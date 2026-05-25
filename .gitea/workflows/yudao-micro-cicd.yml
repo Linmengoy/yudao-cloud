@@ -10,15 +10,6 @@ on:
     tags:
       - v*
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 部署环境，支持 dev/test/prod/master-jdk17
-        required: true
-        default: dev
-      module:
-        description: 部署模块，支持 all/gateway/system/infra/member/aigc-model
-        required: true
-        default: all
 
 jobs:
   build-deploy:
@@ -30,10 +21,7 @@ jobs:
       - name: Detect environment
         id: env
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "deploy_env=${{ github.event.inputs.environment }}" >> "$GITHUB_OUTPUT"
-            echo "module=${{ github.event.inputs.module }}" >> "$GITHUB_OUTPUT"
-          elif echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
+          if echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
             echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
             echo "module=all" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
