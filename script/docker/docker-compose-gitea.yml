@@ -36,7 +36,7 @@ services:
       GITEA_INSTANCE_URL: http://gitea:3000
       GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN:-}
       GITEA_RUNNER_NAME: yudao-runner
-      GITEA_RUNNER_LABELS: ubuntu-latest:docker://swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/ubuntu:22.04
+      GITEA_RUNNER_LABELS: ubuntu-latest:hosted
     volumes:
       - yudao-gitea-runner-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
