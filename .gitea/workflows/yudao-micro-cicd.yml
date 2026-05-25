@@ -15,11 +15,6 @@ jobs:
   build-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Install tools
-        run: |
-          apt-get update
-          apt-get install -y git curl maven docker.io docker-compose-plugin
-
       - name: Checkout
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
