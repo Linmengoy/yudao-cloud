@@ -76,11 +76,8 @@ services:
 
   yudao-system:
     build:
-      context: ../..
-      dockerfile: script/docker/Dockerfile.micro
-      args:
-        MODULE_PATH: yudao-module-system/yudao-module-system-server
-        JAR_NAME: yudao-module-system-server.jar
+      context: ../../yudao-module-system/yudao-module-system-server
+      dockerfile: Dockerfile
     image: yudao-system:latest
     container_name: yudao-system
     restart: always
@@ -120,11 +117,8 @@ services:
 
   yudao-infra:
     build:
-      context: ../..
-      dockerfile: script/docker/Dockerfile.micro
-      args:
-        MODULE_PATH: yudao-module-infra/yudao-module-infra-server
-        JAR_NAME: yudao-module-infra-server.jar
+      context: ../../yudao-module-infra/yudao-module-infra-server
+      dockerfile: Dockerfile
     image: yudao-infra:latest
     container_name: yudao-infra
     restart: always
@@ -165,11 +159,8 @@ services:
         condition: service_healthy
   aigc-model:
     build:
-      context: ../..
-      dockerfile: script/docker/Dockerfile.micro
-      args:
-        MODULE_PATH: yudao-module-aigc-model/yudao-module-aigc-model-server
-        JAR_NAME: yudao-module-aigc-model-server.jar
+      context: ../../yudao-module-aigc-model/yudao-module-aigc-model-server
+      dockerfile: Dockerfile
     image: aigc-model:latest
     container_name: aigc-model
     restart: always
@@ -212,11 +203,8 @@ services:
         condition: service_started
   yudao-member:
     build:
-      context: ../..
-      dockerfile: script/docker/Dockerfile.micro
-      args:
-        MODULE_PATH: yudao-module-member/yudao-module-member-server
-        JAR_NAME: yudao-module-member-server.jar
+      context: ../../yudao-module-member/yudao-module-member-server
+      dockerfile: Dockerfile
     image: yudao-member:latest
     container_name: yudao-member
     restart: always
@@ -260,11 +248,8 @@ services:
 
   yudao-gateway:
     build:
-      context: ../..
-      dockerfile: script/docker/Dockerfile.micro
-      args:
-        MODULE_PATH: yudao-gateway
-        JAR_NAME: yudao-gateway.jar
+      context: ../../yudao-gateway
+      dockerfile: Dockerfile
     image: yudao-gateway:latest
     container_name: yudao-gateway
     restart: always

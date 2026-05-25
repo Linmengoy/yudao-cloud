@@ -155,6 +155,45 @@ CREATE TABLE `aigc_model_tenant` (
   KEY `idx_model_id` (`model_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户模型授权表';
 
+CREATE TABLE `aigc_model_usage_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `trace_id` varchar(64) DEFAULT NULL COMMENT '链路追踪编号',
+  `task_id` bigint DEFAULT NULL COMMENT '任务编号',
+  `user_id` bigint DEFAULT NULL COMMENT '用户编号',
+  `model_id` bigint NOT NULL COMMENT '模型编号',
+  `provider_id` bigint DEFAULT NULL COMMENT '渠道商编号',
+  `capability` varchar(64) NOT NULL COMMENT '模型能力',
+  `request_id` varchar(128) DEFAULT NULL COMMENT '请求编号',
+  `external_task_id` varchar(128) DEFAULT NULL COMMENT '外部任务编号',
+  `prompt_tokens` bigint DEFAULT NULL COMMENT '提示词 Token 数',
+  `completion_tokens` bigint DEFAULT NULL COMMENT '输出 Token 数',
+  `total_tokens` bigint DEFAULT NULL COMMENT '总 Token 数',
+  `cached_tokens` bigint DEFAULT NULL COMMENT '缓存 Token 数',
+  `reasoning_tokens` bigint DEFAULT NULL COMMENT '推理 Token 数',
+  `input_tokens` bigint DEFAULT NULL COMMENT '输入 Token 数',
+  `output_tokens` bigint DEFAULT NULL COMMENT '输出 Token 数',
+  `cost_price` decimal(18,6) DEFAULT NULL COMMENT '成本价',
+  `sale_price` decimal(18,6) DEFAULT NULL COMMENT '销售价',
+  `currency_type` varchar(32) DEFAULT 'POINT' COMMENT '货币类型',
+  `status` int NOT NULL DEFAULT 0 COMMENT '调用状态',
+  `duration_millis` bigint DEFAULT NULL COMMENT '调用耗时，单位：毫秒',
+  `usage_json` text DEFAULT NULL COMMENT '渠道原始 usage JSON',
+  `error_code` varchar(64) DEFAULT NULL COMMENT '错误码',
+  `error_message` varchar(1024) DEFAULT NULL COMMENT '错误信息',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  PRIMARY KEY (`id`),
+  KEY `idx_trace_id` (`trace_id`),
+  KEY `idx_task_id` (`task_id`),
+  KEY `idx_user_time` (`user_id`, `create_time`),
+  KEY `idx_model_time` (`model_id`, `create_time`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型调用计量日志表';
+
 INSERT INTO `aigc_model_provider` (`id`, `code`, `name`, `api_base_url`, `auth_type`, `status`, `tenant_id`) VALUES
 (1, 'provider_kling', '可灵AI', 'https://api.klingai.com', 'API_KEY', 0, 0),
 (2, 'provider_jimeng', '即梦AI', 'https://api.jimengai.com', 'API_KEY', 0, 0),

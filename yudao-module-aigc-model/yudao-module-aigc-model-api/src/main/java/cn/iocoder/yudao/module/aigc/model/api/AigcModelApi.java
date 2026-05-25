@@ -66,4 +66,8 @@ public interface AigcModelApi {
     @Operation(summary = "计算模型价格")
     CommonResult<AigcModelPriceCalculateRespDTO> calculatePrice(@RequestBody AigcModelPriceCalculateReqDTO reqDTO);
 
+    @PostMapping(PREFIX + "/record-usage")
+    @Operation(summary = "记录模型调用计量")
+    CommonResult<Long> recordUsage(@RequestBody AigcModelUsageRecordReqDTO reqDTO);
+
 }

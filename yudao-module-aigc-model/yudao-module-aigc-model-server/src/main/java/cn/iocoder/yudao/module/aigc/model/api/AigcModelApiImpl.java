@@ -10,11 +10,13 @@ import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelProviderRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelParamTemplateRespDTO;
+import cn.iocoder.yudao.module.aigc.model.dto.AigcModelUsageRecordReqDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelValidateReqDTO;
 import cn.iocoder.yudao.module.aigc.model.service.model.AigcModelService;
 import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
 import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
 import cn.iocoder.yudao.module.aigc.model.service.provider.AigcModelProviderService;
+import cn.iocoder.yudao.module.aigc.model.service.usage.AigcModelUsageService;
 import jakarta.annotation.Resource;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
@@ -39,6 +41,9 @@ public class AigcModelApiImpl implements AigcModelApi {
 
     @Resource
     private AigcModelPriceService priceService;
+
+    @Resource
+    private AigcModelUsageService usageService;
 
     @Override
     public CommonResult<AigcModelRespDTO> validateModel(Long modelId, String capability) {
@@ -85,6 +90,11 @@ public class AigcModelApiImpl implements AigcModelApi {
     @Override
     public CommonResult<AigcModelPriceCalculateRespDTO> calculatePrice(AigcModelPriceCalculateReqDTO reqDTO) {
         return success(priceService.calculatePrice(reqDTO));
+    }
+
+    @Override
+    public CommonResult<Long> recordUsage(AigcModelUsageRecordReqDTO reqDTO) {
+        return success(usageService.recordUsage(reqDTO));
     }
 
 }
