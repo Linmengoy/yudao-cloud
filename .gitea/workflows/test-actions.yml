@@ -1,0 +1,13 @@
+name: test-actions
+
+on:
+  push:
+    branches:
+      - master-jdk17
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello
+        run: echo "Gitea Actions is working"
