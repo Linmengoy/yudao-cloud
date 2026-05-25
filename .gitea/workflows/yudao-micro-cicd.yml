@@ -12,26 +12,13 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 部署环境
+        description: 部署环境，支持 dev/test/prod/master-jdk17
         required: true
         default: dev
-        type: choice
-        options:
-          - dev
-          - test
-          - prod
       module:
-        description: 部署模块
+        description: 部署模块，支持 all/gateway/system/infra/member/aigc-model
         required: true
         default: all
-        type: choice
-        options:
-          - all
-          - gateway
-          - system
-          - infra
-          - member
-          - aigc-model
 
 jobs:
   build-deploy:
@@ -44,13 +31,16 @@ jobs:
         id: env
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "deploy_env=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
-            echo "module=${{ inputs.module }}" >> "$GITHUB_OUTPUT"
+            echo "deploy_env=${{ github.event.inputs.environment }}" >> "$GITHUB_OUTPUT"
+            echo "module=${{ github.event.inputs.module }}" >> "$GITHUB_OUTPUT"
           elif echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
             echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
             echo "module=all" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
             echo "deploy_env=test" >> "$GITHUB_OUTPUT"
+            echo "module=all" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
             echo "module=all" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/master-jdk17" ]; then
             echo "deploy_env=master-jdk17" >> "$GITHUB_OUTPUT"
@@ -89,7 +79,6 @@ jobs:
       - name: Deploy aigc-model-server
         if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-model'
         run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-model
-
 
       - name: Verify services
         if: steps.env.outputs.deploy_env != 'build-only'
