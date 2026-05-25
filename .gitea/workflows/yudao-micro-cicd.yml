@@ -1,0 +1,101 @@
+name: yudao-micro-cicd
+
+on:
+  push:
+    branches:
+      - develop
+      - test
+      - master
+      - master-jdk17
+    tags:
+      - v*
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 部署环境
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+      module:
+        description: 部署模块
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - gateway
+          - system
+          - infra
+          - member
+          - aigc-model
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "deploy_env=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+            echo "module=${{ inputs.module }}" >> "$GITHUB_OUTPUT"
+          elif echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
+            echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
+            echo "module=all" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
+            echo "deploy_env=test" >> "$GITHUB_OUTPUT"
+            echo "module=all" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/master-jdk17" ]; then
+            echo "deploy_env=master-jdk17" >> "$GITHUB_OUTPUT"
+            echo "module=all" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            echo "deploy_env=dev" >> "$GITHUB_OUTPUT"
+            echo "module=all" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_env=build-only" >> "$GITHUB_OUTPUT"
+            echo "module=all" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build jar
+        run: mvn clean package -DskipTests
+
+      - name: Deploy all services
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'all'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build
+
+      - name: Deploy gateway
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'gateway'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-gateway
+
+      - name: Deploy system
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'system'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-system
+
+      - name: Deploy infra
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'infra'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-infra
+
+      - name: Deploy member
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'member'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-member
+
+      - name: Deploy aigc-model-server
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-model'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-model
+
+
+      - name: Verify services
+        if: steps.env.outputs.deploy_env != 'build-only'
+        run: |
+          curl -s -o /dev/null -w "Gateway: %{http_code}\n" http://localhost:48080/
+          curl -s -o /dev/null -w "System: %{http_code}\n" http://localhost:48081/
+          curl -s -o /dev/null -w "Infra: %{http_code}\n" http://localhost:48082/
+          curl -s -o /dev/null -w "Member: %{http_code}\n" http://localhost:48087/
+          curl -s -o /dev/null -w "Aigc Model: %{http_code}\n" http://localhost:48090/

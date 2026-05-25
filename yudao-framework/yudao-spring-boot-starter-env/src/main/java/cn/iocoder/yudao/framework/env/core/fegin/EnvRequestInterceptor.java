@@ -20,5 +20,4 @@ public class EnvRequestInterceptor implements RequestInterceptor {
             EnvUtils.setTag(requestTemplate, tag);
         }
     }
-
 }

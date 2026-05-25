@@ -1,0 +1,55 @@
+name: yudao-gitea-cicd
+
+services:
+  gitea:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/gitea/gitea:1.22.6
+    container_name: yudao-gitea
+    restart: always
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      TZ: Asia/Shanghai
+      GITEA__server__ROOT_URL: ${GITEA_ROOT_URL:-http://111.228.39.103:3000/}
+      GITEA__server__SSH_DOMAIN: ${GITEA_SSH_DOMAIN:-111.228.39.103}
+      GITEA__server__SSH_PORT: ${GITEA_SSH_PORT:-2222}
+      GITEA__server__START_SSH_SERVER: "false"
+      GITEA__actions__ENABLED: "true"
+      GITEA__repository__DEFAULT_BRANCH: master
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - yudao-gitea-data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - yudao-network
+
+  gitea-runner:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/gitea/act_runner:0.2.11
+    container_name: yudao-gitea-runner
+    restart: always
+    depends_on:
+      - gitea
+    environment:
+      TZ: Asia/Shanghai
+      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN:-}
+      GITEA_RUNNER_NAME: yudao-runner
+      GITEA_RUNNER_LABELS: ubuntu-latest:docker://swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/ubuntu:22.04
+    volumes:
+      - yudao-gitea-runner-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.m2:/root/.m2
+    networks:
+      - yudao-network
+    command: daemon
+
+volumes:
+  yudao-gitea-data:
+  yudao-gitea-runner-data:
+
+networks:
+  yudao-network:
+    name: yudao-network
+    external: true

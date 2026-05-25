@@ -1,0 +1,305 @@
+name: yudao-cloud-micro
+
+services:
+  mysql:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/mysql:8.0
+    container_name: yudao-mysql
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: ruoyi-vue-pro
+    networks:
+      - yudao-network
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "3306:3306"
+    volumes:
+      - yudao-mysql-data:/var/lib/mysql
+      - ../../sql/mysql/ruoyi-vue-pro.sql:/docker-entrypoint-initdb.d/01-ruoyi-vue-pro.sql:ro
+      - ../../sql/mysql/quartz.sql:/docker-entrypoint-initdb.d/02-quartz.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/redis:7.2-alpine
+    container_name: yudao-redis
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - yudao-network
+    ports:
+      - "6379:6379"
+    volumes:
+      - yudao-redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nacos:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nacos/nacos-server:v2.3.2
+    container_name: yudao-nacos
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      NACOS_AUTH_ENABLE: "false"
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      JVM_XMN: 128m
+    networks:
+      - yudao-network
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    volumes:
+      - yudao-nacos-data:/home/nacos/data
+      - yudao-nacos-logs:/home/nacos/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8848/nacos/v1/console/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  yudao-system:
+    build:
+      context: ../..
+      dockerfile: script/docker/Dockerfile.micro
+      args:
+        MODULE_PATH: yudao-module-system/yudao-module-system-server
+        JAR_NAME: yudao-module-system-server.jar
+    image: yudao-system:latest
+    container_name: yudao-system
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ""
+      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ""
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_USERNAME: root
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD: 123456
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_LAZY: "true"
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_USERNAME: root
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_PASSWORD: 123456
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      ROCKETMQ_NAME_SERVER: rocketmq:9876
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JAVA_OPTS: -Xms512m -Xmx512m
+    networks:
+      - yudao-network
+    ports:
+      - "48081:48081"
+    volumes:
+      - yudao-logs:/root/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+
+  yudao-infra:
+    build:
+      context: ../..
+      dockerfile: script/docker/Dockerfile.micro
+      args:
+        MODULE_PATH: yudao-module-infra/yudao-module-infra-server
+        JAR_NAME: yudao-module-infra-server.jar
+    image: yudao-infra:latest
+    container_name: yudao-infra
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ""
+      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ""
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_USERNAME: root
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD: 123456
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_LAZY: "true"
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_USERNAME: root
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_PASSWORD: 123456
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      ROCKETMQ_NAME_SERVER: rocketmq:9876
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JAVA_OPTS: -Xms512m -Xmx512m
+    networks:
+      - yudao-network
+    ports:
+      - "48082:48082"
+    volumes:
+      - yudao-logs:/root/logs
+    depends_on:
+      yudao-system:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+  aigc-module:
+    build:
+      context: ../..
+      dockerfile: script/docker/Dockerfile.micro
+      args:
+        - MODULE_PATH=yudao-module-aigc-model/yudao-module-aigc-model-server
+        - JAR_NAME=yudao-module-aigc-model-server.jar
+      image: aigc-module:latest
+      container_name: aigc-module
+      restart: always
+      environment:
+        TZ: Asia/Shanghai
+        SPRING_PROFILES_ACTIVE: local
+        SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
+        SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
+        SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ""
+        SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ""
+        SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+        SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_USERNAME: root
+        SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD: 123456
+        SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_LAZY: "true"
+        SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+        SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_USERNAME: root
+        SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_PASSWORD: 123456
+        SPRING_DATA_REDIS_HOST: redis
+        SPRING_DATA_REDIS_PORT: 6379
+        ROCKETMQ_NAME_SERVER: rocketmq:9876
+        SPRING_RABBITMQ_HOST: rabbitmq
+        SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+        JAVA_OPTS: -Xms512m -Xmx512m
+        networks:
+          - yudao-network
+        ports:
+          - "48083:48083"
+        volumes:
+          - yudao-logs:/root/logs
+        depends_on:
+          mysql:
+            condition: service_healthy
+          redis:
+            condition: service_healthy
+          nacos:
+            condition: service_healthy
+          yudao-system:
+            condition: service_started
+          yudao-infra:
+            condition: service_started
+  yudao-member:
+    build:
+      context: ../..
+      dockerfile: script/docker/Dockerfile.micro
+      args:
+        MODULE_PATH: yudao-module-member/yudao-module-member-server
+        JAR_NAME: yudao-module-member-server.jar
+    image: yudao-member:latest
+    container_name: yudao-member
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ""
+      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ""
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_USERNAME: root
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD: 123456
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_LAZY: "true"
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_USERNAME: root
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_PASSWORD: 123456
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      ROCKETMQ_NAME_SERVER: rocketmq:9876
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JAVA_OPTS: -Xms512m -Xmx512m
+    networks:
+      - yudao-network
+    ports:
+      - "48087:48087"
+    volumes:
+      - yudao-logs:/root/logs
+    depends_on:
+      yudao-system:
+        condition: service_started
+      yudao-infra:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+
+  yudao-gateway:
+    build:
+      context: ../..
+      dockerfile: script/docker/Dockerfile.micro
+      args:
+        MODULE_PATH: yudao-gateway
+        JAR_NAME: yudao-gateway.jar
+    image: yudao-gateway:latest
+    container_name: yudao-gateway
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ""
+      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ""
+      JAVA_OPTS: -Xms512m -Xmx512m
+    networks:
+      - yudao-network
+    ports:
+      - "48080:48080"
+    volumes:
+      - yudao-logs:/root/logs
+    depends_on:
+      yudao-system:
+        condition: service_started
+      yudao-infra:
+        condition: service_started
+      yudao-member:
+        condition: service_started
+      aigc-model:
+        condition: service_started
+
+
+volumes:
+  yudao-mysql-data:
+  yudao-redis-data:
+  yudao-nacos-data:
+  yudao-nacos-logs:
+  yudao-logs:
+
+networks:
+  yudao-network:
+    name: yudao-network

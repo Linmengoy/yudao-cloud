@@ -453,13 +453,7 @@ public class GlobalExceptionHandler {
             return CommonResult.error(NOT_IMPLEMENTED.getCode(),
                     "[支付模块 yudao-module-pay - 表结构未导入][参考 https://cloud.iocoder.cn/pay/build/ 开启]");
         }
-        // 11. AI 大模型
-        if (message.contains("ai_")) {
-            log.error("[AI 大模型 yudao-module-ai - 表结构未导入][参考 https://cloud.iocoder.cn/ai/build/ 开启]");
-            return CommonResult.error(NOT_IMPLEMENTED.getCode(),
-                    "[AI 大模型 yudao-module-ai - 表结构未导入][参考 https://cloud.iocoder.cn/ai/build/ 开启]");
-        }
-        // 12. IoT 物联网
+        // 11. IoT 物联网
         if (message.contains("iot_")) {
             log.error("[IoT 物联网 yudao-module-iot - 表结构未导入][参考 https://doc.iocoder.cn/iot/build/ 开启]");
             return CommonResult.error(NOT_IMPLEMENTED.getCode(),

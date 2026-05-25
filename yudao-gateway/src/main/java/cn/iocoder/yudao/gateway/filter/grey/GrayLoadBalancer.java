@@ -69,7 +69,7 @@ public class GrayLoadBalancer implements ReactorServiceInstanceLoadBalancer {
         if (StrUtil.isEmpty(version)) {
             chooseInstances = instances;
         } else {
-            chooseInstances = CollectionUtils.filterList(instances, instance -> version.equals(instance.getMetadata().get("version")));
+            chooseInstances = CollectionUtils.filterList(instances, instance -> version.equals(instance.getMetadata().get(VERSION)));
             if (CollUtil.isEmpty(chooseInstances)) {
                 log.warn("[getInstanceResponse][serviceId({}) 没有满足版本({})的服务实例列表，直接使用所有服务实例列表]", serviceId, version);
                 chooseInstances = instances;

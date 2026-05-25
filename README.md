@@ -330,7 +330,6 @@
 | `yudao-module-crm`    | CRM 系统的 Module 模块  |
 | `yudao-module-mes`    | MES 系统的 Module 模块  |
 | `yudao-module-wms`    | WMS 系统的 Module 模块  |
-| `yudao-module-ai`     | AI 大模型的 Module 模块  |
 | `yudao-module-iot`    | IoT 物联网的 Module 模块 |
 | `yudao-module-mp`     | 微信公众号的 Module 模块   |
 | `yudao-module-report` | 大屏报表 Module 模块     |

@@ -20,7 +20,7 @@ public class BannerApplicationRunner implements ApplicationRunner {
         ThreadUtil.execute(() -> {
             ThreadUtil.sleep(1, TimeUnit.SECONDS); // 延迟 1 秒，保证输出到结尾
             log.info("\n----------------------------------------------------------\n\t" +
-                            "项目启动成功！\n\t" +
+                            "漫漫项目启动成功！有点无语的banner先留着！！\n\t" +
                             "接口文档: \t{} \n\t" +
                             "开发文档: \t{} \n\t" +
                             "视频教程: \t{} \n" +
@@ -49,8 +49,6 @@ public class BannerApplicationRunner implements ApplicationRunner {
             System.out.println("[微信公众号 yudao-module-mp 教程][参考 https://cloud.iocoder.cn/mp/build/ 开启]");
             // 支付平台
             System.out.println("[支付系统 yudao-module-pay - 教程][参考 https://cloud.iocoder.cn/pay/build/ 开启]");
-            // AI 大模型
-            System.out.println("[AI 大模型 yudao-module-ai - 教程][参考 https://cloud.iocoder.cn/ai/build/ 开启]");
         });
     }
 

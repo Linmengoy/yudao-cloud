@@ -177,17 +177,6 @@ spring:
                 - Path=/admin-api/crm/**
               filters:
                 - RewritePath=/admin-api/crm/v3/api-docs, /v3/api-docs # 配置，保证转发到 /v3/api-docs
-            ## ai-server 服务
-            - id: ai-admin-api # 路由的编号
-              uri: grayLb://ai-server
-              predicates: # 断言，作为路由的匹配条件，对应 RouteDefinition 数组
-                - Path=/admin-api/ai/**
-              filters:
-                - RewritePath=/admin-api/ai/v3/api-docs, /v3/api-docs # 配置，保证转发到 /v3/api-docs
-            - id: ai-mcp-server # 路由的编号（MCP Server）
-              uri: grayLb://ai-server
-              predicates: # 断言，作为路由的匹配条件，对应 RouteDefinition 数组
-                - Path=/sse, /mcp/message
             ## iot-server 服务
             - id: iot-admin-api # 路由的编号
               uri: grayLb://iot-server
@@ -209,6 +198,19 @@ spring:
                 - Path=/admin-api/wms/**
               filters:
                 - RewritePath=/admin-api/wms/v3/api-docs, /v3/api-docs # 配置，保证转发到 /v3/api-docs
+            ## aigc-model-server 服务
+            - id: aigc-model-admin-api
+              uri: grayLb://aigc-model-server
+              predicates:
+                - Path=/admin-api/aigc/**
+              filters:
+                - RewritePath=/admin-api/aigc/v3/api-docs, /v3/api-docs
+            - id: aigc-model-app-api
+              uri: grayLb://aigc-model-server
+              predicates:
+                - Path=/app-api/aigc/**
+              filters:
+                - RewritePath=/app-api/aigc/v3/api-docs, /v3/api-docs                
           x-forwarded:
             prefix-enabled: false # 避免 Swagger 重复带上额外的 /admin-api/system 前缀
           default-filters:
@@ -262,9 +264,6 @@ knife4j:
       - name: crm-server
         service-name: crm-server
         url: /admin-api/crm/v3/api-docs
-      - name: ai-server
-        service-name: ai-server
-        url: /admin-api/ai/v3/api-docs
       - name: iot-server
         service-name: iot-server
         url: /admin-api/iot/v3/api-docs
@@ -274,6 +273,9 @@ knife4j:
       - name: wms-server
         service-name: wms-server
         url: /admin-api/wms/v3/api-docs
+      - name: aigc-model-server
+        service-name: aigc-model-server
+        url: /admin-api/aigc/v3/api-docs
 
 --- #################### 芋道相关配置 ####################
 
