@@ -10,23 +10,6 @@ on:
     tags:
       - v*
   workflow_dispatch:
-    inputs:
-      module:
-        description: module to deploy
-        required: true
-        default: all
-        type: choice
-        options:
-          - all
-          - gateway
-          - system
-          - infra
-          - member
-          - pay
-          - aigc-model
-          - aigc-billing
-          - aigc-task
-          - aigc-asset
 
 jobs:
   build-deploy:
@@ -39,81 +22,54 @@ jobs:
           git init .
           git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
           git -c http.extraHeader="Authorization: token ${GITEA_TOKEN}" fetch --depth=1 origin "${{ github.ref }}"
-          git checkout FETCH_HEAD          
-
-      - name: Detect environment
-        id: env
-        run: |
-          module="all"
-          if [ -n "${{ github.event.inputs.module }}" ]; then
-            module="${{ github.event.inputs.module }}"
-          fi
-          if echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
-            echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
-            echo "module=${module}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
-            echo "deploy_env=test" >> "$GITHUB_OUTPUT"
-            echo "module=${module}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
-            echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
-            echo "module=${module}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref }}" = "refs/heads/master-jdk17" ]; then
-            echo "deploy_env=master-jdk17" >> "$GITHUB_OUTPUT"
-            echo "module=${module}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
-            echo "deploy_env=dev" >> "$GITHUB_OUTPUT"
-            echo "module=${module}" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy_env=build-only" >> "$GITHUB_OUTPUT"
-            echo "module=${module}" >> "$GITHUB_OUTPUT"
-          fi          
+          git checkout FETCH_HEAD
 
       - name: Build jar
         run: mvn clean package -DskipTests
 
-      - name: Deploy all services
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'all'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build
+      - name: Deploy services
+        run: |
+          deploy_env="build-only"
+          if echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
+            deploy_env="prod"
+          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
+            deploy_env="test"
+          elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            deploy_env="prod"
+          elif [ "${{ github.ref }}" = "refs/heads/master-jdk17" ]; then
+            deploy_env="master-jdk17"
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            deploy_env="dev"
+          fi
 
-      - name: Deploy gateway
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'gateway'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-gateway
+          echo "Deploy env: ${deploy_env}"
+          if [ "${deploy_env}" = "build-only" ]; then
+            echo "Skip deploy for ${{ github.ref }}"
+            exit 0
+          fi
 
-      - name: Deploy system
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'system'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-system
-
-      - name: Deploy infra
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'infra'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-infra
-
-      - name: Deploy member
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'member'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-member
-
-      - name: Deploy pay
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'pay'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-pay
-
-      - name: Deploy aigc-model-server
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-model'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-model
-
-      - name: Deploy aigc-billing-server
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-billing'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-billing
-
-      - name: Deploy aigc-task-server
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-task'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-task
-
-      - name: Deploy aigc-asset-server
-        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-asset'
-        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-asset
+          docker compose -f script/docker/docker-compose-micro.yml up -d --build
 
       - name: Verify services
-        if: steps.env.outputs.deploy_env != 'build-only'
         run: |
+          deploy_env="build-only"
+          if echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
+            deploy_env="prod"
+          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
+            deploy_env="test"
+          elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            deploy_env="prod"
+          elif [ "${{ github.ref }}" = "refs/heads/master-jdk17" ]; then
+            deploy_env="master-jdk17"
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            deploy_env="dev"
+          fi
+
+          if [ "${deploy_env}" = "build-only" ]; then
+            echo "Skip verify for ${{ github.ref }}"
+            exit 0
+          fi
+
           docker compose -f script/docker/docker-compose-micro.yml ps
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:48080/ || true)
@@ -124,4 +80,4 @@ jobs:
             sleep 5
           done
           docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset
-          exit 1          
+          exit 1
