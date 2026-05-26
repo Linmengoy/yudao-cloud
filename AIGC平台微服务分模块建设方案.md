@@ -8,7 +8,7 @@
 
 ## 1. 方案定位
 
-本方案基于 AIGC 平台 MVP 赚钱版目标，将系统从“单一独立模块”调整为“微服务分模块建设”。当前 `yudao-module-aigc-model`、`yudao-module-aigc-billing`、`yudao-module-aigc-task` 已按 `api + server` 结构落地，本文同步补充已开发模块的实际结果，并作为其他 AIGC 微服务继续建设时的边界参考。
+本方案基于 AIGC 平台 MVP 赚钱版目标，将系统从“单一独立模块”调整为“微服务分模块建设”。当前 `yudao-module-aigc-model`、`yudao-module-aigc-billing`、`yudao-module-aigc-task`、`yudao-module-aigc-asset`、`yudao-module-aigc-safety` 已按 `api + server` 结构落地，本文同步补充已开发模块的实际结果，并作为其他 AIGC 微服务继续建设时的边界参考。
 
 核心目标：
 
@@ -179,6 +179,17 @@ yudao-module-aigc-safety
 | 用户端 | `/aigc/model/list` | 获取当前租户可用模型列表 |
 | 用户端 | `/aigc/model/price/calculate` | 价格预估 |
 | 用户端 | `/aigc/model/param/list` | 获取模型参数模板 |
+
+当前 `aigc-safety` 已实现的服务内路径包括：
+
+| 类型 | 服务内路径 | 说明 |
+| ---- | ---------- | ---- |
+| 管理端 | `/aigc/safety/sensitive-word` | 敏感词新增、修改、删除、查询、分页、启停 |
+| 管理端 | `/aigc/safety/audit-record` | 审核记录详情、分页、人工通过、人工拒绝 |
+| RPC | `/rpc-api/aigc/safety/check-prompt` | 提示词安全检查 |
+| RPC | `/rpc-api/aigc/safety/create-audit-record` | 创建审核记录 |
+| RPC | `/rpc-api/aigc/safety/mark-pass` | 标记审核通过 |
+| RPC | `/rpc-api/aigc/safety/mark-reject` | 标记审核拒绝 |
 
 ### 3.4 表名前缀规范
 
@@ -636,16 +647,22 @@ AigcCodeGenerateApi
 
 ### 4.6.1 服务定位
 
-第一阶段提供轻量审核能力，主要做提示词敏感词和审核记录。
+第一阶段提供轻量审核能力，主要做敏感词管理、提示词敏感词检测、审核记录、人工审核和资产审核状态同步。
+
+当前 `yudao-module-aigc-safety` 已完成 `api + server` 两个子模块，并已接入根工程、Gateway 路由和 Knife4j 聚合。该模块当前不直接开放用户端接口，用户端生成链路由 `aigc-gen` 调用 `AigcSafetyApi` 完成安全检查。
 
 ### 4.6.2 核心能力
 
 - 敏感词管理
+- 敏感词启停
+- 敏感词场景配置
 - 提示词检测
 - 审核记录
 - 人工审核通过
 - 人工审核拒绝
 - 资产审核状态同步
+- 审核状态机并发保护
+- 枚举与状态合法性校验
 
 ### 4.6.3 核心表
 
@@ -655,28 +672,47 @@ AigcCodeGenerateApi
 | aigc_sensitive_word | 敏感词   |
 | aigc_audit_record   | 审核记录 |
 
+核心索引要求：
+
+| 表名 | 索引 | 字段 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `aigc_sensitive_word` | `uk_tenant_scene_word` | `tenant_id, scene, word` | 控制同租户同场景敏感词重复 |
+| `aigc_sensitive_word` | `idx_tenant_scene_status` | `tenant_id, scene, status` | 按租户、场景、状态加载启用敏感词 |
+| `aigc_audit_record` | `idx_tenant_object` | `tenant_id, object_type, object_id` | 查询对象审核记录 |
+| `aigc_audit_record` | `idx_tenant_status` | `tenant_id, audit_status, create_time` | 管理端按状态分页查询 |
+| `aigc_audit_record` | `idx_tenant_scene` | `tenant_id, scene, create_time` | 按审核场景查询和统计 |
+
 ### 4.6.4 API 暴露
 
 `aigc-safety-api` 暴露：
 
 ```text
 AigcSafetyApi
-  ├── checkPrompt(prompt, scene)
-  ├── createAuditRecord(objectType, objectId, content)
-  ├── markPass(auditId)
-  └── markReject(auditId, reason)
+  ├── checkPrompt(AigcSafetyPromptCheckReqDTO)
+  ├── createAuditRecord(AigcAuditRecordCreateReqDTO)
+  ├── markPass(AigcAuditPassReqDTO)
+  └── markReject(AigcAuditRejectReqDTO)
 ```
+
+当前实现约束：
+
+- `checkPrompt` 返回 `pass`、`hitWords`、`riskLevel`、`reason`，不返回内部策略细节。
+- `createAuditRecord` 只允许创建 `PENDING` 状态记录，`objectType`、`scene`、`auditStatus`、`auditResult` 均做枚举校验。
+- `markPass`、`markReject` 使用 `id + PENDING` 条件更新，避免并发重复审核或状态覆盖。
+- 审核记录响应返回审核内容摘要 `contentSummary`，不默认暴露完整 `content`。
 
 ### 4.6.5 依赖关系
 
 依赖：
 
-- aigc-asset-api，可选，用于同步资产审核状态
+- aigc-asset-api，用于事务提交后同步资产审核状态
 
 被依赖：
 
 - aigc-gen
 - aigc-asset
+
+当前实现说明：`aigc-safety` 已完成 Maven 聚合模块、API DTO/枚举/RPC、Server Controller/Service/DAL、MySQL 建表 SQL、敏感词管理、提示词本地检测、审核记录状态机、资产审核状态事务提交后同步、Swagger 分组和 Gateway 聚合配置。当前实现已通过 `mvn -pl yudao-module-aigc-safety/yudao-module-aigc-safety-server -am -DskipTests compile` 编译校验。生产化前建议继续补齐资产同步补偿任务、单元测试、操作审计和审核统计能力。
 
 ## 5. 服务依赖关系
 
@@ -705,6 +741,10 @@ AigcSafetyApi
   aigc-asset
       ↓
   └── infra-api FileApi
+
+  aigc-safety
+      ↓
+  └── aigc-asset-api
 ```
 
 ### 5.2 核心链路
@@ -727,6 +767,8 @@ aigc-model 记录模型调用计量
 aigc-gen 判断结果类型
   ↓
 文件型结果下载并调用 aigc-asset 上传创建资产
+  ↓
+文件型资产需要审核时调用 aigc-safety 创建审核记录
   ↓
 非文件型结果回写任务 outputText / outputData
   ↓
@@ -775,6 +817,7 @@ aigc-task 标记已退款
 | 回调处理 | externalTaskId + callbackType 唯一  |
 | 资产入库 | taskId + assetType 唯一             |
 | 模型调用计量 | requestNo 或 taskId + modelId + capability |
+| 审核记录人工审核 | id + PENDING 条件更新               |
 
 ### 6.3 补偿任务
 
@@ -787,6 +830,7 @@ aigc-task 标记已退款
 | aigc-gen     | 轮询视频、音频、数字人、文档等异步渠道外部任务状态 |
 | aigc-billing | 扫描超时冻结未释放记录                     |
 | aigc-asset   | 检查任务成功但资产未入库记录               |
+| aigc-safety  | 后续补齐资产审核状态同步失败补偿任务       |
 | aigc-model   | 检查调用计量、价格配置、租户授权异常数据   |
 
 ## 7. 数据库拆分建议
@@ -950,6 +994,27 @@ aigc-safety-server
 - 任务回写失败不影响资产入库。
 - 多租户隔离测试通过。
 
+#### aigc-safety 验收
+
+- 根工程已接入 `yudao-module-aigc-safety`。
+- `yudao-module-aigc-safety-api` 和 `yudao-module-aigc-safety-server` 可正常编译。
+- `aigc-safety-server` 可注册独立 OpenAPI 分组，并可通过 Gateway Knife4j 聚合访问。
+- 管理端可新增、修改、删除、查询、分页和启停敏感词。
+- 敏感词按租户、场景、状态隔离查询。
+- 同租户同场景敏感词不能重复创建。
+- 提示词未命中敏感词时返回 `pass=true`。
+- 提示词命中启用敏感词时返回 `pass=false`、命中词、风险等级和通用拒绝原因。
+- 第一阶段只允许 `CONTAINS` 和 `EXACT` 匹配方式，不允许保存 `REGEX`。
+- 审核记录可创建，且创建时只能进入 `PENDING` 状态。
+- 审核记录创建时会校验 `objectType`、`scene`、`auditStatus`、`auditResult` 枚举合法性。
+- 待审核记录可人工通过或人工拒绝。
+- 人工审核状态流转使用 `id + PENDING` 条件更新，避免并发重复审核。
+- 已通过或已拒绝记录不能重复审核。
+- 审核记录响应默认返回 `contentSummary`，不直接暴露完整审核内容。
+- 审核对象为资产时，审核状态在本地事务提交后同步到 `aigc-asset`。
+- 资产审核状态同步失败时记录错误日志，后续补偿任务待生产化补齐。
+- 当前已通过 `mvn -pl yudao-module-aigc-safety/yudao-module-aigc-safety-server -am -DskipTests compile` 编译校验。
+
 #### aigc-gen 验收
 
 - 文本生成、对话、摘要、翻译可生成。
@@ -973,6 +1038,8 @@ aigc-safety-server
 | aigc-task    | aigc-billing | 异常任务退款补偿，真实调用 `releaseFreeze` 释放冻结积分 |
 | aigc-task    | aigc-model   | 任务展示模型信息、补充调用计量或统计口径 |
 | aigc-asset   | infra-api    | 文件上传                         |
+| aigc-asset   | aigc-safety  | 资产入库或发布前创建审核记录     |
+| aigc-safety  | aigc-asset   | 人工审核通过或拒绝后同步资产审核状态 |
 | aigc-billing | pay-api      | 后续充值支付                     |
 
 ## 11. 代码规范
@@ -1010,7 +1077,7 @@ AIGC 微服务统一使用：
 | aigc-task    | 1-041-200-000 |
 | aigc-asset   | 1-041-300-000 |
 | aigc-gen     | 1-041-400-000 |
-| aigc-safety  | 1-041-500-000 |
+| aigc-safety  | 1-044-000-000 |
 
 ### 11.3 枚举位置
 

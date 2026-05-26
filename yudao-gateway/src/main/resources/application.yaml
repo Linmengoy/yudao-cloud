@@ -250,6 +250,13 @@ spring:
                 - Path=/app-api/aigc/asset/**
               filters:
                 - RewritePath=/app-api/aigc/asset/v3/api-docs, /v3/api-docs
+            ## aigc-safety-server 服务
+            - id: aigc-safety-admin-api
+              uri: grayLb://aigc-safety-server
+              predicates:
+                - Path=/admin-api/aigc/safety/**
+              filters:
+                - RewritePath=/admin-api/aigc/safety/v3/api-docs, /v3/api-docs
           x-forwarded:
             prefix-enabled: false # 避免 Swagger 重复带上额外的 /admin-api/system 前缀
           default-filters:
@@ -324,6 +331,9 @@ knife4j:
       - name: aigc-asset-server
         service-name: aigc-asset-server
         url: /admin-api/aigc/asset/v3/api-docs
+      - name: aigc-safety-server
+        service-name: aigc-safety-server
+        url: /admin-api/aigc/safety/v3/api-docs
 
 --- #################### 芋道相关配置 ####################
 
