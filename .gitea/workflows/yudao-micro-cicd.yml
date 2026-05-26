@@ -27,6 +27,9 @@ jobs:
       - name: Build jar
         run: mvn clean package -DskipTests
 
+      - name: Build aigc-gen image
+        run: docker compose -f script/docker/docker-compose-micro.yml build aigc-gen
+
       - name: Deploy services
         run: |
           deploy_env="build-only"
@@ -79,5 +82,5 @@ jobs:
             fi
             sleep 5
           done
-          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety
+          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen
           exit 1

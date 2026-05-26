@@ -191,6 +191,25 @@ yudao-module-aigc-safety
 | RPC | `/rpc-api/aigc/safety/mark-pass` | 标记审核通过 |
 | RPC | `/rpc-api/aigc/safety/mark-reject` | 标记审核拒绝 |
 
+当前 `aigc-gen` 已实现的服务内路径包括：
+
+| 类型 | 服务内路径 | 说明 |
+| ---- | ---------- | ---- |
+| 用户端 | `/aigc/gen/submit` | 通用生成任务提交 |
+| 用户端 | `/aigc/gen/text/generate` | 文本生成 |
+| 用户端 | `/aigc/gen/image/text-to-image` | 文生图 |
+| 用户端 | `/aigc/gen/video/text-to-video` | 文生视频 |
+| 用户端 | `/aigc/gen/result` | 根据任务 ID 查询生成结果 |
+| 管理端 | `/aigc/gen/record/get` | 生成记录详情 |
+| 管理端 | `/aigc/gen/record/page` | 生成记录分页 |
+| 管理端 | `/aigc/gen/record/sync` | 手动同步第三方任务 |
+| 管理端 | `/aigc/gen/callback/page` | 回调记录分页 |
+| 管理端 | `/aigc/gen/provider-log/page` | 渠道调用日志分页 |
+| RPC | `/rpc-api/aigc/gen/submit` | 内部提交生成任务 |
+| RPC | `/rpc-api/aigc/gen/result` | 内部查询生成结果 |
+| RPC | `/rpc-api/aigc/gen/callback` | 内部处理第三方回调 |
+| RPC | `/rpc-api/aigc/gen/sync-task` | 内部同步第三方任务 |
+
 ### 3.4 表名前缀规范
 
 所有 AIGC 微服务表统一使用 `aigc_` 前缀。
@@ -202,7 +221,7 @@ yudao-module-aigc-safety
 | aigc-billing | `aigc_wallet`、`aigc_billing_`、`aigc_quota_` |
 | aigc-task    | `aigc_task_`                                  |
 | aigc-asset   | `aigc_asset_`                                 |
-| aigc-gen     | `aigc_image`、`aigc_video`                    |
+| aigc-gen     | `aigc_gen_record`、`aigc_gen_callback`、`aigc_gen_provider_log` |
 | aigc-safety  | `aigc_audit_`、`aigc_sensitive_`              |
 
 ### 3.5 根工程接入规范
@@ -545,6 +564,8 @@ AigcAssetApi
 
 这是第一阶段用户直接感知最强的服务。
 
+当前 `yudao-module-aigc-gen` 已完成 `api + server` 两个子模块，服务注册名为 `aigc-gen-server`，默认端口为 `48095`。当前落地重点是通用生成编排、文本生成、文生图、文生视频、第三方渠道适配、回调记录、同步补偿、资产创建、扣费确认和用量计量。音频、代码、文档、PPT、数字人等入口属于后续按模型能力继续扩展的规划能力。
+
 ### 4.5.2 核心能力
 
 - 文本生成、对话、摘要、翻译
@@ -558,24 +579,30 @@ AigcAssetApi
 - 第三方任务提交
 - 第三方任务查询
 - 第三方回调处理
-- 结果文件下载
+- 第三方结果 URL 安全校验
 - 调用资产服务入库
 - 调用任务服务推进状态
+- 调用计费服务冻结、确认扣费和失败释放
+- 调用模型服务校验模型、校验参数、计算价格和记录用量
+- 调用安全服务检查提示词
+- 超时生成任务同步补偿
 
 ### 4.5.3 核心表
 
 
 | 表名 | 说明 |
 | ---- | ---- |
-| aigc_generate_record | 通用生成记录，推荐第一阶段优先采用 |
-| aigc_image | 图片生成记录，可作为垂直扩展表 |
-| aigc_video | 视频生成记录，可作为垂直扩展表 |
-| aigc_audio | 音频生成记录，可作为垂直扩展表 |
-| aigc_text | 文本生成记录，可作为垂直扩展表 |
+| aigc_gen_record | 通用生成记录，当前已落地 |
+| aigc_gen_callback | 第三方回调记录，当前已落地 |
+| aigc_gen_provider_log | 第三方渠道调用日志，当前已落地 |
+| aigc_image | 图片生成记录，可作为垂直扩展表，当前未落地 |
+| aigc_video | 视频生成记录，可作为垂直扩展表，当前未落地 |
+| aigc_audio | 音频生成记录，可作为垂直扩展表，当前未落地 |
+| aigc_text | 文本生成记录，可作为垂直扩展表，当前未落地 |
 
 ### 4.5.4 API 暴露
 
-`aigc-gen-api` 暴露给内部使用：
+`aigc-gen-api` 当前对内部暴露通用 `AigcGenerateApi`，服务名为 `aigc-gen-server`，RPC 前缀为 `/rpc-api/aigc/gen`：
 
 ```text
 AigcGenerateApi
@@ -583,6 +610,11 @@ AigcGenerateApi
   ├── getResult(taskId)
   ├── handleCallback(providerCode, callbackData)
   └── syncTask(taskId)
+```
+
+以下垂直 API 属于规划方向，可在通用编排稳定后按业务复杂度逐步拆出：
+
+```text
 
 AigcTextGenerateApi
   ├── generateText(userId, req)
@@ -616,16 +648,14 @@ AigcCodeGenerateApi
 用户端可以直接请求 `aigc-gen`：
 
 ```text
+/app-api/aigc/gen/submit
 /app-api/aigc/gen/image/text-to-image
-/app-api/aigc/gen/image/image-to-image
 /app-api/aigc/gen/video/text-to-video
-/app-api/aigc/gen/video/image-to-video
 /app-api/aigc/gen/text/generate
-/app-api/aigc/gen/text/chat
-/app-api/aigc/gen/audio/text-to-speech
-/app-api/aigc/gen/code/generate
-/app-api/aigc/gen/document/generate
+/app-api/aigc/gen/result
 ```
+
+`image-to-image`、`video/image-to-video`、`text/chat`、`audio/text-to-speech`、`code/generate`、`document/generate` 等路径为后续扩展入口，当前代码未显式落地独立 Controller。
 
 ### 4.5.6 依赖关系
 
@@ -636,12 +666,13 @@ AigcCodeGenerateApi
 - aigc-billing-api
 - aigc-asset-api
 - aigc-safety-api
-- infra-api
 
 被依赖：
 
 - 用户端前端
 - 管理端前端
+
+当前实现说明：`aigc-gen` 已完成 Maven 聚合模块、API DTO/枚举/RPC、Server Controller/Service/DAL、MySQL 建表 SQL、Mock 渠道、`gpt-image-2` 渠道客户端、OpenAPI 分组、XXL-Job 同步补偿、提示词检查、模型校验、价格计算、计费冻结、任务创建、渠道提交、回调验签、资产创建、扣费确认、失败释放冻结和用量计量。生产化前建议继续补齐真实渠道回调验签、异步查询、文件下载转存、更多生成类型入口、管理端统计和异常补偿告警。
 
 ## 4.6 审核风控服务：aigc-safety
 
@@ -752,13 +783,13 @@ AigcSafetyApi
 ```text
 aigc-gen 接收用户请求
   ↓
-aigc-model 校验模型并计算价格
-  ↓
 aigc-safety 检查提示词
   ↓
-aigc-task 创建任务
+aigc-model 校验模型、参数并计算价格
   ↓
 aigc-billing 冻结积分
+  ↓
+aigc-task 创建任务
   ↓
 aigc-gen 调用第三方模型
   ↓
@@ -1017,13 +1048,18 @@ aigc-safety-server
 
 #### aigc-gen 验收
 
-- 文本生成、对话、摘要、翻译可生成。
-- 文生图、图生图可生成。
-- 文生视频、图生视频可生成。
-- 文本转语音、代码生成、文档生成等能力可按模型能力逐步接入。
-- 成功扣费。
-- 失败退款。
+- 根工程已接入 `yudao-module-aigc-gen`，`api + server` 两个子模块可正常编译。
+- `aigc-gen-server` 使用 `48095` 端口和 `aigc-gen-server` 服务名注册。
+- 用户端已提供通用提交、文本生成、文生图、文生视频和结果查询入口。
+- RPC 已提供提交生成、查询结果、处理回调和同步第三方任务能力。
+- 提交生成前会调用 `aigc-safety` 检查提示词，调用 `aigc-model` 校验模型、参数并计算价格。
+- 收费生成会调用 `aigc-billing` 冻结积分，生成成功确认扣费，失败释放冻结。
+- 生成链路会调用 `aigc-task` 创建任务并推进运行、成功、失败等状态。
 - 文件型生成结果进入资产中心，非文件型结果回写任务结果。
+- 第三方回调支持回调记录保存、幂等处理、渠道验签抽象和成功/失败状态推进。
+- XXL-Job 补偿任务可扫描等待中的生成记录并同步第三方任务状态。
+- 当前已落地 `mock` 和 `gpt-image-2` 渠道客户端，更多渠道按 `AigcProviderClient` 扩展。
+- 音频、代码、文档、PPT、数字人等能力按模型能力逐步接入。
 
 ## 10. 服务间 API 依赖矩阵
 

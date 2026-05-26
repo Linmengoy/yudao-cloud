@@ -32,6 +32,7 @@
         <module>yudao-module-aigc-task</module>
         <module>yudao-module-aigc-asset</module>
         <module>yudao-module-aigc-safety</module>
+        <module>yudao-module-aigc-gen</module>
     </modules>
 
     <name>${project.artifactId}</name>
