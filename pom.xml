@@ -28,6 +28,8 @@
         <module>yudao-module-mes</module>
         <module>yudao-module-wms</module>
         <module>yudao-module-aigc-model</module>
+        <module>yudao-module-aigc-billing</module>
+        <module>yudao-module-aigc-task</module>
     </modules>
 
     <name>${project.artifactId}</name>

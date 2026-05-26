@@ -74,6 +74,14 @@ jobs:
         if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-model'
         run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-model
 
+      - name: Deploy aigc-billing-server
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-billing'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-billing
+
+      - name: Deploy aigc-task-server
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-task'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-task
+
       - name: Verify services
         if: steps.env.outputs.deploy_env != 'build-only'
         run: |
@@ -86,5 +94,5 @@ jobs:
             fi
             sleep 5
           done
-          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member aigc-model
+          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member aigc-model aigc-billing aigc-task
           exit 1

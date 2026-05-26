@@ -202,15 +202,41 @@ spring:
             - id: aigc-model-admin-api
               uri: grayLb://aigc-model-server
               predicates:
-                - Path=/admin-api/aigc/**
+                - Path=/admin-api/aigc/model/**
               filters:
-                - RewritePath=/admin-api/aigc/v3/api-docs, /v3/api-docs
+                - RewritePath=/admin-api/aigc/model/v3/api-docs, /v3/api-docs
             - id: aigc-model-app-api
               uri: grayLb://aigc-model-server
               predicates:
-                - Path=/app-api/aigc/**
+                - Path=/app-api/aigc/model/**
               filters:
-                - RewritePath=/app-api/aigc/v3/api-docs, /v3/api-docs                
+                - RewritePath=/app-api/aigc/model/v3/api-docs, /v3/api-docs
+            ## aigc-billing-server 服务
+            - id: aigc-billing-admin-api
+              uri: grayLb://aigc-billing-server
+              predicates:
+                - Path=/admin-api/aigc/billing/**
+              filters:
+                - RewritePath=/admin-api/aigc/billing/v3/api-docs, /v3/api-docs
+            - id: aigc-billing-app-api
+              uri: grayLb://aigc-billing-server
+              predicates:
+                - Path=/app-api/aigc/wallet/**
+              filters:
+                - RewritePath=/app-api/aigc/wallet/v3/api-docs, /v3/api-docs
+            ## aigc-task-server 服务
+            - id: aigc-task-admin-api
+              uri: grayLb://aigc-task-server
+              predicates:
+                - Path=/admin-api/aigc/task/**
+              filters:
+                - RewritePath=/admin-api/aigc/task/v3/api-docs, /v3/api-docs
+            - id: aigc-task-app-api
+              uri: grayLb://aigc-task-server
+              predicates:
+                - Path=/app-api/aigc/task/**
+              filters:
+                - RewritePath=/app-api/aigc/task/v3/api-docs, /v3/api-docs
           x-forwarded:
             prefix-enabled: false # 避免 Swagger 重复带上额外的 /admin-api/system 前缀
           default-filters:
@@ -275,7 +301,13 @@ knife4j:
         url: /admin-api/wms/v3/api-docs
       - name: aigc-model-server
         service-name: aigc-model-server
-        url: /admin-api/aigc/v3/api-docs
+        url: /admin-api/aigc/model/v3/api-docs
+      - name: aigc-billing-server
+        service-name: aigc-billing-server
+        url: /admin-api/aigc/billing/v3/api-docs
+      - name: aigc-task-server
+        service-name: aigc-task-server
+        url: /admin-api/aigc/task/v3/api-docs
 
 --- #################### 芋道相关配置 ####################
 

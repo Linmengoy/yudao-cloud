@@ -8,7 +8,7 @@
 
 ## 1. 方案定位
 
-本方案基于 AIGC 平台 MVP 赚钱版目标，将系统从“单一独立模块”调整为“微服务分模块建设”。当前 `yudao-module-aigc-model` 已按 `api + server` 结构落地，本文同步补充模型服务的实际开发结果，并作为其他 AIGC 微服务继续建设时的边界参考。
+本方案基于 AIGC 平台 MVP 赚钱版目标，将系统从“单一独立模块”调整为“微服务分模块建设”。当前 `yudao-module-aigc-model`、`yudao-module-aigc-billing`、`yudao-module-aigc-task` 已按 `api + server` 结构落地，本文同步补充已开发模块的实际结果，并作为其他 AIGC 微服务继续建设时的边界参考。
 
 核心目标：
 
@@ -65,7 +65,7 @@ yudao-module-aigc-publish    发布导出服务
 | -------------- | ---------------- | -------------------------------- |
 | aigc-model     | 是               | 渠道商、模型、参数模板、价格配置、租户授权、调用计量 |
 | aigc-billing   | 是               | 钱包、积分冻结、扣费、退款、成本 |
-| aigc-task      | 是               | 统一任务、状态机、回调、日志     |
+| aigc-task      | 是               | 统一任务、状态机、回调、日志、重试、补偿 |
 | aigc-asset     | 是               | 图片、视频、音频、文档等文件资产管理 |
 | aigc-gen       | 是               | 文本、图片、视频、音频等大模型生成适配 |
 | aigc-safety    | 是               | 敏感词、基础审核                 |
@@ -345,6 +345,8 @@ AigcBillingApi
   └── calculateGrossProfit(taskId)
 ```
 
+其中 `releaseFreeze(AigcBillingReleaseReqDTO)` 是任务失败、任务取消、超时补偿时释放冻结积分的真实 RPC 入口。`aigc-task` 不直接修改钱包余额和计费流水，只通过该 API 调用 `aigc-billing-server` 完成释放冻结。
+
 ### 4.2.5 并发要求
 
 冻结积分必须使用条件更新：
@@ -370,6 +372,8 @@ WHERE user_id = #{userId}
 - aigc-task
 - aigc-gen
 
+当前实现说明：`yudao-module-aigc-billing` 已提供 `AigcBillingApi.releaseFreeze`、`confirmFreeze`、`freeze` 等 RPC 接口。`aigc-task` 的补偿服务已接入真实 `releaseFreeze` 调用，超时任务进入 `REFUNDING` 后释放冻结，释放成功再进入 `REFUNDED`。
+
 ## 4.3 任务调度服务：aigc-task
 
 ### 4.3.1 服务定位
@@ -390,6 +394,9 @@ WHERE user_id = #{userId}
 - 任务失败退款联动
 - 任务进度查询
 - 管理后台任务监控
+- 管理端统计
+- 超时补偿
+- 真实调用 `aigc-billing` 释放冻结积分
 - 文本、图片、视频、音频、代码、文档、数字人等生成任务的统一状态抽象
 
 ### 4.3.3 核心表
@@ -411,14 +418,18 @@ AigcTaskApi
   ├── createTask(userId, taskType, modelId, requestParams, freezeAmount)
   ├── markQueued(taskId)
   ├── markRunning(taskId)
+  ├── markSubmitted(taskId, externalTaskId)
   ├── markCallbackWaiting(taskId, externalTaskId)
   ├── markDownloading(taskId)
-  ├── markAuditing(taskId)
+  ├── markAssetCreating(taskId)
   ├── markSuccess(taskId, outputAssetId / outputText / outputData)
   ├── markFailed(taskId, failReason)
+  ├── markRefunding(taskId)
   ├── markRefunded(taskId)
   ├── getTask(taskId)
-  └── createCallbackRecord(externalTaskId, callbackType, callbackData)
+  ├── getTaskByTaskNo(taskNo)
+  ├── createCallbackRecord(externalTaskId, callbackType, callbackData)
+  └── createRetryRecord(taskId, retryType)
 ```
 
 ### 4.3.5 依赖关系
@@ -427,6 +438,8 @@ AigcTaskApi
 
 - aigc-billing-api
 - aigc-model-api
+
+`aigc-task` 对 `aigc-billing-api` 的依赖是实际运行依赖，不是文档预留。补偿流程中必须通过 `AigcBillingApi.releaseFreeze` 调用 `aigc-billing-server`，不能在任务服务内直接操作钱包表。
 
 被依赖：
 
@@ -894,10 +907,19 @@ aigc-safety-server
 - 任务可创建。
 - 文本、图片、视频、音频等任务类型可统一创建。
 - 状态流转正确。
+- 状态更新使用 `id + oldStatus` 条件更新，避免并发覆盖。
 - 日志完整。
 - 回调幂等。
+- 回调可处理成功、处理失败和重放。
 - 失败任务可重试。
+- 重试次数不会超过最大限制。
+- 超时任务可被补偿扫描。
+- 超时、失败、取消补偿可真实调用 `AigcBillingApi.releaseFreeze` 释放冻结积分。
+- billing 释放成功后任务进入 `REFUNDED`；释放失败时保持 `REFUNDING` 等待后续补偿或人工处理。
 - 任务可按用户分页查询。
+- 用户端可查询任务进度，且不返回成本价、第三方原始信息和内部错误码。
+- 管理端可查看任务统计。
+- 当前已有 20 个自动化测试用例通过，编译和测试门禁通过。
 
 #### aigc-asset 验收
 
@@ -928,7 +950,7 @@ aigc-safety-server
 | aigc-gen     | aigc-task    | 创建任务、更新状态               |
 | aigc-gen     | aigc-asset   | 文件型结果创建资产               |
 | aigc-gen     | aigc-safety  | 提示词审核                       |
-| aigc-task    | aigc-billing | 异常任务退款补偿                 |
+| aigc-task    | aigc-billing | 异常任务退款补偿，真实调用 `releaseFreeze` 释放冻结积分 |
 | aigc-task    | aigc-model   | 任务展示模型信息、补充调用计量或统计口径 |
 | aigc-asset   | infra-api    | 文件上传                         |
 | aigc-billing | pay-api      | 后续充值支付                     |

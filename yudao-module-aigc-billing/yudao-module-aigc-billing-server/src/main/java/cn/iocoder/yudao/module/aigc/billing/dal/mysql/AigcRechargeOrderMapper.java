@@ -1,0 +1,43 @@
+package cn.iocoder.yudao.module.aigc.billing.dal.mysql;
+
+import cn.iocoder.yudao.framework.common.pojo.PageParam;
+import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
+import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
+import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargeOrderDO;
+import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRechargeStatusEnum;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import org.apache.ibatis.annotations.Mapper;
+
+import java.time.LocalDateTime;
+
+@Mapper
+public interface AigcRechargeOrderMapper extends BaseMapperX<AigcRechargeOrderDO> {
+
+    default AigcRechargeOrderDO selectByRechargeNo(String rechargeNo) {
+        return selectOne(AigcRechargeOrderDO::getRechargeNo, rechargeNo);
+    }
+
+    default PageResult<AigcRechargeOrderDO> selectPage(PageParam reqVO) {
+        return selectPage(reqVO, new LambdaQueryWrapperX<AigcRechargeOrderDO>()
+                .orderByDesc(AigcRechargeOrderDO::getId));
+    }
+
+    default PageResult<AigcRechargeOrderDO> selectUserPage(PageParam reqVO, Long userId) {
+        return selectPage(reqVO, new LambdaQueryWrapperX<AigcRechargeOrderDO>()
+                .eq(AigcRechargeOrderDO::getUserId, userId)
+                .orderByDesc(AigcRechargeOrderDO::getId));
+    }
+
+    default int updatePaid(Long id, Long payOrderId, String payOrderNo, String payChannelCode, LocalDateTime payTime) {
+        return update(null, new LambdaUpdateWrapper<AigcRechargeOrderDO>()
+                .set(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.PAID.getCode())
+                .set(AigcRechargeOrderDO::getPayOrderId, payOrderId)
+                .set(AigcRechargeOrderDO::getPayOrderNo, payOrderNo)
+                .set(AigcRechargeOrderDO::getPayChannelCode, payChannelCode)
+                .set(AigcRechargeOrderDO::getPayTime, payTime)
+                .eq(AigcRechargeOrderDO::getId, id)
+                .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.WAIT_PAY.getCode()));
+    }
+
+}
