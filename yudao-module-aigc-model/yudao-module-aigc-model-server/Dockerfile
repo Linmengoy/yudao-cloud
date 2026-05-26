@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21-jre
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/eclipse-temurin:17-jre
 
 RUN mkdir -p /yudao-module-aigc-model-server
 WORKDIR /yudao-module-aigc-model-server

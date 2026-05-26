@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21-jre
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/eclipse-temurin:21-jre
 
 ARG MODULE_PATH
 ARG JAR_NAME

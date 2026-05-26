@@ -1,11 +1,11 @@
-## AdoptOpenJDK 停止发布 OpenJDK 二进制，而 Eclipse Temurin 是它的延伸，提供更好的稳定性
+## AdoptOpenJDK 停止发布 OpenJDK 二进制，�?Eclipse Temurin 是它的延伸，提供更好的稳定�?
 ## 感谢复旦核博士的建议！灰子哥，牛皮！
-FROM eclipse-temurin:21-jre
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/eclipse-temurin:21-jre
 
-## 创建目录，并使用它作为工作目录
+## 创建目录，并使用它作为工作目�?
 RUN mkdir -p /yudao-server
 WORKDIR /yudao-server
-## 将后端项目的 Jar 文件，复制到镜像中
+## 将后端项目的 Jar 文件，复制到镜像�?
 COPY ./target/yudao-server.jar app.jar
 
 ## 设置 TZ 时区
@@ -16,7 +16,7 @@ ENV JAVA_OPTS="-Xms512m -Xmx512m -Djava.security.egd=file:/dev/./urandom"
 ## 应用参数
 ENV ARGS=""
 
-## 暴露后端项目的 48080 端口
+## 暴露后端项目�?48080 端口
 EXPOSE 48080
 
 ## 启动后端项目
