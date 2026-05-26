@@ -30,6 +30,7 @@
         <module>yudao-module-aigc-model</module>
         <module>yudao-module-aigc-billing</module>
         <module>yudao-module-aigc-task</module>
+        <module>yudao-module-aigc-asset</module>
     </modules>
 
     <name>${project.artifactId}</name>

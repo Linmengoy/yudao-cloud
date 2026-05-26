@@ -32,14 +32,8 @@ public class AigcBillingStatisticsServiceImpl implements AigcBillingStatisticsSe
     @Override
     public Map<String, Object> getOverview(LocalDateTime startTime, LocalDateTime endTime) {
         List<AigcWalletDO> wallets = walletMapper.selectList();
-        List<AigcCostRecordDO> costs = costRecordMapper.selectList(wrapper -> {
-            if (startTime != null) {
-                wrapper.ge(AigcCostRecordDO::getCreateTime, startTime);
-            }
-            if (endTime != null) {
-                wrapper.le(AigcCostRecordDO::getCreateTime, endTime);
-            }
-        });
+        List<AigcCostRecordDO> costs = costRecordMapper.selectList(new LambdaQueryWrapperX<AigcCostRecordDO>()
+                .betweenIfPresent(AigcCostRecordDO::getCreateTime, startTime, endTime));
         
         BigDecimal totalBalance = wallets.stream()
                 .map(AigcWalletDO::getBalance)
@@ -85,14 +79,8 @@ public class AigcBillingStatisticsServiceImpl implements AigcBillingStatisticsSe
 
     @Override
     public List<Map<String, Object>> getDailyStatistics(LocalDateTime startTime, LocalDateTime endTime) {
-        return costRecordMapper.selectList(wrapper -> {
-            if (startTime != null) {
-                wrapper.ge(AigcCostRecordDO::getCreateTime, startTime);
-            }
-            if (endTime != null) {
-                wrapper.le(AigcCostRecordDO::getCreateTime, endTime);
-            }
-        }).stream()
+        return costRecordMapper.selectList(new LambdaQueryWrapperX<AigcCostRecordDO>()
+                        .betweenIfPresent(AigcCostRecordDO::getCreateTime, startTime, endTime)).stream()
                 .filter(record -> record.getCreateTime() != null)
                 .collect(Collectors.groupingBy(record -> record.getCreateTime().toLocalDate()))
                 .entrySet().stream()
@@ -133,14 +121,8 @@ public class AigcBillingStatisticsServiceImpl implements AigcBillingStatisticsSe
     @Override
     public List<Map<String, Object>> getUserRank(LocalDateTime startTime, LocalDateTime endTime, Integer limit) {
         int actualLimit = limit != null && limit > 0 ? limit : 20;
-        return billingRecordMapper.selectList(wrapper -> {
-            if (startTime != null) {
-                wrapper.ge(AigcBillingRecordDO::getCreateTime, startTime);
-            }
-            if (endTime != null) {
-                wrapper.le(AigcBillingRecordDO::getCreateTime, endTime);
-            }
-        }).stream()
+        return billingRecordMapper.selectList(new LambdaQueryWrapperX<AigcBillingRecordDO>()
+                        .betweenIfPresent(AigcBillingRecordDO::getCreateTime, startTime, endTime)).stream()
                 .filter(record -> record.getUserId() != null)
                 .collect(Collectors.groupingBy(AigcBillingRecordDO::getUserId))
                 .entrySet().stream()
@@ -159,14 +141,8 @@ public class AigcBillingStatisticsServiceImpl implements AigcBillingStatisticsSe
     }
 
     private List<Map<String, Object>> groupCostBy(String type, LocalDateTime startTime, LocalDateTime endTime) {
-        return costRecordMapper.selectList(wrapper -> {
-            if (startTime != null) {
-                wrapper.ge(AigcCostRecordDO::getCreateTime, startTime);
-            }
-            if (endTime != null) {
-                wrapper.le(AigcCostRecordDO::getCreateTime, endTime);
-            }
-        }).stream()
+        return costRecordMapper.selectList(new LambdaQueryWrapperX<AigcCostRecordDO>()
+                        .betweenIfPresent(AigcCostRecordDO::getCreateTime, startTime, endTime)).stream()
                 .collect(Collectors.groupingBy(record -> "model".equals(type) ? record.getModelId() : record.getProviderId()))
                 .entrySet().stream()
                 .filter(entry -> entry.getKey() != null)

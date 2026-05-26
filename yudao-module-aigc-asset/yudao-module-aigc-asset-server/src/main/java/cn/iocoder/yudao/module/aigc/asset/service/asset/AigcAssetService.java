@@ -1,0 +1,63 @@
+package cn.iocoder.yudao.module.aigc.asset.service.asset;
+
+import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetDownloadLogPageReqVO;
+import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetPageReqVO;
+import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetSaveReqVO;
+import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
+import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDownloadLogDO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAuditUpdateReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateRespDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetPageReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetUpdateReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetVisibilityUpdateReqDTO;
+
+public interface AigcAssetService {
+
+    Long createAsset(AigcAssetSaveReqVO reqVO);
+
+    Long uploadAsset(Long userId, String assetType, String title, String fileName, String mimeType, byte[] content);
+
+    AigcAssetCreateRespDTO createAsset(AigcAssetCreateReqDTO reqDTO);
+
+    void updateAsset(AigcAssetSaveReqVO reqVO);
+
+    void updateAsset(AigcAssetUpdateReqDTO reqDTO);
+
+    void deleteAsset(Long id);
+
+    void recoverAsset(Long id);
+
+    AigcAssetDO getAsset(Long id);
+
+    AigcAssetDO validateAssetExists(Long id);
+
+    AigcAssetDO getAssetByTaskId(Long taskId);
+
+    PageResult<AigcAssetDO> getAssetPage(AigcAssetPageReqVO reqVO);
+
+    PageResult<AigcAssetDO> getAssetPage(AigcAssetPageReqDTO reqDTO);
+
+    AigcAssetDO getUserAsset(Long id, Long userId);
+
+    AigcAssetDO getAccessibleAsset(Long id, Long userId);
+
+    PageResult<AigcAssetDO> getUserAssetPage(AigcAssetPageReqVO reqVO, Long userId);
+
+    void updateAuditStatus(AigcAssetAuditUpdateReqDTO reqDTO);
+
+    void updateVisibility(AigcAssetVisibilityUpdateReqDTO reqDTO);
+
+    void increaseDownloadCount(AigcAssetDownloadReqDTO reqDTO);
+
+    void increaseUseCount(Long id, Long userId);
+
+    PageResult<AigcAssetDownloadLogDO> getDownloadLogPage(AigcAssetDownloadLogPageReqVO reqVO);
+
+    Long getAssetCount();
+
+    Long getDownloadCount();
+
+}

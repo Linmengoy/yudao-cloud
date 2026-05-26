@@ -10,6 +10,23 @@ on:
     tags:
       - v*
   workflow_dispatch:
+    inputs:
+      module:
+        description: module to deploy
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - gateway
+          - system
+          - infra
+          - member
+          - pay
+          - aigc-model
+          - aigc-billing
+          - aigc-task
+          - aigc-asset
 
 jobs:
   build-deploy:
@@ -22,30 +39,34 @@ jobs:
           git init .
           git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
           git -c http.extraHeader="Authorization: token ${GITEA_TOKEN}" fetch --depth=1 origin "${{ github.ref }}"
-          git checkout FETCH_HEAD
+          git checkout FETCH_HEAD          
 
       - name: Detect environment
         id: env
         run: |
+          module="all"
+          if [ -n "${{ github.event.inputs.module }}" ]; then
+            module="${{ github.event.inputs.module }}"
+          fi
           if echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
             echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
-            echo "module=all" >> "$GITHUB_OUTPUT"
+            echo "module=${module}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
             echo "deploy_env=test" >> "$GITHUB_OUTPUT"
-            echo "module=all" >> "$GITHUB_OUTPUT"
+            echo "module=${module}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
             echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
-            echo "module=all" >> "$GITHUB_OUTPUT"
+            echo "module=${module}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/master-jdk17" ]; then
             echo "deploy_env=master-jdk17" >> "$GITHUB_OUTPUT"
-            echo "module=all" >> "$GITHUB_OUTPUT"
+            echo "module=${module}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
             echo "deploy_env=dev" >> "$GITHUB_OUTPUT"
-            echo "module=all" >> "$GITHUB_OUTPUT"
+            echo "module=${module}" >> "$GITHUB_OUTPUT"
           else
             echo "deploy_env=build-only" >> "$GITHUB_OUTPUT"
-            echo "module=all" >> "$GITHUB_OUTPUT"
-          fi
+            echo "module=${module}" >> "$GITHUB_OUTPUT"
+          fi          
 
       - name: Build jar
         run: mvn clean package -DskipTests
@@ -70,6 +91,10 @@ jobs:
         if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'member'
         run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-member
 
+      - name: Deploy pay
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'pay'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build yudao-pay
+
       - name: Deploy aigc-model-server
         if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-model'
         run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-model
@@ -81,6 +106,10 @@ jobs:
       - name: Deploy aigc-task-server
         if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-task'
         run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-task
+
+      - name: Deploy aigc-asset-server
+        if: steps.env.outputs.deploy_env != 'build-only' && steps.env.outputs.module == 'aigc-asset'
+        run: docker compose -f script/docker/docker-compose-micro.yml up -d --build aigc-asset
 
       - name: Verify services
         if: steps.env.outputs.deploy_env != 'build-only'
@@ -94,5 +123,5 @@ jobs:
             fi
             sleep 5
           done
-          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member aigc-model aigc-billing aigc-task
-          exit 1
+          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset
+          exit 1          

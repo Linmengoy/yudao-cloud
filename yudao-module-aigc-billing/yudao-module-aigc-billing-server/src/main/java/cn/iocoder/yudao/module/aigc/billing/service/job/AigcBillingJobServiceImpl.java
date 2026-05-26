@@ -7,10 +7,13 @@ import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcBillingRecordMapper;
 import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcQuotaFreezeMapper;
 import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcRechargeOrderMapper;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcBillingRecordCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.billing.dto.AigcBillingReleaseReqDTO;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRecordTypeEnum;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRechargeStatusEnum;
+import cn.iocoder.yudao.module.aigc.billing.service.freeze.AigcQuotaFreezeService;
 import cn.iocoder.yudao.module.aigc.billing.service.record.AigcBillingRecordService;
 import cn.iocoder.yudao.module.aigc.billing.service.wallet.AigcWalletService;
+import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +37,8 @@ public class AigcBillingJobServiceImpl implements AigcBillingJobService {
     private AigcWalletService walletService;
     @Resource
     private AigcBillingRecordService billingRecordService;
+    @Resource
+    private AigcQuotaFreezeService quotaFreezeService;
 
     @Override
     public int handleFreezeTimeout() {
@@ -59,31 +64,18 @@ public class AigcBillingJobServiceImpl implements AigcBillingJobService {
 
     @Transactional(rollbackFor = Exception.class)
     public void compensateTimeoutFreeze(AigcQuotaFreezeDO freeze) {
-        AigcBillingRecordDO existingRecord = billingRecordMapper.selectByBiz(freeze.getBizType(), freeze.getBizId());
-        if (existingRecord != null) {
-            return;
-        }
-        
-        walletService.recharge(freeze.getWalletId(), freeze.getAmount());
-        
-        AigcBillingRecordCreateReqDTO record = new AigcBillingRecordCreateReqDTO();
-        record.setWalletId(freeze.getWalletId());
-        record.setUserId(freeze.getUserId());
-        record.setBizType(freeze.getBizType());
-        record.setBizId(freeze.getBizId());
-        record.setRecordType(AigcBillingRecordTypeEnum.RELEASE.getCode());
-        record.setTitle("AIGC 冻结超时释放-补偿");
-        record.setAmount(freeze.getAmount());
-        record.setFreezeId(freeze.getId());
-        record.setTaskId(freeze.getTaskId());
-        record.setCurrencyType(POINT.getCode());
-        billingRecordService.createBillingRecord(record);
+        AigcBillingReleaseReqDTO reqDTO = new AigcBillingReleaseReqDTO();
+        reqDTO.setFreezeId(freeze.getId());
+        reqDTO.setTaskId(freeze.getTaskId());
+        reqDTO.setTaskNo(freeze.getTaskNo());
+        reqDTO.setReason("冻结超时自动释放");
+        quotaFreezeService.releaseFreeze(reqDTO);
     }
 
     private int reconcileRechargeOrders() {
         int count = 0;
-        List<AigcRechargeOrderDO> orders = rechargeOrderMapper.selectList(wrapper ->
-                wrapper.eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.PAID.getCode())
+        List<AigcRechargeOrderDO> orders = rechargeOrderMapper.selectList(new LambdaQueryWrapperX<AigcRechargeOrderDO>()
+                .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.PAID.getCode())
                         .isNotNull(AigcRechargeOrderDO::getPayTime)
                         .last("LIMIT 100"));
         

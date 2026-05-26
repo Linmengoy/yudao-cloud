@@ -237,6 +237,19 @@ spring:
                 - Path=/app-api/aigc/task/**
               filters:
                 - RewritePath=/app-api/aigc/task/v3/api-docs, /v3/api-docs
+            ## aigc-asset-server 服务
+            - id: aigc-asset-admin-api
+              uri: grayLb://aigc-asset-server
+              predicates:
+                - Path=/admin-api/aigc/asset/**
+              filters:
+                - RewritePath=/admin-api/aigc/asset/v3/api-docs, /v3/api-docs
+            - id: aigc-asset-app-api
+              uri: grayLb://aigc-asset-server
+              predicates:
+                - Path=/app-api/aigc/asset/**
+              filters:
+                - RewritePath=/app-api/aigc/asset/v3/api-docs, /v3/api-docs
           x-forwarded:
             prefix-enabled: false # 避免 Swagger 重复带上额外的 /admin-api/system 前缀
           default-filters:
@@ -308,6 +321,9 @@ knife4j:
       - name: aigc-task-server
         service-name: aigc-task-server
         url: /admin-api/aigc/task/v3/api-docs
+      - name: aigc-asset-server
+        service-name: aigc-asset-server
+        url: /admin-api/aigc/asset/v3/api-docs
 
 --- #################### 芋道相关配置 ####################
 
