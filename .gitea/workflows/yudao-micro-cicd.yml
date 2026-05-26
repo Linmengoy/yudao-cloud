@@ -77,8 +77,14 @@ jobs:
       - name: Verify services
         if: steps.env.outputs.deploy_env != 'build-only'
         run: |
-          curl -s -o /dev/null -w "Gateway: %{http_code}\n" http://localhost:48080/
-          curl -s -o /dev/null -w "System: %{http_code}\n" http://localhost:48081/
-          curl -s -o /dev/null -w "Infra: %{http_code}\n" http://localhost:48082/
-          curl -s -o /dev/null -w "Member: %{http_code}\n" http://localhost:48087/
-          curl -s -o /dev/null -w "Aigc Model: %{http_code}\n" http://localhost:48090/
+          docker compose -f script/docker/docker-compose-micro.yml ps
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:48080/ || true)
+            echo "Gateway: ${code}"
+            if [ "${code}" != "000" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member aigc-model
+          exit 1
