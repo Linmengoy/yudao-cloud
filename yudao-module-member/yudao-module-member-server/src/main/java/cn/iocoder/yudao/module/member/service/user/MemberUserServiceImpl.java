@@ -70,6 +70,11 @@ public class MemberUserServiceImpl implements MemberUserService {
     }
 
     @Override
+    public MemberUserDO getUserByEmail(String email) {
+        return memberUserMapper.selectByEmail(email);
+    }
+
+    @Override
     public List<MemberUserDO> getUserListByNickname(String nickname) {
         return memberUserMapper.selectListByNicknameLike(nickname);
     }
@@ -90,6 +95,35 @@ public class MemberUserServiceImpl implements MemberUserService {
     @Transactional(rollbackFor = Exception.class)
     public MemberUserDO createUser(String nickname, String avtar, String registerIp, Integer terminal) {
         return createUser(null, nickname, avtar, registerIp, terminal);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public MemberUserDO createUserByEmail(String email, String password, String registerIp, Integer terminal) {
+        validateEmailUnique(null, email);
+        String nickname = StrUtil.subBefore(email, '@', false);
+        if (StrUtil.isBlank(nickname)) {
+            nickname = "用户" + RandomUtil.randomNumbers(6);
+        }
+        MemberUserDO user = new MemberUserDO();
+        user.setEmail(email);
+        user.setEmailVerified(true);
+        user.setEmailBindTime(LocalDateTime.now());
+        user.setStatus(CommonStatusEnum.ENABLE.getStatus());
+        user.setPassword(encodePassword(password));
+        user.setRegisterIp(registerIp).setRegisterTerminal(terminal);
+        user.setNickname(nickname);
+        memberUserMapper.insert(user);
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+            @Override
+            public void afterCommit() {
+                memberUserProducer.sendUserCreateMessage(user.getId());
+            }
+
+        });
+        return user;
     }
 
     private MemberUserDO createUser(String mobile, String nickname, String avtar,
@@ -271,6 +305,19 @@ public class MemberUserServiceImpl implements MemberUserService {
         }
         if (!user.getId().equals(id)) {
             throw exception(USER_MOBILE_USED, mobile);
+        }
+    }
+
+    private void validateEmailUnique(Long id, String email) {
+        if (StrUtil.isBlank(email)) {
+            return;
+        }
+        MemberUserDO user = memberUserMapper.selectByEmail(email);
+        if (user == null) {
+            return;
+        }
+        if (id == null || !user.getId().equals(id)) {
+            throw exception(USER_EMAIL_USED);
         }
     }
 

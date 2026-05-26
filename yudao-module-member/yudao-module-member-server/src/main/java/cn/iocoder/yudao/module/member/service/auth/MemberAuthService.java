@@ -78,6 +78,28 @@ public interface MemberAuthService {
     void validateSmsCode(Long userId, AppAuthSmsValidateReqVO reqVO);
 
     /**
+     * 发送邮箱验证码
+     *
+     * @param reqVO 发送信息
+     */
+    void sendEmailCode(AppAuthEmailCodeSendReqVO reqVO);
+
+    /**
+     * 校验邮箱验证码是否正确
+     *
+     * @param reqVO 校验信息
+     */
+    void validateEmailCode(AppAuthEmailCodeValidateReqVO reqVO);
+
+    /**
+     * 邮箱验证码注册
+     *
+     * @param reqVO 注册信息
+     * @return 登录结果
+     */
+    AppAuthLoginRespVO emailRegister(@Valid AppAuthEmailRegisterReqVO reqVO);
+
+    /**
      * 刷新访问令牌
      *
      * @param refreshToken 刷新令牌

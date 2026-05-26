@@ -9,6 +9,7 @@ import cn.iocoder.yudao.framework.common.util.servlet.ServletUtils;
 import cn.iocoder.yudao.module.member.controller.app.auth.vo.*;
 import cn.iocoder.yudao.module.member.convert.auth.AuthConvert;
 import cn.iocoder.yudao.module.member.dal.dataobject.user.MemberUserDO;
+import cn.iocoder.yudao.module.member.enums.auth.MemberEmailCodeSceneEnum;
 import cn.iocoder.yudao.module.member.service.user.MemberUserService;
 import cn.iocoder.yudao.module.system.api.logger.LoginLogApi;
 import cn.iocoder.yudao.module.system.api.logger.dto.LoginLogCreateReqDTO;
@@ -51,6 +52,8 @@ public class MemberAuthServiceImpl implements MemberAuthService {
     private MemberUserService userService;
     @Resource
     private SmsCodeApi smsCodeApi;
+    @Resource
+    private MemberEmailCodeService emailCodeService;
     @Resource
     private LoginLogApi loginLogApi;
     @Resource
@@ -248,6 +251,31 @@ public class MemberAuthServiceImpl implements MemberAuthService {
     @Override
     public void validateSmsCode(Long userId, AppAuthSmsValidateReqVO reqVO) {
         smsCodeApi.validateSmsCode(AuthConvert.INSTANCE.convert(reqVO));
+    }
+
+    @Override
+    public void sendEmailCode(AppAuthEmailCodeSendReqVO reqVO) {
+        emailCodeService.sendEmailCode(reqVO.getEmail(), reqVO.getScene(), getClientIP());
+    }
+
+    @Override
+    public void validateEmailCode(AppAuthEmailCodeValidateReqVO reqVO) {
+        emailCodeService.validateEmailCode(reqVO.getEmail(), reqVO.getScene(), reqVO.getCode());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AppAuthLoginRespVO emailRegister(AppAuthEmailRegisterReqVO reqVO) {
+        if (!Boolean.TRUE.equals(reqVO.getAgreeTerms())) {
+            throw exception(AUTH_REGISTER_AGREE_TERMS_REQUIRED);
+        }
+        if (userService.getUserByEmail(reqVO.getEmail()) != null) {
+            throw exception(USER_EMAIL_USED);
+        }
+        String userIp = getClientIP();
+        emailCodeService.useEmailCode(reqVO.getEmail(), MemberEmailCodeSceneEnum.REGISTER.getScene(), reqVO.getCode(), userIp);
+        MemberUserDO user = userService.createUserByEmail(reqVO.getEmail(), reqVO.getPassword(), userIp, getTerminal());
+        return createTokenAfterLoginSuccess(user, reqVO.getEmail(), LoginLogTypeEnum.LOGIN_EMAIL, null);
     }
 
     @Override

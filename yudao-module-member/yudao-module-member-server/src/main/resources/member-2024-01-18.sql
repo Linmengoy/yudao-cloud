@@ -301,6 +301,9 @@ DROP TABLE IF EXISTS `member_user`;
 CREATE TABLE `member_user`  (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '编号',
   `mobile` varchar(11) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '手机号',
+  `email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '邮箱',
+  `email_verified` bit(1) NOT NULL DEFAULT b'0' COMMENT '邮箱是否已验证',
+  `email_bind_time` datetime NULL DEFAULT NULL COMMENT '邮箱绑定时间',
   `password` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' COMMENT '密码',
   `status` tinyint NOT NULL COMMENT '状态',
   `register_ip` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '注册 IP',
@@ -325,8 +328,36 @@ CREATE TABLE `member_user`  (
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
   `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
-  PRIMARY KEY (`id`) USING BTREE
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE INDEX `uk_tenant_email_deleted`(`tenant_id` ASC, `email` ASC, `deleted` ASC) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 286 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '会员用户';
+
+-- ----------------------------
+-- Table structure for member_email_code
+-- ----------------------------
+DROP TABLE IF EXISTS `member_email_code`;
+CREATE TABLE `member_email_code`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '编号',
+  `email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '邮箱',
+  `code` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '验证码',
+  `scene` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '发送场景',
+  `used` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否使用',
+  `used_time` datetime NULL DEFAULT NULL COMMENT '使用时间',
+  `used_ip` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '使用 IP',
+  `create_ip` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '创建 IP',
+  `today_index` int NOT NULL DEFAULT 1 COMMENT '当天第几次发送',
+  `expires_time` datetime NOT NULL COMMENT '过期时间',
+  `creator` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '' COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '' COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`) USING BTREE,
+  INDEX `idx_tenant_email_scene_create_time`(`tenant_id` ASC, `email` ASC, `scene` ASC, `create_time` ASC) USING BTREE,
+  INDEX `idx_tenant_email_scene_code`(`tenant_id` ASC, `email` ASC, `scene` ASC, `code` ASC) USING BTREE,
+  INDEX `idx_tenant_create_ip_create_time`(`tenant_id` ASC, `create_ip` ASC, `create_time` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '会员邮箱验证码';
 
 -- ----------------------------
 -- Records of member_user

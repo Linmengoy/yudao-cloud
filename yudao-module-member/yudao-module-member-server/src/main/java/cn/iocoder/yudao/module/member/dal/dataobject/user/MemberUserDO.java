@@ -46,6 +46,18 @@ public class MemberUserDO extends TenantBaseDO {
      */
     private String mobile;
     /**
+     * 邮箱
+     */
+    private String email;
+    /**
+     * 邮箱是否已验证
+     */
+    private Boolean emailVerified;
+    /**
+     * 邮箱绑定时间
+     */
+    private LocalDateTime emailBindTime;
+    /**
      * 加密后的密码
      *
      * 因为目前使用 {@link BCryptPasswordEncoder} 加密器，所以无需自己处理 salt 盐

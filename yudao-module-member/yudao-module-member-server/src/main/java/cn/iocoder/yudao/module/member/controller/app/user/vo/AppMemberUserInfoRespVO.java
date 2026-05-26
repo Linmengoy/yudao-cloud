@@ -23,6 +23,12 @@ public class AppMemberUserInfoRespVO {
     @Schema(description = "用户手机号", requiredMode = Schema.RequiredMode.REQUIRED, example = "15601691300")
     private String mobile;
 
+    @Schema(description = "用户邮箱", example = "user@example.com")
+    private String email;
+
+    @Schema(description = "邮箱是否已验证", example = "true")
+    private Boolean emailVerified;
+
     @Schema(description = "用户性别", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     private Integer sex;
 

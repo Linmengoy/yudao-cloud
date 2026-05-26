@@ -94,6 +94,31 @@ public class AppAuthController {
         return success(true);
     }
 
+    // ========== 邮箱注册相关 ==========
+
+    @PostMapping("/send-email-code")
+    @Operation(summary = "发送邮箱验证码")
+    @PermitAll
+    public CommonResult<Boolean> sendEmailCode(@RequestBody @Valid AppAuthEmailCodeSendReqVO reqVO) {
+        authService.sendEmailCode(reqVO);
+        return success(true);
+    }
+
+    @PostMapping("/validate-email-code")
+    @Operation(summary = "校验邮箱验证码")
+    @PermitAll
+    public CommonResult<Boolean> validateEmailCode(@RequestBody @Valid AppAuthEmailCodeValidateReqVO reqVO) {
+        authService.validateEmailCode(reqVO);
+        return success(true);
+    }
+
+    @PostMapping("/email-register")
+    @Operation(summary = "邮箱注册")
+    @PermitAll
+    public CommonResult<AppAuthLoginRespVO> emailRegister(@RequestBody @Valid AppAuthEmailRegisterReqVO reqVO) {
+        return success(authService.emailRegister(reqVO));
+    }
+
     // ========== 社交登录相关 ==========
 
     @GetMapping("/social-auth-redirect")

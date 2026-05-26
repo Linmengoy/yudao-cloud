@@ -24,6 +24,12 @@ public class MemberUserRespDTO {
     @Schema(description = "手机号", example = "15601691300")
     private String mobile;
 
+    @Schema(description = "邮箱", example = "user@example.com")
+    private String email;
+
+    @Schema(description = "邮箱是否已验证", example = "true")
+    private Boolean emailVerified;
+
     @Schema(description = "创建时间", requiredMode = Schema.RequiredMode.REQUIRED)
     private LocalDateTime createTime;
 
