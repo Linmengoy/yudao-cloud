@@ -4,10 +4,13 @@ import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelParamTemplateDO;
-import cn.iocoder.yudao.module.aigc.model.dto.AigcModelRespDTO;
+import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateReqDTO;
+import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelParamTemplateRespDTO;
+import cn.iocoder.yudao.module.aigc.model.dto.AigcModelRespDTO;
 import cn.iocoder.yudao.module.aigc.model.service.model.AigcModelService;
 import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
+import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,7 +25,7 @@ import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 
 @Tag(name = "用户端 - AIGC 模型")
 @RestController
-@RequestMapping("/app/aigc/model")
+@RequestMapping("/aigc/model")
 @Validated
 public class AigcModelAppController {
 
@@ -32,11 +35,14 @@ public class AigcModelAppController {
     @Resource
     private AigcModelParamService paramService;
 
+    @Resource
+    private AigcModelPriceService priceService;
+
     @GetMapping("/get")
     @Operation(summary = "获取模型详情")
     @Parameter(name = "id", description = "模型ID", required = true)
     public CommonResult<AigcModelRespDTO> getModel(@RequestParam("id") Long id) {
-        AigcModelDO model = modelService.getModel(id);
+        AigcModelDO model = modelService.getTenantVisibleModel(id);
         return success(BeanUtils.toBean(model, AigcModelRespDTO.class));
     }
 
@@ -48,6 +54,12 @@ public class AigcModelAppController {
         return success(models.stream()
                 .map(model -> BeanUtils.toBean(model, AigcModelRespDTO.class))
                 .collect(Collectors.toList()));
+    }
+
+    @PostMapping("/price/calculate")
+    @Operation(summary = "预估模型价格")
+    public CommonResult<AigcModelPriceCalculateRespDTO> calculatePrice(@RequestBody AigcModelPriceCalculateReqDTO reqDTO) {
+        return success(priceService.calculatePrice(reqDTO));
     }
 
     @GetMapping("/param/list")

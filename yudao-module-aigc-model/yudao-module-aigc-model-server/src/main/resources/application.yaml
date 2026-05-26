@@ -118,6 +118,9 @@ yudao:
   info:
     version: 1.0.0
     base-package: cn.iocoder.yudao.module.aigc.model
+  web:
+    admin-ui:
+      url: http://dashboard.yudao.iocoder.cn
   swagger:
     title: AIGC 模型与渠道中台
     description: 提供 AIGC 模型、渠道商、参数模板、价格规则、路由规则和租户授权管理能力

@@ -38,6 +38,8 @@ public interface AigcModelService {
 
     List<AigcModelDO> listTenantAvailableModels(Integer type);
 
+    AigcModelDO getTenantVisibleModel(Long id);
+
     void validateModelCapability(Long modelId, String capability);
 
     boolean hasModelCapability(Long modelId, String capability);

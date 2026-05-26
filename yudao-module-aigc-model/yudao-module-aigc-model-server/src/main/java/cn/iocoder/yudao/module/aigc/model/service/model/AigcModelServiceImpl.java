@@ -1,11 +1,9 @@
 package cn.iocoder.yudao.module.aigc.model.service.model;
 
 import cn.hutool.core.util.ObjectUtil;
-import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
-import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.model.vo.AigcModelPageReqVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.model.vo.AigcModelSaveReqVO;
@@ -133,8 +131,7 @@ public class AigcModelServiceImpl implements AigcModelService {
 
     @Override
     public AigcModelDO validateTenantModel(Long id, String capability) {
-        Long tenantId = TenantContextHolder.getRequiredTenantId();
-        AigcModelTenantDO tenantModel = tenantMapper.selectByTenantIdAndModelId(tenantId, id);
+        AigcModelTenantDO tenantModel = tenantMapper.selectByModelId(id);
         if (tenantModel == null || !Boolean.TRUE.equals(tenantModel.getEnabled())) {
             throw exception(MODEL_NOT_AUTHORIZED);
         }
@@ -182,8 +179,7 @@ public class AigcModelServiceImpl implements AigcModelService {
 
     @Override
     public List<AigcModelDO> listTenantAvailableModels(Integer type) {
-        Long tenantId = TenantContextHolder.getRequiredTenantId();
-        List<AigcModelTenantDO> tenantModels = tenantMapper.selectListByEnabledTrue(tenantId);
+        List<AigcModelTenantDO> tenantModels = tenantMapper.selectListByEnabledTrue();
         tenantModels = tenantModels.stream()
                 .filter(tenantModel -> Boolean.TRUE.equals(tenantModel.getPublicVisible()))
                 .toList();
@@ -201,6 +197,19 @@ public class AigcModelServiceImpl implements AigcModelService {
                 .peek(model -> fillTenantModelFields(model, tenantModelMap.get(model.getId())))
                 .sorted(Comparator.comparing(AigcModelDO::getSort, Comparator.nullsLast(Integer::compareTo)))
                 .toList();
+    }
+
+    @Override
+    public AigcModelDO getTenantVisibleModel(Long id) {
+        AigcModelTenantDO tenantModel = tenantMapper.selectByModelId(id);
+        if (tenantModel == null || !Boolean.TRUE.equals(tenantModel.getEnabled())
+                || !Boolean.TRUE.equals(tenantModel.getPublicVisible())) {
+            throw exception(MODEL_NOT_AUTHORIZED);
+        }
+        AigcModelDO model = validatePlatformModelExistsAndEnable(id);
+        validateProviderEnable(model.getProviderId());
+        fillTenantModelFields(model, tenantModel);
+        return model;
     }
 
     @Override

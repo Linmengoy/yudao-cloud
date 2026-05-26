@@ -113,6 +113,7 @@ CREATE TABLE `aigc_model_price` (
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_model_capability_tenant` (`model_id`, `capability`, `tenant_id`),
   KEY `idx_model_id` (`model_id`),
   KEY `idx_capability` (`capability`),
   KEY `idx_tenant_id` (`tenant_id`)

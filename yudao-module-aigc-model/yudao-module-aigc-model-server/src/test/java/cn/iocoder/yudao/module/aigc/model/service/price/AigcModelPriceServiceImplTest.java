@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.model.service.price;
 
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.price.vo.AigcModelPriceSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelPriceDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelTenantDO;
@@ -18,12 +19,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Map;
 
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServiceException;
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomPojo;
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomString;
-import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.MODEL_PRICE_NOT_FOUND;
+import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Import(AigcModelPriceServiceImpl.class)
@@ -85,6 +87,45 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
         assertServiceException(() -> priceService.calculatePrice(reqDTO), MODEL_PRICE_NOT_FOUND);
     }
 
+    @Test
+    public void testCalculatePrice_ignoreDisabledAndExpiredPrice() {
+        AigcModelDO model = createModel();
+        priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
+                AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.500000", "1.000000", null).setStatus(0));
+        priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.IMAGE_TO_IMAGE.getCode(),
+                AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.500000", "1.000000", null)
+                .setEffectiveEndTime(LocalDateTime.now().minusDays(1)));
+
+        assertServiceException(() -> priceService.calculatePrice(new AigcModelPriceCalculateReqDTO()
+                .setModelId(model.getId()).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())), MODEL_PRICE_NOT_FOUND);
+        assertServiceException(() -> priceService.calculatePrice(new AigcModelPriceCalculateReqDTO()
+                .setModelId(model.getId()).setCapability(AigcModelCapabilityEnum.IMAGE_TO_IMAGE.getCode())), MODEL_PRICE_NOT_FOUND);
+    }
+
+    @Test
+    public void testCalculatePrice_tenantPriceFirst() {
+        AigcModelDO model = createModel();
+        priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
+                AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.500000", "1.000000", null).setTenantId(0L));
+        priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
+                AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.800000", "2.000000", null).setTenantId(1L));
+
+        AigcModelPriceCalculateRespDTO respDTO = priceService.calculatePrice(new AigcModelPriceCalculateReqDTO()
+                .setModelId(model.getId()).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()));
+
+        assertEquals(0, new BigDecimal("2.000000").compareTo(respDTO.getSalePrice()));
+        assertEquals("TENANT", respDTO.getPriceSource());
+    }
+
+    @Test
+    public void testCreatePrice_duplicate() {
+        AigcModelDO model = createModel();
+        priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
+                AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.500000", "1.000000", null).setTenantId(1L));
+
+        assertServiceException(() -> priceService.createPrice(createPriceReq(model.getId())), MODEL_PRICE_DUPLICATE);
+    }
+
     private AigcModelDO createModel() {
         Long tenantId = 1L;
         TenantContextHolder.setTenantId(tenantId);
@@ -103,6 +144,16 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
         return new AigcModelPriceDO().setModelId(modelId).setCapability(capability).setBillingUnit(billingUnit)
                 .setCostPrice(new BigDecimal(costPrice)).setSalePrice(new BigDecimal(salePrice))
                 .setCurrencyType("POINT").setPriceConfig(priceConfig).setStatus(1);
+    }
+
+    private AigcModelPriceSaveReqVO createPriceReq(Long modelId) {
+        return new AigcModelPriceSaveReqVO().setModelId(modelId)
+                .setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())
+                .setBillingUnit(AigcModelBillingUnitEnum.PER_IMAGE.getCode())
+                .setCostPrice(new BigDecimal("0.500000"))
+                .setSalePrice(new BigDecimal("1.000000"))
+                .setCurrencyType("POINT")
+                .setStatus(1);
     }
 
 }

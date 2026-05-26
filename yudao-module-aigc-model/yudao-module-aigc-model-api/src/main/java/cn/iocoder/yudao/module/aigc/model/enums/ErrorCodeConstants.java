@@ -30,6 +30,7 @@ public interface ErrorCodeConstants {
     ErrorCode MODEL_PRICE_NOT_EXISTS = new ErrorCode(1_041_003_000, "模型价格未配置");
     ErrorCode MODEL_PRICE_INVALID = new ErrorCode(1_041_003_001, "模型价格配置不合法");
     ErrorCode MODEL_PRICE_NOT_FOUND = new ErrorCode(1_041_003_002, "模型价格不存在");
+    ErrorCode MODEL_PRICE_DUPLICATE = new ErrorCode(1_041_003_003, "模型价格配置重复");
 
     ErrorCode MODEL_ROUTE_NOT_EXISTS = new ErrorCode(1_041_004_000, "模型路由不存在");
 

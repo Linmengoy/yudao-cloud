@@ -1,10 +1,18 @@
 # yudao-module-aigc-model 技术方案
 
+前提：
+
+1. 租户模块会自动注入租户
+2. API 前缀由项目 Web 基建根据 Controller 包路径自动添加识别，Controller 不手写 `/admin-api`、`/app-api`
+3. Swagger 开发后的注释要集成到 Gateway 上去，模块必须注册独立 OpenAPI 分组并同步 Gateway Knife4j 聚合配置
+
 ## 1. 模块定位
 
-`yudao-module-aigc-model` 是 AIGC 平台的模型与渠道中台，负责统一管理第三方模型供应商、模型配置、模型能力、参数模板、价格规则和基础路由策略。
+`yudao-module-aigc-model` 是 AIGC 平台的模型与渠道中台，负责统一管理第三方模型供应商、模型配置、模型能力、参数模板、价格规则、租户模型授权、基础路由策略和模型调用计量。
 
-该模块不负责实际调用模型生成内容，不负责图片/视频任务执行，不负责钱包扣费，只提供模型相关的配置、校验、价格计算和查询能力。
+该模块不负责实际调用模型生成内容，不负责图片/视频任务执行，不负责钱包扣费，只提供模型相关的配置、校验、价格计算、租户可用模型查询和调用计量落库能力。
+
+当前实际开发已完成 `api` 与 `server` 两个子模块，已具备模型、渠道商、参数模板、价格规则、路由规则、租户授权、调用计量、用户端查询和内部 RPC 能力。本文档已按 `c:\use\code\project\manman\yudao-module-aigc-model` 的当前代码实现同步修订。
 
 ## 2. 核心职责
 
@@ -22,6 +30,8 @@
 - 任务预估价格计算
 - 基础模型路由配置
 - 渠道健康状态记录
+- 租户模型授权和租户维度展示控制
+- 模型调用计量日志记录
 
 ### 2.2 不负责内容
 
@@ -37,13 +47,14 @@
 
 对应职责归属：
 
-| 能力 | 归属模块 |
-| --- | --- |
-| 图片/视频生成 | `yudao-module-aigc-gen` |
-| 任务状态机 | `yudao-module-aigc-task` |
+
+| 能力                   | 归属模块                    |
+| ---------------------- | --------------------------- |
+| 图片/视频生成          | `yudao-module-aigc-gen`     |
+| 任务状态机             | `yudao-module-aigc-task`    |
 | 钱包、冻结、扣费、退款 | `yudao-module-aigc-billing` |
-| 图片、视频文件资产 | `yudao-module-aigc-asset` |
-| 敏感词、审核 | `yudao-module-aigc-safety` |
+| 图片、视频文件资产     | `yudao-module-aigc-asset`   |
+| 敏感词、审核           | `yudao-module-aigc-safety`  |
 
 ## 3. 模块结构
 
@@ -74,7 +85,8 @@ yudao-module-aigc-model-api
       │   ├── AigcModelParamTemplateRespDTO.java
       │   ├── AigcModelPriceCalculateReqDTO.java
       │   ├── AigcModelPriceCalculateRespDTO.java
-      │   └── AigcModelValidateReqDTO.java
+      │   ├── AigcModelValidateReqDTO.java
+      │   └── AigcModelUsageRecordReqDTO.java
       └── enums
           ├── AigcModelTypeEnum.java
           ├── AigcModelCapabilityEnum.java
@@ -82,6 +94,7 @@ yudao-module-aigc-model-api
           ├── AigcModelBillingUnitEnum.java
           ├── AigcModelParamTypeEnum.java
           ├── AigcModelRouteStrategyEnum.java
+          ├── AigcModelHealthStatusEnum.java
           └── ErrorCodeConstants.java
 ```
 
@@ -97,15 +110,23 @@ yudao-module-aigc-model-server
       │   │   ├── model
       │   │   ├── param
       │   │   ├── price
-      │   │   └── route
+      │   │   ├── route
+      │   │   └── tenant
       │   └── app
       │       └── model
+      ├── framework
+      │   ├── crypto
+      │   └── web
+      │       └── config
+      │           └── AigcModelWebConfiguration.java
       ├── service
       │   ├── provider
       │   ├── model
       │   ├── param
       │   ├── price
-      │   └── route
+      │   ├── route
+      │   ├── tenant
+      │   └── usage
       ├── dal
       │   ├── dataobject
       │   │   ├── AigcModelProviderDO.java
@@ -113,16 +134,18 @@ yudao-module-aigc-model-server
       │   │   ├── AigcModelCapabilityDO.java
       │   │   ├── AigcModelParamTemplateDO.java
       │   │   ├── AigcModelPriceDO.java
-      │   │   └── AigcModelRouteDO.java
+      │   │   ├── AigcModelRouteDO.java
+      │   │   ├── AigcModelTenantDO.java
+      │   │   └── AigcModelUsageLogDO.java
       │   └── mysql
       │       ├── AigcModelProviderMapper.java
       │       ├── AigcModelMapper.java
       │       ├── AigcModelCapabilityMapper.java
       │       ├── AigcModelParamTemplateMapper.java
       │       ├── AigcModelPriceMapper.java
-      │       └── AigcModelRouteMapper.java
-      ├── framework
-      │   └── crypto
+      │       ├── AigcModelRouteMapper.java
+      │       ├── AigcModelTenantMapper.java
+      │       └── AigcModelUsageLogMapper.java
       └── convert
 ```
 
@@ -209,36 +232,40 @@ yudao-module-aigc-model-server
 
 ### 5.1 表清单
 
-| 表名 | 说明 | 第一阶段 |
-| --- | --- | --- |
-| `aigc_model_provider` | 模型渠道商 | 是 |
-| `aigc_model` | 模型配置 | 是 |
-| `aigc_model_capability` | 模型能力 | 是 |
-| `aigc_model_param_template` | 模型参数模板 | 是 |
-| `aigc_model_price` | 模型价格规则 | 是 |
-| `aigc_model_route` | 模型路由规则 | 可选 |
+
+| 表名                        | 说明             | 当前实现 |
+| --------------------------- | ---------------- | -------- |
+| `aigc_model_provider`       | 模型渠道商       | 已实现   |
+| `aigc_model`                | 模型配置         | 已实现   |
+| `aigc_model_capability`     | 模型能力         | 已实现   |
+| `aigc_model_param_template` | 模型参数模板     | 已实现   |
+| `aigc_model_price`          | 模型价格规则     | 已实现   |
+| `aigc_model_route`          | 模型路由规则     | 已实现   |
+| `aigc_model_tenant`         | 租户模型授权     | 已实现   |
+| `aigc_model_usage_log`      | 模型调用计量日志 | 已实现   |
 
 ### 5.2 aigc_model_provider
 
 模型渠道商表，管理可灵、即梦、OpenAI、通义、第三方聚合 API 等供应商。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | bigint | 主键 |
-| code | varchar(64) | 渠道商编码 |
-| name | varchar(128) | 渠道商名称 |
-| api_base_url | varchar(512) | API 地址 |
-| auth_type | varchar(32) | 鉴权方式 |
-| api_key | varchar(1024) | API Key，加密存储 |
-| secret_key | varchar(1024) | Secret Key，加密存储 |
-| extra_config | json | 扩展配置 |
-| timeout_seconds | int | 默认超时时间 |
-| rate_limit_config | json | 限流配置 |
-| health_status | varchar(32) | 健康状态 |
-| balance | decimal(18,6) | 渠道余额 |
-| status | int | 状态 |
-| remark | varchar(512) | 备注 |
-| creator/create_time/updater/update_time/deleted/tenant_id | 标准字段 | 标准字段 |
+
+| 字段                                                      | 类型          | 说明                 |
+| --------------------------------------------------------- | ------------- | -------------------- |
+| id                                                        | bigint        | 主键                 |
+| code                                                      | varchar(64)   | 渠道商编码           |
+| name                                                      | varchar(128)  | 渠道商名称           |
+| api_base_url                                              | varchar(512)  | API 地址             |
+| auth_type                                                 | varchar(32)   | 鉴权方式             |
+| api_key                                                   | varchar(1024) | API Key，加密存储    |
+| secret_key                                                | varchar(1024) | Secret Key，加密存储 |
+| extra_config                                              | json          | 扩展配置             |
+| timeout_seconds                                           | int           | 默认超时时间         |
+| rate_limit_config                                         | json          | 限流配置             |
+| health_status                                             | varchar(32)   | 健康状态             |
+| balance                                                   | decimal(18,6) | 渠道余额             |
+| status                                                    | int           | 状态                 |
+| remark                                                    | varchar(512)  | 备注                 |
+| creator/create_time/updater/update_time/deleted/tenant_id | 标准字段      | 标准字段             |
 
 索引：
 
@@ -251,23 +278,24 @@ idx_status = status
 
 模型配置表，管理用户可以选择或平台内部可以路由的具体模型。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | bigint | 主键 |
-| provider_id | bigint | 渠道商 ID |
-| code | varchar(64) | 平台内部模型编码 |
-| name | varchar(128) | 模型展示名称 |
-| model | varchar(128) | 渠道商模型标识 |
-| type | varchar(32) | IMAGE、VIDEO、AUDIO、TEXT |
-| public_visible | bit(1) | 用户端是否展示 |
-| default_model | bit(1) | 是否默认模型 |
-| sort | int | 排序 |
-| max_concurrent | int | 最大并发 |
-| timeout_seconds | int | 模型超时时间 |
-| queue_priority | int | 默认队列优先级 |
-| status | int | 启用/禁用 |
-| remark | varchar(512) | 备注 |
-| creator/create_time/updater/update_time/deleted/tenant_id | 标准字段 | 标准字段 |
+
+| 字段                                                      | 类型         | 说明                      |
+| --------------------------------------------------------- | ------------ | ------------------------- |
+| id                                                        | bigint       | 主键                      |
+| provider_id                                               | bigint       | 渠道商 ID                 |
+| code                                                      | varchar(64)  | 平台内部模型编码          |
+| name                                                      | varchar(128) | 模型展示名称              |
+| model                                                     | varchar(128) | 渠道商模型标识            |
+| type                                                      | varchar(32)  | IMAGE、VIDEO、AUDIO、TEXT |
+| public_visible                                            | bit(1)       | 用户端是否展示            |
+| default_model                                             | bit(1)       | 是否默认模型              |
+| sort                                                      | int          | 排序                      |
+| max_concurrent                                            | int          | 最大并发                  |
+| timeout_seconds                                           | int          | 模型超时时间              |
+| queue_priority                                            | int          | 默认队列优先级            |
+| status                                                    | int          | 启用/禁用                 |
+| remark                                                    | varchar(512) | 备注                      |
+| creator/create_time/updater/update_time/deleted/tenant_id | 标准字段     | 标准字段                  |
 
 索引：
 
@@ -282,24 +310,26 @@ idx_public_visible = public_visible
 
 模型能力表，一个模型可以支持多个能力。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | bigint | 主键 |
-| model_id | bigint | 模型 ID |
-| capability | varchar(64) | 能力编码 |
-| status | int | 状态 |
-| remark | varchar(512) | 备注 |
+
+| 字段       | 类型         | 说明     |
+| ---------- | ------------ | -------- |
+| id         | bigint       | 主键     |
+| model_id   | bigint       | 模型 ID  |
+| capability | varchar(64)  | 能力编码 |
+| status     | int          | 状态     |
+| remark     | varchar(512) | 备注     |
 
 能力编码：
 
-| 编码 | 说明 |
-| --- | --- |
-| TEXT_TO_IMAGE | 文生图 |
-| IMAGE_TO_IMAGE | 图生图 |
-| TEXT_TO_VIDEO | 文生视频 |
-| IMAGE_TO_VIDEO | 图生视频 |
+
+| 编码                   | 说明       |
+| ---------------------- | ---------- |
+| TEXT_TO_IMAGE          | 文生图     |
+| IMAGE_TO_IMAGE         | 图生图     |
+| TEXT_TO_VIDEO          | 文生视频   |
+| IMAGE_TO_VIDEO         | 图生视频   |
 | FIRST_LAST_FRAME_VIDEO | 首尾帧视频 |
-| VIDEO_EXTEND | 视频延长 |
+| VIDEO_EXTEND           | 视频延长   |
 
 索引：
 
@@ -312,47 +342,50 @@ idx_capability = capability
 
 模型参数模板表，用于配置不同模型支持的参数，避免前后端写死。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | bigint | 主键 |
-| model_id | bigint | 模型 ID |
-| capability | varchar(64) | 能力编码 |
-| param_key | varchar(64) | 参数键 |
-| param_name | varchar(128) | 参数名称 |
-| param_type | varchar(32) | 参数类型 |
-| required_status | bit(1) | 是否必填 |
-| default_value | varchar(512) | 默认值 |
-| options | json | 可选值 |
-| min_value | decimal(18,6) | 最小值 |
-| max_value | decimal(18,6) | 最大值 |
-| regex_pattern | varchar(512) | 正则校验 |
-| sort | int | 排序 |
-| status | int | 状态 |
+
+| 字段            | 类型          | 说明     |
+| --------------- | ------------- | -------- |
+| id              | bigint        | 主键     |
+| model_id        | bigint        | 模型 ID  |
+| capability      | varchar(64)   | 能力编码 |
+| param_key       | varchar(64)   | 参数键   |
+| param_name      | varchar(128)  | 参数名称 |
+| param_type      | varchar(32)   | 参数类型 |
+| required_status | bit(1)        | 是否必填 |
+| default_value   | varchar(512)  | 默认值   |
+| options         | json          | 可选值   |
+| min_value       | decimal(18,6) | 最小值   |
+| max_value       | decimal(18,6) | 最大值   |
+| regex_pattern   | varchar(512)  | 正则校验 |
+| sort            | int           | 排序     |
+| status          | int           | 状态     |
 
 参数类型：
 
-| 类型 | 说明 |
-| --- | --- |
-| STRING | 字符串 |
-| NUMBER | 数字 |
-| BOOLEAN | 布尔 |
-| SELECT | 单选 |
-| MULTI_SELECT | 多选 |
-| JSON | JSON |
+
+| 类型         | 说明   |
+| ------------ | ------ |
+| STRING       | 字符串 |
+| NUMBER       | 数字   |
+| BOOLEAN      | 布尔   |
+| SELECT       | 单选   |
+| MULTI_SELECT | 多选   |
+| JSON         | JSON   |
 
 常见参数：
 
-| 参数 | 说明 |
-| --- | --- |
-| ratio | 比例，如 1:1、9:16、16:9 |
-| width | 宽度 |
-| height | 高度 |
-| duration | 视频时长 |
-| resolution | 分辨率 |
-| style | 风格 |
-| seed | 种子 |
-| batchSize | 批量数量 |
-| cameraMovement | 运镜 |
+
+| 参数           | 说明                     |
+| -------------- | ------------------------ |
+| ratio          | 比例，如 1:1、9:16、16:9 |
+| width          | 宽度                     |
+| height         | 高度                     |
+| duration       | 视频时长                 |
+| resolution     | 分辨率                   |
+| style          | 风格                     |
+| seed           | 种子                     |
+| batchSize      | 批量数量                 |
+| cameraMovement | 运镜                     |
 
 索引：
 
@@ -365,29 +398,31 @@ idx_model_id = model_id
 
 模型价格规则表。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | bigint | 主键 |
-| model_id | bigint | 模型 ID |
-| capability | varchar(64) | 能力编码 |
-| billing_unit | varchar(32) | 计费单位 |
-| cost_price | decimal(18,6) | 平台成本价 |
-| sale_price | decimal(18,6) | 用户销售价 |
-| currency_type | varchar(32) | POINT、CNY |
-| price_config | json | 阶梯价格、规格加价配置 |
-| effective_start_time | datetime | 生效开始时间 |
-| effective_end_time | datetime | 生效结束时间 |
-| status | int | 状态 |
+
+| 字段                 | 类型          | 说明                   |
+| -------------------- | ------------- | ---------------------- |
+| id                   | bigint        | 主键                   |
+| model_id             | bigint        | 模型 ID                |
+| capability           | varchar(64)   | 能力编码               |
+| billing_unit         | varchar(32)   | 计费单位               |
+| cost_price           | decimal(18,6) | 平台成本价             |
+| sale_price           | decimal(18,6) | 用户销售价             |
+| currency_type        | varchar(32)   | POINT、CNY             |
+| price_config         | json          | 阶梯价格、规格加价配置 |
+| effective_start_time | datetime      | 生效开始时间           |
+| effective_end_time   | datetime      | 生效结束时间           |
+| status               | int           | 状态                   |
 
 计费单位：
 
-| 编码 | 说明 |
-| --- | --- |
-| PER_TASK | 按任务 |
-| PER_IMAGE | 按张 |
-| PER_SECOND | 按秒 |
+
+| 编码          | 说明    |
+| ------------- | ------- |
+| PER_TASK      | 按任务  |
+| PER_IMAGE     | 按张    |
+| PER_SECOND    | 按秒    |
 | PER_5_SECONDS | 每 5 秒 |
-| PER_BATCH | 按批次 |
+| PER_BATCH     | 按批次  |
 
 价格配置示例：
 
@@ -406,16 +441,17 @@ idx_model_id = model_id
 
 模型路由规则表，第一阶段可先建表但不做复杂路由。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | bigint | 主键 |
-| name | varchar(128) | 路由名称 |
-| task_type | varchar(64) | 任务类型 |
-| capability | varchar(64) | 能力 |
-| strategy | varchar(64) | 路由策略 |
-| model_ids | json | 候选模型 ID |
-| user_level | varchar(64) | 用户等级 |
-| status | int | 状态 |
+
+| 字段       | 类型         | 说明        |
+| ---------- | ------------ | ----------- |
+| id         | bigint       | 主键        |
+| name       | varchar(128) | 路由名称    |
+| task_type  | varchar(64)  | 任务类型    |
+| capability | varchar(64)  | 能力        |
+| strategy   | varchar(64)  | 路由策略    |
+| model_ids  | json         | 候选模型 ID |
+| user_level | varchar(64)  | 用户等级    |
+| status     | int          | 状态        |
 
 路由策略：
 
@@ -424,6 +460,68 @@ idx_model_id = model_id
 - HIGHEST_SUCCESS_RATE
 - FASTEST_RESPONSE
 - ROUND_ROBIN
+
+### 5.8 aigc_model_tenant
+
+租户模型授权表，用于控制某个租户可使用哪些平台模型，以及租户维度的展示、默认、排序和额度策略。当前生产 SQL 已建表，Server 侧已有 `AigcModelTenantDO`、`AigcModelTenantMapper`、`AigcModelTenantService` 和管理端 Controller。
+
+| 字段           | 类型         | 说明               |
+| -------------- | ------------ | ------------------ |
+| id             | bigint       | 主键               |
+| tenant_id      | bigint       | 租户 ID            |
+| model_id       | bigint       | 模型 ID            |
+| enabled        | bit(1)       | 租户是否启用该模型 |
+| public_visible | bit(1)       | 用户端是否展示     |
+| default_model  | bit(1)       | 是否租户默认模型   |
+| sort           | int          | 租户内排序         |
+| max_concurrent | int          | 租户模型并发限制   |
+| daily_limit    | int          | 租户日调用限制     |
+| remark         | varchar(512) | 备注               |
+
+索引：
+
+```text
+uk_tenant_model = tenant_id + model_id
+idx_model_id = model_id
+```
+
+### 5.9 aigc_model_usage_log
+
+模型调用计量日志表，用于记录模型调用结果，给后续结算、统计、审计和成本分析提供基础数据。当前已通过内部 RPC `recordUsage` 暴露记录能力。
+
+| 字段             | 类型          | 说明                     |
+| ---------------- | ------------- | ------------------------ |
+| id               | bigint        | 主键                     |
+| trace_id         | varchar(128)  | 链路追踪编号             |
+| task_id          | bigint        | 业务任务 ID              |
+| user_id          | bigint        | 用户 ID                  |
+| model_id         | bigint        | 模型 ID                  |
+| provider_id      | bigint        | 渠道商 ID                |
+| capability       | varchar(64)   | 模型能力                 |
+| request_no       | varchar(128)  | 内部请求编号             |
+| external_task_id | varchar(128)  | 第三方任务编号           |
+| input_tokens     | int           | 输入 token 数            |
+| output_tokens    | int           | 输出 token 数            |
+| total_tokens     | int           | 总 token 数              |
+| cost_price       | decimal(18,6) | 平台成本价               |
+| sale_price       | decimal(18,6) | 用户销售价               |
+| currency_type    | varchar(32)   | 货币类型                 |
+| status           | int           | 调用状态                 |
+| latency_ms       | int           | 调用耗时                 |
+| raw_usage        | json          | 第三方原始 usage 信息    |
+| error_code       | varchar(128)  | 错误码                   |
+| error_message    | varchar(1024) | 错误信息                 |
+| tenant_id        | bigint        | 租户 ID，由租户插件维护  |
+
+索引：
+
+```text
+idx_task_id = task_id
+idx_model_id = model_id
+idx_provider_id = provider_id
+idx_trace_id = trace_id
+idx_create_time = create_time
+```
 
 ## 6. 枚举设计
 
@@ -494,32 +592,49 @@ BALANCE_LOW
 核心接口：
 
 ```java
+@FeignClient(name = ApiConstants.NAME)
 public interface AigcModelApi {
 
-    AigcModelRespDTO validateModel(Long modelId, String capability);
+    CommonResult<AigcModelRespDTO> validateModel(Long modelId, String capability);
 
-    AigcModelProviderRespDTO getProvider(Long providerId);
+    CommonResult<AigcModelProviderRespDTO> getProvider(Long providerId);
 
-    AigcModelRespDTO getModel(Long modelId);
+    CommonResult<AigcModelRespDTO> getModel(Long modelId);
 
-    List<AigcModelRespDTO> listAvailableModels(String type, String capability);
+    CommonResult<List<AigcModelRespDTO>> listAvailableModels(Integer type, String capability);
 
-    List<AigcModelParamTemplateRespDTO> getParamTemplates(Long modelId, String capability);
+    CommonResult<List<AigcModelParamTemplateRespDTO>> getParamTemplates(Long modelId, String capability);
 
-    void validateParams(AigcModelValidateReqDTO reqDTO);
+    CommonResult<Boolean> validateParams(AigcModelValidateReqDTO reqDTO);
 
-    AigcModelPriceCalculateRespDTO calculatePrice(AigcModelPriceCalculateReqDTO reqDTO);
+    CommonResult<AigcModelPriceCalculateRespDTO> calculatePrice(AigcModelPriceCalculateReqDTO reqDTO);
+
+    CommonResult<Long> recordUsage(AigcModelUsageRecordReqDTO reqDTO);
 
 }
 ```
+
+当前实际 RPC 路径均基于 `ApiConstants.PREFIX` 拼接：
+
+| 方法 | 路径 | 说明 |
+| ---- | ---- | ---- |
+| GET | `/validate-model` | 校验模型是否可用 |
+| GET | `/get-provider` | 获取内部调用所需渠道商信息 |
+| GET | `/get-model` | 获取模型详情 |
+| GET | `/list-available-models` | 获取当前租户可用模型列表 |
+| GET | `/get-param-templates` | 获取模型参数模板 |
+| POST | `/validate-params` | 校验模型参数 |
+| POST | `/calculate-price` | 计算模型价格 |
+| POST | `/record-usage` | 记录模型调用计量 |
 
 ### 7.2 validateModel
 
 输入：
 
-| 字段 | 说明 |
-| --- | --- |
-| modelId | 模型 ID |
+
+| 字段       | 说明         |
+| ---------- | ------------ |
+| modelId    | 模型 ID      |
 | capability | 要使用的能力 |
 
 校验：
@@ -529,7 +644,8 @@ public interface AigcModelApi {
 - 渠道商存在
 - 渠道商启用
 - 模型支持该能力
-- 模型未被隐藏或内部调用允许
+- 当前租户已授权该模型
+- 当前租户启用了该模型
 
 返回：
 
@@ -558,21 +674,49 @@ public interface AigcModelApi {
 
 输入：
 
-| 字段 | 说明 |
-| --- | --- |
-| modelId | 模型 ID |
-| capability | 能力 |
-| taskType | 任务类型 |
-| params | 生成参数 |
+
+| 字段       | 说明     |
+| ---------- | -------- |
+| modelId    | 模型 ID  |
+| capability | 能力     |
+| taskType   | 任务类型 |
+| params     | 生成参数 |
 
 输出：
 
+
+| 字段        | 说明       |
+| ----------- | ---------- |
+| costPrice   | 平台成本价 |
+| salePrice   | 用户销售价 |
+| billingUnit | 计费单位   |
+| priceDetail | 价格明细   |
+
+### 7.5 recordUsage
+
+`recordUsage` 用于由 `aigc-gen`、`aigc-task` 或模型调用执行方在模型调用完成后记录计量日志，当前实现会写入 `aigc_model_usage_log`。
+
+输入字段包括：
+
 | 字段 | 说明 |
-| --- | --- |
-| costPrice | 平台成本价 |
-| salePrice | 用户销售价 |
-| billingUnit | 计费单位 |
-| priceDetail | 价格明细 |
+| ---- | ---- |
+| traceId | 链路追踪编号 |
+| taskId | 业务任务 ID |
+| userId | 用户 ID |
+| modelId | 模型 ID |
+| providerId | 渠道商 ID |
+| capability | 模型能力 |
+| requestNo | 内部请求编号 |
+| externalTaskId | 第三方任务编号 |
+| inputTokens/outputTokens/totalTokens | token 计量信息 |
+| costPrice/salePrice/currencyType | 价格快照 |
+| status/latencyMs | 调用结果与耗时 |
+| rawUsage | 第三方原始 usage 信息 |
+| errorCode/errorMessage | 失败时错误信息 |
+
+返回：
+
+- 新增的调用计量日志 ID。
 
 ## 8. 管理端接口设计
 
@@ -580,19 +724,20 @@ public interface AigcModelApi {
 
 Controller：`AigcModelProviderController`
 
-路径：`/aigc/model-provider`
+路径：`/aigc/model/provider`
 
 接口：
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | `/create` | 新增渠道商 |
-| PUT | `/update` | 修改渠道商 |
-| DELETE | `/delete` | 删除渠道商 |
-| GET | `/get` | 渠道商详情 |
-| GET | `/page` | 渠道商分页 |
-| PUT | `/update-status` | 启用/禁用 |
-| POST | `/test` | 测试渠道连通性 |
+
+| 方法   | 路径             | 说明           |
+| ------ | ---------------- | -------------- |
+| POST   | `/create`        | 新增渠道商     |
+| PUT    | `/update`        | 修改渠道商     |
+| DELETE | `/delete`        | 删除渠道商     |
+| GET    | `/get`           | 渠道商详情     |
+| GET    | `/page`          | 渠道商分页     |
+| PUT    | `/update-status` | 启用/禁用      |
+| POST   | `/test`          | 测试渠道连通性 |
 
 ### 8.2 模型管理
 
@@ -602,62 +747,105 @@ Controller：`AigcModelController`
 
 接口：
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | `/create` | 新增模型 |
-| PUT | `/update` | 修改模型 |
-| DELETE | `/delete` | 删除模型 |
-| GET | `/get` | 模型详情 |
-| GET | `/page` | 模型分页 |
-| PUT | `/update-status` | 启用/禁用 |
-| PUT | `/update-visible` | 修改用户端展示状态 |
-| PUT | `/update-default` | 设置默认模型 |
+
+| 方法   | 路径              | 说明               |
+| ------ | ----------------- | ------------------ |
+| POST   | `/create`         | 新增模型           |
+| PUT    | `/update`         | 修改模型           |
+| DELETE | `/delete`         | 删除模型           |
+| GET    | `/get`            | 模型详情           |
+| GET    | `/page`           | 模型分页           |
+| PUT    | `/update-status`  | 启用/禁用          |
+| PUT    | `/update-visible` | 修改用户端展示状态 |
+| PUT    | `/update-default` | 设置默认模型       |
 
 ### 8.3 参数模板管理
 
-Controller：`AigcModelParamTemplateController`
+Controller：`AigcModelParamController`
 
-路径：`/aigc/model-param-template`
+路径：`/aigc/model/param`
 
 接口：
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | `/create` | 新增参数 |
-| PUT | `/update` | 修改参数 |
-| DELETE | `/delete` | 删除参数 |
-| GET | `/list` | 模型参数列表 |
-| POST | `/batch-save` | 批量保存参数模板 |
+
+| 方法   | 路径          | 说明             |
+| ------ | ------------- | ---------------- |
+| POST   | `/create`     | 新增参数         |
+| PUT    | `/update`     | 修改参数         |
+| DELETE | `/delete`     | 删除参数         |
+| GET    | `/list`       | 模型参数列表     |
+| POST   | `/batch-save` | 批量保存参数模板 |
 
 ### 8.4 价格管理
 
 Controller：`AigcModelPriceController`
 
-路径：`/aigc/model-price`
+路径：`/aigc/model/price`
+
+接口：
+
+
+| 方法   | 路径         | 说明         |
+| ------ | ------------ | ------------ |
+| POST   | `/create`    | 新增价格规则 |
+| PUT    | `/update`    | 修改价格规则 |
+| DELETE | `/delete`    | 删除价格规则 |
+| GET    | `/list`      | 模型价格列表 |
+| POST   | `/calculate` | 模拟价格计算 |
+
+### 8.5 路由管理
+
+Controller：`AigcModelRouteController`
+
+路径：`/aigc/model/route`
 
 接口：
 
 | 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | `/create` | 新增价格规则 |
-| PUT | `/update` | 修改价格规则 |
-| DELETE | `/delete` | 删除价格规则 |
-| GET | `/list` | 模型价格列表 |
-| POST | `/calculate` | 模拟价格计算 |
+| ---- | ---- | ---- |
+| POST | `/create` | 新增路由规则 |
+| PUT | `/update` | 修改路由规则 |
+| DELETE | `/delete` | 删除路由规则 |
+| GET | `/get` | 路由规则详情 |
+| GET | `/list` | 路由规则列表 |
+| PUT | `/update-status` | 启用/禁用路由规则 |
+
+### 8.6 租户模型授权管理
+
+Controller：`AigcModelTenantController`
+
+路径：`/aigc/model/tenant`
+
+接口：
+
+| 方法 | 路径 | 说明 |
+| ---- | ---- | ---- |
+| POST | `/create` | 创建租户模型授权 |
+| PUT | `/update` | 更新租户模型授权 |
+| DELETE | `/delete` | 删除租户模型授权 |
+| GET | `/get` | 获取租户模型授权详情 |
+| GET | `/list` | 获取租户模型授权列表 |
+| PUT | `/status` | 更新租户模型启用状态 |
+| PUT | `/visible` | 更新租户模型用户端可见性 |
+| PUT | `/default` | 更新租户默认模型 |
 
 ## 9. 用户端接口设计
 
-Controller：`AppAigcModelController`
+Controller：`AigcModelAppController`
 
-路径：`/app-api/aigc/model`
+代码路径：`/aigc/model`
+
+网关对用户端接口可统一增加 `/app-api` 前缀，最终外部路径以网关配置为准。
 
 接口：
 
+
 | 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/available-list` | 获取可用模型 |
-| GET | `/param-template-list` | 获取模型参数模板 |
-| POST | `/calculate-price` | 计算预计消耗 |
+| ---- | ---- | ---- |
+| GET | `/get` | 获取当前租户可见模型详情 |
+| GET | `/list` | 获取当前租户可用模型列表 |
+| POST | `/price/calculate` | 计算预计消耗 |
+| GET | `/param/list` | 获取模型参数模板 |
 
 用户端返回模型时只返回：
 
@@ -677,7 +865,123 @@ Controller：`AppAigcModelController`
 - 成本价
 - 内部路由规则
 
-## 10. 核心流程
+## 10. API 前缀与 Swagger 聚合规范
+
+### 10.1 API 前缀规范
+
+本模块复用项目 Web 基建自动添加 API 前缀，Controller 只声明模块业务路径，不允许在 `@RequestMapping` 中手写 `/admin-api` 或 `/app-api`。
+
+基建规则：
+
+- `cn.iocoder.yudao.module.aigc.model.controller.admin` 包下的 Controller 自动添加 `/admin-api` 前缀。
+- `cn.iocoder.yudao.module.aigc.model.controller.app` 包下的 Controller 自动添加 `/app-api` 前缀。
+- Controller 中的路径必须从 `/aigc/...` 开始，保持与 Gateway 路由和 Swagger 分组路径一致。
+
+示例：
+
+| Controller 包路径 | Controller 代码路径 | 外部最终路径 |
+| ----------------- | ------------------- | ------------ |
+| `controller.admin` | `/aigc/model` | `/admin-api/aigc/model` |
+| `controller.admin` | `/aigc/model/provider` | `/admin-api/aigc/model/provider` |
+| `controller.app` | `/aigc/model` | `/app-api/aigc/model` |
+
+规范约定：
+
+- 管理端 Controller 必须放在 `controller.admin` 包下。
+- 用户端 Controller 必须放在 `controller.app` 包下。
+- 禁止为了适配 Gateway 或 Swagger，在 Controller 路径上重复添加 `/admin-api`、`/app-api`。
+- 新增 AIGC 模型子资源时，路径统一挂在 `/aigc/model/**` 或 `/aigc/**` 下，避免出现多个不一致的模块前缀。
+
+### 10.2 Swagger 分组规范
+
+本模块必须注册独立的 OpenAPI 分组 `aigc`，保证 Gateway 的 Knife4j 聚合页可以按 `aigc-model-server` 正确展示模块接口。
+
+已落地配置类：
+
+```java
+package cn.iocoder.yudao.module.aigc.model.framework.web.config;
+
+import cn.iocoder.yudao.framework.swagger.config.YudaoSwaggerAutoConfiguration;
+import org.springdoc.core.models.GroupedOpenApi;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration(proxyBeanMethods = false)
+public class AigcModelWebConfiguration {
+
+    @Bean
+    public GroupedOpenApi aigcGroupedOpenApi() {
+        return YudaoSwaggerAutoConfiguration.buildGroupedOpenApi("aigc");
+    }
+
+}
+```
+
+该配置会匹配：
+
+- `/admin-api/aigc/**`
+- `/app-api/aigc/**`
+
+规范约定：
+
+- AIGC 模型服务的 Swagger 分组名固定为 `aigc`。
+- 配置类固定放在 `cn.iocoder.yudao.module.aigc.model.framework.web.config` 包下。
+- Bean 方法命名固定为 `aigcGroupedOpenApi`。
+- 不新增与 `aigc` 含义重复的 Swagger 分组，避免 Knife4j 聚合页出现重复模型文档。
+- 新增 Controller 后，必须确认接口能进入 `/v3/api-docs/aigc` 文档分组。
+
+### 10.3 Gateway 聚合规范
+
+Gateway 必须配置 AIGC 服务路由和 Knife4j 聚合入口。
+
+Gateway 路由约定：
+
+```yaml
+- id: aigc-model-admin-api
+  uri: grayLb://aigc-model-server
+  predicates:
+    - Path=/admin-api/aigc/**
+  filters:
+    - RewritePath=/admin-api/aigc/v3/api-docs, /v3/api-docs
+- id: aigc-model-app-api
+  uri: grayLb://aigc-model-server
+  predicates:
+    - Path=/app-api/aigc/**
+  filters:
+    - RewritePath=/app-api/aigc/v3/api-docs, /v3/api-docs
+```
+
+Knife4j 聚合约定：
+
+```yaml
+knife4j:
+  gateway:
+    routes:
+      - name: aigc-model-server
+        service-name: aigc-model-server
+        url: /admin-api/aigc/v3/api-docs
+```
+
+规范约定：
+
+- `service-name` 必须与 AIGC 服务 `spring.application.name` 保持一致，即 `aigc-model-server`。
+- Gateway 对外文档地址使用 `/admin-api/aigc/v3/api-docs`，由 `RewritePath` 转发到服务内部 `/v3/api-docs`。
+- 如果 Gateway 运行时配置来自 Nacos，必须同步更新 Nacos 中对应 `gateway-server-${profile}.yaml`，不能只修改本地 `application.yaml`。
+- Gateway 与 AIGC 服务必须注册到同一个 Nacos namespace/group，否则路由存在也无法发现实例。
+
+### 10.4 验证规范
+
+每次新增或调整 AIGC Controller、Swagger 分组、Gateway 聚合配置后，必须按以下顺序验证：
+
+1. 编译验证：`mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-server -am -DskipTests compile`
+2. 服务内文档：访问 `http://localhost:48090/v3/api-docs/aigc`
+3. Gateway 文档转发：访问 `http://localhost:48080/admin-api/aigc/v3/api-docs/aigc`
+4. Knife4j 聚合页：访问 `http://localhost:48080/doc.html#/SwaggerModels/aigc-model-server`
+
+如果服务内文档正常但 Gateway 文档不正常，优先检查 Gateway 路由、Nacos 服务发现和 namespace/group。  
+如果 Gateway 文档正常但 Knife4j 聚合页不展示，优先检查 Gateway 运行时加载的 `knife4j.gateway.routes` 是否包含 `aigc-model-server`。
+
+## 11. 核心流程
 
 ### 10.1 提交生成前校验流程
 
@@ -731,18 +1035,37 @@ aigc-gen 创建任务并调用 billing 冻结积分
 返回校验通过或错误信息
 ```
 
+### 10.4 调用计量记录流程
+
+```text
+aigc-gen 或模型调用执行方完成第三方模型调用
+  ↓
+整理 taskId、userId、modelId、providerId、capability、usage、价格快照和调用结果
+  ↓
+调用 aigc-model.recordUsage(reqDTO)
+  ↓
+aigc-model 写入 aigc_model_usage_log
+  ↓
+返回 usageLogId，供后续审计、统计和结算链路使用
+```
+
+调用计量只记录模型调用结果，不替代 `aigc-billing` 的冻结、扣费和退款职责。
+
 ## 11. 缓存设计
 
 模型配置属于读多写少，建议使用 Redis 或本地缓存。
 
+当前代码已引入 `yudao-spring-boot-starter-redis`，但核心 Service 暂未实现显式缓存读写，第一阶段主要依赖数据库实时查询，后续可在模型详情、租户可用模型列表、参数模板和价格规则上补充缓存。
+
 缓存 Key：
 
-| Key | 说明 |
-| --- | --- |
-| `aigc:model:{id}` | 模型详情 |
-| `aigc:model:provider:{id}` | 渠道商详情 |
-| `aigc:model:param:{modelId}:{capability}` | 参数模板 |
-| `aigc:model:price:{modelId}:{capability}` | 价格规则 |
+
+| Key                                        | 说明               |
+| ------------------------------------------ | ------------------ |
+| `aigc:model:{id}`                          | 模型详情           |
+| `aigc:model:provider:{id}`                 | 渠道商详情         |
+| `aigc:model:param:{modelId}:{capability}`  | 参数模板           |
+| `aigc:model:price:{modelId}:{capability}`  | 价格规则           |
 | `aigc:model:available:{type}:{capability}` | 用户端可用模型列表 |
 
 缓存失效：
@@ -760,6 +1083,8 @@ aigc-gen 创建任务并调用 billing 冻结积分
 
 渠道商 API Key、Secret Key 必须加密存储。
 
+当前配置中已配置 MyBatis Plus 字段加密器密码，渠道商表预留 `api_key`、`secret_key` 字段，后续需要结合 DO 字段加密注解和管理端脱敏返回规则继续完善。
+
 建议：
 
 - 入库前加密。
@@ -772,18 +1097,21 @@ aigc-gen 创建任务并调用 billing 冻结积分
 
 管理端权限建议：
 
-| 权限标识 | 说明 |
-| --- | --- |
-| `aigc:model-provider:query` | 渠道商查询 |
-| `aigc:model-provider:create` | 渠道商新增 |
-| `aigc:model-provider:update` | 渠道商修改 |
-| `aigc:model-provider:delete` | 渠道商删除 |
-| `aigc:model:query` | 模型查询 |
-| `aigc:model:create` | 模型新增 |
-| `aigc:model:update` | 模型修改 |
-| `aigc:model:delete` | 模型删除 |
-| `aigc:model-price:update` | 价格配置 |
-| `aigc:model-param:update` | 参数模板配置 |
+
+| 权限标识                     | 说明         |
+| ---------------------------- | ------------ |
+| `aigc:model:provider:query`  | 渠道商查询   |
+| `aigc:model:provider:create` | 渠道商新增   |
+| `aigc:model:provider:update` | 渠道商修改   |
+| `aigc:model:provider:delete` | 渠道商删除   |
+| `aigc:model:query`           | 模型查询     |
+| `aigc:model:create`          | 模型新增     |
+| `aigc:model:update`          | 模型修改     |
+| `aigc:model:delete`          | 模型删除     |
+| `aigc:model:price:update`    | 价格配置     |
+| `aigc:model:param:update`    | 参数模板配置 |
+
+当前 Controller 已使用 `@PreAuthorize` 做权限控制，实际权限标识按 Controller 路径拆分为 `aigc:model:*`、`aigc:model:provider:*`、`aigc:model:param:*`、`aigc:model:price:*`、`aigc:model:route:*`、`aigc:model:tenant:*` 等。
 
 ### 12.3 日志要求
 
@@ -800,24 +1128,39 @@ aigc-gen 创建任务并调用 billing 冻结积分
 1-041-000-000 ~ 1-041-099-999
 ```
 
-| 错误码 | 常量 | 说明 |
-| --- | --- | --- |
-| 1-041-000-000 | MODEL_PROVIDER_NOT_EXISTS | 渠道商不存在 |
-| 1-041-000-001 | MODEL_PROVIDER_DISABLED | 渠道商已禁用 |
-| 1-041-000-002 | MODEL_PROVIDER_CODE_DUPLICATE | 渠道商编码重复 |
-| 1-041-001-000 | MODEL_NOT_EXISTS | 模型不存在 |
-| 1-041-001-001 | MODEL_DISABLED | 模型已禁用 |
-| 1-041-001-002 | MODEL_CODE_DUPLICATE | 模型编码重复 |
-| 1-041-001-003 | MODEL_CAPABILITY_NOT_SUPPORTED | 模型能力不支持 |
-| 1-041-002-000 | MODEL_PARAM_NOT_EXISTS | 模型参数不存在 |
-| 1-041-002-001 | MODEL_PARAM_INVALID | 模型参数不合法 |
-| 1-041-003-000 | MODEL_PRICE_NOT_EXISTS | 模型价格未配置 |
-| 1-041-003-001 | MODEL_PRICE_INVALID | 模型价格配置不合法 |
-| 1-041-004-000 | MODEL_ROUTE_NOT_EXISTS | 模型路由不存在 |
+
+| 错误码        | 常量                           | 说明               |
+| ------------- | ------------------------------ | ------------------ |
+| 1-041-000-000 | MODEL_PROVIDER_NOT_EXISTS      | 渠道商不存在       |
+| 1-041-000-001 | MODEL_PROVIDER_DISABLED        | 渠道商已禁用       |
+| 1-041-000-002 | MODEL_PROVIDER_CODE_DUPLICATE  | 渠道商编码重复     |
+| 1-041-000-003 | MODEL_PROVIDER_HAS_MODEL       | 渠道商下存在模型   |
+| 1-041-001-000 | MODEL_NOT_EXISTS               | 模型不存在         |
+| 1-041-001-001 | MODEL_DISABLED                 | 模型已禁用         |
+| 1-041-001-002 | MODEL_CODE_DUPLICATE           | 模型编码重复       |
+| 1-041-001-003 | MODEL_CAPABILITY_NOT_SUPPORTED | 模型能力不支持     |
+| 1-041-001-004 | MODEL_CAPABILITY_INVALID       | 模型能力配置不合法 |
+| 1-041-001-005 | MODEL_NOT_AUTHORIZED           | 模型未授权         |
+| 1-041-002-000 | MODEL_PARAM_NOT_EXISTS         | 模型参数不存在     |
+| 1-041-002-001 | MODEL_PARAM_INVALID            | 模型参数不合法     |
+| 1-041-002-002 | MODEL_PARAM_CODE_DUPLICATE     | 模型参数编码重复   |
+| 1-041-002-003 | MODEL_PARAM_TEMPLATE_NOT_EXISTS | 模型参数模板不存在 |
+| 1-041-002-004 | MODEL_PARAM_KEY_DUPLICATE      | 模型参数键重复     |
+| 1-041-002-005 | MODEL_PARAM_REQUIRED           | 模型参数必填       |
+| 1-041-002-006 | MODEL_PARAM_TYPE_ERROR         | 模型参数类型错误   |
+| 1-041-002-007 | MODEL_PARAM_RANGE_ERROR        | 模型参数超出范围   |
+| 1-041-002-008 | MODEL_PARAM_OPTION_ERROR       | 模型参数选项错误   |
+| 1-041-002-009 | MODEL_PARAM_FORMAT_ERROR       | 模型参数格式错误   |
+| 1-041-003-000 | MODEL_PRICE_NOT_EXISTS         | 模型价格未配置     |
+| 1-041-003-001 | MODEL_PRICE_INVALID            | 模型价格配置不合法 |
+| 1-041-003-002 | MODEL_PRICE_NOT_FOUND          | 模型价格不存在     |
+| 1-041-003-003 | MODEL_PRICE_DUPLICATE          | 模型价格配置重复   |
+| 1-041-004-000 | MODEL_ROUTE_NOT_EXISTS         | 模型路由不存在     |
+| 1-041-005-000 | MODEL_TENANT_NOT_EXISTS        | 租户模型授权不存在 |
 
 ## 14. 第一阶段最小实现范围
 
-第一阶段为了尽快支撑图片/视频生成赚钱闭环，建议只实现：
+第一阶段为了尽快支撑图片/视频生成赚钱闭环，原计划只实现以下能力，当前代码已在此基础上补充租户授权、路由配置和调用计量：
 
 - 渠道商 CRUD
 - 模型 CRUD
@@ -828,8 +1171,11 @@ aigc-gen 创建任务并调用 billing 冻结积分
 - 参数校验
 - 价格计算
 - 内部 RPC API
+- 租户模型授权
+- 基础路由配置
+- 调用计量记录
 
-暂不实现：
+仍暂不实现或仅保留配置基础：
 
 - 自动健康检查
 - 成功率统计路由
@@ -883,12 +1229,13 @@ aigc-gen 创建任务并调用 billing 冻结积分
 
 保存模型能力时必须校验类型匹配：
 
-| 模型类型 | 允许能力 |
-| --- | --- |
-| IMAGE | TEXT_TO_IMAGE、IMAGE_TO_IMAGE |
-| VIDEO | TEXT_TO_VIDEO、IMAGE_TO_VIDEO、FIRST_LAST_FRAME_VIDEO、VIDEO_EXTEND |
-| AUDIO | TTS、VOICE_CLONE、BGM_GENERATE、SOUND_EFFECT_GENERATE |
-| TEXT | TEXT_GENERATE、PROMPT_OPTIMIZE、SCRIPT_GENERATE |
+
+| 模型类型 | 允许能力                                                            |
+| -------- | ------------------------------------------------------------------- |
+| IMAGE    | TEXT_TO_IMAGE、IMAGE_TO_IMAGE                                       |
+| VIDEO    | TEXT_TO_VIDEO、IMAGE_TO_VIDEO、FIRST_LAST_FRAME_VIDEO、VIDEO_EXTEND |
+| AUDIO    | TTS、VOICE_CLONE、BGM_GENERATE、SOUND_EFFECT_GENERATE               |
+| TEXT     | TEXT_GENERATE、PROMPT_OPTIMIZE、SCRIPT_GENERATE                     |
 
 第一阶段只开放 IMAGE 和 VIDEO。
 
@@ -943,7 +1290,6 @@ tenant_id + type + capability + default_model
 
 第一阶段可以先在管理后台统计，后续接入监控指标。
 
-
 ### 15.9 多租户审核结论
 
 再次审核后，多租户是该模块必须重点设计的能力。现有方案虽然在索引、测试中提到了 `tenant_id`，但还不够，需要明确租户级模型配置策略。
@@ -982,16 +1328,17 @@ tenant_id + type + capability + default_model
 
 当前项目已有能力：
 
-| 能力 | 现有位置 | AIGC 模型服务使用方式 |
-| --- | --- | --- |
-| 租户上下文 | `TenantContextHolder` | 获取当前请求租户 ID |
-| Web 租户解析 | `TenantContextWebFilter` | 从请求 Header 解析租户并写入上下文 |
-| 访问租户切换 | `TenantVisitContextInterceptor` | 平台管理员访问指定租户时复用 |
-| 租户 SQL 隔离 | `yudao-spring-boot-starter-biz-tenant` | DO 表自动按 `tenant_id` 隔离 |
-| 忽略租户注解 | `@TenantIgnore` | 平台级配置、租户初始化、跨租户授权时使用 |
-| 租户工具类 | `TenantUtils` | 按指定租户执行初始化和授权逻辑 |
-| 租户合法性校验 | `TenantCommonApi#validTenant` | 创建租户授权前校验租户存在且有效 |
-| 租户列表 | `TenantCommonApi#getTenantIdList` | 批量初始化或补偿租户授权 |
+
+| 能力           | 现有位置                               | AIGC 模型服务使用方式                    |
+| -------------- | -------------------------------------- | ---------------------------------------- |
+| 租户上下文     | `TenantContextHolder`                  | 获取当前请求租户 ID                      |
+| Web 租户解析   | `TenantContextWebFilter`               | 从请求 Header 解析租户并写入上下文       |
+| 访问租户切换   | `TenantVisitContextInterceptor`        | 平台管理员访问指定租户时复用             |
+| 租户 SQL 隔离  | `yudao-spring-boot-starter-biz-tenant` | DO 表自动按`tenant_id` 隔离              |
+| 忽略租户注解   | `@TenantIgnore`                        | 平台级配置、租户初始化、跨租户授权时使用 |
+| 租户工具类     | `TenantUtils`                          | 按指定租户执行初始化和授权逻辑           |
+| 租户合法性校验 | `TenantCommonApi#validTenant`          | 创建租户授权前校验租户存在且有效         |
+| 租户列表       | `TenantCommonApi#getTenantIdList`      | 批量初始化或补偿租户授权                 |
 
 模块依赖上必须引入：
 
@@ -1044,16 +1391,17 @@ calculateTenantPrice(tenantId, modelId, capability, params)
 
 ### 16.2 数据分层
 
-| 数据 | 建议归属 | 是否带 tenant_id | 说明 |
-| --- | --- | --- | --- |
-| 平台渠道商 | 平台级 | tenant_id = 0 | 平台统一维护的渠道商 |
-| 租户渠道商 | 租户级 | 当前租户 ID | 租户自有 API Key |
-| 平台模型 | 平台级 | tenant_id = 0 | 平台统一模型配置 |
-| 租户模型授权 | 租户级 | 当前租户 ID | 租户可用模型、展示、默认配置 |
-| 平台价格 | 平台级 | tenant_id = 0 | 默认售价 |
-| 租户价格 | 租户级 | 当前租户 ID | 租户差异化售价 |
-| 参数模板 | 平台级为主 | tenant_id = 0 | 默认参数模板 |
-| 租户参数覆盖 | 租户级可选 | 当前租户 ID | 限制租户可选参数范围 |
+
+| 数据         | 建议归属   | 是否带 tenant_id | 说明                         |
+| ------------ | ---------- | ---------------- | ---------------------------- |
+| 平台渠道商   | 平台级     | tenant_id = 0    | 平台统一维护的渠道商         |
+| 租户渠道商   | 租户级     | 当前租户 ID      | 租户自有 API Key             |
+| 平台模型     | 平台级     | tenant_id = 0    | 平台统一模型配置             |
+| 租户模型授权 | 租户级     | 当前租户 ID      | 租户可用模型、展示、默认配置 |
+| 平台价格     | 平台级     | tenant_id = 0    | 默认售价                     |
+| 租户价格     | 租户级     | 当前租户 ID      | 租户差异化售价               |
+| 参数模板     | 平台级为主 | tenant_id = 0    | 默认参数模板                 |
+| 租户参数覆盖 | 租户级可选 | 当前租户 ID      | 限制租户可选参数范围         |
 
 ### 16.3 表结构优化
 
@@ -1063,18 +1411,19 @@ calculateTenantPrice(tenantId, modelId, capability, params)
 
 租户模型授权表，用于控制某个租户可使用哪些模型，以及租户维度的展示、默认、限流策略。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | bigint | 主键 |
-| tenant_id | bigint | 租户 ID |
-| model_id | bigint | 平台模型 ID |
-| enabled | bit(1) | 租户是否启用该模型 |
-| public_visible | bit(1) | 用户端是否展示 |
-| default_model | bit(1) | 是否租户默认模型 |
-| sort | int | 租户内排序 |
-| max_concurrent | int | 租户模型并发限制 |
-| daily_limit | int | 租户日调用限制 |
-| remark | varchar(512) | 备注 |
+
+| 字段           | 类型         | 说明               |
+| -------------- | ------------ | ------------------ |
+| id             | bigint       | 主键               |
+| tenant_id      | bigint       | 租户 ID            |
+| model_id       | bigint       | 平台模型 ID        |
+| enabled        | bit(1)       | 租户是否启用该模型 |
+| public_visible | bit(1)       | 用户端是否展示     |
+| default_model  | bit(1)       | 是否租户默认模型   |
+| sort           | int          | 租户内排序         |
+| max_concurrent | int          | 租户模型并发限制   |
+| daily_limit    | int          | 租户日调用限制     |
+| remark         | varchar(512) | 备注               |
 
 唯一索引：
 
@@ -1092,15 +1441,16 @@ uk_tenant_model = tenant_id + model_id
 
 租户参数覆盖表，用于限制租户可用参数范围。例如平台模型支持 1080p，但某些租户只允许 720p。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | bigint | 主键 |
-| tenant_id | bigint | 租户 ID |
-| model_id | bigint | 模型 ID |
-| capability | varchar(64) | 能力 |
-| param_key | varchar(64) | 参数键 |
-| override_config | json | 覆盖配置 |
-| status | int | 状态 |
+
+| 字段            | 类型        | 说明     |
+| --------------- | ----------- | -------- |
+| id              | bigint      | 主键     |
+| tenant_id       | bigint      | 租户 ID  |
+| model_id        | bigint      | 模型 ID  |
+| capability      | varchar(64) | 能力     |
+| param_key       | varchar(64) | 参数键   |
+| override_config | json        | 覆盖配置 |
+| status          | int         | 状态     |
 
 唯一索引：
 
@@ -1114,9 +1464,10 @@ uk_tenant_model_capability_param = tenant_id + model_id + capability + param_key
 
 渠道商支持两种归属：
 
-| tenant_id | 含义 |
-| --- | --- |
-| 0 | 平台统一渠道商 |
+
+| tenant_id   | 含义           |
+| ----------- | -------------- |
+| 0           | 平台统一渠道商 |
 | 当前租户 ID | 租户自有渠道商 |
 
 使用规则：
@@ -1131,9 +1482,10 @@ uk_tenant_model_capability_param = tenant_id + model_id + capability + param_key
 
 模型支持两种归属：
 
-| tenant_id | 含义 |
-| --- | --- |
-| 0 | 平台模型，可授权给租户 |
+
+| tenant_id   | 含义                       |
+| ----------- | -------------------------- |
+| 0           | 平台模型，可授权给租户     |
 | 当前租户 ID | 租户自建模型，仅本租户可用 |
 
 推荐第一阶段优先做平台模型 + 租户授权，不急着开放租户自建模型。
@@ -1249,8 +1601,9 @@ priceSource = TENANT / PLATFORM
 
 渠道商密钥分两种：
 
-| 类型 | 说明 | 适用场景 |
-| --- | --- | --- |
+
+| 类型     | 说明                 | 适用场景           |
+| -------- | -------------------- | ------------------ |
 | 平台密钥 | 平台统一采购模型能力 | C 端用户、普通租户 |
 | 租户密钥 | 租户自己提供 API Key | 企业客户、私有渠道 |
 
@@ -1311,18 +1664,19 @@ priceSource = TENANT / PLATFORM
 
 必须补充以下测试：
 
-| 编号 | 用例 | 预期 |
-| --- | --- | --- |
-| T-001 | 租户 A 查询可用模型 | 只返回租户 A 授权模型 |
-| T-002 | 租户 B 查询可用模型 | 不返回租户 A 专属模型 |
-| T-003 | 租户 A 使用未授权模型 | validateModel 失败 |
-| T-004 | 租户 A 禁用模型后提交任务 | validateModel 失败 |
-| T-005 | 租户 A 有租户价格 | calculatePrice 使用租户价格 |
-| T-006 | 租户 A 无租户价格 | calculatePrice 使用平台价格 |
-| T-007 | 租户 A 默认模型设置 | 不影响租户 B 默认模型 |
-| T-008 | 租户 A 参数覆盖 720p | 1080p 参数校验失败 |
-| T-009 | 租户 A 无法查看租户 B 渠道商 | 查询为空或无权限 |
-| T-010 | 平台管理员查看租户授权 | 可查看所有租户授权 |
+
+| 编号  | 用例                         | 预期                        |
+| ----- | ---------------------------- | --------------------------- |
+| T-001 | 租户 A 查询可用模型          | 只返回租户 A 授权模型       |
+| T-002 | 租户 B 查询可用模型          | 不返回租户 A 专属模型       |
+| T-003 | 租户 A 使用未授权模型        | validateModel 失败          |
+| T-004 | 租户 A 禁用模型后提交任务    | validateModel 失败          |
+| T-005 | 租户 A 有租户价格            | calculatePrice 使用租户价格 |
+| T-006 | 租户 A 无租户价格            | calculatePrice 使用平台价格 |
+| T-007 | 租户 A 默认模型设置          | 不影响租户 B 默认模型       |
+| T-008 | 租户 A 参数覆盖 720p         | 1080p 参数校验失败          |
+| T-009 | 租户 A 无法查看租户 B 渠道商 | 查询为空或无权限            |
+| T-010 | 平台管理员查看租户授权       | 可查看所有租户授权          |
 
 ### 16.13 多租户质量门禁
 
@@ -1338,7 +1692,28 @@ priceSource = TENANT / PLATFORM
 
 ## 17. 测试方案
 
-### 16.1 测试目标
+### 17.0 当前测试现状
+
+当前 `yudao-module-aigc-model-server` 已有 5 个测试类，Surefire 报告显示共 20 个用例，`errors=0`、`failures=0`、`skipped=0`。
+
+| 测试类 | 当前覆盖重点 |
+| ------ | ------------ |
+| `AigcModelApiImplTest` | `validateModel`、`validateParams`、`calculatePrice` RPC 行为 |
+| `AigcModelAppControllerTest` | 用户端模型详情、价格计算接口 |
+| `AigcModelServiceImplTest` | 租户可见模型成功、不可见、渠道商禁用场景 |
+| `AigcModelParamServiceImplTest` | 参数重复、必填缺失、数值范围、下拉选项、字符串格式、成功校验 |
+| `AigcModelPriceServiceImplTest` | 批量倍率、时长/分辨率倍率、价格不存在、禁用/过期价格、租户价格优先、重复价格创建 |
+
+测试资源现状：
+
+- `src/test/resources/application-unit-test.yaml` 提供单元测试配置。
+- `src/test/resources/sql/create_tables.sql` 提供 H2/兼容测试建表。
+- `src/test/resources/sql/clean.sql` 提供测试数据清理。
+- 生产 SQL 已包含 `aigc_model_usage_log`，测试建表脚本当前主要覆盖核心配置表，调用计量日志表的测试覆盖仍需补充。
+
+后续建议优先补充管理端 Controller、租户授权服务、路由服务、渠道商服务、调用计量服务和密钥脱敏相关测试。
+
+### 17.1 测试目标
 
 测试目标是保证模型服务作为 AIGC 平台配置中台稳定可靠，重点验证：
 
@@ -1351,19 +1726,20 @@ priceSource = TENANT / PLATFORM
 - 管理端权限生效。
 - 内部 RPC 能稳定支撑生成、任务和计费服务。
 
-### 16.2 测试分层
+### 17.2 测试分层
 
-| 测试类型 | 目标 | 工具/方式 |
-| --- | --- | --- |
-| 单元测试 | 测 Service 规则、价格计算、参数校验 | JUnit、Mockito |
-| Mapper 测试 | 测分页、唯一约束、条件查询 | 项目现有测试框架 |
-| Controller 测试 | 测接口参数、权限、返回脱敏 | MockMvc |
-| RPC 测试 | 测 `AigcModelApi` 对外行为 | Spring Boot Test |
-| 集成测试 | 测完整模型配置到价格计算流程 | Spring Boot Test + 测试库 |
-| 安全测试 | 测密钥不返回、不打印 | 接口断言、日志检查 |
-| 回归测试 | 改价格、改模板后旧能力不受影响 | 自动化用例 |
 
-### 16.3 单元测试范围
+| 测试类型        | 目标                                | 工具/方式                 |
+| --------------- | ----------------------------------- | ------------------------- |
+| 单元测试        | 测 Service 规则、价格计算、参数校验 | JUnit、Mockito            |
+| Mapper 测试     | 测分页、唯一约束、条件查询          | 项目现有测试框架          |
+| Controller 测试 | 测接口参数、权限、返回脱敏          | MockMvc                   |
+| RPC 测试        | 测`AigcModelApi` 对外行为           | Spring Boot Test          |
+| 集成测试        | 测完整模型配置到价格计算流程        | Spring Boot Test + 测试库 |
+| 安全测试        | 测密钥不返回、不打印                | 接口断言、日志检查        |
+| 回归测试        | 改价格、改模板后旧能力不受影响      | 自动化用例                |
+
+### 17.3 单元测试范围
 
 #### AigcModelServiceTest
 
@@ -1417,7 +1793,7 @@ priceSource = TENANT / PLATFORM
 - 价格规则禁用时失败。
 - 返回成本价、销售价和价格明细。
 
-### 16.4 Controller 测试范围
+### 17.4 Controller 测试范围
 
 管理端接口：
 
@@ -1437,7 +1813,7 @@ priceSource = TENANT / PLATFORM
 - 价格计算接口不返回成本价。
 - 用户端接口不返回 API Key、Secret Key、渠道商内部配置。
 
-### 16.5 RPC API 测试范围
+### 17.5 RPC API 测试范围
 
 `AigcModelApi` 必须覆盖：
 
@@ -1450,7 +1826,7 @@ priceSource = TENANT / PLATFORM
 - `calculatePrice` 返回价格快照所需字段。
 - `validateParams` 对非法参数抛出明确错误。
 
-### 16.6 数据库测试范围
+### 17.6 数据库测试范围
 
 必须验证：
 
@@ -1461,7 +1837,7 @@ priceSource = TENANT / PLATFORM
 - 逻辑删除后分页不展示。
 - 多租户数据隔离生效。
 
-### 16.7 安全测试范围
+### 17.7 安全测试范围
 
 必须验证：
 
@@ -1472,23 +1848,24 @@ priceSource = TENANT / PLATFORM
 - 日志中不出现 API Key 原文。
 - 价格计算不返回成本价给用户端。
 
-### 16.8 边界测试用例
+### 17.8 边界测试用例
 
-| 场景 | 期望 |
-| --- | --- |
-| 模型不存在 | 返回模型不存在错误 |
-| 渠道商不存在 | 返回渠道商不存在错误 |
-| 模型禁用 | 返回模型已禁用错误 |
-| 渠道商禁用 | 返回渠道商已禁用错误 |
-| 能力不匹配 | 返回能力不支持错误 |
-| 参数缺失 | 返回参数不合法错误 |
-| 价格缺失 | 返回价格未配置错误 |
-| 视频时长为 0 | 返回参数不合法错误 |
-| batchSize 超出上限 | 返回参数不合法错误 |
-| 价格配置为负数 | 保存失败 |
-| 设置多个默认模型 | 最终只有一个默认模型 |
 
-### 16.9 测试数据准备
+| 场景               | 期望                 |
+| ------------------ | -------------------- |
+| 模型不存在         | 返回模型不存在错误   |
+| 渠道商不存在       | 返回渠道商不存在错误 |
+| 模型禁用           | 返回模型已禁用错误   |
+| 渠道商禁用         | 返回渠道商已禁用错误 |
+| 能力不匹配         | 返回能力不支持错误   |
+| 参数缺失           | 返回参数不合法错误   |
+| 价格缺失           | 返回价格未配置错误   |
+| 视频时长为 0       | 返回参数不合法错误   |
+| batchSize 超出上限 | 返回参数不合法错误   |
+| 价格配置为负数     | 保存失败             |
+| 设置多个默认模型   | 最终只有一个默认模型 |
+
+### 17.9 测试数据准备
 
 建议准备固定测试数据：
 
@@ -1512,7 +1889,7 @@ param_resolution_select
 test-api-key-please-replace
 ```
 
-### 16.10 质量门禁
+### 17.10 质量门禁
 
 提交前必须满足：
 
@@ -1532,72 +1909,80 @@ mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-server -am -DskipTests c
 
 ## 18. 测试用例清单
 
-### 17.1 渠道商测试用例
+### 18.1 渠道商测试用例
 
-| 编号 | 用例 | 预期 |
-| --- | --- | --- |
-| P-001 | 新增 API_KEY 渠道商 | 成功 |
-| P-002 | 新增重复 code 渠道商 | 失败 |
-| P-003 | 禁用渠道商 | 成功 |
-| P-004 | 禁用渠道商后校验模型 | 失败 |
-| P-005 | 查询渠道商详情 | API Key 脱敏 |
+
+| 编号  | 用例                     | 预期           |
+| ----- | ------------------------ | -------------- |
+| P-001 | 新增 API_KEY 渠道商      | 成功           |
+| P-002 | 新增重复 code 渠道商     | 失败           |
+| P-003 | 禁用渠道商               | 成功           |
+| P-004 | 禁用渠道商后校验模型     | 失败           |
+| P-005 | 查询渠道商详情           | API Key 脱敏   |
 | P-006 | 修改渠道商但不传 API Key | 保留原 API Key |
-| P-007 | 删除有关联模型的渠道商 | 失败 |
+| P-007 | 删除有关联模型的渠道商   | 失败           |
 
-### 17.2 模型测试用例
+### 18.2 模型测试用例
 
-| 编号 | 用例 | 预期 |
-| --- | --- | --- |
-| M-001 | 新增图片模型 | 成功 |
-| M-002 | 新增视频模型 | 成功 |
-| M-003 | 新增重复 code 模型 | 失败 |
-| M-004 | 禁用模型 | 成功 |
-| M-005 | 校验禁用模型 | 失败 |
-| M-006 | 用户端查询隐藏模型 | 不返回 |
-| M-007 | 设置默认模型 | 同类型同能力旧默认取消 |
 
-### 17.3 能力测试用例
+| 编号  | 用例               | 预期                   |
+| ----- | ------------------ | ---------------------- |
+| M-001 | 新增图片模型       | 成功                   |
+| M-002 | 新增视频模型       | 成功                   |
+| M-003 | 新增重复 code 模型 | 失败                   |
+| M-004 | 禁用模型           | 成功                   |
+| M-005 | 校验禁用模型       | 失败                   |
+| M-006 | 用户端查询隐藏模型 | 不返回                 |
+| M-007 | 设置默认模型       | 同类型同能力旧默认取消 |
 
-| 编号 | 用例 | 预期 |
-| --- | --- | --- |
-| C-001 | 图片模型配置 TEXT_TO_IMAGE | 成功 |
-| C-002 | 图片模型配置 TEXT_TO_VIDEO | 失败 |
+### 18.3 能力测试用例
+
+
+| 编号  | 用例                        | 预期 |
+| ----- | --------------------------- | ---- |
+| C-001 | 图片模型配置 TEXT_TO_IMAGE  | 成功 |
+| C-002 | 图片模型配置 TEXT_TO_VIDEO  | 失败 |
 | C-003 | 视频模型配置 IMAGE_TO_VIDEO | 成功 |
-| C-004 | 重复配置同一能力 | 失败 |
+| C-004 | 重复配置同一能力            | 失败 |
 
-### 17.4 参数模板测试用例
+### 18.4 参数模板测试用例
 
-| 编号 | 用例 | 预期 |
-| --- | --- | --- |
-| PT-001 | SELECT 参数值合法 | 成功 |
-| PT-002 | SELECT 参数值非法 | 失败 |
+
+| 编号   | 用例                  | 预期 |
+| ------ | --------------------- | ---- |
+| PT-001 | SELECT 参数值合法     | 成功 |
+| PT-002 | SELECT 参数值非法     | 失败 |
 | PT-003 | NUMBER 参数低于最小值 | 失败 |
 | PT-004 | NUMBER 参数高于最大值 | 失败 |
-| PT-005 | 必填参数缺失 | 失败 |
-| PT-006 | BOOLEAN 参数传字符串 | 失败 |
+| PT-005 | 必填参数缺失          | 失败 |
+| PT-006 | BOOLEAN 参数传字符串  | 失败 |
 
-### 17.5 价格测试用例
+### 18.5 价格测试用例
 
-| 编号 | 用例 | 预期 |
-| --- | --- | --- |
-| PR-001 | 图片按张计费，batchSize=1 | 返回 1 倍价格 |
-| PR-002 | 图片按张计费，batchSize=4 | 返回 4 倍价格 |
-| PR-003 | 视频按 5 秒计费，duration=5 | 返回 1 倍价格 |
-| PR-004 | 视频按 5 秒计费，duration=6 | 返回 2 倍价格 |
-| PR-005 | 视频 1080p 加价 | 返回基础价 + 加价 |
-| PR-006 | 未配置价格 | 失败 |
-| PR-007 | 价格禁用 | 失败 |
 
-### 17.6 用户端安全测试用例
+| 编号   | 用例                        | 预期              |
+| ------ | --------------------------- | ----------------- |
+| PR-001 | 图片按张计费，batchSize=1   | 返回 1 倍价格     |
+| PR-002 | 图片按张计费，batchSize=4   | 返回 4 倍价格     |
+| PR-003 | 视频按 5 秒计费，duration=5 | 返回 1 倍价格     |
+| PR-004 | 视频按 5 秒计费，duration=6 | 返回 2 倍价格     |
+| PR-005 | 视频 1080p 加价             | 返回基础价 + 加价 |
+| PR-006 | 未配置价格                  | 失败              |
+| PR-007 | 价格禁用                    | 失败              |
 
-| 编号 | 用例 | 预期 |
-| --- | --- | --- |
-| S-001 | 用户端模型列表 | 不包含 API Key |
-| S-002 | 用户端参数模板 | 不包含成本价 |
-| S-003 | 用户端价格计算 | 只返回销售价 |
+### 18.6 用户端安全测试用例
+
+
+| 编号  | 用例             | 预期                 |
+| ----- | ---------------- | -------------------- |
+| S-001 | 用户端模型列表   | 不包含 API Key       |
+| S-002 | 用户端参数模板   | 不包含成本价         |
+| S-003 | 用户端价格计算   | 只返回销售价         |
 | S-004 | 管理端渠道商列表 | API Key 脱敏或不返回 |
 
 ## 19. 开发顺序
+
+当前模块主体代码已完成，以下开发顺序作为历史实施路径和后续补齐参考。已完成项包括 Maven 模块、启动类、API DTO/枚举/RPC、DO/Mapper/SQL、渠道商、模型、参数模板、价格、路由、租户授权、调用计量、用户端接口和部分自动化测试。
 
 ```text
 1. 创建 Maven 模块和启动类
@@ -1610,11 +1995,14 @@ mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-server -am -DskipTests c
 8. 实现价格配置和价格计算
 9. 实现内部 RPC API
 10. 实现用户端可用模型接口
-11. 实现权限标识和菜单 SQL
-12. 补充 Service 单元测试
-13. 补充 Controller 测试
-14. 补充 RPC API 测试
-15. 编译、测试和接口验收
+11. 实现租户模型授权
+12. 实现模型调用计量 recordUsage
+13. 实现权限标识和菜单 SQL
+14. 补充 Service 单元测试
+15. 补充 Controller 测试
+16. 补充 RPC API 测试
+17. 补充计量、租户、路由、密钥脱敏测试
+18. 编译、测试和接口验收
 ```
 
 ## 20. 与其他服务协作
@@ -1628,6 +2016,7 @@ validateModel
 validateParams
 calculatePrice
 getProvider
+recordUsage
 ```
 
 ### 20.2 aigc-billing 调用
@@ -1647,9 +2036,10 @@ getModel
 
 ```text
 getModel
+recordUsage
 ```
 
-用于任务详情展示模型名称、模型类型、渠道商信息。
+用于任务详情展示模型名称、模型类型、渠道商信息，以及在任务执行完成后记录模型调用计量。
 
 ## 21. 验收标准
 

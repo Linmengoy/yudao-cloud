@@ -43,6 +43,7 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
     @Override
     public Long createPrice(AigcModelPriceSaveReqVO reqVO) {
         validateModelExists(reqVO.getModelId());
+        validatePriceUnique(null, reqVO.getModelId(), reqVO.getCapability());
 
         AigcModelPriceDO price = BeanUtils.toBean(reqVO, AigcModelPriceDO.class);
         priceMapper.insert(price);
@@ -52,6 +53,8 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
     @Override
     public void updatePrice(AigcModelPriceSaveReqVO reqVO) {
         validatePriceExists(reqVO.getId());
+        validateModelExists(reqVO.getModelId());
+        validatePriceUnique(reqVO.getId(), reqVO.getModelId(), reqVO.getCapability());
 
         AigcModelPriceDO updateObj = BeanUtils.toBean(reqVO, AigcModelPriceDO.class);
         priceMapper.updateById(updateObj);
@@ -166,6 +169,13 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
     private void validatePriceExists(Long id) {
         if (priceMapper.selectById(id) == null) {
             throw exception(MODEL_PRICE_NOT_EXISTS);
+        }
+    }
+
+    private void validatePriceUnique(Long id, Long modelId, String capability) {
+        Long tenantId = TenantContextHolder.getRequiredTenantId();
+        if (priceMapper.selectCountByModelIdAndCapabilityAndTenantId(id, modelId, capability, tenantId) > 0) {
+            throw exception(MODEL_PRICE_DUPLICATE);
         }
     }
 

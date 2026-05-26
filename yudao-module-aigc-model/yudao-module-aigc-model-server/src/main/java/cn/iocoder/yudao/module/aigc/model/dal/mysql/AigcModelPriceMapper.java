@@ -26,6 +26,14 @@ public interface AigcModelPriceMapper extends BaseMapperX<AigcModelPriceDO> {
         return list.isEmpty() ? null : list.get(0);
     }
 
+    default Long selectCountByModelIdAndCapabilityAndTenantId(Long id, Long modelId, String capability, Long tenantId) {
+        return selectCount(new LambdaQueryWrapperX<AigcModelPriceDO>()
+                .eq(AigcModelPriceDO::getModelId, modelId)
+                .eq(AigcModelPriceDO::getCapability, capability)
+                .eq(AigcModelPriceDO::getTenantId, tenantId)
+                .neIfPresent(AigcModelPriceDO::getId, id));
+    }
+
     default List<AigcModelPriceDO> selectListByModelId(Long modelId) {
         return selectList(new LambdaQueryWrapperX<AigcModelPriceDO>()
                 .eq(AigcModelPriceDO::getModelId, modelId)
