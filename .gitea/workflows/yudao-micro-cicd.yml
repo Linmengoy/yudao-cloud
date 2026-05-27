@@ -22,7 +22,7 @@ on:
 
 jobs:
   build-deploy:
-    runs-on: ubuntu-latest
+    runs-on: manman-host
     steps:
       - name: Checkout
         env:
