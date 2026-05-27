@@ -10,6 +10,15 @@ on:
     tags:
       - v*
   workflow_dispatch:
+    inputs:
+      service:
+        description: 'Docker service to build/deploy, use all for all services'
+        required: false
+        default: 'aigc-gen'
+      module:
+        description: 'Maven module path, empty means infer from service, all means full build'
+        required: false
+        default: ''
 
 jobs:
   build-deploy:
@@ -24,11 +33,62 @@ jobs:
           git -c http.extraHeader="Authorization: token ${GITEA_TOKEN}" fetch --depth=1 origin "${{ github.ref }}"
           git checkout FETCH_HEAD
 
-      - name: Build jar
-        run: mvn clean package -DskipTests
+      - name: Resolve build target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SERVICE: ${{ github.event.inputs.service }}
+          INPUT_MODULE: ${{ github.event.inputs.module }}
+        run: |
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            service="${INPUT_SERVICE:-aigc-gen}"
+            module="${INPUT_MODULE}"
+          else
+            service="all"
+            module="all"
+          fi
 
-      - name: Build aigc-gen image
-        run: docker compose -f script/docker/docker-compose-micro.yml build aigc-gen
+          if [ -z "${module}" ]; then
+            case "${service}" in
+              all) module="all" ;;
+              yudao-gateway) module="yudao-gateway" ;;
+              yudao-system) module="yudao-module-system/yudao-module-system-server" ;;
+              yudao-infra) module="yudao-module-infra/yudao-module-infra-server" ;;
+              yudao-member) module="yudao-module-member/yudao-module-member-server" ;;
+              yudao-pay) module="yudao-module-pay/yudao-module-pay-server" ;;
+              aigc-model) module="yudao-module-aigc-model/yudao-module-aigc-model-server" ;;
+              aigc-billing) module="yudao-module-aigc-billing/yudao-module-aigc-billing-server" ;;
+              aigc-task) module="yudao-module-aigc-task/yudao-module-aigc-task-server" ;;
+              aigc-asset) module="yudao-module-aigc-asset/yudao-module-aigc-asset-server" ;;
+              aigc-safety) module="yudao-module-aigc-safety/yudao-module-aigc-safety-server" ;;
+              aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
+              *) echo "Unknown service: ${service}" && exit 1 ;;
+            esac
+          fi
+
+          if [ "${service}" != "all" ]; then
+            docker compose -f script/docker/docker-compose-micro.yml config --services | grep -Fx "${service}"
+          fi
+
+          echo "BUILD_SERVICE=${service}" >> "${GITHUB_ENV}"
+          echo "BUILD_MODULE=${module}" >> "${GITHUB_ENV}"
+
+      - name: Build jar
+        run: |
+          echo "Build module: ${BUILD_MODULE}"
+          if [ -z "${BUILD_MODULE}" ] || [ "${BUILD_MODULE}" = "all" ]; then
+            mvn clean package -DskipTests
+          else
+            mvn clean package -pl "${BUILD_MODULE}" -am -DskipTests
+          fi
+
+      - name: Build image
+        run: |
+          echo "Build service: ${BUILD_SERVICE}"
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            docker compose -f script/docker/docker-compose-micro.yml build
+          else
+            docker compose -f script/docker/docker-compose-micro.yml build "${BUILD_SERVICE}"
+          fi
 
       - name: Deploy services
         run: |
@@ -51,7 +111,11 @@ jobs:
             exit 0
           fi
 
-          docker compose -f script/docker/docker-compose-micro.yml up -d --build
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            docker compose -f script/docker/docker-compose-micro.yml up -d --build
+          else
+            docker compose -f script/docker/docker-compose-micro.yml up -d --build "${BUILD_SERVICE}"
+          fi
 
       - name: Verify services
         run: |
