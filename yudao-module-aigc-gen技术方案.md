@@ -97,28 +97,14 @@ yudao-module-aigc-gen-api
   └── src/main/java/cn/iocoder/yudao/module/aigc/gen
       ├── api
       │   ├── AigcGenerateApi.java
-      │   ├── AigcTextGenerateApi.java
-      │   ├── AigcImageGenerateApi.java
-      │   ├── AigcVideoGenerateApi.java
-      │   ├── AigcAudioGenerateApi.java
-      │   ├── AigcCodeGenerateApi.java
-      │   └── AigcDocumentGenerateApi.java
+      │   └── AigcGenerateApi.java
       ├── dto
       │   ├── AigcGenerateSubmitReqDTO.java
       │   ├── AigcGenerateSubmitRespDTO.java
       │   ├── AigcGenerateResultRespDTO.java
       │   ├── AigcGenerateCallbackReqDTO.java
       │   ├── AigcGenerateSyncReqDTO.java
-      │   ├── AigcTextGenerateReqDTO.java
-      │   ├── AigcTextGenerateRespDTO.java
-      │   ├── AigcChatReqDTO.java
-      │   ├── AigcImageGenerateReqDTO.java
-      │   ├── AigcImageGenerateRespDTO.java
-      │   ├── AigcVideoGenerateReqDTO.java
-      │   ├── AigcVideoGenerateRespDTO.java
-      │   ├── AigcAudioGenerateReqDTO.java
-      │   ├── AigcCodeGenerateReqDTO.java
-      │   └── AigcDocumentGenerateReqDTO.java
+      │   └── AigcGenerateProviderRespDTO.java
       └── enums
           ├── AigcGenerateTypeEnum.java
           ├── AigcGenerateModeEnum.java
@@ -127,8 +113,11 @@ yudao-module-aigc-gen-api
           ├── AigcGenerateProviderTaskStatusEnum.java
           ├── AigcGenerateCallbackStatusEnum.java
           ├── AigcGenerateFailReasonEnum.java
+          ├── ApiConstants.java
           └── ErrorCodeConstants.java
 ```
+
+当前 API 模块以通用 `AigcGenerateApi` 为主，文本、图片、视频等垂直 API 可在对应业务复杂度上升后再拆出。
 
 ### 3.4 Server 模块结构
 
@@ -138,72 +127,41 @@ yudao-module-aigc-gen-server
       ├── AigcGenServerApplication.java
       ├── controller
       │   ├── admin
-      │   │   ├── record
       │   │   ├── callback
-      │   │   └── statistics
+      │   │   ├── providerlog
+      │   │   └── record
       │   └── app
-      │       ├── text
-      │       ├── image
-      │       ├── video
-      │       ├── audio
-      │       ├── code
-      │       └── document
+      │       └── AigcGenerateAppController.java
       ├── api
-      │   ├── AigcGenerateApiImpl.java
-      │   ├── AigcTextGenerateApiImpl.java
-      │   ├── AigcImageGenerateApiImpl.java
-      │   ├── AigcVideoGenerateApiImpl.java
-      │   ├── AigcAudioGenerateApiImpl.java
-      │   ├── AigcCodeGenerateApiImpl.java
-      │   └── AigcDocumentGenerateApiImpl.java
+      │   └── AigcGenerateApiImpl.java
       ├── framework
       │   ├── client
       │   │   ├── AigcProviderClient.java
       │   │   ├── AigcProviderClientFactory.java
+      │   │   ├── MockAigcProviderClient.java
+      │   │   ├── GptImageProviderClient.java
       │   │   └── dto
-      │   ├── provider
-      │   │   ├── openai
-      │   │   ├── stability
-      │   │   ├── runway
-      │   │   ├── aliyun
-      │   │   └── tencent
+      │   ├── security
       │   └── web
       │       └── config
       │           └── AigcGenWebConfiguration.java
       ├── service
-      │   ├── generate
-      │   ├── text
-      │   ├── image
-      │   ├── video
-      │   ├── audio
-      │   ├── code
-      │   ├── document
-      │   ├── callback
-      │   ├── result
-      │   ├── provider
-      │   └── compensate
+      │   └── record
       ├── dal
       │   ├── dataobject
       │   │   ├── AigcGenerateRecordDO.java
       │   │   ├── AigcGenerateCallbackDO.java
-      │   │   ├── AigcGenerateProviderLogDO.java
-      │   │   ├── AigcImageGenerateDO.java
-      │   │   ├── AigcVideoGenerateDO.java
-      │   │   ├── AigcAudioGenerateDO.java
-      │   │   └── AigcTextGenerateDO.java
+      │   │   └── AigcGenerateProviderLogDO.java
       │   └── mysql
       │       ├── AigcGenerateRecordMapper.java
       │       ├── AigcGenerateCallbackMapper.java
-      │       ├── AigcGenerateProviderLogMapper.java
-      │       ├── AigcImageGenerateMapper.java
-      │       ├── AigcVideoGenerateMapper.java
-      │       ├── AigcAudioGenerateMapper.java
-      │       └── AigcTextGenerateMapper.java
+      │       └── AigcGenerateProviderLogMapper.java
       ├── job
-      │   ├── AigcGenerateSyncJob.java
-      │   └── AigcGenerateTimeoutJob.java
+      │   └── AigcGenerateSyncJob.java
       └── convert
 ```
+
+当前 Server 模块以通用生成编排服务 `AigcGenerateRecordServiceImpl` 为核心，垂直生成类型通过 `generateType`、`generateMode` 和统一 DTO 承载，后续如图片、视频、音频复杂度提升，可再拆分独立 service 与 controller。
 
 ## 4. 依赖设计
 
@@ -214,6 +172,11 @@ yudao-module-aigc-gen-server
     <dependency>
         <groupId>cn.iocoder.cloud</groupId>
         <artifactId>yudao-common</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <scope>provided</scope>
     </dependency>
     <dependency>
         <groupId>org.springframework.boot</groupId>
@@ -324,8 +287,8 @@ yudao-module-aigc-gen-server
 
 | 调用方 | 调用目的 |
 | ------ | -------- |
-| 用户端前端 | 提交文本、图片、视频、音频、代码、文档等生成请求 |
-| 管理端前端 | 查询生成记录、回调记录、渠道调用日志、失败任务和运营统计 |
+| 用户端前端 | 提交通用生成、文本生成、文生图、文生视频等生成请求 |
+| 管理端前端 | 查询生成记录、回调记录、渠道调用日志并手动同步任务 |
 | `yudao-module-aigc-task` | 超时补偿时可调用生成服务同步第三方任务状态 |
 | 后续 `yudao-module-aigc-workflow` | 工作流节点调用生成能力 |
 | 后续 `yudao-module-aigc-template` | 模板生成调用生成能力 |
@@ -336,15 +299,15 @@ yudao-module-aigc-gen-server
 
 | 表名 | 说明 |
 | ---- | ---- |
-| `aigc_gen_record` | 通用生成记录，第一阶段优先采用 |
-| `aigc_gen_callback` | 第三方回调记录，保存回调原文、验签结果和处理状态 |
-| `aigc_gen_provider_log` | 第三方渠道调用日志，记录请求摘要、响应摘要、耗时和错误 |
-| `aigc_image` | 图片生成记录，可作为垂直扩展表 |
-| `aigc_video` | 视频生成记录，可作为垂直扩展表 |
-| `aigc_audio` | 音频生成记录，可作为垂直扩展表 |
-| `aigc_text` | 文本生成记录，可作为垂直扩展表 |
+| `aigc_gen_record` | 通用生成记录，当前已落地 |
+| `aigc_gen_callback` | 第三方回调记录，保存回调原文、验签结果和处理状态，当前已落地 |
+| `aigc_gen_provider_log` | 第三方渠道调用日志，记录请求摘要、响应摘要、耗时和错误，当前已落地 |
+| `aigc_image` | 图片生成记录，可作为垂直扩展表，当前未落地 |
+| `aigc_video` | 视频生成记录，可作为垂直扩展表，当前未落地 |
+| `aigc_audio` | 音频生成记录，可作为垂直扩展表，当前未落地 |
+| `aigc_text` | 文本生成记录，可作为垂直扩展表，当前未落地 |
 
-第一阶段建议先落地 `aigc_gen_record`、`aigc_gen_callback`、`aigc_gen_provider_log` 三张通用表，图片、视频、音频、文本垂直表可在对应业务复杂度上升后扩展。
+第一阶段已落地 `aigc_gen_record`、`aigc_gen_callback`、`aigc_gen_provider_log` 三张通用表，图片、视频、音频、文本垂直表可在对应业务复杂度上升后扩展。
 
 ### 5.2 aigc_gen_record
 
@@ -467,7 +430,7 @@ yudao-module-aigc-gen-server
 
 ### 6.1 内部 RPC API
 
-`AigcGenerateApi`：
+`AigcGenerateApi` 是当前已落地的内部 RPC API：
 
 ```text
 submit(userId, req)
@@ -475,6 +438,8 @@ getResult(taskId)
 handleCallback(providerCode, callbackData)
 syncTask(taskId)
 ```
+
+以下垂直 API 属于后续规划，可在通用编排稳定后按业务需要拆出：
 
 `AigcTextGenerateApi`：
 
@@ -526,17 +491,17 @@ generatePpt(userId, req)
 
 ### 6.2 用户端接口
 
-用户端接口由 controller.app 提供，服务内路径不手写 /app-api 前缀。
+用户端接口由 `controller.app` 提供，服务内路径不手写 `/app-api` 前缀。
 
 | 方法 | 服务内路径 | 说明 |
 | ---- | ---------- | ---- |
-| POST | /aigc/gen/submit | 通用生成任务提交 |
-| POST | /aigc/gen/text/generate | 文本生成 |
-| POST | /aigc/gen/image/text-to-image | 文生图 |
-| POST | /aigc/gen/video/text-to-video | 文生视频 |
-| GET | /aigc/gen/result | 查询生成结果 |
+| POST | `/aigc/gen/submit` | 通用生成任务提交 |
+| POST | `/aigc/gen/text/generate` | 文本生成 |
+| POST | `/aigc/gen/image/text-to-image` | 文生图 |
+| POST | `/aigc/gen/video/text-to-video` | 文生视频 |
+| GET | `/aigc/gen/result` | 查询生成结果 |
 
-chat、摘要、翻译、图生图、图生视频、音频、代码、文档和 PPT 等独立路径属于后续扩展入口，当前可优先通过通用 /aigc/gen/submit 按 generateType 与 generateMode 承载。
+`chat`、摘要、翻译、图生图、图生视频、音频、代码、文档和 PPT 等独立路径属于后续扩展入口，当前可优先通过通用 `/aigc/gen/submit` 按 `generateType` 与 `generateMode` 承载。
 
 ### 6.3 管理端接口
 
@@ -547,13 +512,10 @@ chat、摘要、翻译、图生图、图生视频、音频、代码、文档和 
 | GET | `/aigc/gen/callback/page` | 回调记录分页 |
 | GET | `/aigc/gen/provider-log/page` | 渠道调用日志分页 |
 | POST | `/aigc/gen/record/sync` | 手动同步第三方任务 |
-| POST | `/aigc/gen/record/retry` | 手动重试失败任务 |
-| POST | `/aigc/gen/record/cancel` | 手动取消可取消任务 |
-| GET | `/aigc/gen/statistics/summary` | 生成统计概览 |
 
 ### 6.4 第三方回调接口
 
-第三方渠道回调接口需要根据渠道区分路径，便于单独验签和解析。
+第三方渠道回调当前通过内部 RPC `AigcGenerateApi.handleCallback` 承接，后续如需要直接暴露外部 HTTP 回调，可按渠道区分路径，便于单独验签和解析。
 
 | 方法 | 服务内路径 | 说明 |
 | ---- | ---------- | ---- |
@@ -635,14 +597,14 @@ aigc-gen 提交第三方异步任务
 ```text
 aigc-gen 获取第三方结果 URL
   -> 校验 URL 来源和有效期
-  -> 下载临时文件或转交 asset 创建
+  -> 转交 aigc-asset 创建资产
   -> aigc-asset.createAsset 创建资产
   -> aigc-task 回写 outputAssetIds
   -> aigc-safety.createAuditRecord 创建审核记录
   -> aigc-task 标记 SUCCESS
 ```
 
-第一阶段若不启用资产后置审核，可创建资产后直接成功；如果启用审核，则任务成功与资产可见性需要按审核状态区分。
+当前代码以结果 URL 安全校验和资产创建为主，文件下载转存、生成后审核状态联动可继续在 `aigc-asset` 与 `aigc-safety` 中完善。
 
 ### 7.5 回调成功流程
 
@@ -694,41 +656,41 @@ AigcGenerateSyncJob 扫描长时间 CALLBACK_WAITING 的生成记录
 
 | 状态 | 说明 |
 | ---- | ---- |
-| CREATED | 已创建生成记录 |
-| SUBMITTING | 正在提交第三方 |
-| SUBMITTED | 已提交第三方 |
-| CALLBACK_WAITING | 等待第三方回调 |
-| SYNCING | 正在同步第三方状态 |
-| DOWNLOADING | 正在下载结果文件 |
-| ASSET_CREATING | 正在创建资产 |
-| SUCCESS | 生成成功 |
-| FAILED | 生成失败 |
-| CANCELLED | 已取消 |
+| `CREATED` | 已创建生成记录 |
+| `SUBMITTING` | 正在提交第三方 |
+| `SUBMITTED` | 已提交第三方 |
+| `CALLBACK_WAITING` | 等待第三方回调 |
+| `SYNCING` | 正在同步第三方状态 |
+| `DOWNLOADING` | 正在下载结果文件 |
+| `ASSET_CREATING` | 正在创建资产 |
+| `SUCCESS` | 生成成功 |
+| `FAILED` | 生成失败 |
+| `CANCELLED` | 已取消 |
 
-前置校验、计费冻结和审核属于生成链路动作，当前枚举未单独定义 VALIDATING、FROZEN、AUDITING 状态。
+前置校验、计费冻结和审核属于生成链路动作，当前枚举未单独定义 `VALIDATING`、`FROZEN`、`AUDITING` 状态。
 
 ### 8.2 与任务状态关系
 
-igc-gen 内部状态用于生成服务排查和补偿，最终用户可见状态以 igc-task 为准。
+`aigc-gen` 内部状态用于生成服务排查和补偿，最终用户可见状态以 `aigc-task` 为准。
 
 | gen 状态 | task 状态建议 |
 | -------- | ------------- |
-| CREATED | CREATED |
-| SUBMITTING | RUNNING |
-| SUBMITTED | SUBMITTED |
-| CALLBACK_WAITING | CALLBACK_WAITING |
-| SYNCING | RUNNING 或 CALLBACK_WAITING |
-| DOWNLOADING | DOWNLOADING |
-| ASSET_CREATING | ASSET_CREATING |
-| SUCCESS | SUCCESS |
-| FAILED | FAILED 或 REFUNDING |
-| CANCELLED | CANCELLED |
+| `CREATED` | `CREATED` |
+| `SUBMITTING` | `RUNNING` |
+| `SUBMITTED` | `SUBMITTED` |
+| `CALLBACK_WAITING` | `CALLBACK_WAITING` |
+| `SYNCING` | `RUNNING` 或 `CALLBACK_WAITING` |
+| `DOWNLOADING` | `DOWNLOADING` |
+| `ASSET_CREATING` | `ASSET_CREATING` |
+| `SUCCESS` | `SUCCESS` |
+| `FAILED` | `FAILED` 或 `REFUNDING` |
+| `CANCELLED` | `CANCELLED` |
 
 ## 9. 第三方渠道适配设计
 
 ### 9.1 客户端抽象
 
-第三方渠道统一抽象为 `AigcProviderClient`，按能力提供默认方法或子接口：
+第三方渠道统一抽象为 `AigcProviderClient`，当前接口提供提交、查询和回调验签能力：
 
 ```text
 AigcProviderClient
@@ -738,6 +700,8 @@ AigcProviderClient
 ```
 
 不同渠道通过 `providerCode` 注册到 `AigcProviderClientFactory`，生成服务根据模型服务返回的渠道配置选择客户端。
+
+当前已实现 `mock` 与 `gpt-image-2` 两个客户端。`cancel`、独立回调解析、结果下载等能力属于后续渠道增强项，可在真实渠道接入时扩展。
 
 ### 9.2 渠道适配原则
 
@@ -816,21 +780,19 @@ AigcProviderClient
 
 ## 12. OpenAPI 与网关接入
 
-`aigc-gen-server` 需要注册独立 OpenAPI 分组，并同步 Gateway Knife4j 聚合配置。
+`aigc-gen-server` 当前通过 `AigcGenWebConfiguration` 注册独立 OpenAPI 分组 `aigc-gen`，Gateway Knife4j 聚合配置按网关侧统一接入。
 
-建议分组：
+当前分组：
 
 | 分组 | 路径 | 说明 |
 | ---- | ---- | ---- |
-| `aigc-gen-app` | `/aigc/gen/**` | 用户端生成接口 |
-| `aigc-gen-admin` | `/aigc/gen/**` | 管理端生成记录、回调、日志、统计接口 |
-| `aigc-gen-rpc` | `/rpc-api/aigc/gen/**` | 内部 RPC 接口 |
+| `aigc-gen` | `/aigc/gen/**`、`/rpc-api/aigc/gen/**` | 生成服务用户端、管理端和内部 RPC 接口 |
 
 网关路由需要保证：
 
 - 用户端只开放 app 生成和查询接口
 - 管理端接口需要登录和权限校验
-- 第三方回调接口按渠道路径开放，并限制请求体大小
+- 第三方回调如开放外部 HTTP 入口，需要按渠道路径开放，并限制请求体大小
 - RPC 接口仅供服务间调用
 
 ## 13. 第一阶段落地范围
@@ -853,7 +815,7 @@ AigcProviderClient
 - 第三方回调验签和幂等
 - 超时同步补偿任务
 - 管理端生成记录和回调记录查询
-- OpenAPI 分组和 Gateway Knife4j 聚合
+- OpenAPI 分组
 
 ### 13.2 可以延后
 
@@ -890,7 +852,7 @@ AigcProviderClient
 - 数据表均包含租户隔离和项目标准审计字段
 - 回调、扣费、资产创建具备幂等保护
 - 日志不输出渠道密钥和敏感鉴权信息
-- Swagger 分组已接入 Gateway Knife4j 聚合
+- Swagger 分组已注册，Gateway Knife4j 聚合由网关侧统一接入
 
 ## 15. 与已落地模块的协作清单
 
@@ -931,6 +893,7 @@ AigcProviderClient
 | 编排 | `AigcGenerateRecordServiceImpl` | 生成主链路编排服务 |
 | 渠道 | `AigcProviderClient` | 第三方渠道适配接口 |
 | 渠道 | `MockAigcProviderClient` | 可编译、可联调的 Mock 渠道实现 |
+| 渠道 | `GptImageProviderClient` | `gpt-image-2` 图片生成渠道实现 |
 | 补偿 | `AigcGenerateSyncJob` | 超时生成任务同步补偿任务 |
 | 安全 | `AigcGenerateFileSecurityUtils` | 第三方结果 URL 安全校验 |
 | SQL | `schema/mysql.sql` | `aigc_gen_record`、`aigc_gen_callback`、`aigc_gen_provider_log` |
