@@ -15,12 +15,17 @@ public interface AigcWorkflowInstanceService {
 
     AigcWorkflowExecuteRespDTO execute(Long userId, AigcWorkflowExecuteReqDTO reqDTO);
     AigcWorkflowCostEstimateRespDTO estimateCost(AigcWorkflowCostEstimateReqDTO reqDTO);
+    cn.iocoder.yudao.module.aigc.workflow.dto.AigcWorkflowInstanceRespDTO getInstanceDetail(Long id);
+    cn.iocoder.yudao.module.aigc.workflow.dto.AigcWorkflowInstanceRespDTO getUserInstanceDetail(Long id, Long userId);
     AigcWorkflowInstanceDO getInstance(Long id);
     AigcWorkflowInstanceDO validateInstanceExists(Long id);
+    AigcWorkflowInstanceDO validateUserInstance(Long id, Long userId);
     PageResult<AigcWorkflowInstanceDO> getInstancePage(AigcWorkflowInstancePageReqVO reqVO);
     PageResult<AigcWorkflowInstanceDO> getUserInstancePage(AigcWorkflowInstancePageReqVO reqVO, Long userId);
     void retryNode(AigcWorkflowRetryNodeReqDTO reqDTO);
     void cancel(AigcWorkflowCancelReqDTO reqDTO);
+    void cancelUserInstance(AigcWorkflowCancelReqDTO reqDTO, Long userId);
+    void dispatchReadyNode(Long instanceId);
     void handleNodeCallback(AigcWorkflowNodeCallbackReqDTO reqDTO);
 
 }

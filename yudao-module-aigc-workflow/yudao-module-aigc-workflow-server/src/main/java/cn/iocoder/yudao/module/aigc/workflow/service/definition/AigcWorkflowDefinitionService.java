@@ -16,6 +16,7 @@ public interface AigcWorkflowDefinitionService {
     void offlineDefinition(Long id);
     AigcWorkflowDefinitionDO getDefinition(Long id);
     AigcWorkflowDefinitionDO validateDefinitionExists(Long id);
+    AigcWorkflowDefinitionDO validatePublishedDefinition(Long id);
     PageResult<AigcWorkflowDefinitionDO> getDefinitionPage(AigcWorkflowDefinitionPageReqVO reqVO);
 
 }

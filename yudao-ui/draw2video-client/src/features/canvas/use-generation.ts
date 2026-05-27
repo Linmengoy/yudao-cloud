@@ -1,4 +1,7 @@
 import type { AppNode, AppEdge, PromptNodeData, ResultNodeData, ImageNodeData, InputImageSnapshot, GenerationMode, ResultStatus } from "./types";
+import { generationApi } from "@/features/generation/generation-api";
+import { parseGenerateResult } from "@/features/generation/generation-result";
+import type { GenerateResult, GenerateSubmitResponse } from "@/features/generation/generation-types";
 import { getModelById } from "@/features/image-generation/models";
 import { findOpenNodePosition } from "./positioning";
 
@@ -102,70 +105,96 @@ export function createResultDraft(
   return { newNodes, newEdges };
 }
 
-type CreateGenerationResponse = {
-  code: number;
-  msg: string;
-  data: {
-    taskId: string;
-    status: ResultStatus;
-    imageUrls: string[];
-    elapsedMs: number;
-    errorMessage?: string;
-    safetyStatus?: string | null;
-    safetyReason?: string | null;
-    upstreamStatus?: number;
-    upstreamDetail?: string;
-  } | null;
-};
+const POLL_INTERVAL_MS = 1600;
+const POLL_TIMEOUT_MS = 180000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isTerminalStatus(status?: string): boolean {
+  return status === "SUCCESS" || status === "FAILED" || status === "CANCELED" || status === "CANCELLED";
+}
+
+async function pollGenerationResult(taskId: number | string, startedAt: number): Promise<GenerateResult> {
+  let latest: GenerateResult | null = null;
+
+  while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+    latest = await generationApi.getResult(taskId);
+    if (isTerminalStatus(latest.status)) return latest;
+    await sleep(POLL_INTERVAL_MS);
+  }
+
+  if (latest) return latest;
+  throw new Error("生成结果查询超时，请稍后到任务中心查看进度。");
+}
+
+function buildInputParams(data: PromptNodeData, resultDraft: ResultNodeData): string {
+  return JSON.stringify({
+    ...data.params,
+    inputImages: resultDraft.inputImages.map((image) => ({
+      imageId: image.imageId,
+      fileName: image.fileName,
+      mimeType: image.mimeType,
+      dataUrl: image.dataUrl,
+    })),
+  });
+}
+
+function submitImageGeneration(data: PromptNodeData, resultDraft: ResultNodeData): Promise<GenerateSubmitResponse> {
+  const modelId = data.aigcModelId;
+  if (!modelId) throw new Error("请选择 AIGC 模型后再生成。");
+
+  if (resultDraft.mode === "edit") {
+    return generationApi.submit({
+      generateType: "IMAGE",
+      generateMode: "IMAGE_TO_IMAGE",
+      modelId,
+      prompt: data.prompt,
+      inputParams: buildInputParams(data, resultDraft),
+      sync: false,
+    });
+  }
+
+  return generationApi.textToImage({
+    modelId,
+    prompt: data.prompt,
+    inputParams: buildInputParams(data, resultDraft),
+    sync: false,
+  });
+}
 
 export async function createGenerationTask(
   data: PromptNodeData,
   resultDraft: ResultNodeData
 ): Promise<Partial<ResultNodeData>> {
-  const response = await fetch("/app-api/ai/generation/task/create", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      type: "image",
-      mode: resultDraft.mode,
-      model: data.providerModel ?? data.modelId,
-      aigcModelId: data.aigcModelId,
-      prompt: data.prompt,
-      params: data.params,
-      inputImages: resultDraft.inputImages.map((image) => ({
-        dataUrl: image.dataUrl,
-        fileName: image.fileName,
-        mimeType: image.mimeType,
-      })),
-    }),
-  });
+  const startedAt = Date.now();
+  const submitResult = await submitImageGeneration(data, resultDraft);
+  const result = await pollGenerationResult(submitResult.taskId, startedAt);
+  const parsed = parseGenerateResult(result);
+  const elapsedMs = Date.now() - new Date(resultDraft.createdAt).getTime();
 
-  const body = (await response.json()) as CreateGenerationResponse;
-  const payload = body.data;
-
-  if (!response.ok || body.code !== 0 || !payload) {
+  if (parsed.status !== "SUCCESS") {
     return {
-      taskId: payload?.taskId ?? null,
-      status: "failed",
-      imageUrls: payload?.imageUrls ?? [],
-      errorMessage: payload?.upstreamDetail ?? payload?.errorMessage ?? body.msg ?? "生成失败",
-      safetyStatus: payload?.safetyStatus ?? null,
-      safetyReason: payload?.safetyReason ?? null,
-      elapsedMs: payload?.elapsedMs ?? Date.now() - new Date(resultDraft.createdAt).getTime(),
+      taskId: String(submitResult.taskId),
+      status: "failed" as ResultStatus,
+      imageUrls: parsed.outputUrlList,
+      errorMessage: parsed.failMessage ?? "生成失败，请稍后重试。",
+      safetyStatus: null,
+      safetyReason: parsed.failMessage ?? null,
+      elapsedMs,
       completedAt: new Date().toISOString(),
     };
   }
 
   return {
-    taskId: payload.taskId,
-    status: "complete",
-    imageUrls: payload.imageUrls,
+    taskId: String(submitResult.taskId),
+    status: "complete" as ResultStatus,
+    imageUrls: parsed.outputUrlList,
     errorMessage: null,
     safetyStatus: null,
     safetyReason: null,
-    elapsedMs: payload.elapsedMs,
+    elapsedMs,
     completedAt: new Date().toISOString(),
   };
 }

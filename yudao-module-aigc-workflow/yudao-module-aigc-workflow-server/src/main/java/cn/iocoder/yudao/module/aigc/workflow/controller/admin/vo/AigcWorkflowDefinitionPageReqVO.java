@@ -27,4 +27,29 @@ public class AigcWorkflowDefinitionPageReqVO extends PageParam {
     @Schema(description = "分类编号", example = "1024")
     private Long categoryId;
 
+    public String getName() {
+        return name;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public AigcWorkflowDefinitionPageReqVO setStatus(String status) {
+        this.status = status;
+        return this;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
+    public Long getCategoryId() {
+        return categoryId;
+    }
+
 }

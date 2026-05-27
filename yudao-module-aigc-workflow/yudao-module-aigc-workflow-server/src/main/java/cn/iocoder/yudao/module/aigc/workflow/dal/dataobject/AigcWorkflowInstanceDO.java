@@ -38,4 +38,146 @@ public class AigcWorkflowInstanceDO extends TenantBaseDO {
     private LocalDateTime startTime;
     private LocalDateTime finishTime;
 
+    public Long getId() {
+        return id;
+    }
+
+    public AigcWorkflowInstanceDO setId(Long id) {
+        this.id = id;
+        return this;
+    }
+
+    public String getInstanceNo() {
+        return instanceNo;
+    }
+
+    public AigcWorkflowInstanceDO setInstanceNo(String instanceNo) {
+        this.instanceNo = instanceNo;
+        return this;
+    }
+
+    public Long getWorkflowId() {
+        return workflowId;
+    }
+
+    public AigcWorkflowInstanceDO setWorkflowId(Long workflowId) {
+        this.workflowId = workflowId;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setWorkflowVersionId(Long workflowVersionId) {
+        this.workflowVersionId = workflowVersionId;
+        return this;
+    }
+
+    public Long getWorkflowVersionId() {
+        return workflowVersionId;
+    }
+
+    public AigcWorkflowInstanceDO setTemplateId(Long templateId) {
+        this.templateId = templateId;
+        return this;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public AigcWorkflowInstanceDO setUserId(Long userId) {
+        this.userId = userId;
+        return this;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public AigcWorkflowInstanceDO setStatus(String status) {
+        this.status = status;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setInputData(String inputData) {
+        this.inputData = inputData;
+        return this;
+    }
+
+    public Long getMainTaskId() {
+        return mainTaskId;
+    }
+
+    public AigcWorkflowInstanceDO setMainTaskId(Long mainTaskId) {
+        this.mainTaskId = mainTaskId;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setProgress(Integer progress) {
+        this.progress = progress;
+        return this;
+    }
+
+    public Integer getProgress() {
+        return progress;
+    }
+
+    public String getInputData() {
+        return inputData;
+    }
+
+    public String getOutputData() {
+        return outputData;
+    }
+
+    public Long getFreezeId() {
+        return freezeId;
+    }
+
+    public Long getEstimateAmount() {
+        return estimateAmount;
+    }
+
+    public Long getActualAmount() {
+        return actualAmount;
+    }
+
+    public AigcWorkflowInstanceDO setOutputData(String outputData) {
+        this.outputData = outputData;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setFreezeId(Long freezeId) {
+        this.freezeId = freezeId;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setEstimateAmount(Long estimateAmount) {
+        this.estimateAmount = estimateAmount;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setActualAmount(Long actualAmount) {
+        this.actualAmount = actualAmount;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setFailReason(String failReason) {
+        this.failReason = failReason;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setFailMessage(String failMessage) {
+        this.failMessage = failMessage;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setStartTime(LocalDateTime startTime) {
+        this.startTime = startTime;
+        return this;
+    }
+
+    public AigcWorkflowInstanceDO setFinishTime(LocalDateTime finishTime) {
+        this.finishTime = finishTime;
+        return this;
+    }
+
 }

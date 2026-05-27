@@ -4,8 +4,8 @@ import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.gen.controller.admin.record.vo.AigcGenerateRecordPageReqVO;
+import cn.iocoder.yudao.module.aigc.gen.controller.admin.record.vo.AigcGenerateRecordRespVO;
 import cn.iocoder.yudao.module.aigc.gen.dal.dataobject.AigcGenerateRecordDO;
-import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateResultRespDTO;
 import cn.iocoder.yudao.module.aigc.gen.service.record.AigcGenerateRecordService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -35,17 +35,17 @@ public class AigcGenerateRecordController {
     @Operation(summary = "获取生成记录")
     @Parameter(name = "id", description = "ID", required = true)
     @PreAuthorize("@ss.hasPermission('aigc:gen:query')")
-    public CommonResult<AigcGenerateResultRespDTO> getGenerateRecord(@RequestParam("id") Long id) {
+    public CommonResult<AigcGenerateRecordRespVO> getGenerateRecord(@RequestParam("id") Long id) {
         AigcGenerateRecordDO record = generateRecordService.validateGenerateRecordExists(id);
-        return success(BeanUtils.toBean(record, AigcGenerateResultRespDTO.class));
+        return success(BeanUtils.toBean(record, AigcGenerateRecordRespVO.class));
     }
 
     @GetMapping("/page")
     @Operation(summary = "获取生成记录分页")
     @PreAuthorize("@ss.hasPermission('aigc:gen:query')")
-    public CommonResult<PageResult<AigcGenerateResultRespDTO>> getGenerateRecordPage(@Valid AigcGenerateRecordPageReqVO reqVO) {
+    public CommonResult<PageResult<AigcGenerateRecordRespVO>> getGenerateRecordPage(@Valid AigcGenerateRecordPageReqVO reqVO) {
         PageResult<AigcGenerateRecordDO> pageResult = generateRecordService.getGenerateRecordPage(reqVO);
-        return success(BeanUtils.toBean(pageResult, AigcGenerateResultRespDTO.class));
+        return success(BeanUtils.toBean(pageResult, AigcGenerateRecordRespVO.class));
     }
 
     @PostMapping("/sync")

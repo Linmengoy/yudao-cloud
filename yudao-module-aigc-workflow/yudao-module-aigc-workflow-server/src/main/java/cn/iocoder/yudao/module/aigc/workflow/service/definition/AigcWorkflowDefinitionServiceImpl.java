@@ -16,6 +16,8 @@ import org.springframework.validation.annotation.Validated;
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.WORKFLOW_DEFINITION_CODE_EXISTS;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.WORKFLOW_DEFINITION_NOT_EXISTS;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.WORKFLOW_CURRENT_VERSION_NOT_EXISTS;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.WORKFLOW_STATUS_INVALID;
 
 @Service
 @Validated
@@ -50,7 +52,10 @@ public class AigcWorkflowDefinitionServiceImpl implements AigcWorkflowDefinition
 
     @Override
     public void publishDefinition(Long id) {
-        validateDefinitionExists(id);
+        AigcWorkflowDefinitionDO definition = validateDefinitionExists(id);
+        if (definition.getCurrentVersionId() == null) {
+            throw exception(WORKFLOW_CURRENT_VERSION_NOT_EXISTS);
+        }
         definitionMapper.updateById(new AigcWorkflowDefinitionDO().setId(id).setStatus(AigcWorkflowStatusEnum.PUBLISHED.getCode()));
     }
 
@@ -70,6 +75,18 @@ public class AigcWorkflowDefinitionServiceImpl implements AigcWorkflowDefinition
         AigcWorkflowDefinitionDO definition = definitionMapper.selectById(id);
         if (definition == null) {
             throw exception(WORKFLOW_DEFINITION_NOT_EXISTS);
+        }
+        return definition;
+    }
+
+    @Override
+    public AigcWorkflowDefinitionDO validatePublishedDefinition(Long id) {
+        AigcWorkflowDefinitionDO definition = validateDefinitionExists(id);
+        if (!AigcWorkflowStatusEnum.PUBLISHED.getCode().equals(definition.getStatus())) {
+            throw exception(WORKFLOW_STATUS_INVALID);
+        }
+        if (definition.getCurrentVersionId() == null) {
+            throw exception(WORKFLOW_CURRENT_VERSION_NOT_EXISTS);
         }
         return definition;
     }

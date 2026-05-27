@@ -21,10 +21,6 @@
             <artifactId>yudao-common</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <scope>provided</scope>
@@ -40,5 +36,4 @@
             <optional>true</optional>
         </dependency>
     </dependencies>
-
 </project>

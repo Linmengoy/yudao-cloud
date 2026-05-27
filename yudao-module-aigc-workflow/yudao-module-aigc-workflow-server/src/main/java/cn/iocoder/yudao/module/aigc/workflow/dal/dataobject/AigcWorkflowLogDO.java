@@ -28,4 +28,73 @@ public class AigcWorkflowLogDO extends TenantBaseDO {
     private Long costMillis;
     private Long userId;
 
+    public Long getId() {
+        return id;
+    }
+
+    public Long getWorkflowInstanceId() {
+        return workflowInstanceId;
+    }
+
+    public Long getNodeInstanceId() {
+        return nodeInstanceId;
+    }
+
+    public String getLogType() {
+        return logType;
+    }
+
+    public String getFromStatus() {
+        return fromStatus;
+    }
+
+    public String getToStatus() {
+        return toStatus;
+    }
+
+    public AigcWorkflowLogDO setWorkflowInstanceId(Long workflowInstanceId) {
+        this.workflowInstanceId = workflowInstanceId;
+        return this;
+    }
+
+    public AigcWorkflowLogDO setNodeInstanceId(Long nodeInstanceId) {
+        this.nodeInstanceId = nodeInstanceId;
+        return this;
+    }
+
+    public AigcWorkflowLogDO setLogType(String logType) {
+        this.logType = logType;
+        return this;
+    }
+
+    public AigcWorkflowLogDO setFromStatus(String fromStatus) {
+        this.fromStatus = fromStatus;
+        return this;
+    }
+
+    public AigcWorkflowLogDO setToStatus(String toStatus) {
+        this.toStatus = toStatus;
+        return this;
+    }
+
+    public AigcWorkflowLogDO setSummary(String summary) {
+        this.summary = summary;
+        return this;
+    }
+
+    public AigcWorkflowLogDO setDetailData(String detailData) {
+        this.detailData = detailData;
+        return this;
+    }
+
+    public AigcWorkflowLogDO setCostMillis(Long costMillis) {
+        this.costMillis = costMillis;
+        return this;
+    }
+
+    public AigcWorkflowLogDO setUserId(Long userId) {
+        this.userId = userId;
+        return this;
+    }
+
 }

@@ -21,4 +21,21 @@ public class AigcWorkflowInstancePageReqVO extends PageParam {
     @Schema(description = "状态", example = "RUNNING")
     private String status;
 
+    public Long getWorkflowId() {
+        return workflowId;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public AigcWorkflowInstancePageReqVO setUserId(Long userId) {
+        this.userId = userId;
+        return this;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
 }

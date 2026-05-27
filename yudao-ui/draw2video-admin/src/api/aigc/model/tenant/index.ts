@@ -20,13 +20,12 @@ export const AigcModelTenantApi = {
     return await request.delete({ url: '/aigc/model/tenant/delete?id=' + id })
   },
   updateTenantModelStatus: async (id: number, enabled: boolean) => {
-    return await request.put({ url: '/aigc/model/tenant/status', data: { id, enabled } })
+    return await request.put({ url: '/aigc/model/tenant/status', params: { id, enabled } })
   },
   updateTenantModelVisible: async (id: number, publicVisible: boolean) => {
-    return await request.put({ url: '/aigc/model/tenant/visible', data: { id, publicVisible } })
+    return await request.put({ url: '/aigc/model/tenant/visible', params: { id, publicVisible } })
   },
   updateTenantModelDefault: async (id: number, defaultModel: boolean) => {
-    return await request.put({ url: '/aigc/model/tenant/default', data: { id, defaultModel } })
+    return await request.put({ url: '/aigc/model/tenant/default', params: { id, defaultModel } })
   }
 }
-

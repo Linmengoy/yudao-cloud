@@ -1,24 +1,27 @@
 name: yudao-micro-cicd
 
 on:
-  push:
-    branches:
-      - develop
-      - test
-      - master
-      - master-jdk17
-    tags:
-      - v*
   workflow_dispatch:
     inputs:
       service:
         description: 'Docker service to build/deploy, use all for all services'
+        type: choice
         required: false
         default: 'aigc-gen'
-      module:
-        description: 'Maven module path, empty means infer from service, all means full build'
-        required: false
-        default: ''
+        options:
+          - aigc-gen
+          - all
+          - yudao-gateway
+          - yudao-system
+          - yudao-infra
+          - yudao-member
+          - yudao-pay
+          - aigc-model
+          - aigc-billing
+          - aigc-task
+          - aigc-asset
+          - aigc-safety
+          - aigc-workflow
 
 jobs:
   build-deploy:
@@ -60,6 +63,7 @@ jobs:
               aigc-task) module="yudao-module-aigc-task/yudao-module-aigc-task-server" ;;
               aigc-asset) module="yudao-module-aigc-asset/yudao-module-aigc-asset-server" ;;
               aigc-safety) module="yudao-module-aigc-safety/yudao-module-aigc-safety-server" ;;
+              aigc-workflow) module="yudao-module-aigc-workflow/yudao-module-aigc-workflow-server" ;;
               aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
               *) echo "Unknown service: ${service}" && exit 1 ;;
             esac
@@ -92,24 +96,8 @@ jobs:
 
       - name: Deploy services
         run: |
-          deploy_env="build-only"
-          if echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
-            deploy_env="prod"
-          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
-            deploy_env="test"
-          elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
-            deploy_env="prod"
-          elif [ "${{ github.ref }}" = "refs/heads/master-jdk17" ]; then
-            deploy_env="master-jdk17"
-          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
-            deploy_env="dev"
-          fi
-
+          deploy_env="master-jdk17"
           echo "Deploy env: ${deploy_env}"
-          if [ "${deploy_env}" = "build-only" ]; then
-            echo "Skip deploy for ${{ github.ref }}"
-            exit 0
-          fi
 
           if [ "${BUILD_SERVICE}" = "all" ]; then
             docker compose -f script/docker/docker-compose-micro.yml up -d --build
@@ -119,23 +107,8 @@ jobs:
 
       - name: Verify services
         run: |
-          deploy_env="build-only"
-          if echo "${{ github.ref }}" | grep -q '^refs/tags/v'; then
-            deploy_env="prod"
-          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
-            deploy_env="test"
-          elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
-            deploy_env="prod"
-          elif [ "${{ github.ref }}" = "refs/heads/master-jdk17" ]; then
-            deploy_env="master-jdk17"
-          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
-            deploy_env="dev"
-          fi
-
-          if [ "${deploy_env}" = "build-only" ]; then
-            echo "Skip verify for ${{ github.ref }}"
-            exit 0
-          fi
+          deploy_env="master-jdk17"
+          echo "Verify env: ${deploy_env}"
 
           docker compose -f script/docker/docker-compose-micro.yml ps
           for i in $(seq 1 30); do

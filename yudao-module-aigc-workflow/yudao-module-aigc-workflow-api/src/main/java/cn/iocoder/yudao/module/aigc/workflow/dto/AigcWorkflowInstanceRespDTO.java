@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Schema(description = "RPC 服务 - AIGC 工作流实例 Response DTO")
 @Data
@@ -64,5 +65,8 @@ public class AigcWorkflowInstanceRespDTO {
 
     @Schema(description = "结束时间")
     private LocalDateTime finishTime;
+
+    @Schema(description = "节点实例列表")
+    private List<AigcWorkflowNodeInstanceRespDTO> nodeInstances;
 
 }

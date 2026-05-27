@@ -7,6 +7,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowUp, Loader2, Sparkles, Text, X } from "lucide-react";
 import type { TextNodeData } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
+import { generationApi } from "@/features/generation/generation-api";
+import { waitGenerationResult } from "@/features/generation/generation-poll";
 import { cn } from "@/lib/utils";
 
 type TextNodeProps = NodeProps<Node<TextNodeData, "text">>;
@@ -15,14 +17,6 @@ const MIN_WIDTH = 220;
 const MIN_HEIGHT = 160;
 const DEFAULT_MODEL = "Gemini 3.1 Flash Lite";
 const COMPOSER_WIDTH = 620;
-
-function mockTextGeneration(prompt: string, previous: string) {
-  const base = prompt.trim() || "生成一段文本";
-  if (previous.trim()) {
-    return `${previous.trim()}\n\n${base}`;
-  }
-  return `# ${base}\n\n这是一段根据提示生成的文本草稿。你可以双击文本卡片继续编辑，也可以拖拽右下角调整卡片大小。`;
-}
 
 export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProps) {
   const { setNodes } = useReactFlow();
@@ -62,14 +56,54 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
     const prompt = data.prompt.trim();
     if (!prompt || isGenerating) return;
 
-    updateData({ status: "pending", errorMessage: null });
-    await new Promise((resolve) => window.setTimeout(resolve, 1200));
-    updateData({
-      status: "idle",
-      content: mockTextGeneration(prompt, data.content),
-      updatedAt: new Date().toISOString(),
-    });
-  }, [data.content, data.prompt, isGenerating, updateData]);
+    if (!data.aigcModelId) {
+      updateData({ status: "failed", errorMessage: "请选择 AIGC 文本模型后再生成。" });
+      return;
+    }
+
+    const startedAt = new Date().toISOString();
+    updateData({ status: "pending", taskId: null, errorMessage: null, generationStartedAt: startedAt, generationCompletedAt: null, elapsedMs: null });
+
+    try {
+      const submit = await generationApi.generateText({
+        modelId: data.aigcModelId,
+        prompt,
+        inputParams: JSON.stringify({ previousContent: data.content }),
+        sync: false,
+      });
+      const result = await waitGenerationResult(submit.taskId);
+      const completedAt = result.finishTime ?? new Date().toISOString();
+
+      if (result.status === "SUCCESS") {
+        updateData({
+          status: "idle",
+          taskId: String(submit.taskId),
+          content: result.outputText ?? String(result.outputDataValue ?? ""),
+          errorMessage: null,
+          updatedAt: completedAt,
+          generationCompletedAt: completedAt,
+          elapsedMs: Date.now() - new Date(startedAt).getTime(),
+        });
+        return;
+      }
+
+      updateData({
+        status: "failed",
+        taskId: String(submit.taskId),
+        errorMessage: result.failMessage ?? "文本生成失败，请稍后重试。",
+        generationCompletedAt: completedAt,
+        elapsedMs: Date.now() - new Date(startedAt).getTime(),
+      });
+    } catch (error) {
+      updateData({
+        status: "failed",
+        taskId: null,
+        errorMessage: error instanceof Error ? error.message : "文本生成失败，请稍后重试。",
+        generationCompletedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - new Date(startedAt).getTime(),
+      });
+    }
+  }, [data.aigcModelId, data.content, data.prompt, isGenerating, updateData]);
 
   useEffect(() => {
     if (!resizing) return;

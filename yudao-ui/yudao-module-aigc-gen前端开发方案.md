@@ -62,6 +62,14 @@
 | 生成回调分页 | GET | `/aigc/gen/callback/page` | `aigc:gen:query` |
 | 渠道调用日志分页 | GET | `/aigc/gen/provider-log/page` | `aigc:gen:query` |
 
+管理端生成记录接口必须返回管理端专用响应对象，不能复用用户端结果查询 DTO。
+
+```text
+yudao-module-aigc-gen-server/src/main/java/cn/iocoder/yudao/module/aigc/gen/controller/admin/record/vo/AigcGenerateRecordRespVO.java
+```
+
+原因：用户端 `AigcGenerateResultRespDTO` 只覆盖结果查询字段，不包含管理端列表和详情所需的用户、模型、渠道、计费、提交时间、回调时间和内部失败原因等排障字段。管理端 `/get` 与 `/page` 应返回 `AigcGenerateRecordRespVO`，确保前端生成记录页面字段完整。
+
 ## 4. 核心数据模型
 
 ### 4.1 生成提交请求
@@ -120,6 +128,48 @@
 - 计费快照：`freezeId`、`priceAmount`、`costAmount`
 - 时间节点：`submitTime`、`callbackTime`、`finishTime`
 - 失败信息：`failReason`、`failMessage`
+
+管理端响应 VO 要求：
+
+```text
+AigcGenerateRecordRespVO
+  ├── id
+  ├── taskId
+  ├── userId
+  ├── generateNo
+  ├── clientRequestId
+  ├── generateType
+  ├── generateMode
+  ├── modelId
+  ├── modelCode
+  ├── providerId
+  ├── providerCode
+  ├── providerTaskId
+  ├── providerStatus
+  ├── status
+  ├── prompt
+  ├── inputParams
+  ├── outputText
+  ├── outputData
+  ├── outputUrls
+  ├── assetIds
+  ├── freezeId
+  ├── priceAmount
+  ├── costAmount
+  ├── submitTime
+  ├── callbackTime
+  ├── finishTime
+  ├── failReason
+  ├── failMessage
+  └── createTime
+```
+
+实现要求：
+
+- 管理端生成记录 `/get` 返回 `CommonResult<AigcGenerateRecordRespVO>`。
+- 管理端生成记录 `/page` 返回 `CommonResult<PageResult<AigcGenerateRecordRespVO>>`。
+- `AigcGenerateRecordRespVO` 与 `AigcGenerateRecordDO` 字段名保持一致，便于 `BeanUtils.toBean` 转换。
+- 用户端 `/app-api/aigc/gen/result?taskId=` 继续返回 `AigcGenerateResultRespDTO`，避免向用户端泄露成本价、渠道编码、内部失败原因等管理端字段。
 
 ## 5. 用户端开发方案
 
@@ -315,11 +365,23 @@ VideoNode 显示队列中、运行中、成功、失败
 | 后端状态 | 用户端文案 | UI 表现 |
 | --- | --- | --- |
 | `CREATED` | 已创建 | 普通等待 |
+| `SUBMITTING` | 提交中 | loading |
 | `SUBMITTED` | 已提交 | 等待渠道响应 |
 | `RUNNING` | 生成中 | 进度条或 loading |
+| `CALLBACK_WAITING` | 等待回调 | 进度条或 loading |
+| `SYNCING` | 同步中 | 进度条或 loading |
+| `DOWNLOADING` | 下载中 | 进度条或 loading |
+| `ASSET_CREATING` | 资产创建中 | 进度条或 loading |
 | `SUCCESS` | 已完成 | 展示结果 |
 | `FAILED` | 生成失败 | 展示 `failMessage` |
-| `CANCELED` | 已取消 | 灰色终态 |
+| `CANCELLED` | 已取消 | 灰色终态 |
+
+用户端轮询规则：
+
+- `SUCCESS`、`FAILED`、`CANCELLED`、兼容拼写 `CANCELED` 为终态，停止轮询。
+- 其他状态均视为非终态，继续轮询生成结果。
+- 不要只轮询 `CREATED`、`SUBMITTED`、`RUNNING`，因为后端异步提交后会进入 `CALLBACK_WAITING`，同步补偿时会进入 `SYNCING`，文件结果处理时可能进入 `DOWNLOADING`、`ASSET_CREATING`。
+- 用户端 `generation-status.ts` 应以“非终态继续轮询”为默认策略，避免后端新增中间态后前端提前停止刷新。
 
 如果任务真实状态来自 `aigc-task`，则 `aigc-gen.status` 只作为结果层辅助展示，进度和取消以 `aigc-task` 为准。
 
@@ -686,13 +748,18 @@ POST /app-api/aigc/gen/image/text-to-image
 | 值 | 管理端文案 | 用户端文案 |
 | --- | --- | --- |
 | `CREATED` | 已创建 | 已创建 |
-| `SUBMITTED` | 已提交渠道 | 排队中 |
-| `RUNNING` | 渠道处理中 | 生成中 |
+| `SUBMITTING` | 提交中 | 提交中 |
+| `SUBMITTED` | 已提交 | 已提交 |
+| `RUNNING` | 运行中 | 生成中 |
+| `CALLBACK_WAITING` | 等待回调 | 等待回调 |
+| `SYNCING` | 同步中 | 同步中 |
+| `DOWNLOADING` | 下载中 | 下载中 |
+| `ASSET_CREATING` | 资产创建中 | 资产创建中 |
 | `SUCCESS` | 成功 | 已完成 |
 | `FAILED` | 失败 | 生成失败 |
-| `CANCELED` | 已取消 | 已取消 |
+| `CANCELLED` | 已取消 | 已取消 |
 
-实际枚举应以后端 `AigcGenerateStatusEnum` 为准；如果后端状态更多，前端需要在 `utils.ts` 中统一维护，不在页面硬编码。
+实际枚举应以后端 `AigcGenerateStatusEnum` 为准；前端需要在 `draw2video-admin/src/views/aigc/gen/utils.ts` 和 `draw2video-client/src/features/generation/generation-status.ts` 中统一维护，不在页面硬编码。用户端应采用“非终态继续轮询”的策略，管理端筛选项应列出所有后端状态。
 
 ## 9. 安全与隐私要求
 
@@ -735,6 +802,7 @@ POST /app-api/aigc/gen/image/text-to-image
 - 生成中状态不阻塞整个画布，只影响当前节点。
 - 失败时展示用户可理解的 `failMessage`。
 - 提交后可以通过任务列表和任务详情查看进度。
+- 生成结果轮询覆盖所有非终态：`CREATED`、`SUBMITTING`、`SUBMITTED`、`RUNNING`、`CALLBACK_WAITING`、`SYNCING`、`DOWNLOADING`、`ASSET_CREATING` 均不会提前停止刷新。
 - 不在用户端展示成本价、渠道商密钥、第三方任务原始信息。
 - UI 符合暖色、安静、紧凑的 Copse 工作区风格。
 
@@ -742,6 +810,7 @@ POST /app-api/aigc/gen/image/text-to-image
 
 - 生成记录支持分页、筛选、详情查看。
 - 生成详情可查看 prompt、inputParams、outputData、outputUrls、assetIds、计费快照和失败信息。
+- 管理端生成记录 `/get` 和 `/page` 返回 `AigcGenerateRecordRespVO`，页面展示的用户、模型、渠道、计费、时间节点和失败原因字段不为空。
 - 可对指定 `taskId` 执行同步第三方任务，并有二次确认。
 - 回调记录支持分页和原始回调详情查看。
 - 渠道调用日志支持分页和请求/响应摘要查看。
@@ -754,6 +823,8 @@ POST /app-api/aigc/gen/image/text-to-image
 管理端：
 
 ```text
+yudao-module-aigc-gen/yudao-module-aigc-gen-server/src/main/java/cn/iocoder/yudao/module/aigc/gen/controller/admin/record/vo/AigcGenerateRecordRespVO.java
+
 draw2video-admin/src/api/aigc/gen/types.ts
 draw2video-admin/src/api/aigc/gen/record/index.ts
 draw2video-admin/src/api/aigc/gen/callback/index.ts

@@ -31,4 +31,69 @@ public class AigcWorkflowDefinitionDO extends TenantBaseDO {
     private String config;
     private Long creatorUserId;
 
+    public Long getId() {
+        return id;
+    }
+
+    public AigcWorkflowDefinitionDO setId(Long id) {
+        this.id = id;
+        return this;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public Long getCategoryId() {
+        return categoryId;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
+    public Long getCurrentVersionId() {
+        return currentVersionId;
+    }
+
+    public String getInputSchema() {
+        return inputSchema;
+    }
+
+    public String getOutputSchema() {
+        return outputSchema;
+    }
+
+    public String getConfig() {
+        return config;
+    }
+
+    public AigcWorkflowDefinitionDO setStatus(String status) {
+        this.status = status;
+        return this;
+    }
+
+    public AigcWorkflowDefinitionDO setVisibility(String visibility) {
+        this.visibility = visibility;
+        return this;
+    }
+
+    public AigcWorkflowDefinitionDO setCreatorUserId(Long creatorUserId) {
+        this.creatorUserId = creatorUserId;
+        return this;
+    }
+
+    public AigcWorkflowDefinitionDO setCurrentVersionId(Long currentVersionId) {
+        this.currentVersionId = currentVersionId;
+        return this;
+    }
+
 }

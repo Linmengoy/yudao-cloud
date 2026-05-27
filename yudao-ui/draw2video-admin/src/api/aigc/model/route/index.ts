@@ -27,7 +27,6 @@ export const AigcModelRouteApi = {
     return await request.delete({ url: '/aigc/model/route/delete?id=' + id })
   },
   updateRouteStatus: async (id: number, status: number) => {
-    return await request.put({ url: '/aigc/model/route/status', data: { id, status } })
+    return await request.put({ url: '/aigc/model/route/status', params: { id, status } })
   }
 }
-

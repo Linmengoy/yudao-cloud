@@ -34,7 +34,7 @@ export const AIGC_BILLING_UNITS = [
 ]
 
 export const AIGC_ROUTE_STRATEGIES = [
-  { label: '固定模型', value: 'FIXED' },
+  { label: '固定模型', value: 'FIXED_MODEL' },
   { label: '最低成本', value: 'LOWEST_COST' },
   { label: '最高成功率', value: 'HIGHEST_SUCCESS_RATE' },
   { label: '最快响应', value: 'FASTEST_RESPONSE' },
@@ -59,4 +59,3 @@ export const AIGC_HEALTH_STATUSES = [
 export const getOptionLabel = (options: Array<{ label: string; value: string | number }>, value?: string | number) => {
   return options.find((item) => item.value === value)?.label || value || '-'
 }
-

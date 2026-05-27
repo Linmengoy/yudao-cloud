@@ -103,10 +103,17 @@ export interface TextNodeData {
   content: string;
   prompt: string;
   modelId: string;
+  providerModel?: string;
+  modelName?: string;
+  aigcModelId?: number;
   status: "idle" | "pending" | "failed";
+  taskId?: string | null;
   errorMessage?: string | null;
   safetyStatus?: string | null;
   safetyReason?: string | null;
+  generationStartedAt?: string | null;
+  generationCompletedAt?: string | null;
+  elapsedMs?: number | null;
   width: number;
   height: number;
   createdAt: string;
@@ -130,6 +137,8 @@ export interface VideoNodeData {
   prompt: string;
   provider?: "seedance" | "wan";
   modelId: string;
+  providerModel?: string;
+  aigcModelId?: number;
   modelName: string;
   status: "idle" | "pending" | "complete" | "failed";
   taskId?: string | null;
@@ -145,6 +154,7 @@ export interface VideoNodeData {
   watermark: boolean;
   createdAt: string;
   generationStartedAt?: string | null;
+  generationCompletedAt?: string | null;
   generationRunStartedAt?: string | null;
   elapsedMs?: number | null;
   upstreamStatus?: string | null;

@@ -17,4 +17,29 @@ public interface AigcWorkflowEdgeMapper extends BaseMapperX<AigcWorkflowEdgeDO> 
                 .orderByAsc(AigcWorkflowEdgeDO::getId));
     }
 
+    default List<AigcWorkflowEdgeDO> selectDraftList(Long workflowId) {
+        return selectList(new LambdaQueryWrapperX<AigcWorkflowEdgeDO>()
+                .eq(AigcWorkflowEdgeDO::getWorkflowId, workflowId)
+                .isNull(AigcWorkflowEdgeDO::getVersionId)
+                .orderByAsc(AigcWorkflowEdgeDO::getId));
+    }
+
+    default AigcWorkflowEdgeDO selectByEdgeKey(Long workflowId, Long versionId, String edgeKey) {
+        LambdaQueryWrapperX<AigcWorkflowEdgeDO> wrapper = new LambdaQueryWrapperX<AigcWorkflowEdgeDO>()
+                .eq(AigcWorkflowEdgeDO::getWorkflowId, workflowId)
+                .eq(AigcWorkflowEdgeDO::getEdgeKey, edgeKey);
+        if (versionId == null) {
+            wrapper.isNull(AigcWorkflowEdgeDO::getVersionId);
+        } else {
+            wrapper.eq(AigcWorkflowEdgeDO::getVersionId, versionId);
+        }
+        return selectOne(wrapper);
+    }
+
+    default int deleteDraftByWorkflowId(Long workflowId) {
+        return delete(new LambdaQueryWrapperX<AigcWorkflowEdgeDO>()
+                .eq(AigcWorkflowEdgeDO::getWorkflowId, workflowId)
+                .isNull(AigcWorkflowEdgeDO::getVersionId));
+    }
+
 }

@@ -1,7 +1,6 @@
 package cn.iocoder.yudao.module.aigc.workflow.api;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
-import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.workflow.dto.AigcWorkflowCancelReqDTO;
 import cn.iocoder.yudao.module.aigc.workflow.dto.AigcWorkflowCostEstimateReqDTO;
 import cn.iocoder.yudao.module.aigc.workflow.dto.AigcWorkflowCostEstimateRespDTO;
@@ -31,7 +30,7 @@ public class AigcWorkflowApiImpl implements AigcWorkflowApi {
 
     @Override
     public CommonResult<AigcWorkflowInstanceRespDTO> getInstance(Long instanceId) {
-        return success(BeanUtils.toBean(workflowInstanceService.validateInstanceExists(instanceId), AigcWorkflowInstanceRespDTO.class));
+        return success(workflowInstanceService.getInstanceDetail(instanceId));
     }
 
     @Override

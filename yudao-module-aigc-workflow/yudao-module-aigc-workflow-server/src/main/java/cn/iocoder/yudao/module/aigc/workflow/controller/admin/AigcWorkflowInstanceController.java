@@ -45,7 +45,7 @@ public class AigcWorkflowInstanceController {
     @Parameter(name = "id", description = "实例编号", required = true)
     @PreAuthorize("@ss.hasPermission('aigc:workflow:query')")
     public CommonResult<AigcWorkflowInstanceRespDTO> getInstance(@RequestParam("id") Long id) {
-        return success(BeanUtils.toBean(instanceService.validateInstanceExists(id), AigcWorkflowInstanceRespDTO.class));
+        return success(instanceService.getInstanceDetail(id));
     }
 
     @PostMapping("/retry-node")

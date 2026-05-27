@@ -53,7 +53,7 @@ public class AigcWorkflowAppController {
     @Operation(summary = "工作流详情")
     @Parameter(name = "id", description = "工作流编号", required = true)
     public CommonResult<AigcWorkflowDefinitionRespDTO> getWorkflow(@RequestParam("id") Long id) {
-        return success(BeanUtils.toBean(definitionService.validateDefinitionExists(id), AigcWorkflowDefinitionRespDTO.class));
+        return success(BeanUtils.toBean(definitionService.validatePublishedDefinition(id), AigcWorkflowDefinitionRespDTO.class));
     }
 
     @PostMapping("/estimate")
@@ -72,7 +72,7 @@ public class AigcWorkflowAppController {
     @Operation(summary = "实例详情")
     @Parameter(name = "id", description = "实例编号", required = true)
     public CommonResult<AigcWorkflowInstanceRespDTO> getInstance(@RequestParam("id") Long id) {
-        return success(BeanUtils.toBean(instanceService.validateInstanceExists(id), AigcWorkflowInstanceRespDTO.class));
+        return success(instanceService.getUserInstanceDetail(id, getLoginUserId()));
     }
 
     @GetMapping("/instance/page")
@@ -84,7 +84,7 @@ public class AigcWorkflowAppController {
     @PostMapping("/instance/cancel")
     @Operation(summary = "取消执行")
     public CommonResult<Boolean> cancel(@Valid @RequestBody AigcWorkflowCancelReqDTO reqDTO) {
-        instanceService.cancel(reqDTO);
+        instanceService.cancelUserInstance(reqDTO, getLoginUserId());
         return success(true);
     }
 

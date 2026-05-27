@@ -26,4 +26,56 @@ public class AigcWorkflowVersionDO extends TenantBaseDO {
     private String edgeSnapshot;
     private String status;
 
+    public Long getId() {
+        return id;
+    }
+
+    public AigcWorkflowVersionDO setId(Long id) {
+        this.id = id;
+        return this;
+    }
+
+    public Long getWorkflowId() {
+        return workflowId;
+    }
+
+    public AigcWorkflowVersionDO setWorkflowId(Long workflowId) {
+        this.workflowId = workflowId;
+        return this;
+    }
+
+    public Integer getVersionNo() {
+        return versionNo;
+    }
+
+    public AigcWorkflowVersionDO setVersionNo(Integer versionNo) {
+        this.versionNo = versionNo;
+        return this;
+    }
+
+    public AigcWorkflowVersionDO setVersionName(String versionName) {
+        this.versionName = versionName;
+        return this;
+    }
+
+    public AigcWorkflowVersionDO setDefinitionSnapshot(String definitionSnapshot) {
+        this.definitionSnapshot = definitionSnapshot;
+        return this;
+    }
+
+    public AigcWorkflowVersionDO setNodeSnapshot(String nodeSnapshot) {
+        this.nodeSnapshot = nodeSnapshot;
+        return this;
+    }
+
+    public AigcWorkflowVersionDO setEdgeSnapshot(String edgeSnapshot) {
+        this.edgeSnapshot = edgeSnapshot;
+        return this;
+    }
+
+    public AigcWorkflowVersionDO setStatus(String status) {
+        this.status = status;
+        return this;
+    }
+
 }

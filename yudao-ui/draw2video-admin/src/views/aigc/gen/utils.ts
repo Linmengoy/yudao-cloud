@@ -19,11 +19,15 @@ export const generateModeOptions = [
 
 export const generateStatusOptions = [
   { label: '已创建', value: 'CREATED' },
-  { label: '已提交渠道', value: 'SUBMITTED' },
+  { label: '提交中', value: 'SUBMITTING' },
+  { label: '已提交', value: 'SUBMITTED' },
   { label: '运行中', value: 'RUNNING' },
+  { label: '等待回调', value: 'CALLBACK_WAITING' },
+  { label: '同步中', value: 'SYNCING' },
+  { label: '下载中', value: 'DOWNLOADING' },
+  { label: '资产创建中', value: 'ASSET_CREATING' },
   { label: '成功', value: 'SUCCESS' },
   { label: '失败', value: 'FAILED' },
-  { label: '已取消', value: 'CANCELED' },
   { label: '已取消', value: 'CANCELLED' }
 ]
 

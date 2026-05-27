@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import type { AppEdge, AppNode, ImageNodeData, ReferencePickerEventDetail, VideoNodeData } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
+import { generationApi } from "@/features/generation/generation-api";
+import { waitGenerationResult } from "@/features/generation/generation-poll";
 import { cn } from "@/lib/utils";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
@@ -46,16 +48,12 @@ function formatElapsed(ms: number | null | undefined) {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function isFailedStatus(status: string | undefined) {
-  return status === "failed" || status === "error" || status === "cancelled";
-}
-
 function isQueuedStatus(status: string | null | undefined) {
-  return status === "queued";
+  return status === "queued" || status === "CREATED" || status === "SUBMITTING" || status === "SUBMITTED" || status === "CALLBACK_WAITING";
 }
 
 function isRunningStatus(status: string | null | undefined) {
-  return status === "running" || status === "processing" || status === "submitted";
+  return status === "running" || status === "processing" || status === "submitted" || status === "RUNNING" || status === "SYNCING" || status === "DOWNLOADING" || status === "ASSET_CREATING";
 }
 
 function getRunElapsedMs(runStartedAt: string | null | undefined, fallbackStartedAtMs: number) {
@@ -221,93 +219,6 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   }, [isRunning]);
 
   useEffect(() => {
-    if (!isGenerating || !data.taskId) return;
-    let cancelled = false;
-    let timeoutId: number | undefined;
-
-    async function pollTask() {
-      try {
-        const taskId = data.taskId ?? "";
-        const pollUrl = taskId.startsWith("wan:")
-          ? `/app-api/ai/video/wan/task/${encodeURIComponent(taskId.slice(4))}`
-          : `/app-api/ai/video/generation/task/${encodeURIComponent(taskId)}`;
-        const response = await fetch(pollUrl, {
-          cache: "no-store",
-        });
-        const body = (await response.json()) as {
-          code: number;
-          msg: string;
-          data?: {
-            status?: string;
-            videoUrl?: string | null;
-            errorMessage?: string | null;
-            upstreamDetail?: string;
-          } | null;
-        };
-
-        if (cancelled) return;
-        if (!response.ok || body.code !== 0) {
-          throw new Error(body.data?.upstreamDetail ?? body.data?.errorMessage ?? body.msg ?? "视频任务查询失败");
-        }
-
-        const status = body.data?.status;
-        const videoUrl = body.data?.videoUrl;
-        const nextPatch: Partial<VideoNodeData> = {
-          upstreamStatus: status ?? null,
-        };
-        let runStartedAt = data.generationRunStartedAt ?? null;
-        let runStartedAtMs = startedAtMs;
-        if (isRunningStatus(status) && !runStartedAt) {
-          const nextRunStartedAt = new Date().toISOString();
-          runStartedAtMs = Date.now();
-          setStartedAtMs(runStartedAtMs);
-          setNow(runStartedAtMs);
-          nextPatch.generationRunStartedAt = nextRunStartedAt;
-          runStartedAt = nextRunStartedAt;
-        }
-        if (videoUrl) {
-          updateData({
-            status: "complete",
-            kind: "generated",
-            videoUrl,
-            errorMessage: null,
-            upstreamStatus: status ?? "complete",
-            elapsedMs: getRunElapsedMs(runStartedAt, runStartedAtMs),
-          });
-          return;
-        }
-        if (isFailedStatus(status)) {
-          updateData({
-            status: "failed",
-            errorMessage: body.data?.errorMessage ?? "视频生成失败",
-            upstreamStatus: status ?? "failed",
-            elapsedMs: getRunElapsedMs(runStartedAt, runStartedAtMs),
-          });
-          return;
-        }
-        updateData(nextPatch);
-      } catch (error) {
-        if (cancelled) return;
-        updateData({
-          status: "failed",
-          errorMessage: error instanceof Error ? error.message : "视频任务查询失败",
-          upstreamStatus: "failed",
-          elapsedMs: getRunElapsedMs(data.generationRunStartedAt, startedAtMs),
-        });
-        return;
-      }
-
-      timeoutId = window.setTimeout(pollTask, 5000);
-    }
-
-    timeoutId = window.setTimeout(pollTask, 3000);
-    return () => {
-      cancelled = true;
-      if (timeoutId) window.clearTimeout(timeoutId);
-    };
-  }, [data.generationRunStartedAt, data.taskId, isGenerating, startedAtMs, updateData]);
-
-  useEffect(() => {
     if (!selected && pickerActiveForThisNode) {
       window.dispatchEvent(new CustomEvent<ReferencePickerEventDetail>("copse:reference-picker", {
         detail: { promptId: null },
@@ -362,79 +273,87 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     const prompt = data.prompt.trim();
     if (!prompt || isGenerating) return;
 
+    if (!data.aigcModelId) {
+      updateData({ status: "failed", errorMessage: "请选择 AIGC 视频模型后再生成。", upstreamStatus: "failed" });
+      return;
+    }
+
     const startedAt = new Date().toISOString();
-    setStartedAtMs(0);
-    setNow(0);
+    const runStartedAtMs = Date.now();
+    setStartedAtMs(runStartedAtMs);
+    setNow(runStartedAtMs);
     updateData({
       status: "pending",
       errorMessage: null,
       taskId: null,
       generationStartedAt: startedAt,
-      generationRunStartedAt: null,
-      upstreamStatus: "submitting",
+      generationRunStartedAt: startedAt,
+      generationCompletedAt: null,
+      upstreamStatus: "SUBMITTING",
       elapsedMs: null,
     });
 
     try {
-      const response = await fetch(isWanModel ? "/app-api/ai/video/wan/task/create" : "/app-api/ai/video/generation/task/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(isWanModel
-          ? {
-              prompt,
-              referenceImage: referenceImages.map((image) => image.data.dataUrl).filter(Boolean)[0],
-              size: data.size ?? "1280*704",
-            }
-          : {
-              model: SEEDANCE_MODEL_ID,
-              prompt,
-              referenceImages: referenceImages.map((image) => image.data.dataUrl).filter(Boolean),
-              ratio: data.ratio,
-              duration: data.duration,
-              generateAudio: data.generateAudio,
-              watermark: data.watermark,
-            }),
+      const submit = await generationApi.submit({
+        generateType: "VIDEO",
+        generateMode: referenceImages.length > 0 ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO",
+        modelId: data.aigcModelId,
+        prompt,
+        inputParams: JSON.stringify({
+          providerModel: data.providerModel ?? data.modelId,
+          ratio: data.ratio,
+          resolution: data.resolution,
+          duration: data.duration,
+          size: data.size,
+          generateAudio: data.generateAudio,
+          watermark: data.watermark,
+          referenceImages: referenceImages.map((image) => image.data.dataUrl).filter(Boolean),
+        }),
+        sync: false,
       });
-      const body = (await response.json()) as {
-        code: number;
-        msg: string;
-        data?: {
-          taskId?: string | null;
-          status?: string;
-          elapsedMs?: number;
-          errorMessage?: string;
-          upstreamDetail?: string;
-        } | null;
-      };
+      updateData({
+        status: "pending",
+        taskId: String(submit.taskId),
+        upstreamStatus: submit.status,
+        elapsedMs: null,
+      });
 
-      if (!response.ok || body.code !== 0) {
-        throw new Error(body.data?.upstreamDetail ?? body.data?.errorMessage ?? body.msg ?? "视频任务提交失败");
-      }
+      const result = await waitGenerationResult(submit.taskId);
+      const completedAt = result.finishTime ?? new Date().toISOString();
+      const videoUrl = result.outputUrlList[0];
 
-      const createStatus = body.data?.status ?? (isWanModel ? "queued" : "submitted");
-      const runStartedAt = isRunningStatus(createStatus) ? new Date().toISOString() : null;
-      const runStartedAtMs = runStartedAt ? Date.now() : 0;
-      if (runStartedAtMs > 0) {
-        setStartedAtMs(runStartedAtMs);
-        setNow(runStartedAtMs);
+      if (result.status === "SUCCESS" && videoUrl) {
+        updateData({
+          status: "complete",
+          kind: "generated",
+          taskId: String(submit.taskId),
+          videoUrl,
+          errorMessage: null,
+          upstreamStatus: result.status,
+          generationCompletedAt: completedAt,
+          elapsedMs: Date.now() - new Date(startedAt).getTime(),
+        });
+        return;
       }
 
       updateData({
-        status: "pending",
-        taskId: body.data?.taskId ?? null,
-        generationRunStartedAt: runStartedAt,
-        upstreamStatus: createStatus,
-        elapsedMs: null,
+        status: "failed",
+        taskId: String(submit.taskId),
+        errorMessage: result.failMessage ?? "视频生成失败，请稍后重试。",
+        upstreamStatus: result.status,
+        generationCompletedAt: completedAt,
+        elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     } catch (error) {
       updateData({
         status: "failed",
         errorMessage: error instanceof Error ? error.message : "视频任务提交失败",
-        upstreamStatus: "failed",
-        elapsedMs: null,
+        upstreamStatus: "FAILED",
+        generationCompletedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [data.duration, data.generateAudio, data.prompt, data.ratio, data.size, data.watermark, isGenerating, isWanModel, referenceImages, updateData]);
+  }, [data.aigcModelId, data.duration, data.generateAudio, data.modelId, data.prompt, data.providerModel, data.ratio, data.resolution, data.size, data.watermark, isGenerating, referenceImages, updateData]);
 
   return (
     <div className="relative" style={{ width: CARD_WIDTH }}>

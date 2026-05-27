@@ -2,7 +2,20 @@ export type GenerateType = "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "CODE" | "DOCU
 
 export type GenerateMode = "TEXT_GENERATE" | "TEXT_TO_IMAGE" | "IMAGE_TO_IMAGE" | "TEXT_TO_VIDEO" | "IMAGE_TO_VIDEO" | string;
 
-export type GenerateStatus = "CREATED" | "SUBMITTED" | "RUNNING" | "SUCCESS" | "FAILED" | "CANCELED" | "CANCELLED" | string;
+export type GenerateStatus =
+  | "CREATED"
+  | "SUBMITTING"
+  | "SUBMITTED"
+  | "RUNNING"
+  | "CALLBACK_WAITING"
+  | "SYNCING"
+  | "DOWNLOADING"
+  | "ASSET_CREATING"
+  | "SUCCESS"
+  | "FAILED"
+  | "CANCELED"
+  | "CANCELLED"
+  | string;
 
 export type GenerateSubmitRequest = {
   clientRequestId?: string;

@@ -1,10 +1,9 @@
 import type { GenerateStatus } from "./generation-types";
 
-const pollingStatuses = new Set(["CREATED", "SUBMITTED", "RUNNING"]);
 const terminalStatuses = new Set(["SUCCESS", "FAILED", "CANCELED", "CANCELLED"]);
 
 export function shouldPollGeneration(status?: GenerateStatus | string) {
-  return Boolean(status && pollingStatuses.has(status));
+  return Boolean(status && !terminalStatuses.has(status));
 }
 
 export function isGenerationTerminal(status?: GenerateStatus | string) {
@@ -15,10 +14,20 @@ export function getGenerationStatusLabel(status?: GenerateStatus | string) {
   switch (status) {
     case "CREATED":
       return "已创建";
+    case "SUBMITTING":
+      return "提交中";
     case "SUBMITTED":
-      return "排队中";
+      return "已提交";
     case "RUNNING":
       return "生成中";
+    case "CALLBACK_WAITING":
+      return "等待回调";
+    case "SYNCING":
+      return "同步中";
+    case "DOWNLOADING":
+      return "下载中";
+    case "ASSET_CREATING":
+      return "资产创建中";
     case "SUCCESS":
       return "已完成";
     case "FAILED":

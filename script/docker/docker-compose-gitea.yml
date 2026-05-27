@@ -2,7 +2,7 @@ name: yudao-gitea-cicd
 
 services:
   gitea:
-    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/gitea/gitea:1.22.6
+    image: ${GITEA_IMAGE:-m.daocloud.io/docker.io/gitea/gitea:1.26.2}
     container_name: yudao-gitea
     restart: always
     environment:
@@ -26,7 +26,7 @@ services:
       - yudao-network
 
   gitea-runner:
-    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/gitea/act_runner:0.2.11
+    image: ${GITEA_RUNNER_IMAGE:-m.daocloud.io/docker.io/gitea/runner:1.0.6}
     container_name: yudao-gitea-runner
     restart: always
     depends_on:

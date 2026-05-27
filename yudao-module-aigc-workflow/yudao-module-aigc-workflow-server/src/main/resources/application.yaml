@@ -26,6 +26,11 @@ spring:
     redis:
       time-to-live: 1h
 
+  data:
+    redis:
+      repositories:
+        enabled: false
+
 server:
   port: 48096
 
@@ -62,12 +67,6 @@ mybatis-plus:
 
 mybatis-plus-join:
   banner: false
-
-spring:
-  data:
-    redis:
-      repositories:
-        enabled: false
 
 easy-trans:
   is-enable-global: false

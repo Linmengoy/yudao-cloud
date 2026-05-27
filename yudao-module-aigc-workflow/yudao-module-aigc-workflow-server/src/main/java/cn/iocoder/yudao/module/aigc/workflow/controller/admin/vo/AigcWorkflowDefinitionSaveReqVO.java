@@ -40,4 +40,16 @@ public class AigcWorkflowDefinitionSaveReqVO {
     @Schema(description = "工作流配置 JSON")
     private String config;
 
+    public Long getId() {
+        return id;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
 }

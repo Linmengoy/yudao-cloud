@@ -16,5 +16,11 @@ public interface ErrorCodeConstants {
     ErrorCode WORKFLOW_NODE_TYPE_UNSUPPORTED = new ErrorCode(1_046_000_009, "工作流节点类型不支持");
     ErrorCode WORKFLOW_NO_EXECUTABLE_NODE = new ErrorCode(1_046_000_010, "工作流没有可执行节点");
     ErrorCode WORKFLOW_NO_PERMISSION = new ErrorCode(1_046_000_011, "无权访问该工作流");
+    ErrorCode WORKFLOW_CURRENT_VERSION_NOT_EXISTS = new ErrorCode(1_046_000_012, "工作流当前版本不存在");
+    ErrorCode WORKFLOW_VERSION_NODE_EMPTY = new ErrorCode(1_046_000_013, "工作流版本没有节点");
+    ErrorCode WORKFLOW_EDGE_NOT_EXISTS = new ErrorCode(1_046_000_014, "工作流连线不存在");
+    ErrorCode WORKFLOW_NODE_KEY_EXISTS = new ErrorCode(1_046_000_015, "工作流节点键已存在");
+    ErrorCode WORKFLOW_EDGE_KEY_EXISTS = new ErrorCode(1_046_000_016, "工作流连线键已存在");
+    ErrorCode WORKFLOW_GRAPH_INVALID = new ErrorCode(1_046_000_017, "工作流图结构无效");
 
 }
