@@ -33,6 +33,7 @@
         <module>yudao-module-aigc-asset</module>
         <module>yudao-module-aigc-safety</module>
         <module>yudao-module-aigc-gen</module>
+        <module>yudao-module-aigc-workflow</module>
     </modules>
 
     <name>${project.artifactId}</name>

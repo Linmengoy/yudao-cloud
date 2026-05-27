@@ -1,5 +1,9 @@
 # AIGC 平台第一阶段前端完整开发计划
 
+1. 保持前端规范统一
+2. 保持css风格一致
+3. 保持与后端的一致性
+
 ## 1. 计划定位
 
 本文档面向 `c:\use\code\project\manman\yudao-ui`，覆盖第一阶段 AIGC 平台完整前端建设，包含管理端和用户端两个项目。
@@ -48,9 +52,10 @@ yudao-module-member/yudao-module-member-server/src/main/resources/member-email-r
 
 ## 2. 前端项目范围
 
-| 项目 | 路径 | 技术栈 | 建设目标 |
-| ---- | ---- | ---- | ---- |
-| `draw2video-admin` | `yudao-ui/draw2video-admin` | Vue3 + Vite + TypeScript + Element Plus | AIGC 管理后台 |
+
+| 项目                | 路径                         | 技术栈                                      | 建设目标        |
+| ------------------- | ---------------------------- | ------------------------------------------- | --------------- |
+| `draw2video-admin`  | `yudao-ui/draw2video-admin`  | Vue3 + Vite + TypeScript + Element Plus     | AIGC 管理后台   |
 | `draw2video-client` | `yudao-ui/draw2video-client` | Next.js + React + TypeScript + Tailwind CSS | AIGC 用户创作端 |
 
 ## 3. 第一阶段功能总览
@@ -361,12 +366,13 @@ c:\use\code\project\manman\yudao-ui\draw2video-client
 
 当前主要缺口：
 
-- 鉴权仍偏 mock，需要接入真实 member 用户体系
-- 注册能力需要补齐，尤其是邮箱验证码注册
+- member 鉴权主链路已接入真实接口，后续重点是登录后继续原目标页面 / 原生成操作
+- 邮箱验证码注册、手机号验证码登录、手机号密码登录已完成入口接入，邮箱验证码独立预校验尚未串联到注册提交流程
 - 钱包数据需要接入真实接口
 - 模型列表和价格预估需要接入 AIGC 后端
 - 生成调用需要从本地 provider route 切到 `aigc-gen`
 - 任务和资产需要从 mock 切到真实接口
+- Profile 已接入真实会员资料并支持昵称、头像 URL 修改，头像上传和账号安全仍待补齐
 
 ## 6. 用户端第一阶段范围
 
@@ -394,6 +400,15 @@ c:\use\code\project\manman\yudao-ui\draw2video-client
 - 资产删除
 - 生成成功扣费提示
 - 生成失败退款或释放冻结提示
+
+当前完成状态：
+
+- 已完成邮箱验证码注册、手机号验证码登录即注册、手机号密码登录入口接入
+- 已完成登录态保持、Token 自动刷新、refreshToken 失效清理和退出登录
+- 已完成用户资料获取、Profile 基础展示和昵称、头像地址修改
+- 已完成登录弹窗、独立 `/login`、独立 `/register` 页面
+- 已完成工作台布局级登录守卫，未登录访问 `(app)` 路由会跳回首页并打开登录弹窗
+- 钱包余额、模型、价格预估、生成、任务、资产仍需继续对接 AIGC 真实接口
 
 ### 3.2 P1 上线前建议完成
 
@@ -462,20 +477,23 @@ draw2video-client/src/lib/aigc-api
   └── types.ts
 ```
 
+当前 member 实现说明：认证与个人资料已按 feature 拆分到 `src/features/auth`、`src/features/profile`，并统一复用 `src/lib/api-client.ts`；后续 AIGC 业务 API 不再新增独立 auth fetch 客户端。
+
 ### 8.2 认证模块目录
 
 ```text
 draw2video-client/src/features/auth
+  ├── AuthModal.tsx
+  ├── auth-api.ts
   ├── auth-store.tsx
-  ├── auth-modal.tsx
-  ├── login-form.tsx
-  ├── register-form.tsx
-  ├── forgot-password-form.tsx
-  ├── sms-code-button.tsx
-  ├── email-code-button.tsx
-  ├── auth-tabs.tsx
   └── auth-types.ts
+
+draw2video-client/src/features/profile
+  ├── profile-api.ts
+  └── profile-types.ts
 ```
+
+后续可在不破坏现有主链路的前提下继续拆分 `login-form.tsx`、`register-form.tsx`、`sms-code-button.tsx`、`email-code-button.tsx`、`forgot-password-form.tsx`。
 
 ### 8.3 资产模块目录
 
@@ -534,6 +552,8 @@ GET  /app-api/member/user/get
 PUT  /app-api/member/user/update
 ```
 
+当前用户端实现状态：`auth-api.ts` 已封装 `login`、`sms-login`、`send-sms-code`、`send-email-code`、`validate-email-code`、`email-register`、`logout`；`refresh-token` 由 `api-client.ts` 在 401 场景统一处理。
+
 当前后端手机号体系特点：
 
 ```text
@@ -554,11 +574,12 @@ POST /app-api/member/auth/email-register
 
 接口说明：
 
-| 接口 | 状态 | 用户端用途 |
-| ---- | ---- | ---- |
-| `POST /app-api/member/auth/send-email-code` | 已落地 | 发送邮箱验证码 |
-| `POST /app-api/member/auth/validate-email-code` | 已落地 | 校验邮箱验证码，可用于提交前预校验 |
-| `POST /app-api/member/auth/email-register` | 已落地 | 邮箱验证码注册，成功后返回登录 Token |
+
+| 接口                                            | 状态   | 用户端用途                           |
+| ----------------------------------------------- | ------ | ------------------------------------ |
+| `POST /app-api/member/auth/send-email-code`     | 已落地 | 发送邮箱验证码                       |
+| `POST /app-api/member/auth/validate-email-code` | 已落地 | 校验邮箱验证码，可用于提交前预校验   |
+| `POST /app-api/member/auth/email-register`      | 已落地 | 邮箱验证码注册，成功后返回登录 Token |
 
 请求体约定：
 
@@ -616,16 +637,19 @@ openid
 进入工作台
 ```
 
+当前实现状态：邮箱验证码发送和邮箱注册已接入真实接口，注册成功后保存 token、拉取用户资料和钱包并进入 `/app`；`validate-email-code` 已封装但未作为提交前单独步骤串联。
+
 表单字段：
 
-| 字段 | 必填 | 校验 |
-| ---- | ---- | ---- |
-| `email` | 是 | 邮箱格式 |
-| `code` | 是 | 6 位验证码 |
-| `password` | 是 | 8-32 位，至少包含字母和数字 |
-| `confirmPassword` | 是 | 必须和密码一致 |
-| `agreeTerms` | 是 | 必须勾选 |
-| `inviteCode` | 否 | 邀请码预留 |
+
+| 字段              | 必填 | 校验                        |
+| ----------------- | ---- | --------------------------- |
+| `email`           | 是   | 邮箱格式                    |
+| `code`            | 是   | 6 位验证码                  |
+| `password`        | 是   | 8-32 位，至少包含字母和数字 |
+| `confirmPassword` | 是   | 必须和密码一致              |
+| `agreeTerms`      | 是   | 必须勾选                    |
+| `inviteCode`      | 否   | 邀请码预留                  |
 
 ### 9.5 手机号验证码登录即注册
 
@@ -680,13 +704,16 @@ POST /app-api/member/auth/login
 
 存储建议：
 
-| 数据 | 存储位置 | 说明 |
-| ---- | ---- | ---- |
-| `accessToken` | localStorage 或安全 Cookie | 第一阶段可用 localStorage |
-| `refreshToken` | localStorage 或安全 Cookie | 用于刷新登录态 |
-| `expiresTime` | localStorage | 判断是否接近过期 |
-| `userInfo` | 内存 + localStorage 缓存 | 页面刷新后恢复展示 |
-| `wallet` | 内存状态 | 进入钱包或生成前刷新 |
+
+| 数据           | 存储位置                   | 说明                      |
+| -------------- | -------------------------- | ------------------------- |
+| `accessToken`  | localStorage 或安全 Cookie | 第一阶段可用 localStorage |
+| `refreshToken` | localStorage 或安全 Cookie | 用于刷新登录态            |
+| `expiresTime`  | localStorage               | 判断是否接近过期          |
+| `userInfo`     | 内存 + localStorage 缓存   | 页面刷新后恢复展示        |
+| `wallet`       | 内存状态                   | 进入钱包或生成前刷新      |
+
+当前实现状态：`accessToken`、`refreshToken`、`expiresTime` 已持久化到 localStorage；用户和钱包保存在 Auth Store 内存状态，刷新页面时通过 token 恢复并重新拉取。
 
 认证 Store 状态：
 
@@ -731,6 +758,8 @@ closeLoginModal()
 - 未登录访问工作台会触发登录弹窗
 - 退出登录后无法访问任务、资产、钱包页面
 - 密码、验证码、token 不出现在日志和 URL 中
+
+当前缺口：未登录访问工作台已触发登录弹窗，但登录后继续原始目标页面或继续生成提交原操作仍未完整闭环；找回密码入口保留但未实现表单和接口。
 
 ## 10. 钱包页面
 
@@ -937,10 +966,12 @@ DELETE /app-api/aigc/asset/delete
 - 展示手机号
 - 展示邮箱和邮箱验证状态
 - 修改昵称
-- 修改头像
+- 修改头像地址
 - 修改密码，P1
 - 绑定邮箱，P1
 - 退出登录
+
+当前实现状态：`/profile` 已展示真实头像、昵称、手机号、邮箱、账号状态，支持昵称和头像 URL 保存，支持退出登录；头像文件上传 / 裁剪、修改密码、绑定或换绑邮箱、换绑手机号仍未完成。
 
 接口：
 
@@ -971,11 +1002,11 @@ PUT /app-api/member/user/update-email
 ### 18.2 用户端联调顺序
 
 ```text
-1. 邮箱验证码注册
-2. 手机号验证码登录即注册
-3. 手机号密码登录
-4. Token 刷新和退出登录
-5. 用户资料获取
+1. 邮箱验证码发送和邮箱验证码注册，已接入
+2. 手机号验证码登录即注册，已接入
+3. 手机号密码登录，已接入
+4. Token 刷新、refreshToken 失效清理和退出登录，已接入
+5. 用户资料获取和昵称、头像地址修改，已接入
 6. 钱包余额
 7. 模型列表和参数模板
 8. 价格预估
@@ -1023,6 +1054,9 @@ PUT /app-api/member/user/update-email
 - 手机号验证码登录即注册可完成
 - 手机号密码登录可完成
 - 登录后 token 可持久化和刷新
+- refreshToken 失效后可清理登录态并重新打开登录弹窗
+- `/login` 和 `/register` 可作为独立兜底页面进入登录注册流程
+- `/profile` 可展示真实会员资料并修改昵称、头像地址
 - 用户可看到钱包余额
 - 用户可看到可用模型
 - 用户提交生成前可看到预计消耗
@@ -1056,14 +1090,12 @@ PUT /app-api/member/user/update-email
 
 用户端交付物：
 
-用户端交付物：
-
 - 邮箱验证码注册
 - 手机号验证码登录即注册
 - 手机号密码登录
-- 登录弹窗和独立登录注册页
+- 登录弹窗、独立登录页和独立注册页
 - Token 自动刷新
-- 用户资料页
+- 用户资料页，已完成真实资料展示和昵称、头像地址修改
 - 钱包页面
 - 模型选择和价格预估
 - 文本生成
@@ -1081,3 +1113,7 @@ PUT /app-api/member/user/update-email
 ```
 
 会员模块双端前端开发计划详见：`yudao-module-member双端前端开发计划.md`。
+
+当前 member 前端已完成 P0 主链路补强：用户端真实登录注册弹窗、`/login` 独立兜底页、`/register` 独立注册页、Token 保存与 401 自动刷新、refreshToken 失效清理、资料页基础展示与昵称 / 头像地址修改；管理端已补充会员列表邮箱 / 登录时间 / 标签 / 等级 / 分组筛选、手机号和邮箱脱敏、详情权限、启用 / 禁用独立入口、等级原因必填、积分和余额调整原因及二次确认。
+
+当前 member 前端剩余缺口：用户端头像上传、账号安全、找回密码、邮箱验证码独立预校验、登录后继续原目标页或原生成操作；管理端 AIGC 任务 / 资产专属会员关联 Tab、邮箱验证状态、注册来源、最近登录 IP、AIGC 用户标识、会员账号安全后台操作和审计能力。

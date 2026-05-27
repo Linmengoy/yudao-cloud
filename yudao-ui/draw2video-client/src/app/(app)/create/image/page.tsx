@@ -1,0 +1,1294 @@
+"use client";
+
+import "@xyflow/react/dist/style.css";
+
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  BackgroundVariant,
+  Controls,
+  useNodesState,
+  useEdgesState,
+  useReactFlow,
+  addEdge,
+  applyNodeChanges,
+  applyEdgeChanges,
+  PanOnScrollMode,
+  SelectionMode,
+  type Connection,
+  type FinalConnectionState,
+  type NodeTypes,
+  type NodeChange,
+  type EdgeChange,
+  type ConnectionLineComponentProps,
+} from "@xyflow/react";
+import type { AppNode, AppEdge, ImageNodeData, NodeCreateMenuEventDetail, ReferencePickerEventDetail, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
+import { PromptNodeComponent } from "@/features/canvas/PromptNode";
+import { ResultNodeComponent } from "@/features/canvas/ResultNode";
+import { ImageNodeComponent } from "@/features/canvas/ImageNode";
+import { TextNodeComponent } from "@/features/canvas/TextNode";
+import { VideoNodeComponent } from "@/features/canvas/VideoNode";
+import { loadCanvas, saveCanvas, clearCanvas } from "@/features/canvas/use-canvas-storage";
+import { saveImage, loadImage, clearImages, saveVideo, loadVideo, clearVideos } from "@/features/canvas/image-store";
+import { ToolbarIconButton } from "@/features/canvas/ToolbarIconButton";
+import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
+import {
+  isEditableElement,
+  getImageFilesFromPasteEvent,
+  getImageFilesFromClipboardAPI,
+} from "@/features/canvas/clipboard";
+import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
+import { findOpenNodePosition } from "@/features/canvas/positioning";
+import { createProject, getProject, touchProject, updateProject, type ProjectKind } from "@/features/projects/project-store";
+import { Plus, Trash2, ImagePlus, Type, Video } from "lucide-react";
+
+// Static outside component to avoid React Flow "new nodeTypes object" warning
+const CANVAS_NODE_TYPES = {
+  prompt: PromptNodeComponent,
+  result: ResultNodeComponent,
+  image: ImageNodeComponent,
+  text: TextNodeComponent,
+  video: VideoNodeComponent,
+} satisfies NodeTypes;
+
+type CreateNodeKind = "text" | "image" | "video";
+type LinkedCreateDirection = "incoming" | "outgoing";
+type PendingConnectionPreview = {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  direction: LinkedCreateDirection;
+};
+
+const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "video"];
+
+function isValidNodeKindConnection(sourceType: AppNode["type"] | CreateNodeKind, targetType: AppNode["type"] | CreateNodeKind) {
+  return (
+    (sourceType === "image" && targetType === "image") ||
+    (sourceType === "image" && targetType === "video") ||
+    (sourceType === "image" && targetType === "text") ||
+    (sourceType === "text" && targetType === "image") ||
+    (sourceType === "text" && targetType === "text")
+  );
+}
+
+function getCreateKindsForOrigin(originType: AppNode["type"] | undefined, direction: LinkedCreateDirection | null) {
+  if (!originType || !direction) return CREATE_NODE_KINDS;
+  return CREATE_NODE_KINDS.filter((kind) =>
+    direction === "incoming"
+      ? isValidNodeKindConnection(kind, originType)
+      : isValidNodeKindConnection(originType, kind)
+  );
+}
+
+function getClientPoint(event: MouseEvent | TouchEvent) {
+  if ("changedTouches" in event) {
+    const touch = event.changedTouches[0];
+    return touch ? { x: touch.clientX, y: touch.clientY } : null;
+  }
+  return { x: event.clientX, y: event.clientY };
+}
+
+function getConnectionPreviewPath(preview: PendingConnectionPreview) {
+  const { from, to, direction } = preview;
+  const distance = Math.max(72, Math.abs(to.x - from.x) * 0.45);
+  const controlOffset = direction === "outgoing" ? distance : -distance;
+
+  return `M ${from.x} ${from.y} C ${from.x + controlOffset} ${from.y}, ${to.x - controlOffset} ${to.y}, ${to.x} ${to.y}`;
+}
+
+function getNodeCardPreviewAnchor(nodeId: string, direction: LinkedCreateDirection) {
+  const escapedId = CSS.escape(nodeId);
+  const cardElement =
+    document.querySelector(`[data-node-preview-card][data-node-id="${escapedId}"]`) ??
+    document.querySelector(`.react-flow__node[data-id="${escapedId}"] [data-node-preview-card]`);
+
+  if (!cardElement) {
+    const nodeElement = document.querySelector(`.react-flow__node[data-id="${escapedId}"]`);
+    if (!nodeElement) return null;
+
+    const rect = nodeElement.getBoundingClientRect();
+    return {
+      x: direction === "outgoing" ? rect.right : rect.left,
+      y: rect.top + rect.height / 2,
+    };
+  }
+
+  const rect = cardElement.getBoundingClientRect();
+  return {
+    x: direction === "outgoing" ? rect.right : rect.left,
+    y: rect.top + rect.height / 2,
+  };
+}
+
+function CanvasConnectionLine({
+  fromNode,
+  fromHandle,
+  fromX,
+  fromY,
+  toX,
+  toY,
+}: ConnectionLineComponentProps<AppNode>) {
+  const { screenToFlowPosition } = useReactFlow();
+  const direction = fromHandle.type === "target" ? "incoming" : "outgoing";
+  const cardAnchor = getNodeCardPreviewAnchor(fromNode.id, direction);
+  const from = cardAnchor ? screenToFlowPosition(cardAnchor) : { x: fromX, y: fromY };
+
+  return (
+    <path
+      d={getConnectionPreviewPath({
+        from,
+        to: { x: toX, y: toY },
+        direction,
+      })}
+      fill="none"
+      stroke="#eceae4"
+      strokeLinecap="round"
+      strokeWidth={2}
+    />
+  );
+}
+
+type CanvasSnapshot = {
+  nodes: AppNode[];
+  edges: AppEdge[];
+};
+
+function cloneSnapshot(nodes: AppNode[], edges: AppEdge[]): CanvasSnapshot {
+  return {
+    nodes: structuredClone(nodes),
+    edges: structuredClone(edges),
+  };
+}
+
+function snapshotSignature(snapshot: CanvasSnapshot) {
+  return JSON.stringify({ nodes: snapshot.nodes, edges: snapshot.edges });
+}
+
+function defaultNodes(): AppNode[] {
+  const id = "draft_default";
+  return [
+    {
+      id,
+      type: "image",
+      position: { x: 250, y: 200 },
+      data: {
+        imageId: id,
+        fileName: "Image",
+        dataUrl: "",
+        mimeType: "image/png",
+        createdAt: new Date().toISOString(),
+        kind: "draft",
+        prompt: "",
+        modelId: DEFAULT_PROMPT_DATA.modelId,
+        params: { ...DEFAULT_PROMPT_DATA.params },
+        status: "idle",
+        taskId: null,
+        errorMessage: null,
+        elapsedMs: null,
+      },
+    },
+  ];
+}
+
+function migrateNode(n: AppNode): AppNode {
+  if (n.type === "prompt") {
+    const d = n.data as Record<string, unknown>;
+    return {
+      id: `draft_${n.id}`,
+      type: "image",
+      position: n.position,
+      selected: n.selected,
+      data: {
+        imageId: `draft_${n.id}`,
+        fileName: "Image",
+        dataUrl: "",
+        mimeType: "image/png",
+        createdAt: new Date().toISOString(),
+        kind: "draft",
+        prompt: typeof d.prompt === "string" ? d.prompt : "",
+        modelId: typeof d.modelId === "string" ? d.modelId : DEFAULT_PROMPT_DATA.modelId,
+        params: typeof d.params === "object" && d.params ? d.params : { ...DEFAULT_PROMPT_DATA.params },
+        status: d.isGenerating ? "pending" : "idle",
+        taskId: null,
+        errorMessage: null,
+        elapsedMs: null,
+      },
+    } as AppNode;
+  }
+  if (n.type === "result") {
+    const d = n.data as Record<string, unknown>;
+    const imageUrls = Array.isArray(d.imageUrls) ? d.imageUrls : d.imageUrl ? [d.imageUrl] : [];
+    return {
+      id: `generated_${n.id}`,
+      type: "image",
+      position: n.position,
+      selected: n.selected,
+      data: {
+        imageId: `generated_${n.id}`,
+        fileName: "generated-image.png",
+        dataUrl: typeof imageUrls[0] === "string" ? imageUrls[0] : "",
+        mimeType: "image/png",
+        createdAt: typeof d.createdAt === "string" ? d.createdAt : new Date().toISOString(),
+        kind: imageUrls[0] ? "generated" : "draft",
+        prompt: typeof d.prompt === "string" ? d.prompt : "",
+        modelId: typeof d.modelId === "string" ? d.modelId : DEFAULT_PROMPT_DATA.modelId,
+        params: typeof d.params === "object" && d.params ? d.params : { ...DEFAULT_PROMPT_DATA.params },
+        status: d.status === "failed" ? "failed" : "idle",
+        taskId: typeof d.taskId === "string" ? d.taskId : null,
+        errorMessage: typeof d.errorMessage === "string" ? d.errorMessage : null,
+        elapsedMs: typeof d.elapsedMs === "number" ? d.elapsedMs : null,
+      },
+    } as AppNode;
+  }
+  if (n.type === "text") {
+    const d = n.data as Record<string, unknown>;
+    return {
+      ...n,
+      data: {
+        content: typeof d.content === "string" ? d.content : "",
+        prompt: typeof d.prompt === "string" ? d.prompt : "",
+        modelId: typeof d.modelId === "string" ? d.modelId : "Gemini 3.1 Flash Lite",
+        status: d.status === "pending" || d.status === "failed" ? d.status : "idle",
+        errorMessage: typeof d.errorMessage === "string" ? d.errorMessage : null,
+        width: typeof d.width === "number" ? d.width : 320,
+        height: typeof d.height === "number" ? d.height : 260,
+        createdAt: typeof d.createdAt === "string" ? d.createdAt : new Date().toISOString(),
+        updatedAt: typeof d.updatedAt === "string" ? d.updatedAt : undefined,
+      },
+    } as AppNode;
+  }
+  if (n.type === "video") {
+    const d = n.data as Record<string, unknown>;
+    const status = d.status === "pending" || d.status === "complete" || d.status === "failed" ? d.status : "idle";
+    const ratio = d.ratio === "4:3" || d.ratio === "1:1" || d.ratio === "3:4" || d.ratio === "9:16" || d.ratio === "21:9" ? d.ratio : "16:9";
+    const resolution = d.resolution === "480p" || d.resolution === "720p" ? d.resolution : "1080p";
+    const duration = d.duration === 10 ? 10 : 5;
+    return {
+      ...n,
+      data: {
+        videoId: typeof d.videoId === "string" ? d.videoId : undefined,
+        fileName: typeof d.fileName === "string" ? d.fileName : "Video",
+        mimeType: typeof d.mimeType === "string" ? d.mimeType : "video/mp4",
+        width: typeof d.width === "number" ? d.width : undefined,
+        height: typeof d.height === "number" ? d.height : undefined,
+        durationSec: typeof d.durationSec === "number" ? d.durationSec : undefined,
+        sizeBytes: typeof d.sizeBytes === "number" ? d.sizeBytes : undefined,
+        prompt: typeof d.prompt === "string" ? d.prompt : "",
+        provider: d.provider === "wan" ? "wan" : "seedance",
+        modelId: typeof d.modelId === "string" ? d.modelId : "doubao-seedance-2-0-260128",
+        modelName: typeof d.modelName === "string" ? d.modelName : "Seedance 2.0",
+        kind: d.kind === "uploaded" || d.kind === "generated" ? d.kind : "draft",
+        status,
+        taskId: typeof d.taskId === "string" ? d.taskId : null,
+        videoUrl: typeof d.videoUrl === "string" ? d.videoUrl : null,
+        errorMessage: typeof d.errorMessage === "string" ? d.errorMessage : null,
+        ratio,
+        resolution,
+        duration,
+        size: d.size === "704*1280" ? "704*1280" : d.size === "1280*704" ? "1280*704" : undefined,
+        generateAudio: typeof d.generateAudio === "boolean" ? d.generateAudio : true,
+        watermark: typeof d.watermark === "boolean" ? d.watermark : false,
+        createdAt: typeof d.createdAt === "string" ? d.createdAt : new Date().toISOString(),
+        generationStartedAt: typeof d.generationStartedAt === "string" ? d.generationStartedAt : null,
+        generationRunStartedAt: typeof d.generationRunStartedAt === "string" ? d.generationRunStartedAt : null,
+        elapsedMs: typeof d.elapsedMs === "number" ? d.elapsedMs : null,
+        upstreamStatus: typeof d.upstreamStatus === "string" ? d.upstreamStatus : null,
+      },
+    } as AppNode;
+  }
+  return n;
+}
+
+function migrateEdge(e: AppEdge): AppEdge {
+  if (e.type === "smoothstep" || e.type === "bezier") {
+    return { ...e, type: "default" };
+  }
+  return e;
+}
+
+function isValidCanvasConnection(connection: { source: string; target: string }, nodes: AppNode[]) {
+  const source = nodes.find((n) => n.id === connection.source);
+  const target = nodes.find((n) => n.id === connection.target);
+  return (
+    (source?.type === "image" && target?.type === "image" && connection.source !== connection.target) ||
+    (source?.type === "image" && target?.type === "video") ||
+    (source?.type === "image" && target?.type === "text") ||
+    (source?.type === "text" && target?.type === "image") ||
+    (source?.type === "text" && target?.type === "text" && connection.source !== connection.target) ||
+    (source?.type === "image" && target?.type === "prompt") ||
+    (source?.type === "prompt" && target?.type === "result")
+  );
+}
+
+async function blobFromDataUrl(dataUrl: string): Promise<Blob> {
+  const response = await fetch(dataUrl);
+  return response.blob();
+}
+
+function summarizeCanvas(nodes: AppNode[]): { kind: ProjectKind; nodeCount: number; assetCount: number } {
+  const hasImage = nodes.some((node) => node.type === "image");
+  const hasVideo = nodes.some((node) => node.type === "video");
+  const kind: ProjectKind = hasImage && hasVideo ? "mixed" : hasVideo ? "video" : "image";
+  return {
+    kind,
+    nodeCount: nodes.length,
+    assetCount: nodes.filter((node) => {
+      if (node.type === "image") return Boolean((node.data as ImageNodeData).dataUrl);
+      if (node.type === "video") return Boolean((node.data as VideoNodeData).videoUrl);
+      return false;
+    }).length,
+  };
+}
+
+function CanvasFlow() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const routeProjectId = searchParams.get("projectId");
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [nodes, setNodes] = useNodesState<AppNode>(defaultNodes());
+  const [edges, setEdges] = useEdgesState<AppEdge>([]);
+  const [saveError, setSaveError] = useState("");
+  const [pasteToast, setPasteToast] = useState("");
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
+  const [createMenu, setCreateMenu] = useState<{
+    x: number;
+    y: number;
+    flowX: number;
+    flowY: number;
+    visible: boolean;
+    originNodeId: string | null;
+    direction: LinkedCreateDirection | null;
+  }>({ x: 0, y: 0, flowX: 0, flowY: 0, visible: false, originNodeId: null, direction: null });
+  const [pendingConnectionPreview, setPendingConnectionPreview] = useState<PendingConnectionPreview | null>(null);
+
+  const {
+    getNodes,
+    getViewport,
+    screenToFlowPosition,
+    flowToScreenPosition,
+    setViewport,
+    zoomIn,
+    zoomOut,
+    fitView,
+  } = useReactFlow();
+
+  // Track last mouse position for paste placement
+  const lastMouseRef = useRef<{ x: number; y: number }>({
+    x: window.innerWidth / 2,
+    y: window.innerHeight / 2,
+  });
+  const historyPastRef = useRef<CanvasSnapshot[]>([]);
+  const historyFutureRef = useRef<CanvasSnapshot[]>([]);
+  const lastHistorySignatureRef = useRef<string | null>(null);
+  const restoringHistoryRef = useRef(false);
+  const projectCreationRef = useRef(false);
+  const ignoreNextPaneClickRef = useRef(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (routeProjectId) {
+        const existing = getProject(routeProjectId);
+        if (existing) {
+          touchProject(routeProjectId);
+          setActiveProjectId(routeProjectId);
+          return;
+        }
+      }
+
+      if (projectCreationRef.current) return;
+      projectCreationRef.current = true;
+      const project = createProject({ name: "未命名项目", kind: "image" });
+      router.replace(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+      setActiveProjectId(project.id);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [routeProjectId, router]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    const snapshot = cloneSnapshot(nodes, edges);
+    const signature = snapshotSignature(snapshot);
+
+    if (restoringHistoryRef.current) {
+      lastHistorySignatureRef.current = signature;
+      restoringHistoryRef.current = false;
+      return;
+    }
+
+    const previousSignature = lastHistorySignatureRef.current;
+    if (!previousSignature) {
+      lastHistorySignatureRef.current = signature;
+      return;
+    }
+
+    if (previousSignature === signature) return;
+    try {
+      historyPastRef.current.push(JSON.parse(previousSignature) as CanvasSnapshot);
+      if (historyPastRef.current.length > 80) {
+        historyPastRef.current.shift();
+      }
+      historyFutureRef.current = [];
+      lastHistorySignatureRef.current = signature;
+    } catch {
+      lastHistorySignatureRef.current = signature;
+    }
+  }, [edges, isHydrated, nodes]);
+
+  const restoreSnapshot = useCallback(
+    (snapshot: CanvasSnapshot) => {
+      restoringHistoryRef.current = true;
+      setNodes(snapshot.nodes);
+      setEdges(snapshot.edges);
+      setCreateMenu((prev) => ({ ...prev, visible: false }));
+    },
+    [setEdges, setNodes]
+  );
+
+  const undo = useCallback(() => {
+    const previous = historyPastRef.current.pop();
+    if (!previous) return;
+    historyFutureRef.current.push(cloneSnapshot(nodes, edges));
+    restoreSnapshot(previous);
+  }, [edges, nodes, restoreSnapshot]);
+
+  const redo = useCallback(() => {
+    const next = historyFutureRef.current.pop();
+    if (!next) return;
+    historyPastRef.current.push(cloneSnapshot(nodes, edges));
+    restoreSnapshot(next);
+  }, [edges, nodes, restoreSnapshot]);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<AppNode>[]) => {
+      setNodes((nds) => applyNodeChanges(changes, nds));
+    },
+    [setNodes]
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange<AppEdge>[]) => {
+      setEdges((eds) => applyEdgeChanges(changes, eds));
+    },
+    [setEdges]
+  );
+
+  useEffect(() => {
+    function handleUndoRedo(event: KeyboardEvent) {
+      if (isEditableElement(event.target)) return;
+      const isUndo = (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "z";
+      const isRedo =
+        (event.metaKey || event.ctrlKey) &&
+        ((event.shiftKey && event.key.toLowerCase() === "z") || event.key.toLowerCase() === "y");
+
+      if (isUndo) {
+        event.preventDefault();
+        undo();
+      } else if (isRedo) {
+        event.preventDefault();
+        redo();
+      }
+    }
+
+    window.addEventListener("keydown", handleUndoRedo);
+    return () => window.removeEventListener("keydown", handleUndoRedo);
+  }, [redo, undo]);
+
+  // --- Connection handling ---
+  const onConnect = useCallback((connection: Connection) => {
+    setEdges((eds) => addEdge({ ...connection, type: "default" }, eds));
+  }, [setEdges]);
+
+  // Hydrate from localStorage + IndexedDB when the project changes
+  useEffect(() => {
+    if (!activeProjectId) return;
+    let cancelled = false;
+
+    async function hydrate() {
+      setIsHydrated(false);
+      historyPastRef.current = [];
+      historyFutureRef.current = [];
+      lastHistorySignatureRef.current = null;
+
+      const saved = loadCanvas(activeProjectId);
+      if (!saved) {
+        if (!cancelled) {
+          setNodes(defaultNodes());
+          setEdges([]);
+          setIsHydrated(true);
+        }
+        return;
+      }
+
+      const idMap = new Map<string, string>();
+      const migratedNodes = saved.nodes.map((node) => {
+        const migrated = migrateNode(node);
+        idMap.set(node.id, migrated.id);
+        return migrated;
+      });
+      const migratedEdges = saved.edges
+        .map(migrateEdge)
+        .map((edge) => ({
+          ...edge,
+          source: idMap.get(edge.source) ?? edge.source,
+          target: idMap.get(edge.target) ?? edge.target,
+        }))
+        .filter((edge) => isValidCanvasConnection(edge, migratedNodes));
+
+      const restoredNodes: AppNode[] = [];
+
+      for (const node of migratedNodes) {
+        if (cancelled) return;
+        if (node.type !== "image" && node.type !== "video") {
+          restoredNodes.push(node);
+          continue;
+        }
+        const d = node.data as Record<string, unknown>;
+        if (node.type === "image" && typeof d.dataUrl === "string" && d.dataUrl) {
+          await saveImage(d as ImageNodeData);
+          const full = await loadImage(d.imageId as string);
+          restoredNodes.push(full?.dataUrl ? { ...node, data: full } : { ...node, data: { ...(d as ImageNodeData), dataUrl: "" } });
+          continue;
+        }
+        if (node.type === "image") {
+          const full = await loadImage(d.imageId as string);
+          restoredNodes.push(full?.dataUrl ? { ...node, data: full } : { ...node, data: { ...(d as ImageNodeData), dataUrl: "" } });
+          continue;
+        }
+        if (node.type === "video" && typeof d.videoId === "string" && typeof d.videoUrl === "string" && d.videoUrl.startsWith("data:")) {
+          const blob = await blobFromDataUrl(d.videoUrl);
+          await saveVideo(d as VideoNodeData, blob);
+          restoredNodes.push({ ...node, data: { ...(d as VideoNodeData), videoUrl: URL.createObjectURL(blob) } });
+          continue;
+        }
+        if (node.type === "video" && typeof d.videoId === "string") {
+          const full = await loadVideo(d.videoId);
+          restoredNodes.push(full?.videoUrl ? { ...node, data: full } : node);
+          continue;
+        }
+        restoredNodes.push(node);
+      }
+
+      if (cancelled) return;
+      setNodes(restoredNodes);
+      setEdges(migratedEdges);
+      if (saved.viewport) setViewport(saved.viewport);
+      setIsHydrated(true);
+    }
+
+    hydrate();
+    return () => { cancelled = true; };
+  }, [activeProjectId, setNodes, setEdges, setViewport]);
+
+  // Debounced save — only after hydration completes
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    if (!isHydrated || !activeProjectId) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      try {
+        saveCanvas({ nodes, edges, viewport: getViewport() }, activeProjectId);
+        updateProject(activeProjectId, summarizeCanvas(nodes));
+        setSaveError("");
+      } catch {
+        setSaveError("图片太大，当前浏览器无法保存到本地草稿");
+      }
+    }, 500);
+    return () => clearTimeout(saveTimer.current);
+  }, [activeProjectId, isHydrated, nodes, edges, getViewport]);
+
+  // --- Add nodes ---
+  const addImageDraftNode = useCallback((position?: { x: number; y: number }) => {
+    const center = position ?? screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const id = `draft_${Date.now()}`;
+    const newNode: AppNode = {
+      id,
+      type: "image",
+      position: findOpenNodePosition(
+        { x: center.x - 190, y: center.y - 150 },
+        { width: 360, height: 340 },
+        getNodes() as AppNode[]
+      ),
+      data: {
+        imageId: id,
+        fileName: "Image",
+        dataUrl: "",
+        mimeType: "image/png",
+        createdAt: new Date().toISOString(),
+        kind: "draft",
+        prompt: "",
+        modelId: DEFAULT_PROMPT_DATA.modelId,
+        params: { ...DEFAULT_PROMPT_DATA.params },
+        status: "idle",
+        taskId: null,
+        errorMessage: null,
+        elapsedMs: null,
+      },
+      selected: true,
+    };
+    setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    return newNode;
+  }, [getNodes, screenToFlowPosition, setNodes]);
+
+  const addTextNode = useCallback((position?: { x: number; y: number }) => {
+    const center = position ?? screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const id = `text_${Date.now()}`;
+    const textData: TextNodeData = {
+      content: "",
+      prompt: "",
+      modelId: "Gemini 3.1 Flash Lite",
+      status: "idle",
+      errorMessage: null,
+      width: 320,
+      height: 260,
+      createdAt: new Date().toISOString(),
+    };
+    const newNode: AppNode = {
+      id,
+      type: "text",
+      position: findOpenNodePosition(
+        { x: center.x - 160, y: center.y - 130 },
+        { width: 320, height: 260 },
+        getNodes() as AppNode[]
+      ),
+      data: textData,
+      selected: true,
+    };
+    setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    return newNode;
+  }, [getNodes, screenToFlowPosition, setNodes]);
+
+  const addVideoNode = useCallback((position?: { x: number; y: number }) => {
+    const center = position ?? screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const id = `video_${Date.now()}`;
+    const videoData: VideoNodeData = {
+      prompt: "",
+      provider: "seedance",
+      modelId: "doubao-seedance-2-0-260128",
+      modelName: "Seedance 2.0",
+      kind: "draft",
+      status: "idle",
+      taskId: null,
+      videoUrl: null,
+      errorMessage: null,
+      ratio: "16:9",
+      resolution: "1080p",
+      duration: 5,
+      size: "1280*704",
+      generateAudio: true,
+      watermark: false,
+      createdAt: new Date().toISOString(),
+      generationStartedAt: null,
+      generationRunStartedAt: null,
+      elapsedMs: null,
+      upstreamStatus: null,
+    };
+    const newNode: AppNode = {
+      id,
+      type: "video",
+      position: findOpenNodePosition(
+        { x: center.x - 210, y: center.y - 130 },
+        { width: 420, height: 448 },
+        getNodes() as AppNode[]
+      ),
+      data: videoData,
+      selected: true,
+    };
+    setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    return newNode;
+  }, [getNodes, screenToFlowPosition, setNodes]);
+
+  const closeReferencePicker = useCallback(() => {
+    window.dispatchEvent(new CustomEvent<ReferencePickerEventDetail>("copse:reference-picker", {
+      detail: { promptId: null },
+    }));
+  }, []);
+
+  useEffect(() => {
+    function handleReferencePicker(e: Event) {
+      const detail = (e as CustomEvent<ReferencePickerEventDetail>).detail;
+      setReferencePickerPromptId(detail?.promptId ?? null);
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") closeReferencePicker();
+    }
+
+    window.addEventListener("copse:reference-picker", handleReferencePicker);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("copse:reference-picker", handleReferencePicker);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeReferencePicker]);
+
+  // --- Upload media ---
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFiles = useCallback(
+    async (files: File[], position?: { x: number; y: number }) => {
+      const center = position ?? screenToFlowPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      });
+
+      const newNodes: AppNode[] = [];
+      const existingNodes = getNodes() as AppNode[];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          const preferred = {
+            x: center.x + i * 100,
+            y: center.y + i * 80 - ((files.length - 1) * 40),
+          };
+          if (isAcceptedImageType(file.type)) {
+            const imageData: ImageNodeData = await fileToImageNodeData(file);
+            await saveImage(imageData);
+            newNodes.push({
+              id: imageData.imageId,
+              type: "image",
+              position: findOpenNodePosition(
+                preferred,
+                { width: 220, height: 260 },
+                [...existingNodes, ...newNodes],
+                { padding: 28, stepX: 150, stepY: 130 }
+              ),
+              data: imageData,
+            });
+            continue;
+          }
+          if (isAcceptedVideoFile(file)) {
+            const { data: videoData, blob } = await fileToVideoNodeData(file);
+            await saveVideo(videoData, blob);
+            newNodes.push({
+              id: videoData.videoId ?? `uploaded_video_${Date.now()}`,
+              type: "video",
+              position: findOpenNodePosition(
+                preferred,
+                { width: 420, height: 260 },
+                [...existingNodes, ...newNodes],
+                { padding: 28, stepX: 170, stepY: 140 }
+              ),
+              data: videoData,
+            });
+          }
+        } catch (error) {
+          setPasteToast(error instanceof Error ? error.message : "素材上传失败");
+          setTimeout(() => setPasteToast(""), 2500);
+        }
+      }
+      if (newNodes.length > 0) {
+        setNodes((nds) => [...nds, ...newNodes]);
+      }
+    },
+    [getNodes, screenToFlowPosition, setNodes]
+  );
+
+  const handleFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
+      handleFiles(Array.from(files));
+      e.target.value = "";
+    },
+    [handleFiles]
+  );
+
+  // --- Drag & Drop ---
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const mediaFiles = getFilesFromDrop(e);
+      if (mediaFiles.length === 0) return;
+
+      const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      handleFiles(mediaFiles, flowPos);
+    },
+    [screenToFlowPosition, handleFiles]
+  );
+
+  // --- Paste from clipboard (keyboard) ---
+  const handlePaste = useCallback(
+    (e: ClipboardEvent) => {
+      if (isEditableElement(e.target)) return;
+      const files = getImageFilesFromPasteEvent(e);
+      if (files.length === 0) return;
+      e.preventDefault();
+      const pos = screenToFlowPosition(lastMouseRef.current);
+      handleFiles(files, pos);
+    },
+    [screenToFlowPosition, handleFiles]
+  );
+
+  useEffect(() => {
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [handlePaste]);
+
+  // --- Track mouse position ---
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    return () => document.removeEventListener("mousemove", onMouseMove);
+  }, []);
+
+  // --- Context menu ---
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    x: 0,
+    y: 0,
+    visible: false,
+  });
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest(".react-flow__node")) return;
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, visible: true });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const handleMenuPaste = useCallback(async () => {
+    const files = await getImageFilesFromClipboardAPI();
+    if (files && files.length > 0) {
+      const pos = screenToFlowPosition(contextMenu);
+      handleFiles(files, pos);
+      setPasteToast("");
+    } else {
+      setPasteToast("请使用 ⌘V 粘贴图片");
+      setTimeout(() => setPasteToast(""), 2500);
+    }
+  }, [contextMenu, screenToFlowPosition, handleFiles, setPasteToast]);
+
+  const handleMenuZoomIn = useCallback(() => { zoomIn({ duration: 200 }); }, [zoomIn]);
+  const handleMenuZoomOut = useCallback(() => { zoomOut({ duration: 200 }); }, [zoomOut]);
+  const handleMenuFitView = useCallback(() => { fitView({ padding: 0.2, duration: 200 }); }, [fitView]);
+  const handleMenuZoom100 = useCallback(() => {
+    const vp = getViewport();
+    setViewport({ x: vp.x, y: vp.y, zoom: 1 }, { duration: 200 });
+  }, [getViewport, setViewport]);
+
+  const closeCreateMenu = useCallback(() => {
+    setCreateMenu((prev) => ({ ...prev, visible: false }));
+    setPendingConnectionPreview(null);
+  }, []);
+
+  const openCreateMenuAt = useCallback(
+    (
+      point: { x: number; y: number },
+      origin?: { nodeId: string; direction: LinkedCreateDirection },
+      preview?: PendingConnectionPreview | null
+    ) => {
+      const originNode = origin ? nodes.find((node) => node.id === origin.nodeId) : undefined;
+      if (origin && getCreateKindsForOrigin(originNode?.type, origin.direction).length === 0) return;
+
+      closeContextMenu();
+      closeReferencePicker();
+      const flowPosition = screenToFlowPosition(point);
+      setCreateMenu({
+        x: point.x,
+        y: point.y,
+        flowX: flowPosition.x,
+        flowY: flowPosition.y,
+        visible: true,
+        originNodeId: origin?.nodeId ?? null,
+        direction: origin?.direction ?? null,
+      });
+      setPendingConnectionPreview(preview ?? null);
+    },
+    [closeContextMenu, closeReferencePicker, nodes, screenToFlowPosition]
+  );
+
+  const createNodeAtMenu = useCallback(
+    (kind: CreateNodeKind) => {
+      const position = { x: createMenu.flowX, y: createMenu.flowY };
+      const newNode =
+        kind === "text"
+          ? addTextNode(position)
+          : kind === "image"
+            ? addImageDraftNode(position)
+            : addVideoNode(position);
+
+      if (createMenu.originNodeId && createMenu.direction) {
+        const connection =
+          createMenu.direction === "incoming"
+            ? { source: newNode.id, target: createMenu.originNodeId }
+            : { source: createMenu.originNodeId, target: newNode.id };
+        const connectionNodes = [
+          ...(getNodes() as AppNode[]).filter((node) => node.id !== newNode.id),
+          newNode,
+        ];
+
+        if (isValidCanvasConnection(connection, connectionNodes)) {
+          setEdges((eds) => {
+            const exists = eds.some((edge) => edge.source === connection.source && edge.target === connection.target);
+            if (exists) return eds;
+            return addEdge(
+              {
+                ...connection,
+                id: `e-${connection.source}-${connection.target}-${Date.now()}`,
+                type: "default",
+              },
+              eds
+            );
+          });
+        }
+      }
+
+      closeCreateMenu();
+    },
+    [addImageDraftNode, addTextNode, addVideoNode, closeCreateMenu, createMenu, getNodes, setEdges]
+  );
+
+  const handleConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+      window.dispatchEvent(new CustomEvent("copse:canvas-interaction"));
+      if (connectionState.toHandle || !connectionState.from || !connectionState.fromNode?.id || !connectionState.fromHandle?.type) return;
+
+      const point = getClientPoint(event);
+      if (!point) return;
+
+      const direction = connectionState.fromHandle.type === "target" ? "incoming" : "outgoing";
+      const from = getNodeCardPreviewAnchor(connectionState.fromNode.id, direction) ?? flowToScreenPosition(connectionState.from);
+      ignoreNextPaneClickRef.current = true;
+      openCreateMenuAt(point, {
+        nodeId: connectionState.fromNode.id,
+        direction,
+      }, {
+        from,
+        to: point,
+        direction,
+      });
+    },
+    [flowToScreenPosition, openCreateMenuAt]
+  );
+
+  useEffect(() => {
+    function handleNodeCreateMenu(event: Event) {
+      const detail = (event as CustomEvent<NodeCreateMenuEventDetail>).detail;
+      if (!detail?.nodeId) return;
+      openCreateMenuAt(
+        { x: detail.clientX, y: detail.clientY },
+        { nodeId: detail.nodeId, direction: detail.direction }
+      );
+    }
+
+    window.addEventListener("copse:node-create-menu", handleNodeCreateMenu);
+    return () => window.removeEventListener("copse:node-create-menu", handleNodeCreateMenu);
+  }, [openCreateMenuAt]);
+
+  // --- Clear ---
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const handleClear = useCallback(() => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    closeReferencePicker();
+    closeCreateMenu();
+    setNodes(defaultNodes());
+    setEdges([]);
+    clearCanvas(activeProjectId);
+    clearImages();
+    clearVideos();
+    setConfirmClear(false);
+  }, [activeProjectId, closeCreateMenu, closeReferencePicker, confirmClear, setNodes, setEdges]);
+
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
+
+  useEffect(() => {
+    if (!createMenu.visible) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-create-menu]")) return;
+      closeCreateMenu();
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeCreateMenu();
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeCreateMenu, createMenu.visible]);
+
+  if (!activeProjectId) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-sm text-muted-gray">
+        正在准备项目...
+      </div>
+    );
+  }
+
+  const createMenuOrigin = createMenu.originNodeId ? nodes.find((node) => node.id === createMenu.originNodeId) : undefined;
+  const createMenuKinds = getCreateKindsForOrigin(createMenuOrigin?.type, createMenu.direction);
+
+  return (
+    <div
+      className="relative h-full w-full"
+      onContextMenu={handleContextMenu}
+      onDoubleClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (
+          target.closest(".react-flow__node") ||
+          target.closest(".react-flow__controls") ||
+          isEditableElement(target)
+        ) {
+          return;
+        }
+        openCreateMenuAt({ x: event.clientX, y: event.clientY });
+      }}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={CANVAS_NODE_TYPES}
+        minZoom={0.2}
+        maxZoom={2}
+        zoomOnScroll={false}
+        zoomOnPinch
+        panOnScroll
+        panOnScrollMode={PanOnScrollMode.Free}
+        panOnDrag={false}
+        selectionOnDrag
+        selectionMode={SelectionMode.Partial}
+        zoomOnDoubleClick={false}
+        deleteKeyCode="Backspace"
+        fitView
+        defaultEdgeOptions={{
+          type: "default",
+          style: { stroke: "#eceae4", strokeWidth: 2 },
+        }}
+        connectionLineComponent={CanvasConnectionLine}
+        proOptions={{ hideAttribution: true }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onConnect={onConnect}
+        onMoveStart={() => { closeContextMenu(); closeCreateMenu(); window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
+        onPaneClick={() => {
+          if (ignoreNextPaneClickRef.current) {
+            ignoreNextPaneClickRef.current = false;
+            return;
+          }
+          closeContextMenu();
+          closeCreateMenu();
+          closeReferencePicker();
+          window.dispatchEvent(new CustomEvent("copse:canvas-interaction"));
+        }}
+        onNodeDragStart={() => { window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
+        onConnectStart={() => { setPendingConnectionPreview(null); window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
+        onConnectEnd={handleConnectEnd}
+        isValidConnection={(connection) => isValidCanvasConnection(connection, nodes)}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#eceae4" />
+        <Controls
+          showInteractive={false}
+          style={{
+            background: "#fcfbf8",
+            border: "1px solid #eceae4",
+            borderRadius: "8px",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+          }}
+        />
+      </ReactFlow>
+
+      {createMenu.visible && pendingConnectionPreview && (
+        <svg className="pointer-events-none fixed inset-0 z-40 overflow-visible" aria-hidden="true">
+          <path
+            d={getConnectionPreviewPath(pendingConnectionPreview)}
+            fill="none"
+            stroke="#eceae4"
+            strokeLinecap="round"
+            strokeWidth={2}
+          />
+        </svg>
+      )}
+
+      {/* Reference picker banner */}
+      <AnimatePresence>
+        {referencePickerPromptId && (
+          <motion.div
+            initial={{ opacity: 0, y: -8, x: "-50%", scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
+            exit={{ opacity: 0, y: -8, x: "-50%", scale: 0.98 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="pointer-events-auto absolute left-1/2 top-4 z-50 flex items-center gap-3 rounded-xl bg-charcoal px-4 py-2 text-sm font-medium text-off-white shadow-lg"
+          >
+            <span>从画布选择参考图</span>
+            <button
+              type="button"
+              onClick={closeReferencePicker}
+              className="rounded-lg bg-off-white/15 px-2 py-1 text-xs hover:bg-off-white/25"
+            >
+              退出
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Drag overlay */}
+      <AnimatePresence>
+        {isDragOver && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14 }}
+            className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-background/60"
+          >
+            <motion.div
+              initial={{ scale: 0.98, y: 4 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.98, y: 4 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              className="rounded-2xl border-2 border-dashed border-charcoal/30 px-8 py-6 text-charcoal/60"
+            >
+              <ImagePlus className="mx-auto mb-2 size-8" />
+              <p className="text-sm">松开以添加图片或视频</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {createMenu.visible && (
+          <motion.div
+            data-create-menu
+            initial={{ opacity: 0, scale: 0.98, y: -2 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: -2 }}
+            transition={{ duration: 0.14, ease: "easeOut" }}
+            className="fixed z-50 min-w-[180px] origin-top-left rounded-xl border border-border-warm bg-background p-1 shadow-[0_8px_24px_rgba(28,28,28,0.12)]"
+            style={{ left: createMenu.x, top: createMenu.y }}
+          >
+            {createMenuKinds.map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => createNodeAtMenu(kind)}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-charcoal hover:bg-muted"
+              >
+                {kind === "text" && <Type className="size-4 text-muted-gray" />}
+                {kind === "image" && <ImagePlus className="size-4 text-muted-gray" />}
+                {kind === "video" && <Video className="size-4 text-muted-gray" />}
+                {kind === "text" ? "Text" : kind === "image" ? "Image" : "Video"}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating toolbar */}
+      {!referencePickerPromptId && (
+        <div className="pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-border-warm bg-background px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+          <ToolbarIconButton
+            label="新建 Image"
+            icon={<Plus className="size-3.5" />}
+            onClick={() => addImageDraftNode()}
+            variant="primary"
+          />
+          <ToolbarIconButton
+            label="上传素材"
+            icon={<ImagePlus className="size-3.5" />}
+            onClick={() => fileInputRef.current?.click()}
+          />
+          <ToolbarIconButton
+            label={confirmClear ? "确认清空" : "清空画布"}
+            icon={<Trash2 className="size-3.5" />}
+            onClick={handleClear}
+            variant={confirmClear ? "danger" : "default"}
+          />
+        </div>
+      )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,.mov"
+        multiple
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
+      {/* Context menu */}
+      <CanvasContextMenu
+        state={contextMenu}
+        onClose={closeContextMenu}
+        onPaste={handleMenuPaste}
+        onZoomIn={handleMenuZoomIn}
+        onZoomOut={handleMenuZoomOut}
+        onFitView={handleMenuFitView}
+        onZoom100={handleMenuZoom100}
+      />
+
+      {/* Paste toast */}
+      {pasteToast && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-charcoal px-4 py-2 text-xs text-off-white shadow-lg">
+          {pasteToast}
+        </div>
+      )}
+
+      {/* Save error toast */}
+      {saveError && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-charcoal px-4 py-2 text-xs text-off-white shadow-lg">
+          {saveError}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function CreateImagePage() {
+  return (
+    <div className="h-full w-full bg-cream">
+      <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-gray">正在加载画布...</div>}>
+        <ReactFlowProvider>
+          <CanvasFlow />
+        </ReactFlowProvider>
+      </Suspense>
+    </div>
+  );
+}

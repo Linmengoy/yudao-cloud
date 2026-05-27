@@ -64,6 +64,15 @@ PUT /app-api/member/user/update-email
 
 邮箱密码登录、邮箱找回密码如果后端补齐后再接入。
 
+当前实现状态：
+
+- 已新增 `src/features/auth/auth-api.ts`，登录注册接口已接入 `/app-api/member/auth/*`
+- 已新增 `src/features/auth/auth-types.ts`，覆盖 `LoginToken`、`MemberUser`、邮箱注册、短信登录、密码登录和验证码请求类型
+- 已新增 `src/features/profile/profile-api.ts`、`src/features/profile/profile-types.ts`，资料接口已接入 `/app-api/member/user/get`、`/app-api/member/user/update`
+- `src/lib/api-client.ts` 已统一处理 `/app-api` 前缀、`tenant-id`、`terminal`、Bearer Token、refresh token 和 401 并发刷新队列
+- `validateEmailCode` 已封装并暴露，但邮箱注册主流程当前直接调用 `email-register`，尚未串联提交前独立预校验
+- `update-password`、`update-email`、邮箱密码登录、邮箱找回密码仍未接入，保留为 P1/P2
+
 ## 4. 管理端接口范围
 
 管理端会员管理接口：
@@ -72,6 +81,7 @@ PUT /app-api/member/user/update-email
 GET /admin-api/member/user/page
 GET /admin-api/member/user/get?id=
 PUT /admin-api/member/user/update
+PUT /admin-api/member/user/update-status
 PUT /admin-api/member/user/update-level
 PUT /admin-api/member/user/update-point
 ```
@@ -83,9 +93,18 @@ src/api/member/user/index.ts
   ├── /member/user/page
   ├── /member/user/get?id=
   ├── /member/user/update
+  ├── /member/user/update-status
   ├── /member/user/update-level
   └── /member/user/update-point
 ```
+
+当前实现状态：
+
+- 已封装 `src/api/member/user/index.ts` 的分页、详情、修改、修改状态、修改等级、修改积分接口
+- `update-status` 请求体包含 `id`、`status`、`reason`
+- 管理端列表已通过 `member:user:update-status` 权限提供独立启用 / 禁用入口
+- 会员余额调整已通过 `src/views/member/user/components/UserBalanceUpdateForm.vue` 接入钱包余额读取和 `pay:wallet:update-balance` 权限
+- 管理端第一阶段仍不提供新增会员、重置密码、绑定 / 换绑手机号邮箱、强制下线等账号安全后台能力
 
 ## 5. 用户端开发计划
 
@@ -97,6 +116,8 @@ src/api/member/user/index.ts
 - 新增 `src/features/profile/profile-types.ts`，定义会员用户资料类型
 - 复用现有 `src/lib/api-client.ts` 的 token、refresh-token、401 重试能力
 - 不再另写 fetch 客户端
+
+当前实现状态：已完成。实际文件为 `auth-api.ts`、`auth-types.ts`、`profile-api.ts`、`profile-types.ts`，并复用 `api-client.ts`。
 
 建议类型：
 
@@ -117,6 +138,8 @@ UpdateProfileReq
 - 登录、注册成功后拉取当前用户资料
 - 刷新页面时恢复 token 和用户信息
 - refreshToken 失效后清理登录态并打开登录弹窗
+
+当前实现状态：已完成主链路。`auth-store.tsx` 已移除 mock 主流程，登录 / 注册成功后保存 token、拉取用户资料和钱包，初始化时恢复登录态；refreshToken 失败后清理状态并通过 `auth-expired` 打开登录弹窗。
 
 Auth Store 状态：
 
@@ -156,6 +179,8 @@ closeLoginModal()
 - 支持 loading、错误、成功、禁用状态
 - 支持登录成功后回到原始目标页面
 
+当前实现状态：已完成真实登录注册弹窗，支持手机号验证码、邮箱注册、手机号密码登录、验证码倒计时、表单校验、loading、错误提示和成功后进入 `/app`。登录成功后回到原始目标页面 / 原始操作仍不完整，当前未稳定记录 `redirectTo` 或生成提交上下文。
+
 建议组件：
 
 ```text
@@ -176,6 +201,13 @@ src/features/auth
 - `/forgot-password` 第一阶段可预留入口
 - 支持 `redirect` 参数，登录成功后回到目标页面
 
+当前实现状态：
+
+- 已新增 `/login` 独立兜底页面，未登录时在当前页面打开登录注册弹窗
+- 已新增 `/register` 独立注册页面，未登录时默认打开邮箱注册 Tab
+- 已登录访问 `/login` 或 `/register` 时跳转 `/app`
+- `/forgot-password` 仍未实现，入口在密码登录表单中保留但无实际流程
+
 阶段 5：登录态守卫。
 
 - 未登录访问工作台时打开登录弹窗或跳转登录页
@@ -184,6 +216,8 @@ src/features/auth
 - 登录成功后继续原操作流程
 - 退出登录后清理 token、user、wallet、任务和资产私有缓存
 
+当前实现状态：已完成工作台布局级守卫。`src/app/(app)/layout.tsx` 未登录时跳回 `/` 并打开登录弹窗；`RequireAuth.tsx` 已存在但当前未作为主要守卫挂载。退出登录会清理 token、user、wallet；任务、资产等业务私有缓存仍需随真实接口接入后补齐统一清理。
+
 阶段 6：用户资料页。
 
 - 改造 `src/app/(app)/profile/page.tsx`
@@ -191,6 +225,8 @@ src/features/auth
 - 展示真实头像、昵称、手机号、邮箱、账号状态
 - 第一阶段支持昵称和头像修改
 - P1 支持修改密码、绑定邮箱、换绑手机号
+
+当前实现状态：已完成基础展示和编辑。`/profile` 展示真实头像、昵称、手机号、邮箱、账号状态，支持昵称和头像 URL 保存，支持退出登录；头像文件上传 / 裁剪、修改密码、绑定或换绑邮箱、换绑手机号仍未完成。
 
 建议组件：
 
@@ -209,6 +245,8 @@ src/features/profile
 - 钱包、任务、资产接口请求统一走带 token 的 API 客户端
 - 登录成功后刷新用户资料和钱包余额
 - 退出登录后清理用户私有业务缓存
+
+当前实现状态：登录成功后已刷新用户资料和钱包；工作台页面访问已接入登录态守卫。生成提交前继续原操作、任务 / 资产私有缓存清理仍需结合 AIGC 真实接口改造继续补齐。
 
 ## 6. 用户端界面计划
 
@@ -355,6 +393,16 @@ src/features/profile
 - 下方 Tab 展示积分记录、余额记录、成长值、签到、地址、AIGC 任务、AIGC 资产
 - AIGC 任务、资产、钱包流水支持按 userId 跳转筛选
 
+当前实现状态：
+
+- 已在 `src/views/member/user/detail/index.vue` 汇总基础信息、账户信息和账户明细 Tab
+- 已在会员详情基础信息中补充邮箱、分组、标签、备注展示
+- 手机号和邮箱已默认脱敏展示
+- 空值已统一显示为 `--`
+- 详情页编辑按钮已增加 `member:user:update` 权限控制
+- 已展示积分、成长值、余额、充值 / 支出金额，并接入积分、余额、签到、成长值、地址等明细组件
+- 订单、售后、收藏等详情 Tab 仍带 TODO 或依赖商城模块完成度；AIGC 任务、AIGC 资产专属 Tab 尚未专项落地
+
 阶段 3：会员编辑与风控操作。
 
 - 继续使用 `src/views/member/user/UserForm.vue`
@@ -363,6 +411,16 @@ src/features/profile
 - 手机号、邮箱不建议普通编辑
 - 禁用会员、修改积分、修改等级、修改余额必须二次确认
 - 敏感信息不展示密码、验证码、token
+
+当前实现状态：
+
+- 会员列表“更多”菜单已新增独立启用 / 禁用入口
+- 启用 / 禁用入口已增加 `member:user:update-status` 权限控制
+- 启用 / 禁用操作要求填写原因并二次确认
+- 修改等级已增加原因必填
+- 修改积分已增加变动原因必填和二次确认
+- 修改余额已增加变动原因必填和二次确认
+- 编辑弹窗支持昵称、头像、真实姓名、性别、生日、地区、标签、分组、备注、状态等通用会员资料；手机号和邮箱不作为普通编辑项
 
 阶段 4：权限完善。
 
@@ -385,6 +443,8 @@ pay:wallet:update-balance
 promotion:coupon:send
 ```
 
+当前实现状态：列表、详情、编辑、状态、等级、积分、余额、发送优惠券等主要按钮已按 `v-hasPermi` 或 `checkPermi` 做权限控制。
+
 阶段 5：管理端 member/auth 边界确认。
 
 - 不新增用于普通会员登录的 `src/api/member/auth`
@@ -405,6 +465,13 @@ promotion:coupon:send
 - 用户状态使用 Tag 展示：正常为绿色，禁用为灰色或红色，待完善资料为橙色
 - 积分、余额等重要数值右对齐
 - 操作按钮采用“详情、编辑、更多”结构，更多内放修改等级、修改积分、修改余额、发送优惠券、禁用/启用
+
+当前实现状态：
+
+- 已补充邮箱筛选
+- 已补充手机号和邮箱脱敏展示
+- 已补充详情按钮 `member:user:query` 权限控制
+- 已补充“更多”菜单中的启用 / 禁用状态操作
 
 会员详情页：
 
@@ -547,16 +614,19 @@ Tabs:
 - accessToken 过期后可自动刷新
 - refreshToken 失效后清理登录态并打开登录弹窗
 - `/profile` 展示真实会员资料
-- 用户可修改昵称和头像
-- 退出登录后无法访问工作台、钱包、任务、资产、个人中心
+- 用户可修改昵称和头像地址
+- 退出登录后无法访问工作台、钱包、任务、资产、个人中心，其中任务和资产私有缓存清理随真实接口接入继续验证
 - 密码、验证码、token 不出现在 URL、页面日志、控制台输出中
 - 登录注册表单具备 loading、错误、成功、禁用状态
 - 登录注册界面在移动端可正常使用
+- `/login` 是独立兜底页面，不再跳首页后再打开弹窗
+- `/register` 是独立注册页面，默认打开邮箱注册流程
+- 登录成功后回到原始目标页面或继续生成提交原操作仍作为后续验收项
 
 管理端验收：
 
 - 会员列表展示真实会员数据
-- 可按昵称、手机号、注册时间、等级、标签、分组筛选
+- 可按昵称、手机号、邮箱、注册时间、登录时间、等级、标签、分组筛选
 - 会员详情展示基础信息、账户信息、积分、余额等记录
 - 运营可编辑允许修改的会员资料
 - 修改等级、积分、余额有权限控制和二次确认
@@ -565,6 +635,8 @@ Tabs:
 - 动态菜单能正确加载会员用户列表和详情页
 - 管理端不暴露会员密码、验证码、accessToken、refreshToken
 - 列表、详情、编辑弹窗具备空状态、异常状态、无权限状态
+- 会员启用 / 禁用通过独立入口完成，不依赖编辑表单直接修改状态
+- 会员启用 / 禁用需要填写原因并二次确认
 
 ## 12. 优先级
 
@@ -584,16 +656,31 @@ P0 必须完成：
 - 管理端会员列表敏感信息脱敏
 - 管理端会员状态 Tag
 - 管理端编辑、积分、等级、余额弹窗操作确认
+- 管理端会员启用 / 禁用独立入口
+- 用户端独立 `/login` 和 `/register` 页面
+
+P0 当前完成状态：
+
+- 已完成用户端邮箱验证码注册、手机号验证码登录、手机号密码登录入口接入
+- 已完成 Token 保存、401 自动刷新、刷新失败清理、refreshToken 启动恢复登录态
+- 已完成用户端真实登录注册弹窗、`/login` 独立页、`/register` 独立页
+- 已完成用户端 Profile 基础展示与昵称、头像地址修改，头像上传、账号安全未完成
+- 已完成工作台布局级登录守卫，未登录进入 `(app)` 路由会跳回首页并打开登录弹窗
+- 已完成管理端会员列表邮箱、登录时间、标签、等级、分组等筛选能力，以及手机号 / 邮箱脱敏、详情权限控制
+- 已完成管理端会员启用 / 禁用独立入口、等级原因必填、积分和余额调整原因及二次确认
+- 已完成管理端详情页基础信息、账户信息、积分 / 余额 / 签到 / 成长值 / 地址等明细入口
 
 P1 上线前建议完成：
 
-- 用户端 Profile 昵称、头像修改
-- 用户端独立 `/login`、`/register` 完整页面
+- 用户端头像上传 / 裁剪，替换当前头像 URL 输入
+- 用户端独立 `/login`、`/register` 页面增强
 - 用户端账号安全卡片
 - 用户端移动端底部 Sheet 登录体验
 - 用户端找回密码入口预留
-- 管理端会员邮箱字段展示
-- 管理端会员状态操作增强
+- 用户端登录后回到原始目标页、生成提交后继续原操作
+- 用户端邮箱验证码提交前独立预校验
+- 管理端会员邮箱字段展示已完成，后续重点是邮箱验证状态、注册来源、最近登录 IP、AIGC 用户标识补强
+- 管理端会员状态操作审计增强
 - 管理端 AIGC 任务、资产关联 Tab
 - 管理端批量操作入口
 

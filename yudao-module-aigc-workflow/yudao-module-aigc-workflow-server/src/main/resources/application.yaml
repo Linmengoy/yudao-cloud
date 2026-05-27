@@ -1,0 +1,98 @@
+spring:
+  application:
+    name: aigc-workflow-server
+
+  profiles:
+    active: local
+
+  main:
+    allow-circular-references: true
+    allow-bean-definition-overriding: true
+
+  config:
+    import:
+      - optional:classpath:application-${spring.profiles.active}.yaml
+      - optional:nacos:${spring.application.name}-${spring.profiles.active}.yaml
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: true
+      write-date-timestamps-as-nanoseconds: false
+      write-durations-as-timestamps: true
+      fail-on-empty-beans: false
+
+  cache:
+    type: REDIS
+    redis:
+      time-to-live: 1h
+
+server:
+  port: 48096
+
+logging:
+  file:
+    name: ${user.home}/logs/${spring.application.name}.log
+
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui
+  default-flat-param-object: true
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: NONE
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+    banner: false
+  type-aliases-package: ${yudao.info.base-package}.dal.dataobject
+  encryptor:
+    password: XDV71a+xqStEA3WH
+
+mybatis-plus-join:
+  banner: false
+
+spring:
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+easy-trans:
+  is-enable-global: false
+
+xxl:
+  job:
+    executor:
+      appname: ${spring.application.name}
+      logpath: ${user.home}/logs/xxl-job/${spring.application.name}
+    accessToken: default_token
+
+yudao:
+  info:
+    version: 1.0.0
+    base-package: cn.iocoder.yudao.module.aigc.workflow
+  web:
+    admin-ui:
+      url: http://dashboard.yudao.iocoder.cn
+  swagger:
+    title: AIGC 工作流服务
+    description: AIGC 工作流服务，负责工作流编排、实例执行和节点状态追踪
+    version: ${yudao.info.version}
+    base-package: ${yudao.info.base-package}
+  tenant:
+    enable: true
+  security:
+    permit-all_urls:
+      - /rpc-api/aigc/workflow/**
