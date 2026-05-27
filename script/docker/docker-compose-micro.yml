@@ -19,8 +19,6 @@ services:
       - "3306:3306"
     volumes:
       - yudao-mysql-data:/var/lib/mysql
-      - ../../sql/mysql/ruoyi-vue-pro.sql:/docker-entrypoint-initdb.d/01-ruoyi-vue-pro.sql:ro
-      - ../../sql/mysql/quartz.sql:/docker-entrypoint-initdb.d/02-quartz.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
       interval: 10s

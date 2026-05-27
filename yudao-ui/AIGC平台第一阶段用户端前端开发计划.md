@@ -1079,3 +1079,5 @@ PUT /app-api/member/user/update-email
 ```text
 用户端能完成：注册 / 登录 → 查看钱包 → 选择模型 → 预估价格 → 提交生成 → 查看进度 → 获得结果 → 查看资产 → 钱包扣费
 ```
+
+会员模块双端前端开发计划详见：`yudao-module-member双端前端开发计划.md`。
