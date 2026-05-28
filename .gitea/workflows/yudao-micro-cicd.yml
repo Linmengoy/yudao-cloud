@@ -28,50 +28,66 @@ on:
 jobs:
   build-deploy:
     runs-on: manman
+
     steps:
       - name: Checkout
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git init .
-          git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          if [ -d .git ]; then
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+            git fetch --prune origin
+            git clean -fdx
+          else
+            git init .
+            git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          fi
+
           git -c http.extraHeader="Authorization: token ${GITEA_TOKEN}" fetch --depth=1 origin "${{ github.ref }}"
-          git checkout FETCH_HEAD
+          git checkout -f FETCH_HEAD
+          git clean -fdx
+
+      - name: Show host environment
+        run: |
+          whoami
+          hostname
+          pwd
+          git --version
+          java -version
+          mvn -version
+          docker version
+          docker compose version
 
       - name: Resolve build target
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_SERVICE: ${{ github.event.inputs.service }}
-          INPUT_MODULE: ${{ github.event.inputs.module }}
         run: |
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             service="${INPUT_SERVICE:-aigc-gen}"
-            module="${INPUT_MODULE}"
           else
             service="all"
-            module="all"
           fi
 
-          if [ -z "${module}" ]; then
-            case "${service}" in
-              all) module="all" ;;
-              yudao-gateway) module="yudao-gateway" ;;
-              yudao-system) module="yudao-module-system/yudao-module-system-server" ;;
-              yudao-infra) module="yudao-module-infra/yudao-module-infra-server" ;;
-              yudao-member) module="yudao-module-member/yudao-module-member-server" ;;
-              yudao-pay) module="yudao-module-pay/yudao-module-pay-server" ;;
-              aigc-model) module="yudao-module-aigc-model/yudao-module-aigc-model-server" ;;
-              aigc-billing) module="yudao-module-aigc-billing/yudao-module-aigc-billing-server" ;;
-              aigc-task) module="yudao-module-aigc-task/yudao-module-aigc-task-server" ;;
-              aigc-asset) module="yudao-module-aigc-asset/yudao-module-aigc-asset-server" ;;
-              aigc-safety) module="yudao-module-aigc-safety/yudao-module-aigc-safety-server" ;;
-              aigc-workflow) module="yudao-module-aigc-workflow/yudao-module-aigc-workflow-server" ;;
-              aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
-              draw2video-admin) module="frontend" ;;
-              draw2video-client) module="frontend" ;;
-              *) echo "Unknown service: ${service}" && exit 1 ;;
-            esac
-          fi
+          case "${service}" in
+            all) module="all" ;;
+            yudao-gateway) module="yudao-gateway" ;;
+            yudao-system) module="yudao-module-system/yudao-module-system-server" ;;
+            yudao-infra) module="yudao-module-infra/yudao-module-infra-server" ;;
+            yudao-member) module="yudao-module-member/yudao-module-member-server" ;;
+            yudao-pay) module="yudao-module-pay/yudao-module-pay-server" ;;
+            aigc-model) module="yudao-module-aigc-model/yudao-module-aigc-model-server" ;;
+            aigc-billing) module="yudao-module-aigc-billing/yudao-module-aigc-billing-server" ;;
+            aigc-task) module="yudao-module-aigc-task/yudao-module-aigc-task-server" ;;
+            aigc-asset) module="yudao-module-aigc-asset/yudao-module-aigc-asset-server" ;;
+            aigc-safety) module="yudao-module-aigc-safety/yudao-module-aigc-safety-server" ;;
+            aigc-workflow) module="yudao-module-aigc-workflow/yudao-module-aigc-workflow-server" ;;
+            aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
+            draw2video-admin) module="frontend" ;;
+            draw2video-client) module="frontend" ;;
+            *) echo "Unknown service: ${service}" && exit 1 ;;
+          esac
 
           if [ "${service}" != "all" ]; then
             docker compose -f script/docker/docker-compose-micro.yml config --services | grep -Fx "${service}"
@@ -82,10 +98,12 @@ jobs:
 
       - name: Build jar
         run: |
+          echo "Build service: ${BUILD_SERVICE}"
           echo "Build module: ${BUILD_MODULE}"
+
           if [ "${BUILD_MODULE}" = "frontend" ]; then
             echo "Skip Maven build for frontend service: ${BUILD_SERVICE}"
-          elif [ -z "${BUILD_MODULE}" ] || [ "${BUILD_MODULE}" = "all" ]; then
+          elif [ "${BUILD_MODULE}" = "all" ]; then
             mvn clean package -DskipTests
           else
             mvn clean package -pl "${BUILD_MODULE}" -am -DskipTests
@@ -94,6 +112,7 @@ jobs:
       - name: Build image
         run: |
           echo "Build service: ${BUILD_SERVICE}"
+
           if [ "${BUILD_SERVICE}" = "all" ]; then
             docker compose -f script/docker/docker-compose-micro.yml build
           else
@@ -106,9 +125,9 @@ jobs:
           echo "Deploy env: ${deploy_env}"
 
           if [ "${BUILD_SERVICE}" = "all" ]; then
-            docker compose -f script/docker/docker-compose-micro.yml up -d --build
+            docker compose -f script/docker/docker-compose-micro.yml up -d
           else
-            docker compose -f script/docker/docker-compose-micro.yml up -d --build "${BUILD_SERVICE}"
+            docker compose -f script/docker/docker-compose-micro.yml up -d "${BUILD_SERVICE}"
           fi
 
       - name: Verify services
@@ -117,6 +136,7 @@ jobs:
           echo "Verify env: ${deploy_env}"
 
           docker compose -f script/docker/docker-compose-micro.yml ps
+
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:48080/ || true)
             echo "Gateway: ${code}"
@@ -125,5 +145,20 @@ jobs:
             fi
             sleep 5
           done
-          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen draw2video-admin draw2video-client
+
+          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 \
+            yudao-gateway \
+            yudao-system \
+            yudao-infra \
+            yudao-member \
+            yudao-pay \
+            aigc-model \
+            aigc-billing \
+            aigc-task \
+            aigc-asset \
+            aigc-safety \
+            aigc-gen \
+            draw2video-admin \
+            draw2video-client
+
           exit 1
