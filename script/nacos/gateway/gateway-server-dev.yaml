@@ -31,6 +31,18 @@ spring:
                 - Path=/app-api/infra/**
               filters:
                 - RewritePath=/app-api/infra/v3/api-docs, /v3/api-docs
+            - id: member-admin-api
+              uri: grayLb://member-server
+              predicates:
+                - Path=/admin-api/member/**
+              filters:
+                - RewritePath=/admin-api/member/v3/api-docs, /v3/api-docs
+            - id: member-app-api
+              uri: grayLb://member-server
+              predicates:
+                - Path=/app-api/member/**
+              filters:
+                - RewritePath=/app-api/member/v3/api-docs, /v3/api-docs
 
 --- #################### Knife4j 相关配置 ####################
 knife4j:
@@ -40,10 +52,21 @@ knife4j:
       - name: system-server
         service-name: system-server
         url: /admin-api/system/v3/api-docs
+      - name: system-app-server
+        service-name: system-app-server
+        url: /app-api/system/v3/api-docs
       - name: infra-server
         service-name: infra-server
         url: /admin-api/infra/v3/api-docs
-
+      - name: infra-app-server
+        service-name: infra-app-server
+        url: /app-api/infra/v3/api-docs
+      - name: member-server
+        service-name: member-server
+        url: /admin-api/member/v3/api-docs
+      - name: member-app-server
+        service-name: member-app-server
+        url: /app-api/member/v3/api-docs
 --- #################### 日志相关配置 ####################
 logging:
   level:

@@ -33,3 +33,19 @@ mvn -pl yudao-gateway -am package -DskipTests
 ```java
 java -jar .\yudao-gateway\target\yudao-gateway.jar
 ```
+
+admin创建
+
+```
+npm run dev-server
+```
+
+member-server
+
+```
+mvn -pl yudao-module-member/yudao-module-member-server -am package -DskipTests
+```
+
+```
+java -jar .\yudao-module-member\yudao-module-member-server\target\yudao-module-member-server.jar
+```
