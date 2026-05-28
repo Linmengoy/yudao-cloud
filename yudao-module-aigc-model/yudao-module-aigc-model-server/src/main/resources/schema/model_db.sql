@@ -1,0 +1,228 @@
+CREATE TABLE `aigc_model_provider` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `code` varchar(64) NOT NULL COMMENT '渠道商编码',
+  `name` varchar(128) NOT NULL COMMENT '渠道商名称',
+  `api_base_url` varchar(512) NOT NULL COMMENT 'API地址',
+  `auth_type` varchar(32) NOT NULL COMMENT '鉴权方式',
+  `api_key` varchar(1024) DEFAULT NULL COMMENT 'API Key',
+  `secret_key` varchar(1024) DEFAULT NULL COMMENT 'Secret Key',
+  `extra_config` json DEFAULT NULL COMMENT '扩展配置',
+  `timeout_seconds` int DEFAULT 30 COMMENT '默认超时时间',
+  `rate_limit_config` json DEFAULT NULL COMMENT '限流配置',
+  `health_status` varchar(32) DEFAULT 'UNKNOWN' COMMENT '健康状态',
+  `balance` decimal(18,6) DEFAULT 0 COMMENT '渠道余额',
+  `status` int NOT NULL DEFAULT 1 COMMENT '状态',
+  `remark` varchar(512) DEFAULT NULL COMMENT '备注',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_code_tenant` (`code`, `tenant_id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型渠道商表';
+
+CREATE TABLE `aigc_model` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `provider_id` bigint NOT NULL COMMENT '渠道商ID',
+  `code` varchar(64) NOT NULL COMMENT '平台内部模型编码',
+  `name` varchar(128) NOT NULL COMMENT '模型展示名称',
+  `model` varchar(128) NOT NULL COMMENT '渠道商模型标识',
+  `type` int NOT NULL COMMENT '模型类型',
+  `public_visible` tinyint(1) DEFAULT 0 COMMENT '用户端是否展示',
+  `default_model` tinyint(1) DEFAULT 0 COMMENT '是否默认模型',
+  `sort` int DEFAULT 0 COMMENT '排序',
+  `max_concurrent` int DEFAULT 10 COMMENT '最大并发',
+  `timeout_seconds` int DEFAULT 60 COMMENT '模型超时时间',
+  `queue_priority` int DEFAULT 100 COMMENT '默认队列优先级',
+  `status` int NOT NULL DEFAULT 1 COMMENT '状态',
+  `remark` varchar(512) DEFAULT NULL COMMENT '备注',
+  `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_code_tenant` (`code`, `tenant_id`),
+  KEY `idx_provider_id` (`provider_id`),
+  KEY `idx_type_status` (`type`, `status`),
+  KEY `idx_public_visible` (`public_visible`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型配置表';
+
+CREATE TABLE `aigc_model_capability` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `model_id` bigint NOT NULL COMMENT '模型ID',
+  `capability` varchar(64) NOT NULL COMMENT '能力编码',
+  `status` int DEFAULT 1 COMMENT '状态',
+  `remark` varchar(512) DEFAULT NULL COMMENT '备注',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_model_capability` (`model_id`, `capability`),
+  KEY `idx_capability` (`capability`),
+  KEY `idx_model_id` (`model_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型能力表';
+
+CREATE TABLE `aigc_model_param_template` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `model_id` bigint NOT NULL COMMENT '模型ID',
+  `capability` varchar(64) NOT NULL COMMENT '能力编码',
+  `param_key` varchar(64) NOT NULL COMMENT '参数键',
+  `param_name` varchar(128) NOT NULL COMMENT '参数名称',
+  `param_type` varchar(32) NOT NULL COMMENT '参数类型',
+  `required_status` tinyint(1) DEFAULT 0 COMMENT '是否必填',
+  `default_value` varchar(512) DEFAULT NULL COMMENT '默认值',
+  `options` json DEFAULT NULL COMMENT '可选值',
+  `min_value` decimal(18,6) DEFAULT NULL COMMENT '最小值',
+  `max_value` decimal(18,6) DEFAULT NULL COMMENT '最大值',
+  `regex_pattern` varchar(512) DEFAULT NULL COMMENT '正则校验',
+  `sort` int DEFAULT 0 COMMENT '排序',
+  `status` int DEFAULT 1 COMMENT '状态',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_model_capability_param` (`model_id`, `capability`, `param_key`),
+  KEY `idx_model_id` (`model_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型参数模板表';
+
+CREATE TABLE `aigc_model_price` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `model_id` bigint NOT NULL COMMENT '模型ID',
+  `capability` varchar(64) NOT NULL COMMENT '能力编码',
+  `billing_unit` varchar(32) NOT NULL COMMENT '计费单位',
+  `cost_price` decimal(18,6) NOT NULL DEFAULT 0 COMMENT '平台成本价',
+  `sale_price` decimal(18,6) NOT NULL DEFAULT 0 COMMENT '用户销售价',
+  `currency_type` varchar(32) DEFAULT 'POINT' COMMENT '货币类型',
+  `price_config` json DEFAULT NULL COMMENT '阶梯价格配置',
+  `effective_start_time` datetime DEFAULT NULL COMMENT '生效开始时间',
+  `effective_end_time` datetime DEFAULT NULL COMMENT '生效结束时间',
+  `status` int DEFAULT 1 COMMENT '状态',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_model_capability_tenant` (`model_id`, `capability`, `tenant_id`),
+  KEY `idx_model_id` (`model_id`),
+  KEY `idx_capability` (`capability`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型价格规则表';
+
+CREATE TABLE `aigc_model_route` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `name` varchar(128) NOT NULL COMMENT '路由名称',
+  `task_type` varchar(64) DEFAULT NULL COMMENT '任务类型',
+  `capability` varchar(64) DEFAULT NULL COMMENT '能力',
+  `strategy` varchar(64) NOT NULL COMMENT '路由策略',
+  `model_ids` json DEFAULT NULL COMMENT '候选模型ID',
+  `user_level` varchar(64) DEFAULT NULL COMMENT '用户等级',
+  `status` int DEFAULT 1 COMMENT '状态',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型路由规则表';
+
+CREATE TABLE `aigc_model_tenant` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `tenant_id` bigint NOT NULL COMMENT '租户ID',
+  `model_id` bigint NOT NULL COMMENT '平台模型ID',
+  `enabled` tinyint(1) DEFAULT 1 COMMENT '租户是否启用该模型',
+  `public_visible` tinyint(1) DEFAULT 0 COMMENT '用户端是否展示',
+  `default_model` tinyint(1) DEFAULT 0 COMMENT '是否租户默认模型',
+  `sort` int DEFAULT 0 COMMENT '租户内排序',
+  `max_concurrent` int DEFAULT NULL COMMENT '租户模型并发限制',
+  `daily_limit` int DEFAULT NULL COMMENT '租户日调用限制',
+  `remark` varchar(512) DEFAULT NULL COMMENT '备注',
+  `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_tenant_model` (`tenant_id`, `model_id`),
+  KEY `idx_model_id` (`model_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户模型授权表';
+
+CREATE TABLE `aigc_model_usage_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `trace_id` varchar(64) DEFAULT NULL COMMENT '链路追踪编号',
+  `task_id` bigint DEFAULT NULL COMMENT '任务编号',
+  `user_id` bigint DEFAULT NULL COMMENT '用户编号',
+  `model_id` bigint NOT NULL COMMENT '模型编号',
+  `provider_id` bigint DEFAULT NULL COMMENT '渠道商编号',
+  `capability` varchar(64) NOT NULL COMMENT '模型能力',
+  `request_id` varchar(128) DEFAULT NULL COMMENT '请求编号',
+  `external_task_id` varchar(128) DEFAULT NULL COMMENT '外部任务编号',
+  `prompt_tokens` bigint DEFAULT NULL COMMENT '提示词 Token 数',
+  `completion_tokens` bigint DEFAULT NULL COMMENT '输出 Token 数',
+  `total_tokens` bigint DEFAULT NULL COMMENT '总 Token 数',
+  `cached_tokens` bigint DEFAULT NULL COMMENT '缓存 Token 数',
+  `reasoning_tokens` bigint DEFAULT NULL COMMENT '推理 Token 数',
+  `input_tokens` bigint DEFAULT NULL COMMENT '输入 Token 数',
+  `output_tokens` bigint DEFAULT NULL COMMENT '输出 Token 数',
+  `cost_price` decimal(18,6) DEFAULT NULL COMMENT '成本价',
+  `sale_price` decimal(18,6) DEFAULT NULL COMMENT '销售价',
+  `currency_type` varchar(32) DEFAULT 'POINT' COMMENT '货币类型',
+  `status` int NOT NULL DEFAULT 0 COMMENT '调用状态',
+  `duration_millis` bigint DEFAULT NULL COMMENT '调用耗时，单位：毫秒',
+  `usage_json` text DEFAULT NULL COMMENT '渠道原始 usage JSON',
+  `error_code` varchar(64) DEFAULT NULL COMMENT '错误码',
+  `error_message` varchar(1024) DEFAULT NULL COMMENT '错误信息',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  PRIMARY KEY (`id`),
+  KEY `idx_trace_id` (`trace_id`),
+  KEY `idx_task_id` (`task_id`),
+  KEY `idx_user_time` (`user_id`, `create_time`),
+  KEY `idx_model_time` (`model_id`, `create_time`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型调用计量日志表';
+
+INSERT INTO `aigc_model_provider` (`id`, `code`, `name`, `api_base_url`, `auth_type`, `status`, `tenant_id`) VALUES
+(1, 'provider_kling', '可灵AI', 'https://api.klingai.com', 'API_KEY', 0, 0),
+(2, 'provider_jimeng', '即梦AI', 'https://api.jimengai.com', 'API_KEY', 0, 0),
+(3, 'provider_openai', 'OpenAI', 'https://api.openai.com', 'API_KEY', 0, 0);
+
+INSERT INTO `aigc_model` (`id`, `provider_id`, `code`, `name`, `model`, `type`, `public_visible`, `default_model`, `status`, `tenant_id`) VALUES
+(1, 1, 'model_image_kling', '可灵图片生成', 'kling-image-v1', 2, 0, 0, 0, 0),
+(2, 1, 'model_video_kling', '可灵视频生成', 'kling-video-v1', 3, 0, 0, 0, 0);
+
+INSERT INTO `aigc_model_capability` (`id`, `model_id`, `capability`, `status`) VALUES
+(1, 1, 'TEXT_TO_IMAGE', 1),
+(2, 1, 'IMAGE_TO_IMAGE', 1),
+(3, 2, 'TEXT_TO_VIDEO', 1),
+(4, 2, 'IMAGE_TO_VIDEO', 1);
+
+INSERT INTO `aigc_model_param_template` (`id`, `model_id`, `capability`, `param_key`, `param_name`, `param_type`, `required_status`, `default_value`, `options`, `sort`, `status`) VALUES
+(1, 1, 'TEXT_TO_IMAGE', 'ratio', '比例', 'SELECT', 1, '1:1', '["1:1", "9:16", "16:9", "3:4", "4:3"]', 1, 1),
+(2, 1, 'TEXT_TO_IMAGE', 'width', '宽度', 'NUMBER', 0, '1024', NULL, 2, 1),
+(3, 1, 'TEXT_TO_IMAGE', 'height', '高度', 'NUMBER', 0, '1024', NULL, 3, 1),
+(4, 1, 'TEXT_TO_IMAGE', 'batchSize', '批量数量', 'SELECT', 0, '1', '["1", "4", "9"]', 4, 1),
+(5, 1, 'TEXT_TO_IMAGE', 'style', '风格', 'SELECT', 0, 'realistic', '["realistic", "anime", "cartoon", "oil", "sketch"]', 5, 1),
+(6, 2, 'TEXT_TO_VIDEO', 'duration', '视频时长(秒)', 'NUMBER', 1, '10', NULL, 1, 1),
+(7, 2, 'TEXT_TO_VIDEO', 'resolution', '分辨率', 'SELECT', 1, '720p', '["720p", "1080p"]', 2, 1),
+(8, 2, 'TEXT_TO_VIDEO', 'ratio', '比例', 'SELECT', 0, '16:9', '["16:9", "9:16", "1:1"]', 3, 1),
+(9, 2, 'TEXT_TO_VIDEO', 'cameraMovement', '运镜', 'SELECT', 0, 'none', '["none", "pan", "zoom", "rotate"]', 4, 1);
+
+INSERT INTO `aigc_model_price` (`id`, `model_id`, `capability`, `billing_unit`, `cost_price`, `sale_price`, `currency_type`, `price_config`, `status`, `tenant_id`) VALUES
+(1, 1, 'TEXT_TO_IMAGE', 'PER_IMAGE', 0.50, 1.00, 'POINT', '{"batchMultiplier":true}', 1, 0),
+(2, 1, 'IMAGE_TO_IMAGE', 'PER_IMAGE', 0.30, 0.60, 'POINT', '{"batchMultiplier":true}', 1, 0),
+(3, 2, 'TEXT_TO_VIDEO', 'PER_5_SECONDS', 2.00, 4.00, 'POINT', '{"durationMultiplier":true,"resolutionExtra":{"720p":0,"1080p":20}}', 1, 0),
+(4, 2, 'IMAGE_TO_VIDEO', 'PER_5_SECONDS', 1.80, 3.60, 'POINT', '{"durationMultiplier":true,"resolutionExtra":{"720p":0,"1080p":20}}', 1, 0);
