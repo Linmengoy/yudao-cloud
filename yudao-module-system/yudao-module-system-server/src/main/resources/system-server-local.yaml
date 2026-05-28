@@ -3,12 +3,6 @@ yudao:
   web:
     admin-ui:
       url: http://dashboard.yudao.iocoder.cn # Admin 管理后台 UI 的地址
-  sms-code:
-    expire-times: 10m
-    send-frequency: 1m
-    send-maximum-quantity-per-day: 10
-    begin-code: 9999
-    end-code: 9999
 
 --- #################### 数据库相关配置 ####################
 spring:
@@ -52,19 +46,19 @@ spring:
       primary: master
       datasource:
         master:
-          url: jdbc:mysql://mysql:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
+          url: jdbc:mysql://111.228.39.103:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
           username: root
           password: 123456
         slave: # 模拟从库，可根据自己需要修改 # 模拟从库，可根据自己需要修改
           lazy: true # 开启懒加载，保证启动速度
-          url: jdbc:mysql://mysql:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
+          url: jdbc:mysql://111.228.39.103:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
           username: root
           password: 123456
 
   # Redis 配置。Redisson 默认的配置足够使用，一般不需要进行调优
   data:
     redis:
-      host: redis # 地址
+      host: 111.228.39.103 # 地址
       port: 6379 # 端口
       database: 1 # 数据库索引
 #      password: 123456 # 密码，建议生产环境开启
@@ -74,7 +68,7 @@ spring:
 xxl:
   job:
     admin:
-      addresses: http://xxl-job-admin:9090/xxl-job-admin # 调度中心部署跟地址
+      addresses: http://111.228.39.103:9090/xxl-job-admin # 调度中心部署跟地址
 
 --- #################### 服务保障相关配置 ####################
 
@@ -202,39 +196,3 @@ aj:
     req-get-minute-limit: 30 # get 接口一分钟内请求数限制
     req-check-minute-limit: 60 # check 接口一分钟内请求数限制
     req-verify-minute-limit: 60 # verify 接口一分钟内请求数限制
-
---- #################### 芋道相关配置 ####################
-
-yudao:
-  xss:
-    enable: false
-    exclude-urls: # 如下 url，仅仅是为了演示，去掉配置也没关系
-      - ${management.endpoints.web.base-path}/** # 不处理 Actuator 的请求
-  api-encrypt:
-    enable: true # 是否开启 API 加密
-    algorithm: AES # 加密算法，支持 AES、RSA 等
-    request-key: 52549111389893486934626385991395 # 【AES 案例】请求加密的秘钥，，必须 16、24、32 位
-    response-key: 96103715984234343991809655248883 # 【AES 案例】响应加密的秘钥，AES 案例，必须 16、24、32 位
-  #    request-key: MIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAKWzasimcZ1icsWDPVdTXcZs1DkOWjI+m9bTQU8aOqflnomkr6QO1WWeSHBHzuJGsTlV/ZY2pFfq/NstKC94hBjx7yioYJvzb2bKN/Uy4j5nM3iCF//u0RiFkkY8j0Bt/EWoFTOb6RHf8cHIAjbYYtP3pYzbpCIwryfe0g//KIuzAgMBAAECgYADDjZrYcpZjR2xr7RbXmGtzYbyUGXwZEAqa3XaWBD51J2iSyOkAlQEDjGmxGQ3vvb4qDHHadWI+3/TKNeDXJUO+xTVJrnismK5BsHyC6dfxlIK/5BAuknryTca/3UoA1yomS9ZlF3Q0wcecaDoEnSmZEaTrp9T3itPAz4KnGjv5QJBAN5mNcfu6iJ5ktNvEdzqcxkKwbXb9Nq1SLnmTvt+d5TPX7eQ9fCwtOfVu5iBLhhZzb5PJ7pSN3Zt6rl5/jPOGv0CQQC+vETX9oe1wbxZSv6/RBGy0Xow6GndbJwvd89PcAJ2h+OJXWtg/rRHB3t9EQm7iis0XbZTapj19E4U6l8EibhvAkEA1CvYpRwmHKu1SqdM+GBnW/2qHlBwwXJvpoK02TOm674HR/4w0+YRQJfkd7LOAgcyxJuJgDTNmtt0MmzS+iNoFQJAMVSUIZ77XoDq69U/qcw7H5qaFcgmiUQr6QL9tTftCyb+LGri+MUnby96OtCLSdvkbLjIDS8GvKYhA7vSM2RDNQJBAKGyVVnFFIrbK3yuwW71yvxQEGoGxlgvZSezZ4vGgqTxrr9HvAtvWLwR6rpe6ybR/x8uUtoW7NRBWgpiIFwjvY4= # 【RSA 案例】请求解密的私钥
-  #    response-key: MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDh/CHyBcS/zEfVyINVA7+c9Xxl0CPdxPMK1OIjxaLy/7BLfbkoEpI8onQtjuzfpuxCraDem9bu3BMF0pMH95HytI3Vi0kGjaV+WLIalwgc2w37oA2sbsmKzQOP7SDLO5s2QJNAD7kVwd+Q5rqaLu2MO0xVv+0IUJhn83hClC0L5wIDAQAB # 【RSA 案例】响应加密的公钥
-  tenant: # 多租户相关配置项
-    enable: true
-    ignore-urls:
-    ignore-visit-urls:
-      - /admin-api/system/user/profile/**
-      - /admin-api/system/auth/**
-    ignore-tables:
-    ignore-caches:
-      - user_role_ids
-      - permission_menu_ids
-      - oauth_client
-      - notify_template
-      - mail_account
-      - mail_template
-      - sms_template
-  sms-code: # 短信验证码相关的配置项
-    expire-times: 10m
-    send-frequency: 1m
-    send-maximum-quantity-per-day: 10
-    begin-code: 9999 # 这里配置 9999 的原因是，测试方便。
-    end-code: 9999 # 这里配置 9999 的原因是，测试方便。

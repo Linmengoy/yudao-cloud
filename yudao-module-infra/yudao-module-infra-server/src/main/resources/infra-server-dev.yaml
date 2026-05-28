@@ -79,3 +79,16 @@ management:
 
 yudao:
   demo: false
+  env:
+    tag: ${HOSTNAME:dev}
+  security:
+    mock-enable: false
+  access-log:
+    enable: true
+
+logging:
+  level:
+    cn.iocoder.yudao.module.infra.dal.mysql: INFO
+    cn.iocoder.yudao.module.infra.dal.mysql.logger.ApiErrorLogMapper: INFO
+    cn.iocoder.yudao.module.infra.dal.mysql.file.FileConfigMapper: INFO
+    org.springframework.context.support.PostProcessorRegistrationDelegate: ERROR

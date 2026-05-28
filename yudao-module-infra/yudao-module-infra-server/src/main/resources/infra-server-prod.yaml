@@ -1,0 +1,33 @@
+yudao:
+  demo: false
+  env:
+    tag: ${HOSTNAME:prod}
+  security:
+    mock-enable: false
+  access-log:
+    enable: true
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,prometheus
+
+spring:
+  boot:
+    admin:
+      client:
+        instance:
+          service-host-type: IP
+        username: ${SPRING_BOOT_ADMIN_USERNAME:admin}
+        password: ${SPRING_BOOT_ADMIN_PASSWORD:admin}
+      context-path: /admin
+      frame-ancestors: "'self' ${YUDao_ADMIN_HOST:localhost}"
+
+logging:
+  level:
+    cn.iocoder.yudao.module.infra.dal.mysql: INFO
+    cn.iocoder.yudao.module.infra.dal.mysql.logger.ApiErrorLogMapper: INFO
+    cn.iocoder.yudao.module.infra.dal.mysql.file.FileConfigMapper: INFO
+    org.springframework.context.support.PostProcessorRegistrationDelegate: ERROR

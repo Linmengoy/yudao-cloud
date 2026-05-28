@@ -1,0 +1,127 @@
+yudao:
+  web:
+    admin-ui:
+      url: ${YUDao_ADMIN_UI_URL:http://localhost}
+  demo: false
+  env:
+    tag: ${HOSTNAME:prod}
+  captcha:
+    enable: true
+  security:
+    mock-enable: false
+  access-log:
+    enable: true
+  wxa-code:
+    env-version: release
+  wxa-subscribe-message:
+    miniprogram-state: formal
+  xss:
+    enable: true
+    exclude-urls:
+      - ${management.endpoints.web.base-path}/**
+  api-encrypt:
+    enable: true
+    algorithm: AES
+    request-key: ${YUDao_API_ENCRYPT_REQUEST_KEY:52549111389893486934626385991395}
+    response-key: ${YUDao_API_ENCRYPT_RESPONSE_KEY:96103715984234343991809655248883}
+  tenant:
+    enable: true
+    ignore-urls:
+    ignore-visit-urls:
+      - /admin-api/system/user/profile/**
+      - /admin-api/system/auth/**
+    ignore-tables:
+    ignore-caches:
+      - user_role_ids
+      - permission_menu_ids
+      - oauth_client
+      - notify_template
+      - mail_account
+      - mail_template
+      - sms_template
+  sms-code:
+    expire-times: 10m
+    send-frequency: 1m
+    send-maximum-quantity-per-day: 10
+    begin-code: 1000
+    end-code: 9999
+
+wx:
+  mp:
+    app-id: ${WX_MP_APP_ID:}
+    secret: ${WX_MP_SECRET:}
+    config-storage:
+      type: RedisTemplate
+      key-prefix: wx
+      http-client-type: HttpClient
+  miniapp:
+    appid: ${WX_MINIAPP_APPID:}
+    secret: ${WX_MINIAPP_SECRET:}
+    config-storage:
+      type: RedisTemplate
+      key-prefix: wa
+      http-client-type: HttpClient
+
+justauth:
+  enabled: true
+  type:
+    WECHAT_MINI_PROGRAM:
+      client-id: ${wx.miniapp.appid}
+      client-secret: ${wx.miniapp.secret}
+      ignore-check-redirect-uri: true
+      ignore-check-state: true
+    WECHAT_MP:
+      client-id: ${wx.mp.app-id}
+      client-secret: ${wx.mp.secret}
+      ignore-check-redirect-uri: true
+  cache:
+    type: REDIS
+    prefix: 'social_auth_state:'
+    timeout: 24h
+
+mybatis-plus:
+  encryptor:
+    password: ${MYBATIS_PLUS_ENCRYPTOR_PASSWORD:XDV71a+xqStEA3WH}
+
+xxl:
+  job:
+    accessToken: ${XXL_JOB_ACCESS_TOKEN:default_token}
+
+aj:
+  captcha:
+    jigsaw: classpath:images/jigsaw
+    pic-click: classpath:images/pic-click
+    cache-type: redis
+    cache-number: 1000
+    timing-clear: 180
+    type: blockPuzzle
+    water-mark: manmanAI
+    interference-options: 0
+    req-frequency-limit-enable: true
+    req-get-lock-limit: 5
+    req-get-lock-seconds: 10
+    req-get-minute-limit: 30
+    req-check-minute-limit: 60
+    req-verify-minute-limit: 60
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,prometheus
+
+spring:
+  boot:
+    admin:
+      client:
+        instance:
+          service-host-type: IP
+        username: ${SPRING_BOOT_ADMIN_USERNAME:admin}
+        password: ${SPRING_BOOT_ADMIN_PASSWORD:admin}
+
+logging:
+  level:
+    cn.iocoder.yudao.module.system.dal.mysql: INFO
+    cn.iocoder.yudao.module.system.dal.mysql.sms.SmsChannelMapper: INFO
+    org.springframework.context.support.PostProcessorRegistrationDelegate: ERROR

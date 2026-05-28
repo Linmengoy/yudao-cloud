@@ -51,20 +51,20 @@ spring:
       primary: master
       datasource:
         master:
-          url: ${SYSTEM_DB_MASTER_URL:jdbc:mysql://mysql:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true}
-          username: ${SYSTEM_DB_USERNAME:root}
-          password: ${SYSTEM_DB_PASSWORD:123456}
+          url: ${INFRA_DB_MASTER_URL:jdbc:mysql://mysql:3306/infra_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true}
+          username: ${INFRA_DB_USERNAME:root}
+          password: ${INFRA_DB_PASSWORD:123456}
         slave:
           lazy: true
-          url: ${SYSTEM_DB_SLAVE_URL:${SYSTEM_DB_MASTER_URL:jdbc:mysql://mysql:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true}}
-          username: ${SYSTEM_DB_SLAVE_USERNAME:${SYSTEM_DB_USERNAME:root}}
-          password: ${SYSTEM_DB_SLAVE_PASSWORD:${SYSTEM_DB_PASSWORD:123456}}
+          url: ${INFRA_DB_SLAVE_URL:${INFRA_DB_MASTER_URL:jdbc:mysql://mysql:3306/infra_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true}}
+          username: ${INFRA_DB_SLAVE_USERNAME:${INFRA_DB_USERNAME:root}}
+          password: ${INFRA_DB_SLAVE_PASSWORD:${INFRA_DB_PASSWORD:123456}}
 
   data:
     redis:
       host: ${REDIS_HOST:redis}
       port: ${REDIS_PORT:6379}
-      database: ${SYSTEM_REDIS_DATABASE:1}
+      database: ${INFRA_REDIS_DATABASE:2}
       password: ${REDIS_PASSWORD:}
 
 --- #################### MQ 消息队列相关配置 ####################
