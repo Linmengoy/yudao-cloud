@@ -85,6 +85,8 @@ easy-trans:
 
 xxl:
   job:
+    admin:
+      addresses: http://111.228.39.103:9090/xxl-job-admin
     executor:
       appname: ${spring.application.name}
       logpath: ${user.home}/logs/xxl-job/${spring.application.name}

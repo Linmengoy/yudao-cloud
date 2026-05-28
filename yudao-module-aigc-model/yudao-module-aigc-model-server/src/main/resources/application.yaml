@@ -12,6 +12,7 @@ spring:
   config:
     import:
       - optional:classpath:application-${spring.profiles.active}.yaml
+      - optional:classpath:${spring.application.name}-${spring.profiles.active}.yaml
       - optional:nacos:${spring.application.name}-${spring.profiles.active}.yaml
 
   servlet:
