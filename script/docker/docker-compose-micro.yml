@@ -523,7 +523,7 @@ services:
     ports:
       - "48087:48087"
     volumes:
-      - yudao-logs:/root/logs
+      - /opt/data/yudao-logs:/root/logs
     depends_on:
       yudao-system:
         condition: service_started
@@ -556,7 +556,7 @@ services:
     ports:
       - "48080:48080"
     volumes:
-      - yudao-logs:/root/logs
+      - /opt/data/yudao-logs:/root/logs
     depends_on:
       yudao-system:
         condition: service_started
