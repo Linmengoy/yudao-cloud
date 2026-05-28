@@ -1,0 +1,51 @@
+
+--- #################### 网关关相关配置 ####################
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: system-admin-api
+              uri: grayLb://system-server
+              predicates:
+                - Path=/admin-api/system/**
+              filters:
+                - RewritePath=/admin-api/system/v3/api-docs, /v3/api-docs
+
+            - id: system-app-api
+              uri: grayLb://system-server
+              predicates:
+                - Path=/app-api/system/**
+              filters:
+                - RewritePath=/app-api/system/v3/api-docs, /v3/api-docs
+            - id: infra-admin-api
+              uri: grayLb://infra-server
+              predicates:
+                - Path=/admin-api/infra/**
+              filters:
+                - RewritePath=/admin-api/infra/v3/api-docs, /v3/api-docs
+            - id: infra-app-api
+              uri: grayLb://infra-server
+              predicates:
+                - Path=/app-api/infra/**
+              filters:
+                - RewritePath=/app-api/infra/v3/api-docs, /v3/api-docs
+
+--- #################### Knife4j 相关配置 ####################
+knife4j:
+  gateway:
+    enabled: true
+    routes:
+      - name: system-server
+        service-name: system-server
+        url: /admin-api/system/v3/api-docs
+      - name: infra-server
+        service-name: infra-server
+        url: /admin-api/infra/v3/api-docs
+
+--- #################### 日志相关配置 ####################
+logging:
+  level:
+    cn.iocoder.yudao.gateway: debug
+    org.springframework.cloud.gateway: info

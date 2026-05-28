@@ -21,3 +21,15 @@ mvn -pl yudao-module-system/yudao-module-system-server -am package -DskipTests
 ```
 java -jar .\yudao-module-system\yudao-module-system-server\target\yudao-module-system-server.jar
 ```
+
+gateway-server
+
+本地构建
+
+```
+mvn -pl yudao-gateway -am package -DskipTests
+```
+
+```java
+java -jar .\yudao-gateway\target\yudao-gateway.jar
+```

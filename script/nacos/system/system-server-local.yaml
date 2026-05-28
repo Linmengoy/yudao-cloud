@@ -1,16 +1,5 @@
---- #################### 芋道相关配置 ####################
-yudao:
-  web:
-    admin-ui:
-      url: http://dashboard.yudao.iocoder.cn # Admin 管理后台 UI 的地址
-  sms-code:
-    expire-times: 10m
-    send-frequency: 1m
-    send-maximum-quantity-per-day: 10
-    begin-code: 9999
-    end-code: 9999
 
---- #################### 数据库相关配置 ####################
+
 spring:
   # 数据源配置项
   autoconfigure:
@@ -50,52 +39,17 @@ spring:
         pool-prepared-statements: true # 是否开启 PreparedStatement 缓存
         max-pool-prepared-statement-per-connection-size: 20 # 每个连接缓存的 PreparedStatement 数量
       primary: master
-      datasource:
+      datasource: 
         master:
-          url: jdbc:mysql://mysql:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
+          url: jdbc:mysql://111.228.39.103:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
           username: root
           password: 123456
         slave: # 模拟从库，可根据自己需要修改 # 模拟从库，可根据自己需要修改
           lazy: true # 开启懒加载，保证启动速度
-          url: jdbc:mysql://mysql:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
+          url: jdbc:mysql://111.228.39.103:3306/system_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
           username: root
           password: 123456
-
-  # Redis 配置。Redisson 默认的配置足够使用，一般不需要进行调优
-  data:
-    redis:
-      host: redis # 地址
-      port: 6379 # 端口
-      database: 1 # 数据库索引
-#      password: 123456 # 密码，建议生产环境开启
-
-
---- #################### 定时任务相关配置 ####################
-xxl:
-  job:
-    enabled: false # 未启动 xxl-job-admin 时关闭注册，避免 Connection refused
-    admin:
-      addresses: http://xxl-job-admin:9090/xxl-job-admin # 调度中心部署跟地址
-
---- #################### 服务保障相关配置 ####################
-
-# Lock4j 配置项
-lock4j:
-  acquire-timeout: 3000 # 获取分布式锁超时时间，默认为 3000 毫秒
-  expire: 30000 # 分布式锁的超时时间，默认为 30000 毫秒
-
---- #################### 监控相关配置 ####################
-
-# Actuator 监控端点的配置项
-management:
-  endpoints:
-    web:
-      base-path: /actuator # Actuator 提供的 API 接口的根目录。默认为 /actuator
-      exposure:
-        include: '*' # 需要开放的端点。默认值只打开 health 和 info 两个端点。通过设置 * ，可以开放所有端点。
-
 # Spring Boot Admin 配置项
-spring:
   boot:
     admin:
       # Spring Boot Admin Client 客户端的相关配置
@@ -107,12 +61,46 @@ spring:
       # Spring Boot Admin Server 服务端的相关配置
       context-path: /admin # 配置 Spring
 
+  # Redis 配置。Redisson 默认的配置足够使用，一般不需要进行调优
+  data:
+    redis:
+      host: 111.228.39.103 # 地址
+      port: 6379 # 端口
+      database: 1 # 数据库索引
+#      password: 123456 # 密码，建议生产环境开启
+
+
+#################### 定时任务相关配置 ####################
+xxl:
+  job:
+    enabled: false # 未启动 xxl-job-admin 时关闭注册，避免 Connection refused
+    admin:
+      addresses: http://111.228.39.103:9090/xxl-job-admin # 调度中心部署跟地址
+
+#################### 服务保障相关配置 ####################
+
+# Lock4j 配置项
+lock4j:
+  acquire-timeout: 3000 # 获取分布式锁超时时间，默认为 3000 毫秒
+  expire: 30000 # 分布式锁的超时时间，默认为 30000 毫秒
+
+#################### 监控相关配置 ####################
+
+# Actuator 监控端点的配置项
+management:
+  endpoints:
+    web:
+      base-path: /actuator # Actuator 提供的 API 接口的根目录。默认为 /actuator
+      exposure:
+        include: '*' # 需要开放的端点。默认值只打开 health 和 info 两个端点。通过设置 * ，可以开放所有端点。
+
+
 # 日志文件配置
 logging:
   file:
     name: ${user.home}/logs/${spring.application.name}.log # 日志文件名，全路径
 
---- #################### 微信公众号、小程序相关配置 ####################
+#################### 微信公众号、小程序相关配置 ####################
 wx:
   mp: # 公众号配置（必填），参见 https://github.com/Wechat-Group/WxJava/blob/develop/spring-boot-starters/wx-java-mp-spring-boot-starter/README.md 文档
     #    app-id: wx041349c6f39b268b
@@ -134,11 +122,9 @@ wx:
       key-prefix: wa # Redis Key 的前缀
       http-client-type: HttpClient # 采用 HttpClient 请求微信公众号平台
 
---- #################### 芋道相关配置 ####################
+#################### 芋道相关配置 ####################
 
-# 芋道配置项，设置当前项目所有自定义的配置
-yudao:
-  demo: false # 开启演示模式
+
 
 justauth:
   enabled: true
@@ -176,17 +162,17 @@ justauth:
 
 
 
---- #################### MyBatis Plus 的配置项 ####################
+#################### MyBatis Plus 的配置项 ####################
 mybatis-plus:
   encryptor:
     password: XDV71a+xqStEA3WH # 加解密的秘钥，可使用 https://www.imaegoo.com/2020/aes-key-generator/ 网站生成
 
---- #################### 定时任务相关配置 ####################
+#################### 定时任务相关配置 ####################
 xxl:
   job:
     accessToken: default_token # 执行器通讯TOKEN
 
---- #################### 验证码相关配置 ####################
+#################### 验证码相关配置 ####################
 aj:
   captcha:
     jigsaw: classpath:images/jigsaw # 滑动验证，底图路径，不配置将使用默认图片；以 classpath: 开头，取 resource 目录下路径
@@ -204,9 +190,11 @@ aj:
     req-check-minute-limit: 60 # check 接口一分钟内请求数限制
     req-verify-minute-limit: 60 # verify 接口一分钟内请求数限制
 
---- #################### 芋道相关配置 ####################
+#################### 芋道相关配置 ####################
 
 yudao:
+# 芋道配置项，设置当前项目所有自定义的配置
+  demo: false # 开启演示模式
   xss:
     enable: false
     exclude-urls: # 如下 url，仅仅是为了演示，去掉配置也没关系
@@ -239,3 +227,6 @@ yudao:
     send-maximum-quantity-per-day: 10
     begin-code: 9999 # 这里配置 9999 的原因是，测试方便。
     end-code: 9999 # 这里配置 9999 的原因是，测试方便。
+  web:
+    admin-ui:
+      url: http://dashboard.yudao.iocoder.cn # Admin 管理后台 UI 的地址
