@@ -545,11 +545,11 @@ services:
     restart: always
     environment:
       TZ: Asia/Shanghai
-      SPRING_PROFILES_ACTIVE: local
+      SPRING_PROFILES_ACTIVE: dev
       SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
       SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
-      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ""
-      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ""
+      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: dev
+      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: dev
       JAVA_OPTS: -Xms512m -Xmx512m
     networks:
       - yudao-network
