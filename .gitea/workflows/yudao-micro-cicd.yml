@@ -27,7 +27,7 @@ on:
 
 jobs:
   build-deploy:
-    runs-on: manman-host
+    runs-on: manman
     steps:
       - name: Checkout
         env:

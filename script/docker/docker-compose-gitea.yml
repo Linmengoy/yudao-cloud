@@ -34,11 +34,11 @@ services:
     environment:
       TZ: Asia/Shanghai
       GITEA_INSTANCE_URL: http://gitea:3000
-      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN:-}
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN:-n1Au24GlcLRLkvIpa2Y4pbA2GCydzWZT90p3GMA9}
       GITEA_RUNNER_NAME: yudao-runner
       GITEA_RUNNER_LABELS: ubuntu-latest:hosted
     volumes:
-      - yudao-gitea-runner-data:/data
+      - /opt/data/gitea-runner-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.m2:/root/.m2
     networks:
