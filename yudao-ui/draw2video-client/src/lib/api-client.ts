@@ -1,5 +1,5 @@
 const BASE_URL =
-  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:48080") +
+  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "") +
   (process.env.NEXT_PUBLIC_APP_API_PREFIX ?? "/app-api");
 const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID ?? "1";
 const TERMINAL = process.env.NEXT_PUBLIC_TERMINAL ?? "20";

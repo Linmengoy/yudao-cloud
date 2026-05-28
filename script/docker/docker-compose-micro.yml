@@ -8,7 +8,6 @@ services:
     environment:
       TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: 123456
-      MYSQL_DATABASE: ruoyi-vue-pro
     networks:
       - yudao-network
     command:
@@ -18,7 +17,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - yudao-mysql-data:/var/lib/mysql
+      - /opt/data/mysql-data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
       interval: 10s
@@ -37,7 +36,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - yudao-redis-data:/data
+      - /opt/data/redis-data:/data
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -46,7 +45,7 @@ services:
       retries: 10
 
   nacos:
-    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nacos/nacos-server:v2.3.2
+    image: m.daocloud.io/docker.io/nacos/nacos-server:v3.0.3
     container_name: yudao-nacos
     restart: always
     environment:
@@ -54,12 +53,16 @@ services:
       MODE: standalone
       PREFER_HOST_MODE: hostname
       NACOS_AUTH_ENABLE: "false"
+      NACOS_AUTH_TOKEN: "JYWobuGwRzIm/9YYE6DWUvJK+bdDNBGUB7UKpdNsLG4="
+      NACOS_AUTH_IDENTITY_KEY: "serverIdentity"
+      NACOS_AUTH_IDENTITY_VALUE: "security"
       JVM_XMS: 256m
       JVM_XMX: 512m
       JVM_XMN: 128m
     networks:
       - yudao-network
     ports:
+      - "8080:8080"
       - "8848:8848"
       - "9848:9848"
     volumes:
@@ -70,7 +73,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
-      start_period: 40s
+      start_period: 60s
 
   yudao-system:
     build:
@@ -95,9 +98,9 @@ services:
       SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_PASSWORD: 123456
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
-      ROCKETMQ_NAME_SERVER: rocketmq:9876
-      SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # ROCKETMQ_NAME_SERVER: rocketmq:9876
+      # SPRING_RABBITMQ_HOST: rabbitmq
+      # SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       JAVA_OPTS: -Xms512m -Xmx512m
     networks:
       - yudao-network
@@ -571,6 +574,45 @@ services:
       aigc-safety:
         condition: service_started
       aigc-gen:
+        condition: service_started
+
+  draw2video-admin:
+    build:
+      context: ../../yudao-ui/draw2video-admin
+      dockerfile: Dockerfile
+    image: draw2video-admin:latest
+    container_name: draw2video-admin
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - yudao-network
+    ports:
+      - "8080:80"
+    depends_on:
+      yudao-gateway:
+        condition: service_started
+
+  draw2video-client:
+    build:
+      context: ../../yudao-ui/draw2video-client
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ""
+        NEXT_PUBLIC_APP_API_PREFIX: /app-api
+    image: draw2video-client:latest
+    container_name: draw2video-client
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      NEXT_PUBLIC_API_BASE_URL: ""
+      NEXT_PUBLIC_APP_API_PREFIX: /app-api
+    networks:
+      - yudao-network
+    ports:
+      - "3000:3000"
+    depends_on:
+      yudao-gateway:
         condition: service_started
 
 

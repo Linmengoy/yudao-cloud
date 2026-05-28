@@ -22,6 +22,8 @@ on:
           - aigc-asset
           - aigc-safety
           - aigc-workflow
+          - draw2video-admin
+          - draw2video-client
 
 jobs:
   build-deploy:
@@ -65,6 +67,8 @@ jobs:
               aigc-safety) module="yudao-module-aigc-safety/yudao-module-aigc-safety-server" ;;
               aigc-workflow) module="yudao-module-aigc-workflow/yudao-module-aigc-workflow-server" ;;
               aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
+              draw2video-admin) module="frontend" ;;
+              draw2video-client) module="frontend" ;;
               *) echo "Unknown service: ${service}" && exit 1 ;;
             esac
           fi
@@ -79,7 +83,9 @@ jobs:
       - name: Build jar
         run: |
           echo "Build module: ${BUILD_MODULE}"
-          if [ -z "${BUILD_MODULE}" ] || [ "${BUILD_MODULE}" = "all" ]; then
+          if [ "${BUILD_MODULE}" = "frontend" ]; then
+            echo "Skip Maven build for frontend service: ${BUILD_SERVICE}"
+          elif [ -z "${BUILD_MODULE}" ] || [ "${BUILD_MODULE}" = "all" ]; then
             mvn clean package -DskipTests
           else
             mvn clean package -pl "${BUILD_MODULE}" -am -DskipTests
@@ -119,5 +125,5 @@ jobs:
             fi
             sleep 5
           done
-          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen
+          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen draw2video-admin draw2video-client
           exit 1
