@@ -73,6 +73,7 @@ spring:
 --- #################### 定时任务相关配置 ####################
 xxl:
   job:
+    enabled: false # 未启动 xxl-job-admin 时关闭注册，避免 Connection refused
     admin:
       addresses: http://xxl-job-admin:9090/xxl-job-admin # 调度中心部署跟地址
 
