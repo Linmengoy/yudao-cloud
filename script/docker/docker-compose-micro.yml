@@ -172,29 +172,13 @@ services:
     environment:
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: local
-      SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
-      SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
-      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ""
-      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ""
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_USERNAME: root
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD: 123456
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_LAZY: "true"
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_USERNAME: root
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_PASSWORD: 123456
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      ROCKETMQ_NAME_SERVER: rocketmq:9876
-      SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       JAVA_OPTS: -Xms512m -Xmx512m
     networks:
       - yudao-network
     ports:
       - "48085:48085"
     volumes:
-      - yudao-logs:/root/logs
+      - /opt/data/yudao-logs:/root/logs
     depends_on:
       yudao-system:
         condition: service_started
@@ -205,7 +189,7 @@ services:
       redis:
         condition: service_healthy
       nacos:
-        condition: service_healthy
+        condition: service_started
 
   aigc-model:
     build:

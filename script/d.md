@@ -46,6 +46,19 @@ member-server
 mvn -pl yudao-module-member/yudao-module-member-server -am package -DskipTests
 ```
 
+
 ```
 java -jar .\yudao-module-member\yudao-module-member-server\target\yudao-module-member-server.jar
+```
+
+
+
+pay-server
+
+```
+mvn -pl yudao-module-pay/yudao-module-pay-server -am package -DskipTests
+```
+
+```
+java -jar .\yudao-module-pay\yudao-module-pay-server\target\yudao-module-pay-server.jar
 ```
