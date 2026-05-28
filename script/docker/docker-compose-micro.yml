@@ -373,7 +373,7 @@ services:
     networks:
       - yudao-network
     ports:
-      - "48095:48095"
+      - "48096:48096"
     volumes:
       - /opt/data/yudao-logs:/root/logs
     depends_on:
