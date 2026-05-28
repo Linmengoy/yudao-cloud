@@ -1,5 +1,4 @@
-
---- #################### 网关关相关配置 ####################
+--- #################### 网关相关配置 ####################
 spring:
   cloud:
     gateway:
@@ -12,7 +11,6 @@ spring:
                 - Path=/admin-api/system/**
               filters:
                 - RewritePath=/admin-api/system/v3/api-docs, /v3/api-docs
-
             - id: system-app-api
               uri: grayLb://system-server
               predicates:
@@ -31,6 +29,14 @@ spring:
                 - Path=/app-api/infra/**
               filters:
                 - RewritePath=/app-api/infra/v3/api-docs, /v3/api-docs
+            - id: infra-spring-boot-admin
+              uri: grayLb://infra-server
+              predicates:
+                - Path=/admin/**
+            - id: infra-websocket
+              uri: grayLb://infra-server
+              predicates:
+                - Path=/infra/ws/**
             - id: member-admin-api
               uri: grayLb://member-server
               predicates:
@@ -43,31 +49,205 @@ spring:
                 - Path=/app-api/member/**
               filters:
                 - RewritePath=/app-api/member/v3/api-docs, /v3/api-docs
+            - id: bpm-admin-api
+              uri: grayLb://bpm-server
+              predicates:
+                - Path=/admin-api/bpm/**
+              filters:
+                - RewritePath=/admin-api/bpm/v3/api-docs, /v3/api-docs
+            - id: report-admin-api
+              uri: grayLb://report-server
+              predicates:
+                - Path=/admin-api/report/**
+              filters:
+                - RewritePath=/admin-api/report/v3/api-docs, /v3/api-docs
+            - id: report-jimu
+              uri: grayLb://report-server
+              predicates:
+                - Path=/jmreport/**, /drag/**, /jimubi/**
+            - id: pay-admin-api
+              uri: grayLb://pay-server
+              predicates:
+                - Path=/admin-api/pay/**
+              filters:
+                - RewritePath=/admin-api/pay/v3/api-docs, /v3/api-docs
+            - id: pay-app-api
+              uri: grayLb://pay-server
+              predicates:
+                - Path=/app-api/pay/**
+              filters:
+                - RewritePath=/app-api/pay/v3/api-docs, /v3/api-docs
+            - id: mp-admin-api
+              uri: grayLb://mp-server
+              predicates:
+                - Path=/admin-api/mp/**
+              filters:
+                - RewritePath=/admin-api/mp/v3/api-docs, /v3/api-docs
+            - id: product-admin-api
+              uri: grayLb://product-server
+              predicates:
+                - Path=/admin-api/product/**
+              filters:
+                - RewritePath=/admin-api/product/v3/api-docs, /v3/api-docs
+            - id: product-app-api
+              uri: grayLb://product-server
+              predicates:
+                - Path=/app-api/product/**
+              filters:
+                - RewritePath=/app-api/product/v3/api-docs, /v3/api-docs
+            - id: promotion-admin-api
+              uri: grayLb://promotion-server
+              predicates:
+                - Path=/admin-api/promotion/**
+              filters:
+                - RewritePath=/admin-api/promotion/v3/api-docs, /v3/api-docs
+            - id: promotion-app-api
+              uri: grayLb://promotion-server
+              predicates:
+                - Path=/app-api/promotion/**
+              filters:
+                - RewritePath=/app-api/promotion/v3/api-docs, /v3/api-docs
+            - id: trade-admin-api
+              uri: grayLb://trade-server
+              predicates:
+                - Path=/admin-api/trade/**
+              filters:
+                - RewritePath=/admin-api/trade/v3/api-docs, /v3/api-docs
+            - id: trade-app-api
+              uri: grayLb://trade-server
+              predicates:
+                - Path=/app-api/trade/**
+              filters:
+                - RewritePath=/app-api/trade/v3/api-docs, /v3/api-docs
+            - id: statistics-admin-api
+              uri: grayLb://statistics-server
+              predicates:
+                - Path=/admin-api/statistics/**
+              filters:
+                - RewritePath=/admin-api/statistics/v3/api-docs, /v3/api-docs
+            - id: erp-admin-api
+              uri: grayLb://erp-server
+              predicates:
+                - Path=/admin-api/erp/**
+              filters:
+                - RewritePath=/admin-api/erp/v3/api-docs, /v3/api-docs
+            - id: crm-admin-api
+              uri: grayLb://crm-server
+              predicates:
+                - Path=/admin-api/crm/**
+              filters:
+                - RewritePath=/admin-api/crm/v3/api-docs, /v3/api-docs
+            - id: ai-admin-api
+              uri: grayLb://ai-server
+              predicates:
+                - Path=/admin-api/ai/**
+              filters:
+                - RewritePath=/admin-api/ai/v3/api-docs, /v3/api-docs
+            - id: ai-mcp-server
+              uri: grayLb://ai-server
+              predicates:
+                - Path=/sse, /mcp/message
+            - id: iot-admin-api
+              uri: grayLb://iot-server
+              predicates:
+                - Path=/admin-api/iot/**
+              filters:
+                - RewritePath=/admin-api/iot/v3/api-docs, /v3/api-docs
+            - id: mes-admin-api
+              uri: grayLb://mes-server
+              predicates:
+                - Path=/admin-api/mes/**
+              filters:
+                - RewritePath=/admin-api/mes/v3/api-docs, /v3/api-docs
+            - id: wms-admin-api
+              uri: grayLb://wms-server
+              predicates:
+                - Path=/admin-api/wms/**
+              filters:
+                - RewritePath=/admin-api/wms/v3/api-docs, /v3/api-docs
+          x-forwarded:
+            prefix-enabled: false
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+
 --- #################### Knife4j 相关配置 ####################
 knife4j:
   gateway:
     enabled: true
     routes:
-      - name: system-server
+      - name: system-admin-api
         service-name: system-server
         url: /admin-api/system/v3/api-docs
-      - name: system-app-server
-        service-name: system-app-server
+      - name: system-app-api
+        service-name: system-server
         url: /app-api/system/v3/api-docs
-      - name: infra-server
-        service-name: infra-app-server
-        url: /app-api/infra/v3/api-docs
-      - name: infra-server
+      - name: infra-admin-api
         service-name: infra-server
         url: /admin-api/infra/v3/api-docs
-      - name: member-app-server
-        url: /admin-api/infra/v3/api-docs
-      - name: member-server
+      - name: infra-app-api
+        service-name: infra-server
+        url: /app-api/infra/v3/api-docs
+      - name: member-admin-api
         service-name: member-server
         url: /admin-api/member/v3/api-docs
-      - name: member-app-server
-        service-name: member-app-server
+      - name: member-app-api
+        service-name: member-server
         url: /app-api/member/v3/api-docs
+      - name: bpm-admin-api
+        service-name: bpm-server
+        url: /admin-api/bpm/v3/api-docs
+      - name: report-admin-api
+        service-name: report-server
+        url: /admin-api/report/v3/api-docs
+      - name: pay-admin-api
+        service-name: pay-server
+        url: /admin-api/pay/v3/api-docs
+      - name: pay-app-api
+        service-name: pay-server
+        url: /app-api/pay/v3/api-docs
+      - name: mp-admin-api
+        service-name: mp-server
+        url: /admin-api/mp/v3/api-docs
+      - name: product-admin-api
+        service-name: product-server
+        url: /admin-api/product/v3/api-docs
+      - name: product-app-api
+        service-name: product-server
+        url: /app-api/product/v3/api-docs
+      - name: promotion-admin-api
+        service-name: promotion-server
+        url: /admin-api/promotion/v3/api-docs
+      - name: promotion-app-api
+        service-name: promotion-server
+        url: /app-api/promotion/v3/api-docs
+      - name: trade-admin-api
+        service-name: trade-server
+        url: /admin-api/trade/v3/api-docs
+      - name: trade-app-api
+        service-name: trade-server
+        url: /app-api/trade/v3/api-docs
+      - name: statistics-admin-api
+        service-name: statistics-server
+        url: /admin-api/statistics/v3/api-docs
+      - name: erp-admin-api
+        service-name: erp-server
+        url: /admin-api/erp/v3/api-docs
+      - name: crm-admin-api
+        service-name: crm-server
+        url: /admin-api/crm/v3/api-docs
+      - name: ai-admin-api
+        service-name: ai-server
+        url: /admin-api/ai/v3/api-docs
+      - name: iot-admin-api
+        service-name: iot-server
+        url: /admin-api/iot/v3/api-docs
+      - name: mes-admin-api
+        service-name: mes-server
+        url: /admin-api/mes/v3/api-docs
+      - name: wms-admin-api
+        service-name: wms-server
+        url: /admin-api/wms/v3/api-docs
+
 --- #################### 日志相关配置 ####################
 logging:
   level:
