@@ -32,9 +32,7 @@ import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.springframework.web.util.pattern.PathPattern;
 
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -102,7 +100,7 @@ public class YudaoWebSecurityConfigurerAdapter {
      */
     @Bean
     protected SecurityFilterChain filterChain(HttpSecurity httpSecurity,
-                                             ObjectProvider<List<AuthorizeRequestsCustomizer>> authorizeRequestsCustomizers) throws Exception {
+                                             ObjectProvider<AuthorizeRequestsCustomizer> authorizeRequestsCustomizers) throws Exception {
         // 登出
         httpSecurity
                 // 开启跨域
@@ -136,7 +134,7 @@ public class YudaoWebSecurityConfigurerAdapter {
                     .requestMatchers(securityProperties.getPermitAllUrls().toArray(new String[0])).permitAll()
                 )
                 // ②：每个项目的自定义规则
-                .authorizeHttpRequests(c -> authorizeRequestsCustomizers.getIfAvailable(Collections::emptyList)
+                .authorizeHttpRequests(c -> authorizeRequestsCustomizers.orderedStream()
                         .forEach(customizer -> customizer.customize(c)))
                 // ③：兜底规则，必须认证
                 .authorizeHttpRequests(c -> c
