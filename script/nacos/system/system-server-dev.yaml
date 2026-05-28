@@ -75,8 +75,8 @@ xxl:
   job:
     enabled: false # 未启动 xxl-job-admin 时关闭注册，避免 Connection refused
     admin:
-      addresses: http://xxl-job-admin:9090/xxl-job-admin # 调度中心部署跟地址
-
+      addresses: http://xxl-job-admin:8080/xxl-job-admin # 调度中心部署跟地址
+    accessToken: default_token # 执行器通讯TOKEN
 #################### 服务保障相关配置 ####################
 
 # Lock4j 配置项
@@ -168,9 +168,8 @@ mybatis-plus:
     password: XDV71a+xqStEA3WH # 加解密的秘钥，可使用 https://www.imaegoo.com/2020/aes-key-generator/ 网站生成
 
 #################### 定时任务相关配置 ####################
-xxl:
-  job:
-    accessToken: default_token # 执行器通讯TOKEN
+
+
 
 #################### 验证码相关配置 ####################
 aj:
