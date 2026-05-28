@@ -359,7 +359,34 @@ services:
         condition: service_started
       yudao-infra:
         condition: service_started
-
+  aigc-workflow:
+    build:
+      context: ../../yudao-module-aigc-workflow/yudao-module-aigc-workflow-server
+      dockerfile: Dockerfile
+    image: aigc-workflow:latest
+    container_name: aigc-workflow
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms512m -Xmx512m
+    networks:
+      - yudao-network
+    ports:
+      - "48095:48095"
+    volumes:
+      - /opt/data/yudao-logs:/root/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_started
+      yudao-system:
+        condition: service_started
+      yudao-infra:
+        condition: service_started
   yudao-member:
     build:
       context: ../../yudao-module-member/yudao-module-member-server
