@@ -134,31 +134,26 @@ jobs:
         run: |
           deploy_env="master-jdk17"
           echo "Verify env: ${deploy_env}"
+          echo "Build service: ${BUILD_SERVICE}"
 
           docker compose -f script/docker/docker-compose-micro.yml ps
 
-          for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:48080/ || true)
-            echo "Gateway: ${code}"
-            if [ "${code}" != "000" ]; then
-              exit 0
-            fi
-            sleep 5
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            verify_services="yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen draw2video-admin draw2video-client"
+          else
+            verify_services="${BUILD_SERVICE}"
+          fi
+
+          for service in ${verify_services}; do
+            for i in $(seq 1 30); do
+              state=$(docker compose -f script/docker/docker-compose-micro.yml ps --status running --services | grep -Fx "${service}" || true)
+              echo "${service}: ${state:-not-running}"
+              if [ "${state}" = "${service}" ]; then
+                exit 0
+              fi
+              sleep 5
+            done
+
+            docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 "${service}"
+            exit 1
           done
-
-          docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 \
-            yudao-gateway \
-            yudao-system \
-            yudao-infra \
-            yudao-member \
-            yudao-pay \
-            aigc-model \
-            aigc-billing \
-            aigc-task \
-            aigc-asset \
-            aigc-safety \
-            aigc-gen \
-            draw2video-admin \
-            draw2video-client
-
-          exit 1
