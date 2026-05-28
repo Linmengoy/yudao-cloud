@@ -13,7 +13,7 @@ public class AigcProviderClientFactory {
 
     private final Map<String, AigcProviderClient> clients;
 
-    @Resource
+    @Resource(name = "mockAigcProviderClient")
     private AigcProviderClient defaultClient;
 
     public AigcProviderClientFactory(List<AigcProviderClient> clients) {

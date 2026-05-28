@@ -6,9 +6,9 @@ import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcBillingRecordDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcWalletDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcBillingRecordMapper;
+import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcWalletMapper;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcBillingRecordCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.billing.service.no.AigcBillingNoGenerator;
-import cn.iocoder.yudao.module.aigc.billing.service.wallet.AigcWalletService;
 import jakarta.annotation.Resource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -17,6 +17,7 @@ import org.springframework.validation.annotation.Validated;
 import static cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingCurrencyTypeEnum.POINT;
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.billing.enums.ErrorCodeConstants.BILLING_RECORD_NOT_EXISTS;
+import static cn.iocoder.yudao.module.aigc.billing.enums.ErrorCodeConstants.WALLET_NOT_EXISTS;
 
 @Service
 @Validated
@@ -25,13 +26,16 @@ public class AigcBillingRecordServiceImpl implements AigcBillingRecordService {
     @Resource
     private AigcBillingRecordMapper billingRecordMapper;
     @Resource
-    private AigcWalletService walletService;
+    private AigcWalletMapper walletMapper;
     @Resource
     private AigcBillingNoGenerator billingNoGenerator;
 
     @Override
     public Long createBillingRecord(AigcBillingRecordCreateReqDTO reqDTO) {
-        AigcWalletDO wallet = walletService.validateWalletExists(reqDTO.getWalletId());
+        AigcWalletDO wallet = walletMapper.selectById(reqDTO.getWalletId());
+        if (wallet == null) {
+            throw exception(WALLET_NOT_EXISTS);
+        }
         
         if (reqDTO.getBizType() != null && reqDTO.getBizId() != null) {
             AigcBillingRecordDO exists = billingRecordMapper.selectByBiz(reqDTO.getBizType(), reqDTO.getBizId());

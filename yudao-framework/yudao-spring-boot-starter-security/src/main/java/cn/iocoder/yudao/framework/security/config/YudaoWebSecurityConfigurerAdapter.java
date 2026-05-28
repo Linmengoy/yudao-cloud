@@ -8,6 +8,7 @@ import com.google.common.collect.Multimap;
 import jakarta.annotation.Resource;
 import jakarta.annotation.security.PermitAll;
 import jakarta.servlet.DispatcherType;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.context.ApplicationContext;
@@ -31,6 +32,7 @@ import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.springframework.web.util.pattern.PathPattern;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -69,14 +71,6 @@ public class YudaoWebSecurityConfigurerAdapter {
     @Resource
     private TokenAuthenticationFilter authenticationTokenFilter;
 
-    /**
-     * 自定义的权限映射 Bean 们
-     *
-     * @see #filterChain(HttpSecurity)
-     */
-    @Resource
-    private List<AuthorizeRequestsCustomizer> authorizeRequestsCustomizers;
-
     @Resource
     private ApplicationContext applicationContext;
 
@@ -107,7 +101,8 @@ public class YudaoWebSecurityConfigurerAdapter {
      * authenticated       |   用户登录后可访问
      */
     @Bean
-    protected SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
+    protected SecurityFilterChain filterChain(HttpSecurity httpSecurity,
+                                             ObjectProvider<List<AuthorizeRequestsCustomizer>> authorizeRequestsCustomizers) throws Exception {
         // 登出
         httpSecurity
                 // 开启跨域
@@ -141,7 +136,8 @@ public class YudaoWebSecurityConfigurerAdapter {
                     .requestMatchers(securityProperties.getPermitAllUrls().toArray(new String[0])).permitAll()
                 )
                 // ②：每个项目的自定义规则
-                .authorizeHttpRequests(c -> authorizeRequestsCustomizers.forEach(customizer -> customizer.customize(c)))
+                .authorizeHttpRequests(c -> authorizeRequestsCustomizers.getIfAvailable(Collections::emptyList)
+                        .forEach(customizer -> customizer.customize(c)))
                 // ③：兜底规则，必须认证
                 .authorizeHttpRequests(c -> c
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll() // WebFlux 异步请求，无需认证，目的：SSE 场景

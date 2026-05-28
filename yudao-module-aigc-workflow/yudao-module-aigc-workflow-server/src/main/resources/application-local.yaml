@@ -17,4 +17,4 @@ spring:
 
 logging:
   level:
-    cn.iocoder.yudao.module.aigc.task: debug
+    cn.iocoder.yudao.module.aigc.workflow: debug

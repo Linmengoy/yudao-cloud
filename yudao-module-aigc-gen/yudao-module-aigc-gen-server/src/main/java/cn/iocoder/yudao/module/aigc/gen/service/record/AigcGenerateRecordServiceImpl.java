@@ -46,6 +46,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.Resource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -88,7 +89,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     @Resource
     private AigcProviderClientFactory providerClientFactory;
     @Resource
-    private MeterRegistry meterRegistry;
+    private ObjectProvider<MeterRegistry> meterRegistryProvider;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -272,10 +273,16 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setProviderTimeoutSeconds(provider == null ? null : provider.getTimeoutSeconds())
                 .setGenerateType(record.getGenerateType()).setGenerateMode(record.getGenerateMode()).setPrompt(record.getPrompt()).setInputParams(record.getInputParams()).setSync(reqDTO.getSync());
         long start = System.currentTimeMillis();
-        AigcProviderSubmitRespDTO resp = Timer.builder("aigc_gen_provider_duration_ms")
-                .tag("provider", record.getProviderCode() == null ? "unknown" : record.getProviderCode())
-                .register(meterRegistry)
-                .record(() -> providerClientFactory.getClient(record.getProviderCode()).submit(providerReq));
+        AigcProviderSubmitRespDTO resp;
+        MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
+        if (meterRegistry == null) {
+            resp = providerClientFactory.getClient(record.getProviderCode()).submit(providerReq);
+        } else {
+            resp = Timer.builder("aigc_gen_provider_duration_ms")
+                    .tag("provider", record.getProviderCode() == null ? "unknown" : record.getProviderCode())
+                    .register(meterRegistry)
+                    .record(() -> providerClientFactory.getClient(record.getProviderCode()).submit(providerReq));
+        }
         providerLogMapper.insert(new AigcGenerateProviderLogDO().setRecordId(record.getId()).setTaskId(record.getTaskId()).setProviderCode(record.getProviderCode()).setModelCode(record.getModelCode())
                 .setApiAction("submit").setRequestId(record.getGenerateNo()).setRequestSummary(maskPrompt(record.getPrompt())).setResponseSummary(resp.getProviderStatus())
                 .setSuccess(Boolean.TRUE.equals(resp.getSuccess())).setErrorCode(resp.getErrorCode()).setErrorMessage(resp.getErrorMessage()).setDurationMs(System.currentTimeMillis() - start));
@@ -339,10 +346,13 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     }
 
     private void recordMetric(String name) {
-        counter(name).increment();
+        MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
+        if (meterRegistry != null) {
+            counter(meterRegistry, name).increment();
+        }
     }
 
-    private Counter counter(String name) {
+    private Counter counter(MeterRegistry meterRegistry, String name) {
         return Counter.builder(name).register(meterRegistry);
     }
 
