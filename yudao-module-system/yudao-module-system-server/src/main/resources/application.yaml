@@ -77,7 +77,7 @@ mybatis-plus:
 mybatis-plus-join:
   banner: false # 关闭控制台的 Banner 打印
 
-# Spring Data Redis 配置
+--- # Spring Data Redis 配置
 spring:
   data:
     redis:
@@ -88,9 +88,9 @@ spring:
 easy-trans:
   is-enable-global: false # 【默认禁用，对性能确认压力大】启用全局翻译（拦截所有 SpringMVC ResponseBody 进行自动翻译 )。如果对于性能要求很高可关闭此配置，或通过 @IgnoreTrans 忽略某个接口
 
---- #################### RPC 远程调用相关配置 ####################
+# --- #################### RPC 远程调用相关配置 ####################
 
---- #################### 消息队列相关 ####################
+# --- #################### 消息队列相关 ####################
 
 # rocketmq 配置项，对应 RocketMQProperties 配置类
 # rocketmq:
@@ -132,7 +132,9 @@ yudao:
   info:
     version: 1.0.0
     base-package: cn.iocoder.yudao.module.system
-
+  web:
+    admin-ui:
+      url: http://localhost
   swagger:
     title: 管理后台
     description: 提供管理员管理的所有功能
