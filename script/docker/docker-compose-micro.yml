@@ -562,22 +562,6 @@ services:
         condition: service_started
       yudao-infra:
         condition: service_started
-      yudao-member:
-        condition: service_started
-      yudao-pay:
-        condition: service_started
-      aigc-model:
-        condition: service_started
-      aigc-billing:
-        condition: service_started
-      aigc-task:
-        condition: service_started
-      aigc-asset:
-        condition: service_started
-      aigc-safety:
-        condition: service_started
-      aigc-gen:
-        condition: service_started
 
   draw2video-admin:
     build:
