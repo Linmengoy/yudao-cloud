@@ -66,8 +66,8 @@ services:
       - "8848:8848"
       - "9848:9848"
     volumes:
-      - yudao-nacos-data:/home/nacos/data
-      - yudao-nacos-logs:/home/nacos/logs
+      - /opt/data/yudao-nacos-data:/home/nacos/data
+      - /opt/data/yudao-nacos-logs:/home/nacos/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8848/nacos/v1/console/health/readiness"]
       interval: 10s
@@ -97,7 +97,7 @@ services:
     ports:
       - "48081:48081"
     volumes:
-      - yudao-logs:/root/logs
+      - /opt/data/yudao-logs:/root/logs
     depends_on:
       mysql:
         condition: service_healthy
@@ -118,27 +118,17 @@ services:
       SPRING_PROFILES_ACTIVE: local
       SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
       SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
-      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ""
-      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ""
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_USERNAME: root
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD: 123456
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_LAZY: "true"
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_URL: jdbc:mysql://mysql:3306/ruoyi-vue-pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_USERNAME: root
-      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_PASSWORD: 123456
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      ROCKETMQ_NAME_SERVER: rocketmq:9876
-      SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: dev
+      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: dev
+      SPRING_CLOUD_NACOS_DISCOVERY_GROUP: DEFAULT_GROUP
+      SPRING_CLOUD_NACOS_CONFIG_GROUP: DEFAULT_GROUP
       JAVA_OPTS: -Xms512m -Xmx512m
     networks:
       - yudao-network
     ports:
       - "48082:48082"
     volumes:
-      - yudao-logs:/root/logs
+      - /opt/data/yudao-logs:/root/logs
     depends_on:
       yudao-system:
         condition: service_started
@@ -147,7 +137,7 @@ services:
       redis:
         condition: service_healthy
       nacos:
-        condition: service_healthy
+        condition: service_started
 
   yudao-pay:
     build:
