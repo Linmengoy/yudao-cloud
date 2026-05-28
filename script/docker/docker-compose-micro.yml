@@ -171,7 +171,7 @@ services:
     restart: always
     environment:
       TZ: Asia/Shanghai
-      SPRING_PROFILES_ACTIVE: local
+      SPRING_PROFILES_ACTIVE: dev
       JAVA_OPTS: -Xms512m -Xmx512m
     networks:
       - yudao-network
