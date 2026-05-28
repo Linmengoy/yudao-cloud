@@ -249,7 +249,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         List<AigcGenerateRecordDO> records = generateRecordMapper.selectTimeoutList(WAITING_STATUSES, LocalDateTime.now().minusMinutes(5));
         records.forEach(record -> syncTask(record.getTaskId()));
         if (!records.isEmpty()) {
-            counter("aigc_gen_timeout_total").increment(records.size());
+            recordMetric("aigc_gen_timeout_total", records.size());
         }
         return records.size();
     }
@@ -346,9 +346,13 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     }
 
     private void recordMetric(String name) {
+        recordMetric(name, 1D);
+    }
+
+    private void recordMetric(String name, double amount) {
         MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
         if (meterRegistry != null) {
-            counter(meterRegistry, name).increment();
+            counter(meterRegistry, name).increment(amount);
         }
     }
 
