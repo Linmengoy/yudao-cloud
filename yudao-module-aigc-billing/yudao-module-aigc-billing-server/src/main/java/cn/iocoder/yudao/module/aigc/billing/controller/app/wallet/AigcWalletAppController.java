@@ -25,7 +25,7 @@ import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUti
 
 @Tag(name = "用户端 - AIGC 钱包")
 @RestController
-@RequestMapping("/aigc/wallet")
+@RequestMapping("/aigc/billing/wallet")
 @Validated
 public class AigcWalletAppController {
 

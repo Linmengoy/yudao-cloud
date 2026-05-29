@@ -23,7 +23,7 @@ import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUti
 
 @Tag(name = "用户端 - AIGC 充值")
 @RestController
-@RequestMapping("/aigc/wallet/recharge")
+@RequestMapping("/aigc/billing/recharge")
 @Validated
 public class AigcRechargeAppController {
 

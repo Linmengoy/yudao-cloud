@@ -884,7 +884,7 @@ Controller：`AigcBillingStatisticsController`
 
 Controller：`AigcWalletAppController`
 
-代码路径：`/aigc/wallet`
+代码路径：`/aigc/billing/wallet`
 
 网关对用户端接口可统一增加 `/app-api` 前缀，最终外部路径以网关配置为准。
 
@@ -921,13 +921,14 @@ Controller：`AigcWalletAppController`
 
 Controller：`AigcRechargeAppController`
 
-代码路径：`/aigc/wallet/recharge`
+代码路径：`/aigc/billing/recharge`
 
 接口：
 
 | 方法 | 路径 | 说明 |
 | ---- | ---- | ---- |
 | POST | `/create` | 创建充值订单 |
+| POST | `/create-by-package` | 按套餐创建充值订单 |
 | GET | `/get` | 获取充值订单详情 |
 | GET | `/page` | 获取当前用户充值订单分页 |
 | POST | `/sync-pay-status` | 主动同步支付状态 |
@@ -1219,7 +1220,7 @@ Gateway 路由建议：
 - id: aigc-billing-server-app-api
   uri: lb://aigc-billing-server
   predicates:
-    - Path=/app-api/aigc/wallet/**,/app-api/aigc/billing/recharge-package/list-enabled
+    - Path=/app-api/aigc/billing/**
   filters:
     - RewritePath=/app-api/(?<segment>.*), /${segment}
 
@@ -1231,7 +1232,7 @@ Gateway 路由建议：
 | 方法 | 路径 | 说明 |
 | ---- | ---- | ---- |
 | GET | `/aigc/billing/recharge-package/list-enabled` | 查询启用充值套餐列表 |
-| POST | `/aigc/wallet/recharge/create-by-package?packageId=xxx` | 按套餐创建充值订单 |
+| POST | `/aigc/billing/recharge/create-by-package?packageId=xxx` | 按套餐创建充值订单 |
 
 按套餐创建订单要求：
 
@@ -1294,7 +1295,7 @@ Gateway 路由建议：
 - **新增**：`aigc_recharge_package` 充值套餐表
 - **新增**：管理端充值套餐 CRUD 接口 `/aigc/billing/recharge-package/**`
 - **新增**：用户端启用套餐列表接口 `/aigc/billing/recharge-package/list-enabled`
-- **新增**：用户端按套餐创建订单接口 `/aigc/wallet/recharge/create-by-package`
+- **新增**：用户端按套餐创建订单接口 `/aigc/billing/recharge/create-by-package`
 - **规则**：前端只传 `packageId`，后端按启用套餐配置生成订单金额和到账积分
 - **文件**：`AigcRechargePackageDO.java`、`AigcRechargePackageController.java`、`AigcRechargePackageServiceImpl.java`、`AigcRechargeOrderServiceImpl.java`、`AigcRechargeAppController.java`
 
@@ -1344,8 +1345,7 @@ Gateway 路由建议：
 | 类型 | 服务内路径 | 对外路径 |
 | ---- | ---------- | -------- |
 | 管理端 | `/aigc/billing/**` | `/admin-api/aigc/billing/**` |
-| 用户端钱包 | `/aigc/wallet/**` | `/app-api/aigc/wallet/**` |
-| 用户端套餐 | `/aigc/billing/recharge-package/list-enabled` | `/app-api/aigc/billing/recharge-package/list-enabled` |
+| 用户端 | `/aigc/billing/**` | `/app-api/aigc/billing/**` |
 | RPC | `/rpc-api/aigc/billing/**` | 内部服务调用 |
 
 ## 16. 第一阶段落地范围

@@ -142,7 +142,7 @@ draw2video-admin/src/views/aigc/billing/
 
 接口：
 
-- `GET /app-api/aigc/wallet/get`
+- `GET /app-api/aigc/billing/wallet/get`
 
 ### 4.2 钱包首页
 
@@ -166,9 +166,9 @@ draw2video-admin/src/views/aigc/billing/
 
 接口：
 
-- `GET /app-api/aigc/wallet/get`
-- `GET /app-api/aigc/wallet/record/page`
-- `GET /app-api/aigc/wallet/statistics`
+- `GET /app-api/aigc/billing/wallet/get`
+- `GET /app-api/aigc/billing/wallet/record/page`
+- `GET /app-api/aigc/billing/wallet/statistics`
 
 ### 4.3 钱包流水列表
 
@@ -198,7 +198,7 @@ draw2video-admin/src/views/aigc/billing/
 
 接口：
 
-- `GET /app-api/aigc/wallet/record/page`
+- `GET /app-api/aigc/billing/wallet/record/page`
 
 ### 4.4 冻结记录列表
 
@@ -221,7 +221,7 @@ draw2video-admin/src/views/aigc/billing/
 
 接口：
 
-- `GET /app-api/aigc/wallet/freeze/page`
+- `GET /app-api/aigc/billing/wallet/freeze/page`
 
 ### 4.5 充值页面
 
@@ -252,11 +252,11 @@ draw2video-admin/src/views/aigc/billing/
 接口：
 
 - `GET /app-api/aigc/billing/recharge-package/list-enabled`
-- `POST /app-api/aigc/wallet/recharge/create`
-- `POST /app-api/aigc/wallet/recharge/create-by-package?packageId=xxx`
-- `GET /app-api/aigc/wallet/recharge/get`
-- `GET /app-api/aigc/wallet/recharge/page`
-- `POST /app-api/aigc/wallet/recharge/sync-pay-status`
+- `POST /app-api/aigc/billing/recharge/create`
+- `POST /app-api/aigc/billing/recharge/create-by-package?packageId=xxx`
+- `GET /app-api/aigc/billing/recharge/get`
+- `GET /app-api/aigc/billing/recharge/page`
+- `POST /app-api/aigc/billing/recharge/sync-pay-status`
 
 ### 4.6 生成页计费提示
 
@@ -359,7 +359,7 @@ export interface AigcRechargePackage {
 
 ```ts
 export function getAigcWallet() {
-  return api.get<AigcWallet>('/aigc/wallet/get')
+  return api.get<AigcWallet>('/aigc/billing/wallet/get')
 }
 
 export function getAigcWalletRecordPage(params: {
@@ -367,7 +367,7 @@ export function getAigcWalletRecordPage(params: {
   pageSize: number
   recordType?: number
 }) {
-  return api.get(`/aigc/wallet/record/page${toQuery(params)}`)
+  return api.get(`/aigc/billing/wallet/record/page${toQuery(params)}`)
 }
 
 export function getAigcWalletFreezePage(params: {
@@ -375,11 +375,11 @@ export function getAigcWalletFreezePage(params: {
   pageSize: number
   status?: number
 }) {
-  return api.get(`/aigc/wallet/freeze/page${toQuery(params)}`)
+  return api.get(`/aigc/billing/wallet/freeze/page${toQuery(params)}`)
 }
 
 export function getAigcWalletStatistics() {
-  return api.get('/aigc/wallet/statistics')
+  return api.get('/aigc/billing/wallet/statistics')
 }
 
 export function createAigcRechargeOrder(data: {
@@ -387,7 +387,7 @@ export function createAigcRechargeOrder(data: {
   rechargeType?: number
   payChannelCode?: string
 }) {
-  return api.post('/aigc/wallet/recharge/create', data)
+  return api.post('/aigc/billing/recharge/create', data)
 }
 
 export function getEnabledAigcRechargePackages() {
@@ -395,11 +395,11 @@ export function getEnabledAigcRechargePackages() {
 }
 
 export function createAigcRechargeOrderByPackage(packageId: number) {
-  return api.post<number>(`/aigc/wallet/recharge/create-by-package${toQuery({ packageId })}`)
+  return api.post<number>(`/aigc/billing/recharge/create-by-package${toQuery({ packageId })}`)
 }
 
 export function getAigcRechargeOrder(id: number) {
-  return api.get(`/aigc/wallet/recharge/get${toQuery({ id })}`)
+  return api.get(`/aigc/billing/recharge/get${toQuery({ id })}`)
 }
 
 export function getAigcRechargeOrderPage(params: {
@@ -407,15 +407,15 @@ export function getAigcRechargeOrderPage(params: {
   pageSize: number
   status?: number
 }) {
-  return api.get(`/aigc/wallet/recharge/page${toQuery(params)}`)
+  return api.get(`/aigc/billing/recharge/page${toQuery(params)}`)
 }
 
 export function syncRechargePayStatus(id: number) {
-  return api.post('/aigc/wallet/recharge/sync-pay-status', { id })
+  return api.post('/aigc/billing/recharge/sync-pay-status', { id })
 }
 ```
 
-说明：`draw2video-client/src/lib/api-client.ts` 会自动拼接 `NEXT_PUBLIC_API_BASE_URL + NEXT_PUBLIC_APP_API_PREFIX`，默认前缀为 `/app-api`，因此业务 API 封装中只写 `/aigc/wallet/**`，不要重复写 `/app-api`。
+说明：`draw2video-client/src/lib/api-client.ts` 会自动拼接 `NEXT_PUBLIC_API_BASE_URL + NEXT_PUBLIC_APP_API_PREFIX`，默认前缀为 `/app-api`，因此业务 API 封装中只写 `/aigc/billing/**`，不要重复写 `/app-api`。
 
 ## 六、用户端任务拆分
 

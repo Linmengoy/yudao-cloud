@@ -159,7 +159,7 @@ yudao-module-aigc-safety
 | 微服务       | 管理端 URL      | 用户端 URL             |
 | ------------ | --------------- | ---------------------- |
 | aigc-model   | `/aigc/model`   | `/app-api/aigc/model`  |
-| aigc-billing | `/aigc/billing` | `/app-api/aigc/wallet` |
+| aigc-billing | `/aigc/billing` | `/app-api/aigc/billing` |
 | aigc-task    | `/aigc/task`    | `/app-api/aigc/task`   |
 | aigc-asset   | `/aigc/asset`   | `/app-api/aigc/asset`  |
 | aigc-gen     | `/aigc/gen`     | `/app-api/aigc/gen`    |
@@ -918,7 +918,7 @@ aigc-safety-server
 /app-api/aigc/gen/**
 /app-api/aigc/task/**
 /app-api/aigc/asset/**
-/app-api/aigc/wallet/**
+/app-api/aigc/billing/**
 /app-api/aigc/model/**
 ```
 

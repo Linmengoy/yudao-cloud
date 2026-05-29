@@ -180,9 +180,9 @@ spring:
             - id: aigc-billing-app-api
               uri: grayLb://aigc-billing-server
               predicates:
-                - Path=/app-api/aigc/wallet/**
+                - Path=/app-api/aigc/billing/**
               filters:
-                - RewritePath=/app-api/aigc/wallet/v3/api-docs, /v3/api-docs
+                - RewritePath=/app-api/aigc/billing/v3/api-docs, /v3/api-docs
             - id: aigc-asset-admin-api
               uri: grayLb://aigc-asset-server
               predicates:
@@ -333,7 +333,7 @@ knife4j:
         url: /admin-api/aigc/billing/v3/api-docs
       - name: aigc-billing-app-api
         service-name: aigc-billing-server
-        url: /app-api/aigc/wallet/v3/api-docs
+        url: /app-api/aigc/billing/v3/api-docs
       - name: aigc-asset-admin-api
         service-name: aigc-asset-server
         url: /admin-api/aigc/asset/v3/api-docs

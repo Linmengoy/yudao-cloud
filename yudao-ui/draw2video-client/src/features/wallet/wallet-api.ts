@@ -21,19 +21,19 @@ function toQuery(params: object) {
 }
 
 export function getAigcWallet() {
-  return api.get<AigcWallet>("/aigc/wallet/get");
+  return api.get<AigcWallet>("/aigc/billing/wallet/get");
 }
 
 export function getAigcWalletRecordPage(params: WalletPageParams) {
-  return api.get<PageResult<AigcWalletRecord>>(`/aigc/wallet/record/page${toQuery(params)}`);
+  return api.get<PageResult<AigcWalletRecord>>(`/aigc/billing/wallet/record/page${toQuery(params)}`);
 }
 
 export function getAigcWalletFreezePage(params: WalletPageParams) {
-  return api.get<PageResult<AigcWalletFreeze>>(`/aigc/wallet/freeze/page${toQuery(params)}`);
+  return api.get<PageResult<AigcWalletFreeze>>(`/aigc/billing/wallet/freeze/page${toQuery(params)}`);
 }
 
 export function getAigcWalletStatistics() {
-  return api.get<Record<string, number>>("/aigc/wallet/statistics");
+  return api.get<Record<string, number>>("/aigc/billing/wallet/statistics");
 }
 
 export function createAigcRechargeOrder(data: {
@@ -41,7 +41,7 @@ export function createAigcRechargeOrder(data: {
   rechargeType?: number;
   payChannelCode?: string;
 }) {
-  return api.post<AigcRechargeOrder>("/aigc/wallet/recharge/create", data);
+  return api.post<AigcRechargeOrder>("/aigc/billing/recharge/create", data);
 }
 
 export function getEnabledAigcRechargePackages() {
@@ -49,19 +49,19 @@ export function getEnabledAigcRechargePackages() {
 }
 
 export function createAigcRechargeOrderByPackage(packageId: number) {
-  return api.post<number>(`/aigc/wallet/recharge/create-by-package${toQuery({ packageId })}`);
+  return api.post<number>(`/aigc/billing/recharge/create-by-package${toQuery({ packageId })}`);
 }
 
 export function getAigcRechargeOrder(id: number) {
-  return api.get<AigcRechargeOrder>(`/aigc/wallet/recharge/get${toQuery({ id })}`);
+  return api.get<AigcRechargeOrder>(`/aigc/billing/recharge/get${toQuery({ id })}`);
 }
 
 export function getAigcRechargeOrderPage(params: WalletPageParams) {
-  return api.get<PageResult<AigcRechargeOrder>>(`/aigc/wallet/recharge/page${toQuery(params)}`);
+  return api.get<PageResult<AigcRechargeOrder>>(`/aigc/billing/recharge/page${toQuery(params)}`);
 }
 
 export function syncRechargePayStatus(id: number) {
-  return api.post<AigcRechargeOrder>("/aigc/wallet/recharge/sync-pay-status", { id });
+  return api.post<AigcRechargeOrder>("/aigc/billing/recharge/sync-pay-status", { id });
 }
 
 export function formatPoints(value?: number | null) {

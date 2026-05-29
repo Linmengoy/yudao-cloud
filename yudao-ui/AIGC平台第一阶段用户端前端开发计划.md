@@ -788,9 +788,9 @@ closeLoginModal()
 接口：
 
 ```text
-GET /app-api/aigc/wallet/get
-GET /app-api/aigc/wallet/record/page
-POST /app-api/aigc/wallet/recharge/create
+GET /app-api/aigc/billing/wallet/get
+GET /app-api/aigc/billing/wallet/record/page
+POST /app-api/aigc/billing/recharge/create
 ```
 
 ## 11. 模型和价格
