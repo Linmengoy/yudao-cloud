@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createAigcRechargeOrderByPackage, getEnabledAigcRechargePackages } from "@/features/wallet/wallet-api";
 import type { AigcRechargePackage } from "@/features/wallet/wallet-types";
 
@@ -20,6 +21,7 @@ function parseFeatures(value?: string) {
 }
 
 export default function PricingPage() {
+  const router = useRouter();
   const [packages, setPackages] = useState<AigcRechargePackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -27,19 +29,21 @@ export default function PricingPage() {
 
   useEffect(() => {
     let mounted = true;
-    setError("");
-    getEnabledAigcRechargePackages()
-      .then((list) => {
-        if (mounted) setPackages(list);
-      })
-      .catch((err) => {
-        if (mounted) setError(err instanceof Error ? err.message : "价格方案加载失败");
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
+    const timer = window.setTimeout(() => {
+      getEnabledAigcRechargePackages()
+        .then((list) => {
+          if (mounted) setPackages(list);
+        })
+        .catch((err) => {
+          if (mounted) setError(err instanceof Error ? err.message : "价格方案加载失败");
+        })
+        .finally(() => {
+          if (mounted) setLoading(false);
+        });
+    }, 0);
     return () => {
       mounted = false;
+      window.clearTimeout(timer);
     };
   }, []);
 
@@ -47,8 +51,13 @@ export default function PricingPage() {
     setCreatingPackageId(packageId);
     setError("");
     try {
-      const orderId = await createAigcRechargeOrderByPackage(packageId);
-      window.location.href = `/wallet?rechargeOrderId=${orderId}`;
+      const order = await createAigcRechargeOrderByPackage(packageId);
+      const params = new URLSearchParams({
+        rechargeOrderId: String(order.rechargeOrderId),
+        payOrderId: String(order.payOrderId),
+        payAppId: String(order.payAppId),
+      });
+      router.push(`/checkout/recharge?${params.toString()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "充值订单创建失败");
     } finally {

@@ -18,6 +18,10 @@ public interface AigcRechargeOrderMapper extends BaseMapperX<AigcRechargeOrderDO
         return selectOne(AigcRechargeOrderDO::getRechargeNo, rechargeNo);
     }
 
+    default AigcRechargeOrderDO selectByPayOrderId(Long payOrderId) {
+        return selectOne(AigcRechargeOrderDO::getPayOrderId, payOrderId);
+    }
+
     default PageResult<AigcRechargeOrderDO> selectPage(PageParam reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcRechargeOrderDO>()
                 .orderByDesc(AigcRechargeOrderDO::getId));
@@ -36,6 +40,14 @@ public interface AigcRechargeOrderMapper extends BaseMapperX<AigcRechargeOrderDO
                 .set(AigcRechargeOrderDO::getPayOrderNo, payOrderNo)
                 .set(AigcRechargeOrderDO::getPayChannelCode, payChannelCode)
                 .set(AigcRechargeOrderDO::getPayTime, payTime)
+                .eq(AigcRechargeOrderDO::getId, id)
+                .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.WAIT_PAY.getCode()));
+    }
+
+    default int updatePayOrder(Long id, Long payOrderId, String payOrderNo) {
+        return update(null, new LambdaUpdateWrapper<AigcRechargeOrderDO>()
+                .set(AigcRechargeOrderDO::getPayOrderId, payOrderId)
+                .set(AigcRechargeOrderDO::getPayOrderNo, payOrderNo)
                 .eq(AigcRechargeOrderDO::getId, id)
                 .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.WAIT_PAY.getCode()));
     }

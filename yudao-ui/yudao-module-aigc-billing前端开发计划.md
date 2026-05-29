@@ -241,13 +241,17 @@ draw2video-admin/src/views/aigc/billing/
 - 前端只传 `packageId`，不传支付金额和到账积分
 - 后端校验套餐存在且启用
 - 后端以套餐配置快照生成充值订单，保证展示价、支付金额、到账积分一致
-- 创建成功后跳转钱包页，并携带 `rechargeOrderId`
+- 创建成功后跳转充值收银台页，并携带 `rechargeOrderId`、`payOrderId` 和 `payAppId`
 
 支付链路：
 
-- 当前阶段先完成套餐配置、套餐展示和订单创建闭环
-- 支付渠道、收银台、二维码、支付状态轮询可在支付模块接入后继续补齐
-- 支付成功后通过充值通知入账，并刷新钱包余额和充值流水
+- 充值收银台路径建议为 `/checkout/recharge?rechargeOrderId=xxx&payOrderId=xxx`
+- 收银台根据 `payAppId` 查询可用支付渠道，展示支付宝、微信等渠道入口
+- 用户选择渠道后调用 Pay 模块提交支付订单
+- 根据 Pay 返回的 `displayMode/displayContent` 展示二维码、跳转链接或其它支付内容
+- 收银台轮询 Pay 支付订单状态，并同步 AIGC 充值订单状态
+- 支付成功后跳转钱包页 `/wallet?rechargeOrderId=xxx`，刷新钱包余额、充值订单和计费流水
+- 支付取消、超时或失败时停留收银台，允许用户重新选择渠道或返回价格页
 
 接口：
 
@@ -257,6 +261,11 @@ draw2video-admin/src/views/aigc/billing/
 - `GET /app-api/aigc/billing/recharge/get`
 - `GET /app-api/aigc/billing/recharge/page`
 - `POST /app-api/aigc/billing/recharge/sync-pay-status`
+- `GET /app-api/pay/channel/get-enable-code-list?appId=xxx`
+- `GET /app-api/pay/order/get?id=xxx&sync=true`
+- `POST /app-api/pay/order/submit`
+
+注意：`/pay/order/submit` 的 `id` 是 Pay 支付订单 ID，即 `payOrderId`，不是 AIGC 充值订单 ID。
 
 ### 4.6 生成页计费提示
 
@@ -330,6 +339,9 @@ export interface AigcWalletFreeze {
 export interface AigcRechargeOrder {
   id: number
   rechargeNo: string
+  payOrderId?: number
+  payOrderNo?: string
+  payAppId?: number
   payAmount: number
   pointAmount: number
   giftAmount: number
@@ -338,6 +350,38 @@ export interface AigcRechargeOrder {
   statusName?: string
   payTime?: string
   createTime: string
+}
+
+export interface AigcRechargeCreateResult {
+  rechargeOrderId: number
+  rechargeNo: string
+  payOrderId: number
+  payOrderNo: string
+  payAppId: number
+  payAmount: number
+  pointAmount: number
+  giftAmount: number
+  totalPointAmount: number
+}
+
+export interface PayOrder {
+  id: number
+  appId: number
+  channelCode?: string
+  merchantOrderId: string
+  subject: string
+  body: string
+  price: number
+  status: number
+  expireTime: string
+  successTime?: string
+  no: string
+}
+
+export interface PayOrderSubmitResult {
+  status: number
+  displayMode: string
+  displayContent: string
 }
 
 export interface AigcRechargePackage {
@@ -395,7 +439,7 @@ export function getEnabledAigcRechargePackages() {
 }
 
 export function createAigcRechargeOrderByPackage(packageId: number) {
-  return api.post<number>(`/aigc/billing/recharge/create-by-package${toQuery({ packageId })}`)
+  return api.post<AigcRechargeCreateResult>(`/aigc/billing/recharge/create-by-package${toQuery({ packageId })}`)
 }
 
 export function getAigcRechargeOrder(id: number) {
@@ -412,6 +456,24 @@ export function getAigcRechargeOrderPage(params: {
 
 export function syncRechargePayStatus(id: number) {
   return api.post('/aigc/billing/recharge/sync-pay-status', { id })
+}
+
+export function getEnablePayChannelCodeList(appId: number) {
+  return api.get<string[]>(`/pay/channel/get-enable-code-list${toQuery({ appId })}`)
+}
+
+export function getPayOrder(params: { id?: number; no?: string; sync?: boolean }) {
+  return api.get<PayOrder | null>(`/pay/order/get${toQuery(params)}`)
+}
+
+export function submitPayOrder(data: {
+  id: number
+  channelCode: string
+  channelExtras?: Record<string, string>
+  displayMode?: string
+  returnUrl?: string
+}) {
+  return api.post<PayOrderSubmitResult>('/pay/order/submit', data)
 }
 ```
 
@@ -480,11 +542,26 @@ export function syncRechargePayStatus(id: number) {
 - 展示后台启用的充值套餐
 - 点击套餐后按 `packageId` 创建充值订单
 - 前端不允许自行传入支付金额、充值积分和赠送积分
-- 创建订单成功后携带 `rechargeOrderId` 跳转钱包页
+- 创建订单成功后携带 `rechargeOrderId`、`payOrderId` 和 `payAppId` 跳转 `/checkout/recharge`
 - 加载套餐失败时展示错误态
 - 展示待支付状态
 - 支持同步支付状态
 - 支付成功后刷新钱包余额
+
+### 6.8.1 充值收银台
+
+- 路由建议：`draw2video-client/src/app/(app)/checkout/recharge/page.tsx`
+- 页面路径：`/checkout/recharge?rechargeOrderId=xxx&payOrderId=xxx`
+- 页面初始化时读取 AIGC 充值订单和 Pay 支付订单，校验订单属于当前用户
+- 根据 `payAppId` 调用 Pay 渠道接口，展示可用支付方式
+- 用户选择渠道后提交 Pay 支付订单
+- `displayMode=url` 时打开或跳转支付链接
+- `displayMode=qr_code` 时展示二维码内容
+- `displayMode=form` 时渲染或提交支付表单内容
+- 支付中轮询 `GET /pay/order/get?id=payOrderId&sync=true`
+- Pay 支付成功后调用 AIGC 充值订单同步接口或等待回调完成
+- AIGC 充值订单确认已支付后跳转 `/wallet?rechargeOrderId=xxx`
+- 支付失败、取消、超时时允许重新提交支付或返回 `/pricing`
 
 ### 6.9 价格方案页
 
@@ -495,6 +572,7 @@ export function syncRechargePayStatus(id: number) {
 - `totalPointAmount` 展示到账积分总数
 - `features` 按换行拆分为权益列表
 - 点击“立即充值”调用 `create-by-package` 创建订单
+- 创建成功后跳转 `/checkout/recharge?rechargeOrderId=xxx&payOrderId=xxx`
 
 ## 七、管理端页面规划
 
@@ -857,6 +935,7 @@ draw2video-client/src/features/wallet/
 └── wallet-types.ts
 
 draw2video-client/src/app/(app)/wallet/page.tsx
+draw2video-client/src/app/(app)/checkout/recharge/page.tsx
 draw2video-client/src/app/(app)/layout.tsx
 draw2video-client/src/features/auth/auth-store.tsx
 draw2video-client/src/components/Header.tsx
@@ -900,13 +979,23 @@ draw2video-admin/src/views/aigc/billing/
 
 ### 16.3 当前完成度
 
-- 用户端：100 / 100，已通过 lint 与 build
+- 用户端：100 / 100，已完成价格页下单、充值收银台、Pay 渠道查询、支付提交、支付状态同步与钱包回跳
 - 管理端 AIGC Billing 模块：96 / 100，新增文件诊断通过，等待全仓既有类型问题治理后可完成全量 ts-check
 - 整体交付：98 / 100
+
+### 16.4 本次充值收银台落地
+
+- 后端 `create-by-package` 返回 `rechargeOrderId`、`payOrderId`、`payAppId` 等收银台字段
+- 后端创建 AIGC 充值订单后同步创建 Pay 支付订单，并以充值订单号作为 `merchantOrderId`
+- 前端价格页创建订单成功后跳转 `/checkout/recharge`
+- 收银台查询 AIGC 充值订单、Pay 支付订单和 Pay 可用渠道
+- 收银台支持提交支付、展示支付返回内容、轮询 Pay 支付状态、同步 AIGC 充值状态
+- 支付成功后跳转 `/wallet?rechargeOrderId=xxx` 并刷新钱包余额
 
 ## 十七、后续注意事项
 
 - 管理端分页筛选字段需要与后端进一步联调确认，因为部分后端分页接口当前只接 `PageParam`，可能不会消费 `userId/taskNo/status` 等筛选条件。
 - 冻结“确认扣费”当前默认以冻结金额作为 `actualAmount`，如后续支持部分扣费，应补充实际扣费金额弹窗。
 - 管理端导出接口目前以后端实际实现为准，如后端返回 `PageResult` 而不是二进制文件，前端导出按钮需等待后端导出能力完善后再验收。
-- 用户端充值入口已保留接口封装，真实支付体验依赖 pay 模块联调完成。
+- AIGC Billing 的 Pay 应用配置需要在环境中确认 `yudao.aigc.billing.pay.app-id` 和 `app-key` 与 Pay 应用信息一致。
+- 支付渠道真实可用性依赖 Pay 模块渠道配置、回调地址和前端域名 returnUrl 联调。

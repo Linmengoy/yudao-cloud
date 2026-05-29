@@ -26,6 +26,11 @@ public interface ErrorCodeConstants {
     ErrorCode RECHARGE_ORDER_NOT_EXISTS = new ErrorCode(1_042_004_000, "充值订单不存在");
     ErrorCode RECHARGE_ORDER_STATUS_INVALID = new ErrorCode(1_042_004_001, "充值订单状态不允许当前操作");
     ErrorCode RECHARGE_ORDER_DUPLICATE = new ErrorCode(1_042_004_002, "充值订单重复");
+    ErrorCode RECHARGE_PAY_ORDER_NOT_EXISTS = new ErrorCode(1_042_004_003, "充值支付订单不存在");
+    ErrorCode RECHARGE_PAY_ORDER_STATUS_INVALID = new ErrorCode(1_042_004_004, "充值支付订单状态不正确");
+    ErrorCode RECHARGE_PAY_ORDER_AMOUNT_NOT_MATCH = new ErrorCode(1_042_004_005, "充值支付订单金额不匹配");
+    ErrorCode RECHARGE_PAY_ORDER_NOT_MATCH = new ErrorCode(1_042_004_006, "充值支付订单不匹配");
+    ErrorCode RECHARGE_PAY_AMOUNT_INVALID = new ErrorCode(1_042_004_007, "充值支付金额不合法");
 
     ErrorCode RECHARGE_PACKAGE_NOT_EXISTS = new ErrorCode(1_042_005_000, "充值套餐不存在");
 

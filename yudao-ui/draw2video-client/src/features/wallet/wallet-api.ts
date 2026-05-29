@@ -1,11 +1,14 @@
 import { api } from "@/lib/api-client";
 import type {
+  AigcRechargeCreateResult,
   AigcRechargeOrder,
   AigcRechargePackage,
   AigcWallet,
   AigcWalletFreeze,
   AigcWalletRecord,
   PageResult,
+  PayOrder,
+  PayOrderSubmitResult,
   WalletPageParams,
 } from "./wallet-types";
 
@@ -37,11 +40,12 @@ export function getAigcWalletStatistics() {
 }
 
 export function createAigcRechargeOrder(data: {
+  amount: number;
   payAmount: number;
   rechargeType?: number;
   payChannelCode?: string;
 }) {
-  return api.post<AigcRechargeOrder>("/aigc/billing/recharge/create", data);
+  return api.post<AigcRechargeCreateResult>(`/aigc/billing/recharge/create${toQuery(data)}`);
 }
 
 export function getEnabledAigcRechargePackages() {
@@ -49,7 +53,7 @@ export function getEnabledAigcRechargePackages() {
 }
 
 export function createAigcRechargeOrderByPackage(packageId: number) {
-  return api.post<number>(`/aigc/billing/recharge/create-by-package${toQuery({ packageId })}`);
+  return api.post<AigcRechargeCreateResult>(`/aigc/billing/recharge/create-by-package${toQuery({ packageId })}`);
 }
 
 export function getAigcRechargeOrder(id: number) {
@@ -61,7 +65,25 @@ export function getAigcRechargeOrderPage(params: WalletPageParams) {
 }
 
 export function syncRechargePayStatus(id: number) {
-  return api.post<AigcRechargeOrder>("/aigc/billing/recharge/sync-pay-status", { id });
+  return api.post<boolean>(`/aigc/billing/recharge/sync-pay-status${toQuery({ id })}`);
+}
+
+export function getEnablePayChannelCodeList(appId: number) {
+  return api.get<string[]>(`/pay/channel/get-enable-code-list${toQuery({ appId })}`);
+}
+
+export function getPayOrder(params: { id?: number; no?: string; sync?: boolean }) {
+  return api.get<PayOrder | null>(`/pay/order/get${toQuery(params)}`);
+}
+
+export function submitPayOrder(data: {
+  id: number;
+  channelCode: string;
+  channelExtras?: Record<string, string>;
+  displayMode?: string;
+  returnUrl?: string;
+}) {
+  return api.post<PayOrderSubmitResult>("/pay/order/submit", data);
 }
 
 export function formatPoints(value?: number | null) {

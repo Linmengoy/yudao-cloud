@@ -933,7 +933,23 @@ Controller：`AigcRechargeAppController`
 | GET | `/page` | 获取当前用户充值订单分页 |
 | POST | `/sync-pay-status` | 主动同步支付状态 |
 
-第一阶段如果暂不接真实支付，可以只开放后台赠送和手工充值，用户端充值接口先保留结构。
+用户端充值必须走“业务充值订单 + Pay 支付订单 + 收银台”链路。价格页点击套餐后先创建 AIGC 充值订单和 Pay 支付订单，再跳转用户端充值收银台；支付成功后再跳转钱包页并刷新钱包余额、充值订单和计费流水。
+
+按套餐创建充值订单建议返回：
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| rechargeOrderId | Long | AIGC 充值订单 ID |
+| rechargeNo | String | AIGC 充值订单号 |
+| payOrderId | Long | Pay 模块支付订单 ID，用于 `/pay/order/submit` |
+| payOrderNo | String | Pay 模块支付订单号 |
+| payAppId | Long | Pay 应用 ID，用于查询可用支付渠道 |
+| payAmount | Integer | 支付金额，单位：分 |
+| pointAmount | BigDecimal | 充值积分 |
+| giftAmount | BigDecimal | 赠送积分 |
+| totalPointAmount | BigDecimal | 到账积分总数 |
+
+如果后端暂时无法创建 Pay 支付订单，前端不能进入正式收银台，只能展示“待支付订单已创建”的占位状态；正式方案必须补齐 `payOrderId` 和 `payAppId`。
 
 ## 10. 核心流程
 
@@ -1004,11 +1020,19 @@ aigc-gen 或 aigc-task 判断任务失败
 ### 10.4 充值入账流程
 
 ```text
-用户创建 AIGC 充值订单
+用户在价格页选择充值套餐
   ↓
-aigc-billing 创建 aigc_recharge_order
+调用 aigc-billing create-by-package 创建 aigc_recharge_order
   ↓
-调用 pay-api 创建真实支付订单
+aigc-billing 调用 pay-api 创建 Pay 支付订单，绑定 payOrderId/payOrderNo
+  ↓
+前端跳转 /checkout/recharge?rechargeOrderId=xxx&payOrderId=xxx
+  ↓
+收银台根据 payAppId 查询可用支付渠道
+  ↓
+用户选择支付渠道，调用 /app-api/pay/order/submit
+  ↓
+根据 displayMode 展示二维码、跳转链接或其它支付内容
   ↓
 pay 模块完成支付回调
   ↓
@@ -1020,6 +1044,30 @@ aigc-billing 接收或主动同步支付成功结果
   ↓
 创建 RECHARGE 类型 aigc_billing_record
 ```
+
+收银台支付状态同步：
+
+```text
+收银台轮询 /app-api/pay/order/get?id=payOrderId&sync=true
+  ↓
+Pay 支付订单状态变为支付成功
+  ↓
+调用 /app-api/aigc/billing/recharge/sync-pay-status 或等待支付回调入账
+  ↓
+查询 /app-api/aigc/billing/recharge/get?id=rechargeOrderId
+  ↓
+确认 AIGC 充值订单已支付并跳转 /wallet?rechargeOrderId=xxx
+```
+
+Pay 模块用户端接口复用：
+
+| 方法 | 路径 | 用途 |
+| ---- | ---- | ---- |
+| GET | `/app-api/pay/channel/get-enable-code-list?appId=xxx` | 查询当前 Pay 应用可用支付渠道 |
+| GET | `/app-api/pay/order/get?id=xxx&sync=true` | 查询支付订单并可同步渠道状态 |
+| POST | `/app-api/pay/order/submit` | 提交支付订单，返回支付展示内容 |
+
+`/pay/order/submit` 的 `id` 必须是 Pay 支付订单 ID，不是 AIGC 充值订单 ID。
 
 第一阶段可先实现后台手工充值：
 
@@ -1223,6 +1271,18 @@ Gateway 路由建议：
     - Path=/app-api/aigc/billing/**
   filters:
     - RewritePath=/app-api/(?<segment>.*), /${segment}
+```
+
+收银台还依赖 Pay 模块用户端路由：
+
+```yaml
+- id: pay-app-api
+  uri: lb://pay-server
+  predicates:
+    - Path=/app-api/pay/**
+  filters:
+    - RewritePath=/app-api/(?<segment>.*), /${segment}
+```
 
 
 ### 15.5 用户端充值套餐接口
@@ -1240,7 +1300,9 @@ Gateway 路由建议：
 - 后端校验套餐存在且状态启用
 - 订单的支付金额、充值积分、赠送积分、到账总积分全部来自套餐配置
 - 订单 `recharge_type` 使用 `PACKAGE`
-- 真实支付接入前，接口只负责创建待支付充值订单
+- 正式支付链路中，接口需要创建或返回 Pay 支付订单信息，供前端跳转收银台
+- 前端创建订单成功后跳转 `/checkout/recharge?rechargeOrderId=xxx&payOrderId=xxx`
+- 支付成功后跳转 `/wallet?rechargeOrderId=xxx`
 ## 16. 实现更新记录
 
 
@@ -1296,8 +1358,10 @@ Gateway 路由建议：
 - **新增**：管理端充值套餐 CRUD 接口 `/aigc/billing/recharge-package/**`
 - **新增**：用户端启用套餐列表接口 `/aigc/billing/recharge-package/list-enabled`
 - **新增**：用户端按套餐创建订单接口 `/aigc/billing/recharge/create-by-package`
+- **新增**：AIGC 充值订单创建时同步创建 Pay 支付订单，并返回 `payOrderId/payAppId` 供收银台使用
+- **新增**：用户端支付状态同步接口 `/aigc/billing/recharge/sync-pay-status?id=xxx`
 - **规则**：前端只传 `packageId`，后端按启用套餐配置生成订单金额和到账积分
-- **文件**：`AigcRechargePackageDO.java`、`AigcRechargePackageController.java`、`AigcRechargePackageServiceImpl.java`、`AigcRechargeOrderServiceImpl.java`、`AigcRechargeAppController.java`
+- **文件**：`AigcRechargePackageDO.java`、`AigcRechargePackageController.java`、`AigcRechargePackageServiceImpl.java`、`AigcRechargeOrderServiceImpl.java`、`AigcRechargeAppController.java`、`AppAigcRechargeOrderCreateRespVO.java`
 
 ### 16.2 新增错误码
 

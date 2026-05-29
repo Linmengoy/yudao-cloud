@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ArrowDownLeft, ArrowUpRight, Coins, Loader2, RefreshCw, Snowflake } from "lucide-react";
 import {
   formatDateTime,
@@ -66,6 +67,8 @@ function isIncome(record: AigcWalletRecord) {
 }
 
 export default function WalletPage() {
+  const searchParams = useSearchParams();
+  const rechargeOrderId = searchParams.get("rechargeOrderId");
   const [wallet, setWallet] = useState<AigcWallet | null>(null);
   const [records, setRecords] = useState<AigcWalletRecord[]>([]);
   const [freezes, setFreezes] = useState<AigcWalletFreeze[]>([]);
@@ -136,6 +139,12 @@ export default function WalletPage() {
       {error && (
         <div className="rounded-xl border border-border-warm bg-muted px-4 py-3 text-sm text-charcoal">
           {error}
+        </div>
+      )}
+
+      {rechargeOrderId && !error && (
+        <div className="rounded-xl border border-border-warm bg-muted px-4 py-3 text-sm text-charcoal">
+          充值订单 {rechargeOrderId} 已提交处理，钱包余额和流水会在支付确认后刷新。
         </div>
       )}
 

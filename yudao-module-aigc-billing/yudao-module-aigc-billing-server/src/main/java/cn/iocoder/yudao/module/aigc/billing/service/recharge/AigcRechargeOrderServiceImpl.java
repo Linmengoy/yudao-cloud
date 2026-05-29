@@ -1,7 +1,11 @@
 package cn.iocoder.yudao.module.aigc.billing.service.recharge;
 
+import cn.hutool.core.util.ObjectUtil;
+import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.billing.config.AigcBillingPayProperties;
+import cn.iocoder.yudao.module.aigc.billing.controller.app.recharge.vo.AppAigcRechargeOrderCreateRespVO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcBillingRecordDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargePackageDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargeOrderDO;
@@ -16,6 +20,11 @@ import cn.iocoder.yudao.module.aigc.billing.service.no.AigcBillingNoGenerator;
 import cn.iocoder.yudao.module.aigc.billing.service.packageconfig.AigcRechargePackageService;
 import cn.iocoder.yudao.module.aigc.billing.service.record.AigcBillingRecordService;
 import cn.iocoder.yudao.module.aigc.billing.service.wallet.AigcWalletService;
+import cn.iocoder.yudao.module.pay.api.notify.dto.PayOrderNotifyReqDTO;
+import cn.iocoder.yudao.module.pay.api.order.PayOrderApi;
+import cn.iocoder.yudao.module.pay.api.order.dto.PayOrderCreateReqDTO;
+import cn.iocoder.yudao.module.pay.api.order.dto.PayOrderRespDTO;
+import cn.iocoder.yudao.module.pay.enums.order.PayOrderStatusEnum;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,8 +36,7 @@ import java.time.LocalDateTime;
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingBizTypeEnum.WALLET_RECHARGE;
 import static cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingCurrencyTypeEnum.POINT;
-import static cn.iocoder.yudao.module.aigc.billing.enums.ErrorCodeConstants.RECHARGE_ORDER_NOT_EXISTS;
-import static cn.iocoder.yudao.module.aigc.billing.enums.ErrorCodeConstants.RECHARGE_ORDER_STATUS_INVALID;
+import static cn.iocoder.yudao.module.aigc.billing.enums.ErrorCodeConstants.*;
 
 @Service
 @Validated
@@ -46,6 +54,10 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
     private AigcBillingNoGenerator billingNoGenerator;
     @Resource
     private AigcRechargePackageService rechargePackageService;
+    @Resource
+    private PayOrderApi payOrderApi;
+    @Resource
+    private AigcBillingPayProperties payProperties;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -79,26 +91,35 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
     }
 
     @Override
-    public Long createRechargeOrder(Long userId, BigDecimal amount, Integer payAmount, String remark) {
+    @Transactional(rollbackFor = Exception.class)
+    public AppAigcRechargeOrderCreateRespVO createRechargeOrder(Long userId, BigDecimal amount, Integer payAmount, String userIp, String remark) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0 || payAmount == null || payAmount <= 0) {
+            throw exception(RECHARGE_PAY_AMOUNT_INVALID);
+        }
         var wallet = walletService.getOrCreateWallet(userId);
         AigcRechargeOrderDO order = new AigcRechargeOrderDO();
         order.setRechargeNo(billingNoGenerator.generateRechargeNo());
         order.setWalletId(wallet.getId());
         order.setUserId(userId);
         order.setRechargeType("PAY");
-        order.setPayAmount(payAmount == null ? 0 : payAmount);
+        order.setPayAmount(payAmount);
         order.setPointAmount(amount);
         order.setGiftAmount(BigDecimal.ZERO);
         order.setTotalPointAmount(amount);
         order.setStatus(AigcBillingRechargeStatusEnum.WAIT_PAY.getCode());
         order.setRemark(remark);
         rechargeOrderMapper.insert(order);
-        return order.getId();
+        createAndBindPayOrder(order, userIp, "AIGC 积分充值");
+        return buildCreateResp(order);
     }
 
     @Override
-    public Long createRechargeOrderByPackage(Long userId, Long packageId, String remark) {
+    @Transactional(rollbackFor = Exception.class)
+    public AppAigcRechargeOrderCreateRespVO createRechargeOrderByPackage(Long userId, Long packageId, String userIp, String remark) {
         AigcRechargePackageDO rechargePackage = rechargePackageService.getEnabledRechargePackage(packageId);
+        if (rechargePackage.getPayAmount() == null || rechargePackage.getPayAmount() <= 0) {
+            throw exception(RECHARGE_PAY_AMOUNT_INVALID);
+        }
         var wallet = walletService.getOrCreateWallet(userId);
         AigcRechargeOrderDO order = new AigcRechargeOrderDO();
         order.setRechargeNo(billingNoGenerator.generateRechargeNo());
@@ -112,7 +133,8 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         order.setStatus(AigcBillingRechargeStatusEnum.WAIT_PAY.getCode());
         order.setRemark(remark);
         rechargeOrderMapper.insert(order);
-        return order.getId();
+        createAndBindPayOrder(order, userIp, rechargePackage.getName());
+        return buildCreateResp(order);
     }
 
     @Override
@@ -135,11 +157,46 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public boolean syncPayStatus(Long id, Long userId) {
+        AigcRechargeOrderDO order = getUserRechargeOrder(id, userId);
+        if (AigcBillingRechargeStatusEnum.PAID.getCode().equals(order.getStatus())) {
+            compensateRechargeIfNeeded(order);
+            return true;
+        }
+        if (!AigcBillingRechargeStatusEnum.WAIT_PAY.getCode().equals(order.getStatus())) {
+            return false;
+        }
+        PayOrderRespDTO payOrder = validatePayOrder(order, order.getPayOrderId());
+        if (!PayOrderStatusEnum.isSuccess(payOrder.getStatus())) {
+            return false;
+        }
+        notifyRechargePaid(buildNotifyReq(order, payOrder));
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean notifyPayOrder(PayOrderNotifyReqDTO reqDTO) {
+        AigcRechargeOrderDO order = rechargeOrderMapper.selectByRechargeNo(reqDTO.getMerchantOrderId());
+        if (order == null) {
+            throw exception(RECHARGE_ORDER_NOT_EXISTS);
+        }
+        PayOrderRespDTO payOrder = validatePayOrder(order, reqDTO.getPayOrderId());
+        if (!PayOrderStatusEnum.isSuccess(payOrder.getStatus())) {
+            throw exception(RECHARGE_PAY_ORDER_STATUS_INVALID);
+        }
+        notifyRechargePaid(buildNotifyReq(order, payOrder));
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void notifyRechargePaid(AigcRechargeNotifyReqDTO reqDTO) {
         AigcRechargeOrderDO order = rechargeOrderMapper.selectByRechargeNo(reqDTO.getRechargeNo());
         if (order == null) {
             throw exception(RECHARGE_ORDER_NOT_EXISTS);
         }
+        validatePayOrder(order, reqDTO.getPayOrderId());
         
         if (AigcBillingRechargeStatusEnum.PAID.getCode().equals(order.getStatus())) {
             compensateRechargeIfNeeded(order);
@@ -171,6 +228,66 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         record.setAmount(order.getTotalPointAmount());
         record.setCurrencyType(POINT.getCode());
         billingRecordService.createBillingRecord(record);
+    }
+
+    private void createAndBindPayOrder(AigcRechargeOrderDO order, String userIp, String subject) {
+        Long payOrderId = payOrderApi.createOrder(new PayOrderCreateReqDTO()
+                .setAppKey(payProperties.getAppKey())
+                .setUserIp(userIp)
+                .setUserId(order.getUserId())
+                .setUserType(UserTypeEnum.MEMBER.getValue())
+                .setMerchantOrderId(order.getRechargeNo())
+                .setSubject(subject)
+                .setBody("AIGC 充值订单：" + order.getRechargeNo())
+                .setPrice(order.getPayAmount())
+                .setExpireTime(LocalDateTime.now().plusMinutes(payProperties.getExpireMinutes())))
+                .getCheckedData();
+        PayOrderRespDTO payOrder = payOrderApi.getOrder(payOrderId).getCheckedData();
+        String payOrderNo = payOrder == null ? order.getRechargeNo() : payOrder.getMerchantOrderId();
+        rechargeOrderMapper.updatePayOrder(order.getId(), payOrderId, payOrderNo);
+        order.setPayOrderId(payOrderId);
+        order.setPayOrderNo(payOrderNo);
+    }
+
+    private PayOrderRespDTO validatePayOrder(AigcRechargeOrderDO order, Long payOrderId) {
+        if (payOrderId == null || !ObjectUtil.equals(order.getPayOrderId(), payOrderId)) {
+            throw exception(RECHARGE_PAY_ORDER_NOT_MATCH);
+        }
+        PayOrderRespDTO payOrder = payOrderApi.getOrder(payOrderId).getCheckedData();
+        if (payOrder == null) {
+            throw exception(RECHARGE_PAY_ORDER_NOT_EXISTS);
+        }
+        if (!ObjectUtil.equals(payOrder.getMerchantOrderId(), order.getRechargeNo())) {
+            throw exception(RECHARGE_PAY_ORDER_NOT_MATCH);
+        }
+        if (!ObjectUtil.equals(payOrder.getPrice(), order.getPayAmount())) {
+            throw exception(RECHARGE_PAY_ORDER_AMOUNT_NOT_MATCH);
+        }
+        return payOrder;
+    }
+
+    private AigcRechargeNotifyReqDTO buildNotifyReq(AigcRechargeOrderDO order, PayOrderRespDTO payOrder) {
+        AigcRechargeNotifyReqDTO reqDTO = new AigcRechargeNotifyReqDTO();
+        reqDTO.setRechargeNo(order.getRechargeNo());
+        reqDTO.setPayOrderId(payOrder.getId());
+        reqDTO.setPayOrderNo(payOrder.getMerchantOrderId());
+        reqDTO.setPayChannelCode(payOrder.getChannelCode());
+        reqDTO.setPayTime(payOrder.getSuccessTime() == null ? LocalDateTime.now() : payOrder.getSuccessTime());
+        return reqDTO;
+    }
+
+    private AppAigcRechargeOrderCreateRespVO buildCreateResp(AigcRechargeOrderDO order) {
+        AppAigcRechargeOrderCreateRespVO respVO = new AppAigcRechargeOrderCreateRespVO();
+        respVO.setRechargeOrderId(order.getId());
+        respVO.setRechargeNo(order.getRechargeNo());
+        respVO.setPayOrderId(order.getPayOrderId());
+        respVO.setPayOrderNo(order.getPayOrderNo());
+        respVO.setPayAppId(payProperties.getAppId());
+        respVO.setPayAmount(order.getPayAmount());
+        respVO.setPointAmount(order.getPointAmount());
+        respVO.setGiftAmount(order.getGiftAmount());
+        respVO.setTotalPointAmount(order.getTotalPointAmount());
+        return respVO;
     }
     
     private void compensateRechargeIfNeeded(AigcRechargeOrderDO order) {

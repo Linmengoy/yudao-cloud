@@ -50,6 +50,10 @@ export interface AigcWalletFreeze {
 export interface AigcRechargeOrder {
   id: number;
   rechargeNo: string;
+  payOrderId?: number;
+  payOrderNo?: string;
+  payAppId?: number;
+  payChannelCode?: string;
   payAmount: number;
   pointAmount: number;
   giftAmount: number;
@@ -58,6 +62,38 @@ export interface AigcRechargeOrder {
   statusName?: string;
   payTime?: string;
   createTime: string;
+}
+
+export interface AigcRechargeCreateResult {
+  rechargeOrderId: number;
+  rechargeNo: string;
+  payOrderId: number;
+  payOrderNo: string;
+  payAppId: number;
+  payAmount: number;
+  pointAmount: number;
+  giftAmount: number;
+  totalPointAmount: number;
+}
+
+export interface PayOrder {
+  id: number;
+  appId?: number;
+  channelCode?: string;
+  merchantOrderId: string;
+  subject: string;
+  body?: string;
+  price: number;
+  status: number;
+  expireTime?: string;
+  successTime?: string;
+  no?: string;
+}
+
+export interface PayOrderSubmitResult {
+  status: number;
+  displayMode: string;
+  displayContent: string;
 }
 
 export interface AigcRechargePackage {
