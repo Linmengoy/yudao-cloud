@@ -1,4 +1,4 @@
-export type AuthMode = "sms" | "register" | "password";
+export type AuthMode = "sms" | "email" | "register" | "password" | "forgot";
 
 export interface LoginToken {
   userId: number;
@@ -32,6 +32,16 @@ export interface SmsLoginReq {
   code: string;
 }
 
+export interface EmailLoginReq {
+  email: string;
+  password: string;
+}
+
+export interface EmailCodeLoginReq {
+  email: string;
+  code: string;
+}
+
 export interface SendSmsCodeReq {
   mobile: string;
   scene: string;
@@ -54,4 +64,10 @@ export interface ValidateEmailCodeReq {
   email: string;
   scene: string;
   code: string;
+}
+
+export interface ResetPasswordByEmailReq {
+  email: string;
+  code: string;
+  password: string;
 }

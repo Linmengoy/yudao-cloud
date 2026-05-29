@@ -216,6 +216,18 @@ public class MemberUserServiceImpl implements MemberUserService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateUserEmail(Long userId, AppMemberUserUpdateEmailReqVO reqVO) {
+        validateUserExists(userId);
+        validateEmailUnique(userId, reqVO.getEmail());
+        memberUserMapper.updateById(MemberUserDO.builder().id(userId)
+                .email(reqVO.getEmail())
+                .emailVerified(true)
+                .emailBindTime(LocalDateTime.now())
+                .build());
+    }
+
+    @Override
     public void updateUserPassword(Long userId, AppMemberUserUpdatePasswordReqVO reqVO) {
         // 检测用户是否存在
         MemberUserDO user = validateUserExists(userId);
@@ -242,10 +254,26 @@ public class MemberUserServiceImpl implements MemberUserService {
                 .password(passwordEncoder.encode(reqVO.getPassword())).build());
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void resetUserPasswordByEmail(AppMemberUserResetPasswordByEmailReqVO reqVO) {
+        MemberUserDO user = validateUserExistsByEmail(reqVO.getEmail());
+        memberUserMapper.updateById(MemberUserDO.builder().id(user.getId())
+                .password(passwordEncoder.encode(reqVO.getPassword())).build());
+    }
+
     private MemberUserDO validateUserExists(String mobile) {
         MemberUserDO user = memberUserMapper.selectByMobile(mobile);
         if (user == null) {
             throw exception(USER_MOBILE_NOT_EXISTS);
+        }
+        return user;
+    }
+
+    private MemberUserDO validateUserExistsByEmail(String email) {
+        MemberUserDO user = memberUserMapper.selectByEmail(email);
+        if (user == null) {
+            throw exception(USER_EMAIL_NOT_EXISTS);
         }
         return user;
     }

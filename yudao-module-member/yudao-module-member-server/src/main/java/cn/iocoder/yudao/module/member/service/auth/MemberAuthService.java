@@ -1,6 +1,8 @@
 package cn.iocoder.yudao.module.member.service.auth;
 
 import cn.iocoder.yudao.module.member.controller.app.auth.vo.*;
+import cn.iocoder.yudao.module.member.controller.app.user.vo.AppMemberUserResetPasswordByEmailReqVO;
+import cn.iocoder.yudao.module.member.controller.app.user.vo.AppMemberUserUpdateEmailReqVO;
 
 import jakarta.validation.Valid;
 
@@ -22,6 +24,14 @@ public interface MemberAuthService {
     AppAuthLoginRespVO login(@Valid AppAuthLoginReqVO reqVO);
 
     /**
+     * 邮箱 + 密码登录
+     *
+     * @param reqVO 登录信息
+     * @return 登录结果
+     */
+    AppAuthLoginRespVO emailLogin(@Valid AppAuthEmailLoginReqVO reqVO);
+
+    /**
      * 基于 token 退出登录
      *
      * @param token token
@@ -35,6 +45,14 @@ public interface MemberAuthService {
      * @return 登录结果
      */
     AppAuthLoginRespVO smsLogin(@Valid AppAuthSmsLoginReqVO reqVO);
+
+    /**
+     * 邮箱 + 验证码登陆
+     *
+     * @param reqVO 登陆信息
+     * @return 登录结果
+     */
+    AppAuthLoginRespVO emailCodeLogin(@Valid AppAuthEmailCodeLoginReqVO reqVO);
 
     /**
      * 社交登录，使用 code 授权码
@@ -98,6 +116,21 @@ public interface MemberAuthService {
      * @return 登录结果
      */
     AppAuthLoginRespVO emailRegister(@Valid AppAuthEmailRegisterReqVO reqVO);
+
+    /**
+     * 通过邮箱重置密码
+     *
+     * @param reqVO 请求信息
+     */
+    void resetUserPasswordByEmail(@Valid AppMemberUserResetPasswordByEmailReqVO reqVO);
+
+    /**
+     * 绑定或换绑邮箱
+     *
+     * @param userId 用户编号
+     * @param reqVO 请求信息
+     */
+    void updateUserEmail(Long userId, @Valid AppMemberUserUpdateEmailReqVO reqVO);
 
     /**
      * 刷新访问令牌

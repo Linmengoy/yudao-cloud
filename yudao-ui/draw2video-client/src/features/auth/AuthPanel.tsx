@@ -7,7 +7,7 @@ import type { AuthMode } from "./auth-types";
 
 const tabs: Array<{ mode: AuthMode; label: string }> = [
   { mode: "sms", label: "手机验证码" },
-  { mode: "register", label: "邮箱注册" },
+  { mode: "email", label: "邮箱登录" },
   { mode: "password", label: "密码登录" },
 ];
 
@@ -30,8 +30,18 @@ export function AuthPanel({
   initialMode?: AuthMode;
   onSuccess?: () => void;
 }) {
-  const { loginByPassword, loginBySms, registerByEmail, sendSmsCode, sendEmailCode } = useAuth();
+  const {
+    loginByPassword,
+    loginBySms,
+    loginByEmail,
+    loginByEmailCode,
+    registerByEmail,
+    resetPasswordByEmail,
+    sendSmsCode,
+    sendEmailCode,
+  } = useAuth();
   const [mode, setMode] = useState<AuthMode>(initialMode);
+  const [emailLoginType, setEmailLoginType] = useState<"password" | "code">("password");
   const [mobile, setMobile] = useState("");
   const [smsCode, setSmsCode] = useState("");
   const [email, setEmail] = useState("");
@@ -76,7 +86,7 @@ export function AuthPanel({
       } else {
         if (!isEmail(email)) throw new Error("请输入正确的邮箱地址");
         setEmailSending(true);
-        await sendEmailCode(email);
+        await sendEmailCode(email, mode === "forgot" ? "RESET_PASSWORD" : mode === "email" ? "LOGIN" : "REGISTER");
         setEmailCountdown(60);
       }
     } catch (err) {
@@ -102,6 +112,16 @@ export function AuthPanel({
         if (!password) throw new Error("请输入密码");
         await loginByPassword(mobile, password);
       }
+      if (mode === "email") {
+        if (!isEmail(email)) throw new Error("请输入正确的邮箱地址");
+        if (emailLoginType === "password") {
+          if (!password) throw new Error("请输入密码");
+          await loginByEmail(email, password);
+        } else {
+          if (!/^\d{6}$/.test(emailCode)) throw new Error("请输入 6 位邮箱验证码");
+          await loginByEmailCode(email, emailCode);
+        }
+      }
       if (mode === "register") {
         if (!isEmail(email)) throw new Error("请输入正确的邮箱地址");
         if (!/^\d{6}$/.test(emailCode)) throw new Error("请输入 6 位邮箱验证码");
@@ -115,6 +135,20 @@ export function AuthPanel({
           agreeTerms,
           inviteCode: inviteCode.trim() || undefined,
         });
+      }
+      if (mode === "forgot") {
+        if (!isEmail(email)) throw new Error("请输入正确的邮箱地址");
+        if (!/^\d{6}$/.test(emailCode)) throw new Error("请输入 6 位邮箱验证码");
+        if (!isPassword(password)) throw new Error("密码需 8-32 位，至少包含字母和数字");
+        if (password !== confirmPassword) throw new Error("两次输入的密码不一致");
+        await resetPasswordByEmail(email, emailCode, password);
+        setMode("email");
+        setEmailLoginType("password");
+        setPassword("");
+        setConfirmPassword("");
+        setEmailCode("");
+        setError("密码已重置，请使用新密码登录");
+        return;
       }
       onSuccess?.();
     } catch (err) {
@@ -150,7 +184,7 @@ export function AuthPanel({
       </div>
 
       <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
-        {mode === "register" ? (
+        {(mode === "register" || mode === "email" || mode === "forgot") ? (
           <>
             <Field label="邮箱">
               <input
@@ -161,7 +195,15 @@ export function AuthPanel({
                 className="input-base"
               />
             </Field>
-            <CodeField value={emailCode} onChange={setEmailCode} onSend={handleSendCode} disabled={emailCodeDisabled} sending={emailSending} countdown={emailCountdown} />
+            {mode === "email" && (
+              <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+                <SegmentButton active={emailLoginType === "password"} onClick={() => setEmailLoginType("password")}>密码登录</SegmentButton>
+                <SegmentButton active={emailLoginType === "code"} onClick={() => setEmailLoginType("code")}>验证码登录</SegmentButton>
+              </div>
+            )}
+            {(mode === "register" || mode === "forgot" || (mode === "email" && emailLoginType === "code")) && (
+              <CodeField value={emailCode} onChange={setEmailCode} onSend={handleSendCode} disabled={emailCodeDisabled} sending={emailSending} countdown={emailCountdown} />
+            )}
           </>
         ) : (
           <Field label="手机号">
@@ -179,8 +221,8 @@ export function AuthPanel({
           <CodeField value={smsCode} onChange={setSmsCode} onSend={handleSendCode} disabled={smsCodeDisabled} sending={smsSending} countdown={smsCountdown} />
         )}
 
-        {(mode === "password" || mode === "register") && (
-          <Field label="密码" hint={mode === "register" ? "8-32 位，至少包含字母和数字" : undefined}>
+        {(mode === "password" || mode === "register" || mode === "forgot" || (mode === "email" && emailLoginType === "password")) && (
+          <Field label={mode === "forgot" ? "新密码" : "密码"} hint={mode === "register" || mode === "forgot" ? "8-32 位，至少包含字母和数字" : undefined}>
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
@@ -201,7 +243,7 @@ export function AuthPanel({
           </Field>
         )}
 
-        {mode === "register" && (
+        {(mode === "register" || mode === "forgot") && (
           <>
             <Field label="确认密码">
               <input
@@ -212,36 +254,55 @@ export function AuthPanel({
                 className="input-base"
               />
             </Field>
-            <Field label="邀请码（选填）">
-              <input
-                value={inviteCode}
-                onChange={(event) => setInviteCode(event.target.value)}
-                placeholder="如有邀请码可填写"
-                className="input-base"
-              />
-            </Field>
-            <label className="flex items-start gap-2 text-xs text-muted-gray">
-              <input
-                type="checkbox"
-                checked={agreeTerms}
-                onChange={(event) => setAgreeTerms(event.target.checked)}
-                className="mt-0.5"
-              />
-              <span>我已阅读并同意用户协议和隐私政策</span>
-            </label>
+            {mode === "register" && (
+              <>
+                <Field label="邀请码（选填）">
+                  <input
+                    value={inviteCode}
+                    onChange={(event) => setInviteCode(event.target.value)}
+                    placeholder="如有邀请码可填写"
+                    className="input-base"
+                  />
+                </Field>
+                <label className="flex items-start gap-2 text-xs text-muted-gray">
+                  <input
+                    type="checkbox"
+                    checked={agreeTerms}
+                    onChange={(event) => setAgreeTerms(event.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>我已阅读并同意用户协议和隐私政策</span>
+                </label>
+              </>
+            )}
           </>
         )}
 
-        {mode === "password" && (
-          <button type="button" className="self-end text-xs text-muted-gray hover:text-charcoal">
+        {(mode === "password" || mode === "email") && (
+          <button type="button" onClick={() => { setError(""); setMode("forgot"); }} className="self-end text-xs text-muted-gray hover:text-charcoal">
             忘记密码
+          </button>
+        )}
+
+        {mode === "email" && (
+          <p className="text-center text-xs text-muted-gray">
+            还没有账号？
+            <button type="button" onClick={() => { setError(""); setMode("register"); }} className="text-charcoal underline">
+              立即注册
+            </button>
+          </p>
+        )}
+
+        {(mode === "register" || mode === "forgot") && (
+          <button type="button" onClick={() => { setError(""); setMode("email"); }} className="self-center text-xs text-muted-gray hover:text-charcoal">
+            返回邮箱登录
           </button>
         )}
 
         {error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
         <button type="submit" disabled={loading} className="primary-button w-full disabled:opacity-50">
-          {loading ? "处理中..." : mode === "register" ? "注册并登录" : "登录 / 注册"}
+          {loading ? "处理中..." : mode === "register" ? "注册并登录" : mode === "forgot" ? "重置密码" : "登录 / 注册"}
         </button>
       </form>
 
@@ -249,6 +310,20 @@ export function AuthPanel({
         继续即表示您同意 <span className="text-charcoal underline">使用条款</span> 和 <span className="text-charcoal underline">隐私政策</span>
       </p>
     </>
+  );
+}
+
+function SegmentButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md px-2 py-2 text-xs transition-colors ${
+        active ? "bg-background text-charcoal shadow-[rgba(0,0,0,0.1)_0px_4px_12px]" : "text-muted-gray hover:text-charcoal"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -7,6 +7,8 @@ import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.common.util.monitor.TracerUtils;
 import cn.iocoder.yudao.framework.common.util.servlet.ServletUtils;
 import cn.iocoder.yudao.module.member.controller.app.auth.vo.*;
+import cn.iocoder.yudao.module.member.controller.app.user.vo.AppMemberUserResetPasswordByEmailReqVO;
+import cn.iocoder.yudao.module.member.controller.app.user.vo.AppMemberUserUpdateEmailReqVO;
 import cn.iocoder.yudao.module.member.convert.auth.AuthConvert;
 import cn.iocoder.yudao.module.member.dal.dataobject.user.MemberUserDO;
 import cn.iocoder.yudao.module.member.enums.auth.MemberEmailCodeSceneEnum;
@@ -80,6 +82,12 @@ public class MemberAuthServiceImpl implements MemberAuthService {
     }
 
     @Override
+    public AppAuthLoginRespVO emailLogin(AppAuthEmailLoginReqVO reqVO) {
+        MemberUserDO user = emailLogin0(reqVO.getEmail(), reqVO.getPassword());
+        return createTokenAfterLoginSuccess(user, reqVO.getEmail(), LoginLogTypeEnum.LOGIN_EMAIL, null);
+    }
+
+    @Override
     @Transactional
     public AppAuthLoginRespVO smsLogin(AppAuthSmsLoginReqVO reqVO) {
         // 校验验证码
@@ -105,6 +113,27 @@ public class MemberAuthServiceImpl implements MemberAuthService {
 
         // 创建 Token 令牌，记录登录日志
         return createTokenAfterLoginSuccess(user, reqVO.getMobile(), LoginLogTypeEnum.LOGIN_SMS, openid);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AppAuthLoginRespVO emailCodeLogin(AppAuthEmailCodeLoginReqVO reqVO) {
+        String userIp = getClientIP();
+        MemberUserDO user = userService.getUserByEmail(reqVO.getEmail());
+        if (user == null) {
+            createLoginLog(null, reqVO.getEmail(), LoginLogTypeEnum.LOGIN_EMAIL, LoginResultEnum.BAD_CREDENTIALS);
+            throw exception(USER_EMAIL_NOT_EXISTS);
+        }
+        if (CommonStatusEnum.isDisable(user.getStatus())) {
+            createLoginLog(user.getId(), reqVO.getEmail(), LoginLogTypeEnum.LOGIN_EMAIL, LoginResultEnum.USER_DISABLED);
+            throw exception(AUTH_LOGIN_USER_DISABLED);
+        }
+        if (!Boolean.TRUE.equals(user.getEmailVerified())) {
+            createLoginLog(user.getId(), reqVO.getEmail(), LoginLogTypeEnum.LOGIN_EMAIL, LoginResultEnum.BAD_CREDENTIALS);
+            throw exception(AUTH_EMAIL_NOT_VERIFIED);
+        }
+        emailCodeService.useEmailCode(reqVO.getEmail(), MemberEmailCodeSceneEnum.LOGIN.getScene(), reqVO.getCode(), userIp);
+        return createTokenAfterLoginSuccess(user, reqVO.getEmail(), LoginLogTypeEnum.LOGIN_EMAIL, null);
     }
 
     @Override
@@ -188,6 +217,28 @@ public class MemberAuthServiceImpl implements MemberAuthService {
         if (CommonStatusEnum.isDisable(user.getStatus())) {
             createLoginLog(user.getId(), mobile, logTypeEnum, LoginResultEnum.USER_DISABLED);
             throw exception(AUTH_LOGIN_USER_DISABLED);
+        }
+        return user;
+    }
+
+    private MemberUserDO emailLogin0(String email, String password) {
+        final LoginLogTypeEnum logTypeEnum = LoginLogTypeEnum.LOGIN_EMAIL;
+        MemberUserDO user = userService.getUserByEmail(email);
+        if (user == null) {
+            createLoginLog(null, email, logTypeEnum, LoginResultEnum.BAD_CREDENTIALS);
+            throw exception(AUTH_LOGIN_BAD_CREDENTIALS);
+        }
+        if (!userService.isPasswordMatch(password, user.getPassword())) {
+            createLoginLog(user.getId(), email, logTypeEnum, LoginResultEnum.BAD_CREDENTIALS);
+            throw exception(AUTH_LOGIN_BAD_CREDENTIALS);
+        }
+        if (CommonStatusEnum.isDisable(user.getStatus())) {
+            createLoginLog(user.getId(), email, logTypeEnum, LoginResultEnum.USER_DISABLED);
+            throw exception(AUTH_LOGIN_USER_DISABLED);
+        }
+        if (!Boolean.TRUE.equals(user.getEmailVerified())) {
+            createLoginLog(user.getId(), email, logTypeEnum, LoginResultEnum.BAD_CREDENTIALS);
+            throw exception(AUTH_EMAIL_NOT_VERIFIED);
         }
         return user;
     }
@@ -276,6 +327,26 @@ public class MemberAuthServiceImpl implements MemberAuthService {
         emailCodeService.useEmailCode(reqVO.getEmail(), MemberEmailCodeSceneEnum.REGISTER.getScene(), reqVO.getCode(), userIp);
         MemberUserDO user = userService.createUserByEmail(reqVO.getEmail(), reqVO.getPassword(), userIp, getTerminal());
         return createTokenAfterLoginSuccess(user, reqVO.getEmail(), LoginLogTypeEnum.LOGIN_EMAIL, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void resetUserPasswordByEmail(AppMemberUserResetPasswordByEmailReqVO reqVO) {
+        emailCodeService.useEmailCode(reqVO.getEmail(), MemberEmailCodeSceneEnum.RESET_PASSWORD.getScene(), reqVO.getCode(), getClientIP());
+        userService.resetUserPasswordByEmail(reqVO);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateUserEmail(Long userId, AppMemberUserUpdateEmailReqVO reqVO) {
+        MemberUserDO user = userService.getUser(userId);
+        if (user == null) {
+            throw exception(USER_NOT_EXISTS);
+        }
+        MemberEmailCodeSceneEnum scene = StrUtil.isBlank(user.getEmail())
+                ? MemberEmailCodeSceneEnum.BIND_EMAIL : MemberEmailCodeSceneEnum.CHANGE_EMAIL;
+        emailCodeService.useEmailCode(reqVO.getEmail(), scene.getScene(), reqVO.getCode(), getClientIP());
+        userService.updateUserEmail(userId, reqVO);
     }
 
     @Override

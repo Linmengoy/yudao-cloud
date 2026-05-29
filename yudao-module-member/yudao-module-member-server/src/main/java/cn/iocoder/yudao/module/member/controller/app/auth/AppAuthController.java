@@ -49,6 +49,13 @@ public class AppAuthController {
         return success(authService.login(reqVO));
     }
 
+    @PostMapping("/email-login")
+    @Operation(summary = "使用邮箱 + 密码登录")
+    @PermitAll
+    public CommonResult<AppAuthLoginRespVO> emailLogin(@RequestBody @Valid AppAuthEmailLoginReqVO reqVO) {
+        return success(authService.emailLogin(reqVO));
+    }
+
     @PostMapping("/logout")
     @Operation(summary = "登出系统")
     @PermitAll
@@ -78,6 +85,13 @@ public class AppAuthController {
         return success(authService.smsLogin(reqVO));
     }
 
+    @PostMapping("/email-code-login")
+    @Operation(summary = "使用邮箱 + 验证码登录")
+    @PermitAll
+    public CommonResult<AppAuthLoginRespVO> emailCodeLogin(@RequestBody @Valid AppAuthEmailCodeLoginReqVO reqVO) {
+        return success(authService.emailCodeLogin(reqVO));
+    }
+
     @PostMapping("/send-sms-code")
     @Operation(summary = "发送手机验证码")
     @PermitAll
@@ -94,7 +108,7 @@ public class AppAuthController {
         return success(true);
     }
 
-    // ========== 邮箱注册相关 ==========
+    // ========== 邮箱验证码相关 ==========
 
     @PostMapping("/send-email-code")
     @Operation(summary = "发送邮箱验证码")

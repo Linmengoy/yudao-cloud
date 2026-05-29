@@ -39,10 +39,13 @@ interface AuthContextValue extends AuthState {
   modalOpen: boolean;
   loginByPassword: (mobile: string, password: string) => Promise<void>;
   loginBySms: (mobile: string, code: string) => Promise<void>;
+  loginByEmail: (email: string, password: string) => Promise<void>;
+  loginByEmailCode: (email: string, code: string) => Promise<void>;
   registerByEmail: (payload: EmailRegisterReq) => Promise<void>;
   sendSmsCode: (mobile: string) => Promise<void>;
-  sendEmailCode: (email: string) => Promise<void>;
-  validateEmailCode: (email: string, code: string) => Promise<void>;
+  sendEmailCode: (email: string, scene?: string) => Promise<void>;
+  validateEmailCode: (email: string, code: string, scene?: string) => Promise<void>;
+  resetPasswordByEmail: (email: string, code: string, password: string) => Promise<void>;
   fetchUser: () => Promise<MemberUser | null>;
   refreshWallet: () => Promise<AigcWallet | null>;
   logout: () => Promise<void>;
@@ -148,6 +151,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [fetchUser]
   );
 
+  const loginByEmail = useCallback(
+    async (email: string, password: string) => {
+      const token = await AuthApi.loginByEmail({ email, password });
+      applyLoginToken(token);
+      await fetchUser();
+      setModalOpen(false);
+    },
+    [fetchUser]
+  );
+
+  const loginByEmailCode = useCallback(
+    async (email: string, code: string) => {
+      const token = await AuthApi.loginByEmailCode({ email, code });
+      applyLoginToken(token);
+      await fetchUser();
+      setModalOpen(false);
+    },
+    [fetchUser]
+  );
+
   const registerByEmail = useCallback(
     async (payload: EmailRegisterReq) => {
       const token = await AuthApi.registerByEmail(payload);
@@ -167,6 +190,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearAuthState();
     }
   }, [clearAuthState]);
+
+  const resetPasswordByEmail = useCallback(async (email: string, code: string, password: string) => {
+    await AuthApi.resetPasswordByEmail({ email, code, password });
+  }, []);
 
   const refreshWallet = useCallback(async () => {
     if (!getAccessToken()) return null;
@@ -188,11 +215,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         modalOpen,
         loginByPassword,
         loginBySms,
+        loginByEmail,
+        loginByEmailCode,
         registerByEmail,
         sendSmsCode: (mobile) => AuthApi.sendSmsCode({ mobile, scene: "LOGIN" }).then(() => undefined),
-        sendEmailCode: (email) => AuthApi.sendEmailCode({ email, scene: "REGISTER" }).then(() => undefined),
-        validateEmailCode: (email, code) =>
-          AuthApi.validateEmailCode({ email, code, scene: "REGISTER" }).then(() => undefined),
+        sendEmailCode: (email, scene = "REGISTER") => AuthApi.sendEmailCode({ email, scene }).then(() => undefined),
+        validateEmailCode: (email, code, scene = "REGISTER") =>
+          AuthApi.validateEmailCode({ email, code, scene }).then(() => undefined),
+        resetPasswordByEmail,
         fetchUser,
         refreshWallet,
         logout,

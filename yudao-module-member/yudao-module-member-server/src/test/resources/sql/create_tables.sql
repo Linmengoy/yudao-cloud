@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS "member_user"
     point         int                   default 0 null comment '积分',
     "avatar"      varchar(255) NOT NULL DEFAULT '' COMMENT '头像',
     "status"      tinyint      NOT NULL COMMENT '状态',
-    "mobile"      varchar(11)  NOT NULL COMMENT '手机号',
+    "mobile"      varchar(11)  NULL COMMENT '手机号',
     "email"       varchar(255) NULL COMMENT '邮箱',
     "email_verified" bit       NOT NULL DEFAULT FALSE COMMENT '邮箱是否已验证',
     "email_bind_time" datetime NULL COMMENT '邮箱绑定时间',

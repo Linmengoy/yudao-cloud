@@ -45,6 +45,8 @@ member 是 AIGC MVP 闭环入口：
 POST /app-api/member/auth/send-email-code
 POST /app-api/member/auth/validate-email-code
 POST /app-api/member/auth/email-register
+POST /app-api/member/auth/email-login
+POST /app-api/member/auth/email-code-login
 POST /app-api/member/auth/login
 POST /app-api/member/auth/sms-login
 POST /app-api/member/auth/send-sms-code
@@ -60,18 +62,18 @@ PUT  /app-api/member/user/update
 ```text
 PUT /app-api/member/user/update-password
 PUT /app-api/member/user/update-email
+PUT /app-api/member/user/reset-password-by-email
 ```
-
-邮箱密码登录、邮箱找回密码如果后端补齐后再接入。
+- 后端已补齐邮箱密码登录、邮箱验证码登录、邮箱找回密码、绑定 / 换绑邮箱接口；前端已接入登录弹窗、独立登录页、找回密码流程和账号安全邮箱绑定 / 换绑入口。
 
 当前实现状态：
 
-- 已新增 `src/features/auth/auth-api.ts`，登录注册接口已接入 `/app-api/member/auth/*`
-- 已新增 `src/features/auth/auth-types.ts`，覆盖 `LoginToken`、`MemberUser`、邮箱注册、短信登录、密码登录和验证码请求类型
-- 已新增 `src/features/profile/profile-api.ts`、`src/features/profile/profile-types.ts`，资料接口已接入 `/app-api/member/user/get`、`/app-api/member/user/update`
+- 已新增 `src/features/auth/auth-api.ts`，登录注册接口已接入 `/app-api/member/auth/*`，并补齐 `email-login`、`email-code-login`、`reset-password-by-email`
+- 已新增 `src/features/auth/auth-types.ts`，覆盖 `LoginToken`、`MemberUser`、邮箱注册、邮箱登录、邮箱验证码登录、短信登录、密码登录、找回密码和验证码请求类型
+- 已新增 `src/features/profile/profile-api.ts`、`src/features/profile/profile-types.ts`，资料接口已接入 `/app-api/member/user/get`、`/app-api/member/user/update`、`/app-api/member/user/update-email`
 - `src/lib/api-client.ts` 已统一处理 `/app-api` 前缀、`tenant-id`、`terminal`、Bearer Token、refresh token 和 401 并发刷新队列
 - `validateEmailCode` 已封装并暴露，但邮箱注册主流程当前直接调用 `email-register`，尚未串联提交前独立预校验
-- `update-password`、`update-email`、邮箱密码登录、邮箱找回密码仍未接入，保留为 P1/P2
+- 后端已提供 `email-login`、`email-code-login`、`reset-password-by-email`、`update-email`；前端已接入邮箱登录、邮箱验证码登录、邮箱找回密码、绑定 / 换绑邮箱，`update-password` 和换绑手机号仍待接入
 
 ## 4. 管理端接口范围
 
@@ -139,7 +141,7 @@ UpdateProfileReq
 - 刷新页面时恢复 token 和用户信息
 - refreshToken 失效后清理登录态并打开登录弹窗
 
-当前实现状态：已完成主链路。`auth-store.tsx` 已移除 mock 主流程，登录 / 注册成功后保存 token、拉取用户资料和钱包，初始化时恢复登录态；refreshToken 失败后清理状态并通过 `auth-expired` 打开登录弹窗。
+当前实现状态：已完成主链路。`auth-store.tsx` 已移除 mock 主流程，登录 / 注册成功后保存 token、拉取用户资料和钱包，初始化时恢复登录态；已补齐 `loginByEmail`、`loginByEmailCode`、`resetPasswordByEmail`、按场景发送 / 校验邮箱验证码；refreshToken 失败后清理状态并通过 `auth-expired` 打开登录弹窗。
 
 Auth Store 状态：
 
@@ -160,11 +162,15 @@ Auth Store 方法：
 
 ```text
 loginByPassword(mobile, password)
+loginByEmail(email, password)
+loginByEmailCode(email, code)
 loginBySms(mobile, code)
 registerByEmail(req)
 sendSmsCode(scene, mobile)
 sendEmailCode(scene, email)
 validateEmailCode(scene, email, code)
+resetPasswordByEmail(email, code, password)
+updateEmail(email, code)
 fetchUser()
 logout()
 openLoginModal(mode, redirectTo)
@@ -175,11 +181,11 @@ closeLoginModal()
 
 - 改造 `src/features/auth/AuthModal.tsx`
 - 从“开发模式 mock 登录”升级为真实登录注册弹窗
-- 支持手机号验证码登录、邮箱注册、密码登录
+- 支持手机号验证码登录、邮箱登录、邮箱注册、密码登录
 - 支持 loading、错误、成功、禁用状态
 - 支持登录成功后回到原始目标页面
 
-当前实现状态：已完成真实登录注册弹窗，支持手机号验证码、邮箱注册、手机号密码登录、验证码倒计时、表单校验、loading、错误提示和成功后进入 `/app`。登录成功后回到原始目标页面 / 原始操作仍不完整，当前未稳定记录 `redirectTo` 或生成提交上下文。
+当前实现状态：已完成真实登录注册弹窗，支持手机号验证码、邮箱登录、邮箱验证码登录、邮箱注册、手机号密码登录、邮箱找回密码、验证码倒计时、表单校验、loading、错误提示和成功后进入 `/app`。邮箱注册已从一级 Tab 调整为邮箱登录表单内“立即注册”入口。登录成功后回到原始目标页面 / 原始操作仍不完整，当前未稳定记录 `redirectTo` 或生成提交上下文。
 
 建议组件：
 
@@ -196,9 +202,9 @@ src/features/auth
 
 阶段 4：独立登录注册页。
 
-- `/login` 不再只是打开弹窗，应具备完整页面兜底能力
+- `/login` 不再只是打开弹窗，应具备完整页面兜底能力，默认进入邮箱登录
 - 新增 `/register` 页面，复用注册表单
-- `/forgot-password` 第一阶段可预留入口
+- 找回密码流程可内嵌在登录表单中，后续如需要再拆独立 `/forgot-password` 页面
 - 支持 `redirect` 参数，登录成功后回到目标页面
 
 当前实现状态：
@@ -206,7 +212,7 @@ src/features/auth
 - 已新增 `/login` 独立兜底页面，未登录时在当前页面打开登录注册弹窗
 - 已新增 `/register` 独立注册页面，未登录时默认打开邮箱注册 Tab
 - 已登录访问 `/login` 或 `/register` 时跳转 `/app`
-- `/forgot-password` 仍未实现，入口在密码登录表单中保留但无实际流程
+- 找回密码已在登录表单内接入邮箱验证码重置密码，独立 `/forgot-password` 页面暂未拆分
 
 阶段 5：登录态守卫。
 
@@ -224,9 +230,9 @@ src/features/auth
 - 替换硬编码占位信息
 - 展示真实头像、昵称、手机号、邮箱、账号状态
 - 第一阶段支持昵称和头像修改
-- P1 支持修改密码、绑定邮箱、换绑手机号
+- P1 支持修改密码、绑定 / 换绑邮箱、换绑手机号
 
-当前实现状态：已完成基础展示和编辑。`/profile` 展示真实头像、昵称、手机号、邮箱、账号状态，支持昵称和头像 URL 保存，支持退出登录；头像文件上传 / 裁剪、修改密码、绑定或换绑邮箱、换绑手机号仍未完成。
+当前实现状态：已完成基础展示和编辑。`/profile` 展示真实头像、昵称、手机号、邮箱、账号状态，支持昵称和头像 URL 保存，支持退出登录；账号安全卡片已接入绑定 / 换绑邮箱，按当前是否已有邮箱发送 `BIND_EMAIL` 或 `CHANGE_EMAIL` 验证码；头像文件上传 / 裁剪、修改密码、换绑手机号仍未完成。
 
 建议组件：
 
@@ -608,6 +614,10 @@ Tabs:
 
 - 新用户可通过邮箱验证码完成注册
 - 邮箱注册成功后自动登录并进入工作台
+- 老用户可通过邮箱密码登录
+- 老用户可通过邮箱验证码登录
+- 用户可通过邮箱验证码完成找回密码
+- 用户可在 `/profile` 账号安全卡片绑定或换绑邮箱
 - 新用户可通过手机号验证码登录即注册
 - 老用户可通过手机号密码登录
 - 刷新页面后仍能保持登录态
@@ -619,7 +629,7 @@ Tabs:
 - 密码、验证码、token 不出现在 URL、页面日志、控制台输出中
 - 登录注册表单具备 loading、错误、成功、禁用状态
 - 登录注册界面在移动端可正常使用
-- `/login` 是独立兜底页面，不再跳首页后再打开弹窗
+- `/login` 是独立兜底页面，默认展示邮箱登录，不再跳首页后再打开弹窗
 - `/register` 是独立注册页面，默认打开邮箱注册流程
 - 登录成功后回到原始目标页面或继续生成提交原操作仍作为后续验收项
 
@@ -661,10 +671,10 @@ P0 必须完成：
 
 P0 当前完成状态：
 
-- 已完成用户端邮箱验证码注册、手机号验证码登录、手机号密码登录入口接入
+- 已完成用户端邮箱验证码注册、邮箱密码登录、邮箱验证码登录、手机号验证码登录、手机号密码登录入口接入
 - 已完成 Token 保存、401 自动刷新、刷新失败清理、refreshToken 启动恢复登录态
-- 已完成用户端真实登录注册弹窗、`/login` 独立页、`/register` 独立页
-- 已完成用户端 Profile 基础展示与昵称、头像地址修改，头像上传、账号安全未完成
+- 已完成用户端真实登录注册弹窗、找回密码内嵌流程、`/login` 独立页、`/register` 独立页
+- 已完成用户端 Profile 基础展示与昵称、头像地址修改、账号安全邮箱绑定 / 换绑，头像上传和修改密码未完成
 - 已完成工作台布局级登录守卫，未登录进入 `(app)` 路由会跳回首页并打开登录弹窗
 - 已完成管理端会员列表邮箱、登录时间、标签、等级、分组等筛选能力，以及手机号 / 邮箱脱敏、详情权限控制
 - 已完成管理端会员启用 / 禁用独立入口、等级原因必填、积分和余额调整原因及二次确认
@@ -674,9 +684,8 @@ P1 上线前建议完成：
 
 - 用户端头像上传 / 裁剪，替换当前头像 URL 输入
 - 用户端独立 `/login`、`/register` 页面增强
-- 用户端账号安全卡片
+- 用户端账号安全卡片继续补齐修改密码和换绑手机号
 - 用户端移动端底部 Sheet 登录体验
-- 用户端找回密码入口预留
 - 用户端登录后回到原始目标页、生成提交后继续原操作
 - 用户端邮箱验证码提交前独立预校验
 - 管理端会员邮箱字段展示已完成，后续重点是邮箱验证状态、注册来源、最近登录 IP、AIGC 用户标识补强
@@ -686,10 +695,7 @@ P1 上线前建议完成：
 
 P2 后续补齐：
 
-- 邮箱密码登录
-- 邮箱找回密码
 - 修改密码
-- 绑定或换绑邮箱
 - 换绑手机号
 - 账号注销
 - 会员登录日志

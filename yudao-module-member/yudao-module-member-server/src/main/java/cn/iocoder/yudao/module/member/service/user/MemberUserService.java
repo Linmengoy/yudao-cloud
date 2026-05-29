@@ -126,6 +126,14 @@ public interface MemberUserService {
     void updateUserMobileByWeixin(Long userId, AppMemberUserUpdateMobileByWeixinReqVO reqVO);
 
     /**
+     * 【会员】绑定或换绑邮箱，基于邮箱验证码
+     *
+     * @param userId 用户编号
+     * @param reqVO 请求信息
+     */
+    void updateUserEmail(Long userId, AppMemberUserUpdateEmailReqVO reqVO);
+
+    /**
      * 【会员】修改密码
      *
      * @param userId 用户编号
@@ -139,6 +147,13 @@ public interface MemberUserService {
      * @param reqVO 请求信息
      */
     void resetUserPassword(AppMemberUserResetPasswordReqVO reqVO);
+
+    /**
+     * 【会员】通过邮箱忘记密码
+     *
+     * @param reqVO 请求信息
+     */
+    void resetUserPasswordByEmail(AppMemberUserResetPasswordByEmailReqVO reqVO);
 
     /**
      * 判断密码是否匹配

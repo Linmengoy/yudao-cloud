@@ -29,4 +29,8 @@ CREATE TABLE IF NOT EXISTS `member_email_code` (
 ) COMMENT='会员邮箱验证码';
 
 INSERT INTO `system_mail_template` (`name`, `code`, `account_id`, `nickname`, `title`, `content`, `params`, `status`, `remark`, `creator`, `create_time`, `updater`, `update_time`, `deleted`) VALUES
-('会员邮箱注册验证码', 'member_email_register_code', 1, 'AIGC 平台', '【${productName}】邮箱注册验证码', '您好，您的邮箱注册验证码为：${code}，${expireMinutes} 分钟内有效。如非本人操作，请忽略本邮件。', '["code","expireMinutes","productName"]', 0, '会员邮箱注册验证码', '1', NOW(), '1', NOW(), b'0');
+('会员邮箱注册验证码', 'member_email_register_code', 1, 'AIGC 平台', '【${productName}】邮箱注册验证码', '您好，您的邮箱注册验证码为：${code}，${expireMinutes} 分钟内有效。如非本人操作，请忽略本邮件。', '["code","expireMinutes","productName"]', 0, '会员邮箱注册验证码', '1', NOW(), '1', NOW(), b'0'),
+('会员邮箱登录验证码', 'member_email_login_code', 1, 'AIGC 平台', '【${productName}】邮箱登录验证码', '您好，您的邮箱登录验证码为：${code}，${expireMinutes} 分钟内有效。如非本人操作，请忽略本邮件。', '["code","expireMinutes","productName"]', 0, '会员邮箱登录验证码', '1', NOW(), '1', NOW(), b'0'),
+('会员邮箱找回密码验证码', 'member_email_reset_password_code', 1, 'AIGC 平台', '【${productName}】找回密码验证码', '您好，您的找回密码验证码为：${code}，${expireMinutes} 分钟内有效。如非本人操作，请忽略本邮件。', '["code","expireMinutes","productName"]', 0, '会员邮箱找回密码验证码', '1', NOW(), '1', NOW(), b'0'),
+('会员绑定邮箱验证码', 'member_email_bind_code', 1, 'AIGC 平台', '【${productName}】绑定邮箱验证码', '您好，您的绑定邮箱验证码为：${code}，${expireMinutes} 分钟内有效。如非本人操作，请忽略本邮件。', '["code","expireMinutes","productName"]', 0, '会员绑定邮箱验证码', '1', NOW(), '1', NOW(), b'0'),
+('会员换绑邮箱验证码', 'member_email_change_code', 1, 'AIGC 平台', '【${productName}】换绑邮箱验证码', '您好，您的换绑邮箱验证码为：${code}，${expireMinutes} 分钟内有效。如非本人操作，请忽略本邮件。', '["code","expireMinutes","productName"]', 0, '会员换绑邮箱验证码', '1', NOW(), '1', NOW(), b'0');

@@ -79,12 +79,7 @@ public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
     @Transactional(rollbackFor = Exception.class)
     public void useEmailCode(String email, String scene, String code, String usedIp) {
         MemberEmailCodeDO emailCode = validateCode(email, scene, code);
-        int updateCount = emailCodeMapper.updateById(MemberEmailCodeDO.builder()
-                .id(emailCode.getId())
-                .used(true)
-                .usedTime(LocalDateTime.now())
-                .usedIp(usedIp)
-                .build());
+        int updateCount = emailCodeMapper.updateUsedById(emailCode.getId(), usedIp);
         if (updateCount == 0) {
             throw exception(AUTH_EMAIL_CODE_USED);
         }
@@ -109,7 +104,7 @@ public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
             return;
         }
         if (user == null) {
-            throw exception(USER_NOT_EXISTS);
+            throw exception(USER_EMAIL_NOT_EXISTS);
         }
     }
 

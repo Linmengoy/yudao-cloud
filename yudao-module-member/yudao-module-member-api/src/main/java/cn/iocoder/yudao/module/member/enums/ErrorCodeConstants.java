@@ -15,6 +15,7 @@ public interface ErrorCodeConstants {
     ErrorCode USER_MOBILE_USED = new ErrorCode(1_004_001_002, "修改手机失败，该手机号({})已经被使用");
     ErrorCode USER_POINT_NOT_ENOUGH = new ErrorCode(1_004_001_003, "用户积分余额不足");
     ErrorCode USER_EMAIL_USED = new ErrorCode(1_004_001_004, "邮箱已经被使用");
+    ErrorCode USER_EMAIL_NOT_EXISTS = new ErrorCode(1_004_001_005, "邮箱未注册用户");
 
     // ========== AUTH 模块 1-004-003-000 ==========
     ErrorCode AUTH_LOGIN_BAD_CREDENTIALS = new ErrorCode(1_004_003_000, "登录失败，账号密码不正确");
@@ -29,6 +30,7 @@ public interface ErrorCodeConstants {
     ErrorCode AUTH_EMAIL_CODE_NOT_CORRECT = new ErrorCode(1_004_003_013, "邮箱验证码不正确");
     ErrorCode AUTH_EMAIL_SCENE_NOT_SUPPORT = new ErrorCode(1_004_003_014, "邮箱验证码场景不支持");
     ErrorCode AUTH_REGISTER_AGREE_TERMS_REQUIRED = new ErrorCode(1_004_003_015, "请阅读并同意用户协议");
+    ErrorCode AUTH_EMAIL_NOT_VERIFIED = new ErrorCode(1_004_003_016, "邮箱未验证");
 
     // ========== 用户收件地址 1-004-004-000 ==========
     ErrorCode ADDRESS_NOT_EXISTS = new ErrorCode(1_004_004_000, "用户收件地址不存在");

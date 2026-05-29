@@ -6,3 +6,8 @@ export interface UpdateProfileReq {
   nickname?: string;
   avatar?: string;
 }
+
+export interface UpdateEmailReq {
+  email: string;
+  code: string;
+}

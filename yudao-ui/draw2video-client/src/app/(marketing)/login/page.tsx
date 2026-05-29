@@ -34,9 +34,9 @@ export default function LoginPage() {
         </div>
         <div className="rounded-2xl border border-border-warm bg-background p-6">
           <h2 className="text-lg font-medium text-charcoal">账号登录 / 注册</h2>
-          <p className="mt-2 text-sm text-muted-gray">选择一种方式继续进入工作台。</p>
+          <p className="mt-2 text-sm text-muted-gray">可使用手机验证码、邮箱登录或手机号密码继续进入工作台。</p>
           <div className="mt-6">
-            <AuthPanel initialMode="sms" />
+            <AuthPanel initialMode="email" />
           </div>
         </div>
       </div>

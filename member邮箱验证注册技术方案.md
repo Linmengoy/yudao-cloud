@@ -2,7 +2,7 @@
 
 ## 1. 方案定位
 
-本方案只用于给 `yudao-module-member` 增加用户端邮箱验证注册能力，支持用户通过邮箱验证码完成注册，并在注册成功后自动登录。
+本方案用于给 `yudao-module-member` 增加用户端邮箱账号能力，支持用户通过邮箱验证码完成注册，并在注册成功后自动登录；当前已进一步补齐邮箱密码登录、邮箱验证码登录、邮箱找回密码、绑定 / 换绑邮箱等 P1 能力。
 
 本方案不包含管理端建设内容，不新增管理端页面，不规划管理端菜单，不改造管理端登录，不新增 `/admin-api` 业务接口。
 
@@ -42,13 +42,20 @@
 
 ```text
 POST /app-api/member/auth/login
+POST /app-api/member/auth/email-login
 POST /app-api/member/auth/sms-login
+POST /app-api/member/auth/email-code-login
 POST /app-api/member/auth/send-sms-code
 POST /app-api/member/auth/validate-sms-code
+POST /app-api/member/auth/send-email-code
+POST /app-api/member/auth/validate-email-code
+POST /app-api/member/auth/email-register
 POST /app-api/member/auth/refresh-token
 POST /app-api/member/auth/logout
 GET  /app-api/member/user/get
 PUT  /app-api/member/user/update
+PUT  /app-api/member/user/reset-password-by-email
+PUT  /app-api/member/user/update-email
 ```
 
 已有后端能力：
@@ -62,6 +69,11 @@ PUT  /app-api/member/user/update
 - 会员用户资料查询和修改
 - 手机号找回密码
 - 手机号换绑
+- 邮箱验证码注册并自动登录
+- 邮箱密码登录
+- 邮箱验证码登录
+- 邮箱找回密码
+- 邮箱绑定 / 换绑
 - 系统邮件账号配置
 - 系统邮件模板配置
 - 系统邮件日志
@@ -71,15 +83,16 @@ PUT  /app-api/member/user/update
 
 | 能力 | 当前状态 | 处理方式 |
 | ---- | ---- | ---- |
-| 独立邮箱注册接口 | 缺失 | 新增 `/member/auth/email-register` |
-| 邮箱验证码发送接口 | 缺失 | 新增 `/member/auth/send-email-code` |
-| 邮箱验证码校验接口 | 缺失 | 新增 `/member/auth/validate-email-code` |
-| 会员邮箱字段 | 缺失 | `member_user` 增加邮箱字段 |
-| 邮箱唯一索引 | 缺失 | 增加邮箱唯一索引 |
-| 邮箱验证码表 | 缺失 | 新增 `member_email_code` |
-| 邮箱密码登录 | 缺失 | P1 可选建设 |
-| 邮箱找回密码 | 缺失 | P1 可选建设 |
-| 邮箱绑定/换绑 | 缺失 | P1 可选建设 |
+| 独立邮箱注册接口 | 已完成 | 已新增 `/member/auth/email-register` |
+| 邮箱验证码发送接口 | 已完成 | 已新增 `/member/auth/send-email-code` |
+| 邮箱验证码校验接口 | 已完成 | 已新增 `/member/auth/validate-email-code` |
+| 会员邮箱字段 | 已完成 | `member_user` 已增加邮箱字段 |
+| 邮箱唯一索引 | 已完成 | 已增加邮箱唯一索引 |
+| 邮箱验证码表 | 已完成 | 已新增 `member_email_code` |
+| 邮箱密码登录 | 已完成 | 已新增 `/member/auth/email-login` |
+| 邮箱验证码登录 | 已完成 | 已新增 `/member/auth/email-code-login` |
+| 邮箱找回密码 | 已完成 | 已新增 `/member/user/reset-password-by-email` |
+| 邮箱绑定/换绑 | 已完成 | 已新增 `/member/user/update-email`，按用户当前是否已有邮箱动态选择 `BIND_EMAIL` 或 `CHANGE_EMAIL` 场景 |
 
 ## 3. 建设范围
 
@@ -99,11 +112,11 @@ PUT  /app-api/member/user/update
 
 ### 3.2 P1 后续建设
 
-- 邮箱密码登录
-- 邮箱验证码登录
-- 邮箱找回密码
-- 用户绑定邮箱
-- 用户换绑邮箱
+- 邮箱密码登录：已完成
+- 邮箱验证码登录：已完成
+- 邮箱找回密码：已完成
+- 用户绑定邮箱：已完成
+- 用户换绑邮箱：已完成
 - 注册欢迎邮件
 - 图形验证码接入
 - IP 风控策略增强
@@ -132,7 +145,7 @@ P0 新增接口：
 | POST | `/app-api/member/auth/validate-email-code` | `/member/auth/validate-email-code` | 校验邮箱验证码 |
 | POST | `/app-api/member/auth/email-register` | `/member/auth/email-register` | 邮箱验证码注册 |
 
-P1 可选接口：
+已补齐的 P1 接口：
 
 | 方法 | 对外路径 | 说明 |
 | ---- | ---- | ---- |
@@ -140,6 +153,12 @@ P1 可选接口：
 | POST | `/app-api/member/auth/email-code-login` | 邮箱验证码登录 |
 | PUT | `/app-api/member/user/reset-password-by-email` | 邮箱找回密码 |
 | PUT | `/app-api/member/user/update-email` | 绑定或换绑邮箱 |
+
+实现说明：
+
+- `email-code-login` 会先校验用户存在、账号未禁用、邮箱已验证，再消费 `LOGIN` 场景邮箱验证码，避免失败登录浪费验证码。
+- `update-email` 会根据用户当前是否已有邮箱动态选择验证码场景：无邮箱时消费 `BIND_EMAIL`，已有邮箱时消费 `CHANGE_EMAIL`。
+- 邮箱验证码消费使用 `id + used = false` 条件更新，保证同一个验证码并发消费只能成功一次。
 
 ### 4.2 发送邮箱验证码
 
@@ -946,7 +965,7 @@ mailSendApi.sendSingleMailToEmail(email, "member_email_register_code", params);
 手机号密码登录
 ```
 
-P1 再支持：
+当前已补齐支持：
 
 ```text
 邮箱密码登录
@@ -983,7 +1002,18 @@ P1 再支持：
 - 注册成功后不能再次使用同一验证码注册
 - 不同租户下邮箱唯一性符合产品定义
 
-### 16.3 工程验收
+### 16.3 邮箱登录与账号安全验收
+
+- 用户可通过邮箱和密码登录
+- 用户可通过 `LOGIN` 场景邮箱验证码登录
+- 邮箱验证码登录失败时，禁用账号和邮箱未验证账号不会消耗验证码
+- 用户可通过 `RESET_PASSWORD` 场景邮箱验证码重置密码
+- 未绑定邮箱用户可通过 `BIND_EMAIL` 场景验证码绑定邮箱
+- 已绑定邮箱用户可通过 `CHANGE_EMAIL` 场景验证码换绑邮箱
+- `BIND_EMAIL` 与 `CHANGE_EMAIL` 场景不能混用
+- 同一个邮箱验证码并发消费只能成功一次
+
+### 16.4 工程验收
 
 - `yudao-module-member-api` 可正常编译
 - `yudao-module-member-server` 可正常编译
@@ -992,6 +1022,7 @@ P1 再支持：
 - 用户端接口文档能展示新增接口
 - `/app-api/member/**` 能访问新增接口
 - 新增 SQL 可重复执行或按项目迁移规范执行
+- 已通过 `mvn -pl yudao-module-member/yudao-module-member-server -am -DskipTests compile` 编译校验
 
 ## 17. 最小落地版本
 

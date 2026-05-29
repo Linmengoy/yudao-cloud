@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.member.dal.mysql.auth;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.module.member.dal.dataobject.auth.MemberEmailCodeDO;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.apache.ibatis.annotations.Mapper;
 
 import java.time.LocalDateTime;
@@ -39,6 +40,15 @@ public interface MemberEmailCodeMapper extends BaseMapperX<MemberEmailCodeDO> {
                 .eq(MemberEmailCodeDO::getUsed, false)
                 .orderByDesc(MemberEmailCodeDO::getId)
                 .last("LIMIT 1"));
+    }
+
+    default int updateUsedById(Long id, String usedIp) {
+        return update(null, new LambdaUpdateWrapper<MemberEmailCodeDO>()
+                .set(MemberEmailCodeDO::getUsed, true)
+                .set(MemberEmailCodeDO::getUsedTime, LocalDateTime.now())
+                .set(MemberEmailCodeDO::getUsedIp, usedIp)
+                .eq(MemberEmailCodeDO::getId, id)
+                .eq(MemberEmailCodeDO::getUsed, false));
     }
 
 }

@@ -5,6 +5,7 @@ import cn.iocoder.yudao.module.member.controller.app.user.vo.*;
 import cn.iocoder.yudao.module.member.convert.user.MemberUserConvert;
 import cn.iocoder.yudao.module.member.dal.dataobject.level.MemberLevelDO;
 import cn.iocoder.yudao.module.member.dal.dataobject.user.MemberUserDO;
+import cn.iocoder.yudao.module.member.service.auth.MemberAuthService;
 import cn.iocoder.yudao.module.member.service.level.MemberLevelService;
 import cn.iocoder.yudao.module.member.service.user.MemberUserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,6 +29,8 @@ public class AppMemberUserController {
 
     @Resource
     private MemberUserService userService;
+    @Resource
+    private MemberAuthService authService;
     @Resource
     private MemberLevelService levelService;
 
@@ -60,6 +63,13 @@ public class AppMemberUserController {
         return success(true);
     }
 
+    @PutMapping("/update-email")
+    @Operation(summary = "绑定或换绑用户邮箱")
+    public CommonResult<Boolean> updateUserEmail(@RequestBody @Valid AppMemberUserUpdateEmailReqVO reqVO) {
+        authService.updateUserEmail(getLoginUserId(), reqVO);
+        return success(true);
+    }
+
     @PutMapping("/update-password")
     @Operation(summary = "修改用户密码", description = "用户修改密码时使用")
     public CommonResult<Boolean> updateUserPassword(@RequestBody @Valid AppMemberUserUpdatePasswordReqVO reqVO) {
@@ -72,6 +82,14 @@ public class AppMemberUserController {
     @PermitAll
     public CommonResult<Boolean> resetUserPassword(@RequestBody @Valid AppMemberUserResetPasswordReqVO reqVO) {
         userService.resetUserPassword(reqVO);
+        return success(true);
+    }
+
+    @PutMapping("/reset-password-by-email")
+    @Operation(summary = "通过邮箱重置密码", description = "用户忘记密码时使用")
+    @PermitAll
+    public CommonResult<Boolean> resetUserPasswordByEmail(@RequestBody @Valid AppMemberUserResetPasswordByEmailReqVO reqVO) {
+        authService.resetUserPasswordByEmail(reqVO);
         return success(true);
     }
 

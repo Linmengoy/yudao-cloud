@@ -1,8 +1,11 @@
 import { api } from "@/lib/api-client";
 import type {
+  EmailCodeLoginReq,
+  EmailLoginReq,
   EmailRegisterReq,
   LoginToken,
   PasswordLoginReq,
+  ResetPasswordByEmailReq,
   SendEmailCodeReq,
   SendSmsCodeReq,
   SmsLoginReq,
@@ -15,6 +18,14 @@ export function loginByPassword(data: PasswordLoginReq) {
 
 export function loginBySms(data: SmsLoginReq) {
   return api.post<LoginToken>("/member/auth/sms-login", data);
+}
+
+export function loginByEmail(data: EmailLoginReq) {
+  return api.post<LoginToken>("/member/auth/email-login", data);
+}
+
+export function loginByEmailCode(data: EmailCodeLoginReq) {
+  return api.post<LoginToken>("/member/auth/email-code-login", data);
 }
 
 export function sendSmsCode(data: SendSmsCodeReq) {
@@ -31,6 +42,10 @@ export function validateEmailCode(data: ValidateEmailCodeReq) {
 
 export function registerByEmail(data: EmailRegisterReq) {
   return api.post<LoginToken>("/member/auth/email-register", data);
+}
+
+export function resetPasswordByEmail(data: ResetPasswordByEmailReq) {
+  return api.put<boolean>("/member/user/reset-password-by-email", data);
 }
 
 export function logout() {
