@@ -8,6 +8,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   clearTokens,
   getAccessToken,
@@ -27,16 +29,20 @@ import { getProfile } from "@/features/profile/profile-api";
 import { getAigcWallet } from "@/features/wallet/wallet-api";
 import type { AigcWallet } from "@/features/wallet/wallet-types";
 
+type AuthReason = "required" | "expired" | "manual-logout" | null;
+
 interface AuthState {
   user: MemberUser | null;
   wallet: AigcWallet | null;
   loading: boolean;
   loggedIn: boolean;
+  authReason: AuthReason;
 }
 
 interface AuthContextValue extends AuthState {
   authMode: AuthMode;
   modalOpen: boolean;
+  redirectTo: string | null;
   loginByPassword: (mobile: string, password: string) => Promise<void>;
   loginBySms: (mobile: string, code: string) => Promise<void>;
   loginByEmail: (email: string, password: string) => Promise<void>;
@@ -49,7 +55,7 @@ interface AuthContextValue extends AuthState {
   fetchUser: () => Promise<MemberUser | null>;
   refreshWallet: () => Promise<AigcWallet | null>;
   logout: () => Promise<void>;
-  openModal: (mode?: AuthMode) => void;
+  openModal: (mode?: AuthMode, redirectTo?: string | null, reason?: AuthReason) => void;
   closeModal: () => void;
 }
 
@@ -60,14 +66,19 @@ function applyLoginToken(token: LoginToken) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const queryClient = useQueryClient();
   const [state, setState] = useState<AuthState>({
     user: null,
     wallet: null,
     loading: true,
     loggedIn: false,
+    authReason: null,
   });
   const [modalOpen, setModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("sms");
+  const [redirectTo, setRedirectTo] = useState<string | null>(null);
 
   const fetchUser = useCallback(async () => {
     const [user, wallet] = await Promise.all([getProfile(), getAigcWallet().catch(() => null)]);
@@ -77,14 +88,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       wallet,
       loading: false,
       loggedIn: true,
+      authReason: null,
     }));
     return user;
   }, []);
 
-  const clearAuthState = useCallback(() => {
+  const clearAuthState = useCallback((reason: AuthReason = null) => {
     clearTokens();
-    setState({ user: null, wallet: null, loading: false, loggedIn: false });
-  }, []);
+    queryClient.clear();
+    setState({ user: null, wallet: null, loading: false, loggedIn: false, authReason: reason });
+  }, [queryClient]);
+
+  const completeLogin = useCallback(async () => {
+    await fetchUser();
+    setModalOpen(false);
+    const target = redirectTo;
+    setRedirectTo(null);
+    if (target) {
+      router.push(target);
+    }
+  }, [fetchUser, redirectTo, router]);
 
   useEffect(() => {
     let ignore = false;
@@ -92,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async function init() {
       if (!getAccessToken() && !getRefreshToken()) {
         if (!ignore) {
-          setState({ user: null, wallet: null, loading: false, loggedIn: false });
+          setState({ user: null, wallet: null, loading: false, loggedIn: false, authReason: null });
         }
         return;
       }
@@ -108,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             wallet,
             loading: false,
             loggedIn: true,
+            authReason: null,
           });
         }
       } catch {
@@ -125,60 +149,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return onAuthExpired(() => {
-      clearAuthState();
+      clearAuthState("expired");
       setAuthMode("sms");
+      setRedirectTo(pathname);
       setModalOpen(true);
     });
-  }, [clearAuthState]);
+  }, [clearAuthState, pathname]);
 
   const loginByPassword = useCallback(
     async (mobile: string, password: string) => {
       const token = await AuthApi.loginByPassword({ mobile, password });
       applyLoginToken(token);
-      await fetchUser();
-      setModalOpen(false);
+      await completeLogin();
     },
-    [fetchUser]
+    [completeLogin]
   );
 
   const loginBySms = useCallback(
     async (mobile: string, code: string) => {
       const token = await AuthApi.loginBySms({ mobile, code });
       applyLoginToken(token);
-      await fetchUser();
-      setModalOpen(false);
+      await completeLogin();
     },
-    [fetchUser]
+    [completeLogin]
   );
 
   const loginByEmail = useCallback(
     async (email: string, password: string) => {
       const token = await AuthApi.loginByEmail({ email, password });
       applyLoginToken(token);
-      await fetchUser();
-      setModalOpen(false);
+      await completeLogin();
     },
-    [fetchUser]
+    [completeLogin]
   );
 
   const loginByEmailCode = useCallback(
     async (email: string, code: string) => {
       const token = await AuthApi.loginByEmailCode({ email, code });
       applyLoginToken(token);
-      await fetchUser();
-      setModalOpen(false);
+      await completeLogin();
     },
-    [fetchUser]
+    [completeLogin]
   );
 
   const registerByEmail = useCallback(
     async (payload: EmailRegisterReq) => {
       const token = await AuthApi.registerByEmail(payload);
       applyLoginToken(token);
-      await fetchUser();
-      setModalOpen(false);
+      await completeLogin();
     },
-    [fetchUser]
+    [completeLogin]
   );
 
   const logout = useCallback(async () => {
@@ -187,9 +207,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await AuthApi.logout();
       }
     } finally {
-      clearAuthState();
+      setModalOpen(false);
+      setRedirectTo(null);
+      clearAuthState("manual-logout");
+      router.push("/");
     }
-  }, [clearAuthState]);
+  }, [clearAuthState, router]);
 
   const resetPasswordByEmail = useCallback(async (email: string, code: string, password: string) => {
     await AuthApi.resetPasswordByEmail({ email, code, password });
@@ -202,8 +225,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return wallet;
   }, []);
 
-  const openModal = useCallback((mode: AuthMode = "sms") => {
+  const openModal = useCallback((mode: AuthMode = "sms", nextRedirectTo: string | null = null, reason: AuthReason = "required") => {
     setAuthMode(mode);
+    setRedirectTo(nextRedirectTo);
+    setState((current) => ({ ...current, authReason: reason }));
     setModalOpen(true);
   }, []);
 
@@ -213,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...state,
         authMode,
         modalOpen,
+        redirectTo,
         loginByPassword,
         loginBySms,
         loginByEmail,

@@ -86,8 +86,8 @@ export default function ProfilePage() {
       setMessage("请输入正确的邮箱地址");
       return;
     }
-    if (!/^\d{6}$/.test(emailCode)) {
-      setMessage("请输入 6 位邮箱验证码");
+    if (!/^\d{4}$/.test(emailCode)) {
+      setMessage("请输入 4 位邮箱验证码");
       return;
     }
     try {

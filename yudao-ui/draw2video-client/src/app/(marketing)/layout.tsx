@@ -2,15 +2,29 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-import { Menu, X } from "lucide-react";
+import { useRef, useState, useEffect } from "react";
+import { Menu, X, ChevronRight, LogOut, Settings, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/auth-store";
+import { formatPoints } from "@/features/wallet/wallet-api";
 
-const navLinks = [
+const guestLinks = [
   { href: "/", label: "首页" },
   { href: "/pricing", label: "价格" },
 ];
+
+const authLinks = [
+  { href: "/", label: "首页" },
+  { href: "/pricing", label: "价格" },
+  { href: "/app", label: "工作台" },
+  { href: "/tasks", label: "我的作品" },
+];
+
+function maskAccount(value?: string) {
+  if (!value) return "已登录";
+  if (value.includes("@")) return value.replace(/^(.).+(@.+)$/, "$1***$2");
+  return value.replace(/^(\d{3})\d{4}(\d{4})$/, "$1****$2");
+}
 
 export default function MarketingLayout({
   children,
@@ -18,8 +32,36 @@ export default function MarketingLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { openModal } = useAuth();
+  const { loggedIn, user, wallet, openModal, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
+  const links = loggedIn ? authLinks : guestLinks;
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    function handleClick(event: MouseEvent) {
+      if (accountRef.current && !accountRef.current.contains(event.target as Node)) {
+        setAccountOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setAccountOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [accountOpen]);
+
+  async function handleLogout() {
+    if (!window.confirm("确定要退出登录吗？")) return;
+    setAccountOpen(false);
+    setMobileOpen(false);
+    await logout();
+  }
 
   return (
     <>
@@ -30,7 +72,7 @@ export default function MarketingLayout({
           </Link>
 
           <nav className="hidden items-center gap-6 md:flex">
-            {navLinks.map((link) => (
+            {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -44,18 +86,72 @@ export default function MarketingLayout({
             ))}
           </nav>
 
-          <div className="hidden md:flex">
-            <button
-              onClick={() => openModal()}
-              className="inline-flex items-center rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80"
-            >
-              开始体验
-            </button>
+          <div className="hidden items-center gap-3 md:flex">
+            {loggedIn ? (
+              <>
+                <Link
+                  href="/app"
+                  className="inline-flex items-center gap-1 rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80"
+                >
+                  进入工作台
+                  <ChevronRight className="size-4" />
+                </Link>
+                <div className="relative" ref={accountRef}>
+                  <button
+                    onClick={() => setAccountOpen((open) => !open)}
+                    className="flex size-9 items-center justify-center rounded-full bg-muted text-xs font-medium text-charcoal hover:bg-border-warm"
+                    aria-label="打开账户菜单"
+                  >
+                    {user?.nickname?.[0] ?? "U"}
+                  </button>
+                  {accountOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-border-warm bg-background py-2 shadow-lg">
+                      <div className="border-b border-border-warm px-4 pb-3 pt-2">
+                        <p className="truncate text-sm font-medium text-charcoal">{user?.nickname ?? "用户"}</p>
+                        <p className="mt-1 truncate text-xs text-muted-gray">{maskAccount(user?.email ?? user?.mobile)}</p>
+                        <p className="mt-2 text-xs text-muted-gray">{formatPoints(wallet?.balance)}</p>
+                      </div>
+                      <Link
+                        href="/profile"
+                        onClick={() => setAccountOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm text-muted-gray hover:bg-muted hover:text-charcoal"
+                      >
+                        <Settings className="size-4" />
+                        个人中心
+                      </Link>
+                      <Link
+                        href="/wallet"
+                        onClick={() => setAccountOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm text-muted-gray hover:bg-muted hover:text-charcoal"
+                      >
+                        <Wallet className="size-4" />
+                        钱包 / 用量
+                      </Link>
+                      <button
+                        onClick={handleLogout}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-muted-gray hover:bg-muted hover:text-charcoal"
+                      >
+                        <LogOut className="size-4" />
+                        退出登录
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <button
+                onClick={() => openModal("email")}
+                className="inline-flex items-center rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80"
+              >
+                登录 / 注册
+              </button>
+            )}
           </div>
 
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
             className="inline-flex items-center justify-center rounded-md p-2 text-charcoal hover:bg-muted md:hidden"
+            aria-label="打开导航菜单"
           >
             {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
@@ -64,7 +160,7 @@ export default function MarketingLayout({
         {mobileOpen && (
           <nav className="border-t border-border-warm bg-background px-4 py-3 md:hidden">
             <div className="flex flex-col gap-3">
-              {navLinks.map((link) => (
+              {links.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
@@ -77,15 +173,28 @@ export default function MarketingLayout({
                   {link.label}
                 </Link>
               ))}
-              <button
-                onClick={() => {
-                  setMobileOpen(false);
-                  openModal();
-                }}
-                className="inline-flex w-fit items-center rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px]"
-              >
-                开始体验
-              </button>
+              {loggedIn ? (
+                <>
+                  <div className="rounded-lg border border-border-warm px-3 py-2">
+                    <p className="text-sm font-medium text-charcoal">{user?.nickname ?? "用户"}</p>
+                    <p className="text-xs text-muted-gray">{maskAccount(user?.email ?? user?.mobile)}</p>
+                    <p className="mt-1 text-xs text-muted-gray">{formatPoints(wallet?.balance)}</p>
+                  </div>
+                  <button onClick={handleLogout} className="text-left text-sm text-muted-gray">
+                    退出登录
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => {
+                    setMobileOpen(false);
+                    openModal("email");
+                  }}
+                  className="inline-flex w-fit items-center rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px]"
+                >
+                  登录 / 注册
+                </button>
+              )}
             </div>
           </nav>
         )}

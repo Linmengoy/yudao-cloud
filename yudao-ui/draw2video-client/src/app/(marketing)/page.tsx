@@ -1,6 +1,21 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/features/auth/auth-store";
 
 export default function HomePage() {
+  const router = useRouter();
+  const { loggedIn, openModal } = useAuth();
+
+  function handleStartCreate() {
+    if (loggedIn) {
+      router.push("/create/image");
+      return;
+    }
+    openModal("email", "/create/image", "required");
+  }
+
   return (
     <div className="flex flex-col">
       {/* Hero */}
@@ -12,12 +27,13 @@ export default function HomePage() {
           输入文字描述，生成高质量图片。简单、快速、无限制。
         </p>
         <div className="mt-8 flex items-center gap-4">
-          <Link
-            href="/create/image"
+          <button
+            type="button"
+            onClick={handleStartCreate}
             className="inline-flex items-center rounded-md bg-charcoal px-6 py-2.5 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80"
           >
             开始创作
-          </Link>
+          </button>
           <Link
             href="/pricing"
             className="inline-flex items-center rounded-md border border-[rgba(28,28,28,0.4)] px-6 py-2.5 text-sm text-charcoal active:opacity-80"

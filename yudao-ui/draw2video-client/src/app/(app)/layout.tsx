@@ -37,7 +37,7 @@ const popoverMenuItems = [
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { loggedIn, loading, wallet, user, logout, openModal } = useAuth();
+  const { loggedIn, loading, wallet, user, logout, openModal, authReason } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -54,9 +54,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (loading) return;
     if (!loggedIn) {
       router.push("/");
-      setTimeout(() => openModal(), 100);
+      if (authReason !== "manual-logout") {
+        setTimeout(() => openModal("email", pathname, "required"), 100);
+      }
     }
-  }, [loggedIn, loading, router, openModal]);
+  }, [authReason, loggedIn, loading, openModal, pathname, router]);
 
   // Close popover on click outside
   useEffect(() => {
@@ -211,6 +213,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="border-t border-border-warm py-1">
                   <button
                     onClick={async () => {
+                      if (!window.confirm("确定要退出登录吗？")) return;
                       setPopoverOpen(false);
                       await logout();
                     }}

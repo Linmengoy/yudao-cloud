@@ -118,13 +118,13 @@ export function AuthPanel({
           if (!password) throw new Error("请输入密码");
           await loginByEmail(email, password);
         } else {
-          if (!/^\d{6}$/.test(emailCode)) throw new Error("请输入 6 位邮箱验证码");
+          if (!/^\d{4}$/.test(emailCode)) throw new Error("请输入 4 位邮箱验证码");
           await loginByEmailCode(email, emailCode);
         }
       }
       if (mode === "register") {
         if (!isEmail(email)) throw new Error("请输入正确的邮箱地址");
-        if (!/^\d{6}$/.test(emailCode)) throw new Error("请输入 6 位邮箱验证码");
+        if (!/^\d{4}$/.test(emailCode)) throw new Error("请输入 4 位邮箱验证码");
         if (!isPassword(password)) throw new Error("密码需 8-32 位，至少包含字母和数字");
         if (password !== confirmPassword) throw new Error("两次输入的密码不一致");
         if (!agreeTerms) throw new Error("请先同意用户协议和隐私政策");
@@ -138,7 +138,7 @@ export function AuthPanel({
       }
       if (mode === "forgot") {
         if (!isEmail(email)) throw new Error("请输入正确的邮箱地址");
-        if (!/^\d{6}$/.test(emailCode)) throw new Error("请输入 6 位邮箱验证码");
+        if (!/^\d{4}$/.test(emailCode)) throw new Error("请输入 4 位邮箱验证码");
         if (!isPassword(password)) throw new Error("密码需 8-32 位，至少包含字母和数字");
         if (password !== confirmPassword) throw new Error("两次输入的密码不一致");
         await resetPasswordByEmail(email, emailCode, password);
