@@ -27,7 +27,7 @@ import static cn.iocoder.yudao.module.member.enums.ErrorCodeConstants.*;
 @Service
 public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
 
-    private static final int CODE_LENGTH = 6;
+    private static final int CODE_LENGTH = 4;
 
     @Resource
     private MemberEmailCodeMapper emailCodeMapper;
