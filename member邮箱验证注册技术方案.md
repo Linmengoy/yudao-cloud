@@ -2,7 +2,7 @@
 
 ## 1. 方案定位
 
-本方案用于给 `yudao-module-member` 增加用户端邮箱账号能力，支持用户通过邮箱验证码完成注册，并在注册成功后自动登录；当前已进一步补齐邮箱密码登录、邮箱验证码登录、邮箱找回密码、绑定 / 换绑邮箱等 P1 能力。
+本方案用于给 `yudao-module-member` 增加用户端邮箱账号能力，支持用户通过邮箱验证码完成注册，并在注册成功后自动登录；当前已进一步补齐邮箱密码登录、邮箱验证码登录、邮箱找回密码、绑定 / 换绑邮箱等 P1 能力，并已完成邮箱验证码发送频控的 Redis 优化。
 
 本方案不包含管理端建设内容，不新增管理端页面，不规划管理端菜单，不改造管理端登录，不新增 `/admin-api` 业务接口。
 
@@ -93,6 +93,8 @@ PUT  /app-api/member/user/update-email
 | 邮箱验证码登录 | 已完成 | 已新增 `/member/auth/email-code-login` |
 | 邮箱找回密码 | 已完成 | 已新增 `/member/user/reset-password-by-email` |
 | 邮箱绑定/换绑 | 已完成 | 已新增 `/member/user/update-email`，按用户当前是否已有邮箱动态选择 `BIND_EMAIL` 或 `CHANGE_EMAIL` 场景 |
+| 邮箱验证码 Redis 频控 | 已完成 | 已使用 Redis 控制发送间隔、邮箱每日上限、IP 小时上限 |
+| 邮箱验证码参数配置化 | 已完成 | 已新增 `yudao.member.email-code` 配置属性 |
 
 ## 3. 建设范围
 
@@ -105,6 +107,9 @@ PUT  /app-api/member/user/update-email
 - 发送邮箱验证码
 - 校验邮箱验证码
 - 消费邮箱验证码
+- Redis 发送频控：同邮箱同场景发送间隔、每日上限、同 IP 小时上限
+- 租户维度 Redis Key 隔离
+- 邮箱标准化处理，统一 trim 并转小写
 - 邮箱注册
 - 注册成功自动登录
 - 邮件模板初始化 SQL
@@ -117,6 +122,8 @@ PUT  /app-api/member/user/update-email
 - 邮箱找回密码：已完成
 - 用户绑定邮箱：已完成
 - 用户换绑邮箱：已完成
+- 邮箱验证码频控参数配置化：已完成
+- Redis DAO 单元测试：已完成
 - 注册欢迎邮件
 - 图形验证码接入
 - IP 风控策略增强
@@ -602,7 +609,7 @@ public interface MemberEmailCodeService {
 | `BIND_EMAIL` | 邮箱不能已存在 |
 | `CHANGE_EMAIL` | 邮箱不能已存在 |
 
-频控建议：
+频控实现：
 
 | 规则 | 建议 |
 | ---- | ---- |
@@ -611,6 +618,37 @@ public interface MemberEmailCodeService {
 | 同 IP 每小时上限 | 30 次 |
 | 验证码有效期 | 10 分钟 |
 | 验证码长度 | 6 位数字 |
+
+当前已将发送频控从数据库查询优化为 Redis 原子操作：
+
+| 能力 | Redis 实现 | Key 维度 |
+| ---- | ---- | ---- |
+| 发送间隔 | `SETNX + TTL` | 租户 + 场景 + 邮箱 |
+| 邮箱每日上限 | `INCR + 次日零点过期` | 租户 + 场景 + 日期 + 邮箱 |
+| IP 小时上限 | `INCR + 窗口 TTL` | 租户 + IP |
+
+当前实现文件：
+
+```text
+yudao-module-member-server/src/main/java/cn/iocoder/yudao/module/member/service/auth/MemberEmailCodeServiceImpl.java
+yudao-module-member-server/src/main/java/cn/iocoder/yudao/module/member/dal/redis/auth/MemberEmailCodeRedisDAO.java
+yudao-module-member-server/src/main/java/cn/iocoder/yudao/module/member/framework/auth/config/MemberEmailCodeProperties.java
+yudao-module-member-server/src/test/java/cn/iocoder/yudao/module/member/dal/redis/auth/MemberEmailCodeRedisDAOTest.java
+```
+
+配置项：
+
+```yaml
+yudao:
+  member:
+    email-code:
+      expire-time: 10m
+      send-interval: 60s
+      email-daily-limit: 10
+      ip-hourly-limit: 30
+      ip-hourly-window: 1h
+      product-name: 栖地平台
+```
 
 ### 8.3 校验验证码流程
 
@@ -929,6 +967,8 @@ mailSendApi.sendSingleMailToEmail(email, "member_email_register_code", params);
 - 同邮箱每日最多 10 次
 - 同 IP 每小时最多 30 次
 - 邮箱验证码 10 分钟过期
+- 频控 Redis Key 必须包含租户 ID，避免多租户之间互相影响
+- 邮箱进入频控和验证码存储前必须统一标准化，避免大小写和首尾空格绕过限制
 
 ### 14.3 验证码安全
 
@@ -986,6 +1026,10 @@ mailSendApi.sendSingleMailToEmail(email, "member_email_register_code", params);
 - 发送成功后 `system_mail_log` 有记录
 - 邮件内容包含验证码和有效期
 - 不需要手写租户条件也能按当前租户隔离数据
+- Redis 中会写入同邮箱同场景发送间隔 Key，TTL 等于配置的发送间隔
+- Redis 中会写入同邮箱同场景每日计数 Key，首次写入后过期时间为次日零点
+- Redis 中会写入同 IP 小时计数 Key，TTL 等于配置的 IP 小时窗口
+- 邮箱大小写和首尾空格不影响频控判断
 
 ### 16.2 邮箱注册验收
 
@@ -1022,7 +1066,8 @@ mailSendApi.sendSingleMailToEmail(email, "member_email_register_code", params);
 - 用户端接口文档能展示新增接口
 - `/app-api/member/**` 能访问新增接口
 - 新增 SQL 可重复执行或按项目迁移规范执行
-- 已通过 `mvn -pl yudao-module-member/yudao-module-member-server -am -DskipTests compile` 编译校验
+- Redis DAO 单元测试已覆盖发送间隔、邮箱每日计数、IP 小时计数
+- 编译校验命令：`mvn -pl yudao-module-member/yudao-module-member-server -am -DskipTests compile`
 
 ## 17. 最小落地版本
 
