@@ -1,17 +1,18 @@
 package cn.iocoder.yudao.module.member.service.auth;
 
-import cn.hutool.core.date.LocalDateTimeUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.member.dal.dataobject.auth.MemberEmailCodeDO;
 import cn.iocoder.yudao.module.member.dal.dataobject.user.MemberUserDO;
 import cn.iocoder.yudao.module.member.dal.mysql.auth.MemberEmailCodeMapper;
+import cn.iocoder.yudao.module.member.dal.redis.auth.MemberEmailCodeRedisDAO;
 import cn.iocoder.yudao.module.member.enums.auth.MemberEmailCodeSceneEnum;
+import cn.iocoder.yudao.module.member.framework.auth.config.MemberEmailCodeProperties;
 import cn.iocoder.yudao.module.member.service.user.MemberUserService;
 import cn.iocoder.yudao.module.system.api.mail.MailSendApi;
 import cn.iocoder.yudao.module.system.api.mail.dto.MailSendSingleToUserReqDTO;
 import jakarta.annotation.Resource;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,58 +28,56 @@ import static cn.iocoder.yudao.module.member.enums.ErrorCodeConstants.*;
 public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
 
     private static final int CODE_LENGTH = 6;
-    private static final int EXPIRE_MINUTES = 10;
-    private static final int SEND_INTERVAL_SECONDS = 60;
-    private static final int EMAIL_DAILY_LIMIT = 10;
-    private static final int IP_HOURLY_LIMIT = 30;
 
     @Resource
     private MemberEmailCodeMapper emailCodeMapper;
+    @Resource
+    private MemberEmailCodeRedisDAO emailCodeRedisDAO;
+    @Resource
+    private MemberEmailCodeProperties emailCodeProperties;
     @Resource
     private MemberUserService userService;
     @Resource
     private MailSendApi mailSendApi;
 
-    @Value("${yudao.member.email-code.product-name:AIGC 平台}")
-    private String productName;
-
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void sendEmailCode(String email, String scene, String createIp) {
+        email = normalizeEmail(email);
+        // 校验场景
         MemberEmailCodeSceneEnum sceneEnum = validateScene(scene);
         validateEmailByScene(email, sceneEnum);
-        validateSendFrequency(email, scene, createIp);
+        int todayIndex = validateSendFrequency(email, scene, createIp);
 
         String code = RandomUtil.randomNumbers(CODE_LENGTH);
         LocalDateTime now = LocalDateTime.now();
-        Long todayCount = emailCodeMapper.selectCountByEmailAndSceneToday(email, scene,
-                LocalDateTimeUtil.beginOfDay(now));
         emailCodeMapper.insert(MemberEmailCodeDO.builder()
                 .email(email)
                 .code(code)
                 .scene(scene)
                 .used(false)
                 .createIp(createIp)
-                .todayIndex(todayCount.intValue() + 1)
-                .expiresTime(now.plusMinutes(EXPIRE_MINUTES))
+                .todayIndex(todayIndex)
+                .expiresTime(now.plus(emailCodeProperties.getExpireTime()))
                 .build());
 
         MailSendSingleToUserReqDTO reqDTO = new MailSendSingleToUserReqDTO();
         reqDTO.setToMails(Collections.singletonList(email));
         reqDTO.setTemplateCode(sceneEnum.getTemplateCode());
-        reqDTO.setTemplateParams(Map.of("code", code, "expireMinutes", EXPIRE_MINUTES, "productName", productName));
+        reqDTO.setTemplateParams(Map.of("code", code, "expireMinutes", emailCodeProperties.getExpireTime().toMinutes(),
+                "productName", emailCodeProperties.getProductName()));
         mailSendApi.sendSingleMailToMember(reqDTO).checkError();
     }
 
     @Override
     public void validateEmailCode(String email, String scene, String code) {
-        validateCode(email, scene, code);
+        validateCode(normalizeEmail(email), scene, code);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void useEmailCode(String email, String scene, String code, String usedIp) {
-        MemberEmailCodeDO emailCode = validateCode(email, scene, code);
+        MemberEmailCodeDO emailCode = validateCode(normalizeEmail(email), scene, code);
         int updateCount = emailCodeMapper.updateUsedById(emailCode.getId(), usedIp);
         if (updateCount == 0) {
             throw exception(AUTH_EMAIL_CODE_USED);
@@ -108,24 +107,27 @@ public class MemberEmailCodeServiceImpl implements MemberEmailCodeService {
         }
     }
 
-    private void validateSendFrequency(String email, String scene, String createIp) {
-        LocalDateTime now = LocalDateTime.now();
-        MemberEmailCodeDO lastCode = emailCodeMapper.selectLastByEmailAndScene(email, scene);
-        if (lastCode != null && lastCode.getCreateTime() != null
-                && lastCode.getCreateTime().plusSeconds(SEND_INTERVAL_SECONDS).isAfter(now)) {
+    private int validateSendFrequency(String email, String scene, String createIp) {
+        Long tenantId = TenantContextHolder.getTenantId();
+        Boolean acquired = emailCodeRedisDAO.tryAcquireSendInterval(tenantId, scene, email, emailCodeProperties.getSendInterval());
+        if (!Boolean.TRUE.equals(acquired)) {
             throw exception(AUTH_EMAIL_CODE_SEND_TOO_FAST);
         }
-        Long todayCount = emailCodeMapper.selectCountByEmailAndSceneToday(email, scene,
-                LocalDateTimeUtil.beginOfDay(now));
-        if (todayCount >= EMAIL_DAILY_LIMIT) {
+        Long todayCount = emailCodeRedisDAO.incrementEmailDaily(tenantId, scene, email);
+        if (todayCount == null || todayCount > emailCodeProperties.getEmailDailyLimit()) {
             throw exception(AUTH_EMAIL_CODE_SEND_TOO_MANY);
         }
         if (StrUtil.isNotBlank(createIp)) {
-            Long ipCount = emailCodeMapper.selectCountByCreateIpSince(createIp, now.minusHours(1));
-            if (ipCount >= IP_HOURLY_LIMIT) {
+            Long ipCount = emailCodeRedisDAO.incrementIpHourly(tenantId, createIp, emailCodeProperties.getIpHourlyWindow());
+            if (ipCount == null || ipCount > emailCodeProperties.getIpHourlyLimit()) {
                 throw exception(AUTH_EMAIL_CODE_SEND_TOO_MANY);
             }
         }
+        return todayCount.intValue();
+    }
+
+    private String normalizeEmail(String email) {
+        return StrUtil.trim(email).toLowerCase();
     }
 
     private MemberEmailCodeDO validateCode(String email, String scene, String code) {
