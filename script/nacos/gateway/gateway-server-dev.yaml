@@ -147,6 +147,84 @@ spring:
               uri: grayLb://ai-server
               predicates:
                 - Path=/sse, /mcp/message
+            - id: aigc-model-admin-api
+              uri: grayLb://aigc-model-server
+              predicates:
+                - Path=/admin-api/aigc/model/**
+              filters:
+                - RewritePath=/admin-api/aigc/model/v3/api-docs, /v3/api-docs
+            - id: aigc-model-app-api
+              uri: grayLb://aigc-model-server
+              predicates:
+                - Path=/app-api/aigc/model/**
+              filters:
+                - RewritePath=/app-api/aigc/model/v3/api-docs, /v3/api-docs
+            - id: aigc-task-admin-api
+              uri: grayLb://aigc-task-server
+              predicates:
+                - Path=/admin-api/aigc/task/**
+              filters:
+                - RewritePath=/admin-api/aigc/task/v3/api-docs, /v3/api-docs
+            - id: aigc-task-app-api
+              uri: grayLb://aigc-task-server
+              predicates:
+                - Path=/app-api/aigc/task/**
+              filters:
+                - RewritePath=/app-api/aigc/task/v3/api-docs, /v3/api-docs
+            - id: aigc-billing-admin-api
+              uri: grayLb://aigc-billing-server
+              predicates:
+                - Path=/admin-api/aigc/billing/**
+              filters:
+                - RewritePath=/admin-api/aigc/billing/v3/api-docs, /v3/api-docs
+            - id: aigc-billing-app-api
+              uri: grayLb://aigc-billing-server
+              predicates:
+                - Path=/app-api/aigc/wallet/**
+              filters:
+                - RewritePath=/app-api/aigc/wallet/v3/api-docs, /v3/api-docs
+            - id: aigc-asset-admin-api
+              uri: grayLb://aigc-asset-server
+              predicates:
+                - Path=/admin-api/aigc/asset/**
+              filters:
+                - RewritePath=/admin-api/aigc/asset/v3/api-docs, /v3/api-docs
+            - id: aigc-asset-app-api
+              uri: grayLb://aigc-asset-server
+              predicates:
+                - Path=/app-api/aigc/asset/**
+              filters:
+                - RewritePath=/app-api/aigc/asset/v3/api-docs, /v3/api-docs
+            - id: aigc-safety-admin-api
+              uri: grayLb://aigc-safety-server
+              predicates:
+                - Path=/admin-api/aigc/safety/**
+              filters:
+                - RewritePath=/admin-api/aigc/safety/v3/api-docs, /v3/api-docs
+            - id: aigc-gen-admin-api
+              uri: grayLb://aigc-gen-server
+              predicates:
+                - Path=/admin-api/aigc/gen/**
+              filters:
+                - RewritePath=/admin-api/aigc/gen/v3/api-docs, /v3/api-docs
+            - id: aigc-gen-app-api
+              uri: grayLb://aigc-gen-server
+              predicates:
+                - Path=/app-api/aigc/gen/**
+              filters:
+                - RewritePath=/app-api/aigc/gen/v3/api-docs, /v3/api-docs
+            - id: aigc-workflow-admin-api
+              uri: grayLb://aigc-workflow-server
+              predicates:
+                - Path=/admin-api/aigc/workflow/**
+              filters:
+                - RewritePath=/admin-api/aigc/workflow/v3/api-docs, /v3/api-docs
+            - id: aigc-workflow-app-api
+              uri: grayLb://aigc-workflow-server
+              predicates:
+                - Path=/app-api/aigc/workflow/**
+              filters:
+                - RewritePath=/app-api/aigc/workflow/v3/api-docs, /v3/api-docs
             - id: iot-admin-api
               uri: grayLb://iot-server
               predicates:
@@ -238,6 +316,45 @@ knife4j:
       - name: ai-admin-api
         service-name: ai-server
         url: /admin-api/ai/v3/api-docs
+      - name: aigc-model-admin-api
+        service-name: aigc-model-server
+        url: /admin-api/aigc/model/v3/api-docs
+      - name: aigc-model-app-api
+        service-name: aigc-model-server
+        url: /app-api/aigc/model/v3/api-docs
+      - name: aigc-task-admin-api
+        service-name: aigc-task-server
+        url: /admin-api/aigc/task/v3/api-docs
+      - name: aigc-task-app-api
+        service-name: aigc-task-server
+        url: /app-api/aigc/task/v3/api-docs
+      - name: aigc-billing-admin-api
+        service-name: aigc-billing-server
+        url: /admin-api/aigc/billing/v3/api-docs
+      - name: aigc-billing-app-api
+        service-name: aigc-billing-server
+        url: /app-api/aigc/wallet/v3/api-docs
+      - name: aigc-asset-admin-api
+        service-name: aigc-asset-server
+        url: /admin-api/aigc/asset/v3/api-docs
+      - name: aigc-asset-app-api
+        service-name: aigc-asset-server
+        url: /app-api/aigc/asset/v3/api-docs
+      - name: aigc-safety-admin-api
+        service-name: aigc-safety-server
+        url: /admin-api/aigc/safety/v3/api-docs
+      - name: aigc-gen-admin-api
+        service-name: aigc-gen-server
+        url: /admin-api/aigc/gen/v3/api-docs
+      - name: aigc-gen-app-api
+        service-name: aigc-gen-server
+        url: /app-api/aigc/gen/v3/api-docs
+      - name: aigc-workflow-admin-api
+        service-name: aigc-workflow-server
+        url: /admin-api/aigc/workflow/v3/api-docs
+      - name: aigc-workflow-app-api
+        service-name: aigc-workflow-server
+        url: /app-api/aigc/workflow/v3/api-docs
       - name: iot-admin-api
         service-name: iot-server
         url: /admin-api/iot/v3/api-docs

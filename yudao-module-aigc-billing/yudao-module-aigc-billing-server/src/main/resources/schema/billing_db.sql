@@ -153,3 +153,26 @@ CREATE TABLE IF NOT EXISTS aigc_recharge_order (
     KEY idx_pay_order_id (pay_order_id),
     KEY idx_status_create_time (status, create_time)
 ) COMMENT='AIGC 充值订单';
+
+CREATE TABLE IF NOT EXISTS aigc_recharge_package (
+    id bigint NOT NULL AUTO_INCREMENT COMMENT '充值套餐编号',
+    name varchar(64) NOT NULL COMMENT '套餐名称',
+    pay_amount int NOT NULL DEFAULT 0 COMMENT '支付金额，单位：分',
+    point_amount decimal(18,6) NOT NULL DEFAULT 0.000000 COMMENT '充值积分数量',
+    gift_amount decimal(18,6) NOT NULL DEFAULT 0.000000 COMMENT '赠送积分数量',
+    total_point_amount decimal(18,6) NOT NULL DEFAULT 0.000000 COMMENT '到账积分总数',
+    description varchar(255) NULL COMMENT '描述',
+    features varchar(1000) NULL COMMENT '权益说明，每行一条',
+    recommend_status bit NOT NULL DEFAULT b'0' COMMENT '是否推荐',
+    sort int NOT NULL DEFAULT 0 COMMENT '排序',
+    status tinyint NOT NULL DEFAULT 0 COMMENT '状态',
+    remark varchar(512) NULL COMMENT '备注',
+    creator varchar(64) NULL DEFAULT '' COMMENT '创建者',
+    create_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater varchar(64) NULL DEFAULT '' COMMENT '更新者',
+    update_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted bit NOT NULL DEFAULT b'0' COMMENT '是否删除',
+    tenant_id bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+    PRIMARY KEY (id),
+    KEY idx_status_sort (status, sort)
+) COMMENT='AIGC 充值套餐';

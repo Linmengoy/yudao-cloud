@@ -11,6 +11,7 @@ public interface AigcRechargeOrderService {
 
     Long createManualRecharge(Long userId, BigDecimal amount, String remark);
     Long createRechargeOrder(Long userId, BigDecimal amount, Integer payAmount, String remark);
+    Long createRechargeOrderByPackage(Long userId, Long packageId, String remark);
     AigcRechargeOrderDO getRechargeOrder(Long id);
     AigcRechargeOrderDO getUserRechargeOrder(Long id, Long userId);
     void notifyRechargePaid(AigcRechargeNotifyReqDTO reqDTO);

@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.aigc.billing.service.recharge;
 import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcBillingRecordDO;
+import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargePackageDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargeOrderDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcWalletDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcBillingRecordMapper;
@@ -12,6 +13,7 @@ import cn.iocoder.yudao.module.aigc.billing.dto.AigcRechargeNotifyReqDTO;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRecordTypeEnum;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRechargeStatusEnum;
 import cn.iocoder.yudao.module.aigc.billing.service.no.AigcBillingNoGenerator;
+import cn.iocoder.yudao.module.aigc.billing.service.packageconfig.AigcRechargePackageService;
 import cn.iocoder.yudao.module.aigc.billing.service.record.AigcBillingRecordService;
 import cn.iocoder.yudao.module.aigc.billing.service.wallet.AigcWalletService;
 import jakarta.annotation.Resource;
@@ -42,6 +44,8 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
     private AigcBillingRecordService billingRecordService;
     @Resource
     private AigcBillingNoGenerator billingNoGenerator;
+    @Resource
+    private AigcRechargePackageService rechargePackageService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -86,6 +90,25 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         order.setPointAmount(amount);
         order.setGiftAmount(BigDecimal.ZERO);
         order.setTotalPointAmount(amount);
+        order.setStatus(AigcBillingRechargeStatusEnum.WAIT_PAY.getCode());
+        order.setRemark(remark);
+        rechargeOrderMapper.insert(order);
+        return order.getId();
+    }
+
+    @Override
+    public Long createRechargeOrderByPackage(Long userId, Long packageId, String remark) {
+        AigcRechargePackageDO rechargePackage = rechargePackageService.getEnabledRechargePackage(packageId);
+        var wallet = walletService.getOrCreateWallet(userId);
+        AigcRechargeOrderDO order = new AigcRechargeOrderDO();
+        order.setRechargeNo(billingNoGenerator.generateRechargeNo());
+        order.setWalletId(wallet.getId());
+        order.setUserId(userId);
+        order.setRechargeType("PACKAGE");
+        order.setPayAmount(rechargePackage.getPayAmount());
+        order.setPointAmount(rechargePackage.getPointAmount());
+        order.setGiftAmount(rechargePackage.getGiftAmount());
+        order.setTotalPointAmount(rechargePackage.getTotalPointAmount());
         order.setStatus(AigcBillingRechargeStatusEnum.WAIT_PAY.getCode());
         order.setRemark(remark);
         rechargeOrderMapper.insert(order);

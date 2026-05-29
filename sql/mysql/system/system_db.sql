@@ -4602,3 +4602,201 @@ COMMIT;
 -- ----------------------------
 -- Table structure for yudao_demo01_contact
 -- ----------------------------
+
+
+
+
+-- 新增
+-- AIGC Billing 菜单配置
+-- 适用于 MySQL
+
+BEGIN;
+
+-- 父级目录：AIGC 计费管理
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    'AIGC 计费管理', '', 1, 90, 0,
+    '/aigc-billing', 'ep:money', NULL, NULL,
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @aigcBillingParentId := LAST_INSERT_ID();
+
+-- 钱包管理
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '钱包管理', 'aigc:billing:wallet:query', 2, 1, @aigcBillingParentId,
+    'wallet', 'ep:wallet', 'aigc/billing/wallet/index', 'AigcBillingWallet',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @walletMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('钱包查询', 'aigc:billing:wallet:query', 3, 1, @walletMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('手动调整积分', 'aigc:billing:wallet:update', 3, 2, @walletMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('运营赠送积分', 'aigc:billing:wallet:gift', 3, 3, @walletMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
+-- 账单流水
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '账单流水', 'aigc:billing:record:query', 2, 2, @aigcBillingParentId,
+    'record', 'ep:tickets', 'aigc/billing/record/index', 'AigcBillingRecord',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @recordMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('账单流水查询', 'aigc:billing:record:query', 3, 1, @recordMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('账单流水导出', 'aigc:billing:record:export', 3, 2, @recordMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
+-- 充值订单
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '充值订单', 'aigc:billing:recharge:query', 2, 3, @aigcBillingParentId,
+    'recharge', 'ep:shopping-cart', 'aigc/billing/recharge/index', 'AigcBillingRecharge',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @rechargeMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('充值订单查询', 'aigc:billing:recharge:query', 3, 1, @rechargeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('手工充值', 'aigc:billing:recharge:create', 3, 2, @rechargeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('关闭充值订单', 'aigc:billing:recharge:update', 3, 3, @rechargeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
+-- 充值套餐
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '充值套餐', 'aigc:billing:recharge-package:query', 2, 4, @aigcBillingParentId,
+    'recharge-package', 'ep:present', 'aigc/billing/recharge-package/index', 'AigcRechargePackage',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @rechargePackageMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('充值套餐查询', 'aigc:billing:recharge-package:query', 3, 1, @rechargePackageMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('充值套餐新增', 'aigc:billing:recharge-package:create', 3, 2, @rechargePackageMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('充值套餐修改', 'aigc:billing:recharge-package:update', 3, 3, @rechargePackageMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('充值套餐删除', 'aigc:billing:recharge-package:delete', 3, 4, @rechargePackageMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
+-- 冻结记录
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '冻结记录', 'aigc:billing:freeze:query', 2, 5, @aigcBillingParentId,
+    'freeze', 'ep:lock', 'aigc/billing/freeze/index', 'AigcBillingFreeze',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @freezeMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('冻结记录查询', 'aigc:billing:freeze:query', 3, 1, @freezeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('人工释放冻结', 'aigc:billing:freeze:update', 3, 2, @freezeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('人工确认扣费', 'aigc:billing:freeze:update', 3, 3, @freezeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
+-- 成本记录
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '成本记录', 'aigc:billing:cost:query', 2, 6, @aigcBillingParentId,
+    'cost', 'ep:coin', 'aigc/billing/cost/index', 'AigcBillingCost',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @costMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('成本记录查询', 'aigc:billing:cost:query', 3, 1, @costMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('成本记录导出', 'aigc:billing:cost:export', 3, 2, @costMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
+-- 计费统计
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '计费统计', 'aigc:billing:statistics:query', 2, 7, @aigcBillingParentId,
+    'statistics', 'ep:data-analysis', 'aigc/billing/statistics/index', 'AigcBillingStatistics',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @statisticsMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('计费统计查询', 'aigc:billing:statistics:query', 3, 1, @statisticsMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
+COMMIT;

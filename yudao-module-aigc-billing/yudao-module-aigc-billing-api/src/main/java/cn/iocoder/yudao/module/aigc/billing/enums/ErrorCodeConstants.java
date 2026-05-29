@@ -27,4 +27,6 @@ public interface ErrorCodeConstants {
     ErrorCode RECHARGE_ORDER_STATUS_INVALID = new ErrorCode(1_042_004_001, "充值订单状态不允许当前操作");
     ErrorCode RECHARGE_ORDER_DUPLICATE = new ErrorCode(1_042_004_002, "充值订单重复");
 
+    ErrorCode RECHARGE_PACKAGE_NOT_EXISTS = new ErrorCode(1_042_005_000, "充值套餐不存在");
+
 }

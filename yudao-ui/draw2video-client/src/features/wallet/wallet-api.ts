@@ -1,6 +1,7 @@
 import { api } from "@/lib/api-client";
 import type {
   AigcRechargeOrder,
+  AigcRechargePackage,
   AigcWallet,
   AigcWalletFreeze,
   AigcWalletRecord,
@@ -41,6 +42,14 @@ export function createAigcRechargeOrder(data: {
   payChannelCode?: string;
 }) {
   return api.post<AigcRechargeOrder>("/aigc/wallet/recharge/create", data);
+}
+
+export function getEnabledAigcRechargePackages() {
+  return api.get<AigcRechargePackage[]>("/aigc/billing/recharge-package/list-enabled");
+}
+
+export function createAigcRechargeOrderByPackage(packageId: number) {
+  return api.post<number>(`/aigc/wallet/recharge/create-by-package${toQuery({ packageId })}`);
 }
 
 export function getAigcRechargeOrder(id: number) {

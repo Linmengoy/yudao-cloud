@@ -173,6 +173,7 @@ AIGC 平台
   │   ├── 冻结记录
   │   ├── 计费流水
   │   ├── 成本记录
+  │   ├── 充值套餐
   │   ├── 充值订单
   │   └── 毛利统计
   └── 安全审核
@@ -211,6 +212,7 @@ draw2video-admin/src/api/aigc
   │   ├── freeze
   │   ├── record
   │   ├── cost
+  │   ├── recharge-package
   │   ├── recharge
   │   └── statistics
   └── safety
@@ -249,6 +251,7 @@ draw2video-admin/src/views/aigc
   │   ├── freeze
   │   ├── record
   │   ├── cost
+  │   ├── recharge-package
   │   ├── recharge
   │   └── statistics
   └── safety
@@ -317,6 +320,7 @@ draw2video-admin/src/views/aigc
 - 冻结记录分页
 - 计费流水分页
 - 成本记录分页
+- 充值套餐分页、新增、编辑、删除、启停、推荐状态、排序配置
 - 充值订单分页
 - 毛利统计
 - 账务异常标识

@@ -37,6 +37,12 @@ public class AigcRechargeAppController {
         return success(rechargeOrderService.createRechargeOrder(getLoginUserId(), amount, payAmount, "用户充值"));
     }
 
+    @PostMapping("/create-by-package")
+    @Operation(summary = "按套餐创建充值订单")
+    public CommonResult<Long> createRechargeOrderByPackage(@RequestParam("packageId") Long packageId) {
+        return success(rechargeOrderService.createRechargeOrderByPackage(getLoginUserId(), packageId, "用户套餐充值"));
+    }
+
     @GetMapping("/get")
     @Operation(summary = "获取充值订单")
     public CommonResult<AigcRechargeOrderDO> getRechargeOrder(@RequestParam("id") Long id) {

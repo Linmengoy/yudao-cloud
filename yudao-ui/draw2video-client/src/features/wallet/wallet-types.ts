@@ -60,6 +60,20 @@ export interface AigcRechargeOrder {
   createTime: string;
 }
 
+export interface AigcRechargePackage {
+  id: number;
+  name: string;
+  payAmount: number;
+  pointAmount: number;
+  giftAmount: number;
+  totalPointAmount: number;
+  description?: string;
+  features?: string;
+  recommendStatus?: boolean;
+  sort?: number;
+  status?: number;
+}
+
 export interface WalletPageParams {
   pageNo: number;
   pageSize: number;

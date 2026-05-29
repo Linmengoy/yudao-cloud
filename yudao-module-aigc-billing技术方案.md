@@ -458,6 +458,39 @@ idx_pay_order_id = pay_order_id
 idx_status_create_time = status + create_time
 ```
 
+### 5.7 aigc_recharge_package
+
+AIGC 充值套餐表，用于后台配置用户端可购买的积分包。用户端只读取启用套餐，创建订单时只传 `packageId`，支付金额和到账积分以后端套餐配置为准。
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| id | bigint | 主键 |
+| name | varchar(64) | 套餐名称 |
+| pay_amount | int | 支付金额，单位分 |
+| point_amount | decimal(18,6) | 充值积分数量 |
+| gift_amount | decimal(18,6) | 赠送积分数量 |
+| total_point_amount | decimal(18,6) | 到账积分总数 |
+| description | varchar(255) | 描述 |
+| features | varchar(1000) | 权益说明，每行一条 |
+| recommend_status | bit | 是否推荐 |
+| sort | int | 排序 |
+| status | tinyint | 启用状态 |
+| remark | varchar(512) | 备注 |
+| creator/create_time/updater/update_time/deleted/tenant_id | 标准字段 | 标准字段 |
+
+索引：
+
+```text
+idx_status_sort = status + sort
+```
+
+金额规则：
+
+- 后端和数据库统一以“分”存储 `pay_amount`
+- 管理端表单以“元”输入和回显，提交时转换成“分”
+- 用户端展示时将“分”转换成“元”
+- `total_point_amount = point_amount + gift_amount`，由后端保存时计算
+
 ## 6. 枚举设计
 
 ### 6.1 AigcBillingBizTypeEnum
@@ -1186,9 +1219,29 @@ Gateway 路由建议：
 - id: aigc-billing-server-app-api
   uri: lb://aigc-billing-server
   predicates:
-    - Path=/app-api/aigc/wallet/**
+    - Path=/app-api/aigc/wallet/**,/app-api/aigc/billing/recharge-package/list-enabled
+  filters:
+    - RewritePath=/app-api/(?<segment>.*), /${segment}
 
+
+### 15.5 用户端充值套餐接口
+
+用户端充值套餐接口用于营销价格页和钱包充值入口，不开放创建、修改、删除能力。
+
+| 方法 | 路径 | 说明 |
+| ---- | ---- | ---- |
+| GET | `/aigc/billing/recharge-package/list-enabled` | 查询启用充值套餐列表 |
+| POST | `/aigc/wallet/recharge/create-by-package?packageId=xxx` | 按套餐创建充值订单 |
+
+按套餐创建订单要求：
+
+- 前端只传 `packageId`
+- 后端校验套餐存在且状态启用
+- 订单的支付金额、充值积分、赠送积分、到账总积分全部来自套餐配置
+- 订单 `recharge_type` 使用 `PACKAGE`
+- 真实支付接入前，接口只负责创建待支付充值订单
 ## 16. 实现更新记录
+
 
 ### 16.1 已完成的核心改进
 
@@ -1237,12 +1290,21 @@ Gateway 路由建议：
 - **新增**：`AigcCostRecordServiceImplTest.java` - 成本记录幂等测试
 - **文件**：`AigcCostRecordServiceImplTest.java`
 
+#### 16.1.9 充值套餐配置和按套餐下单
+- **新增**：`aigc_recharge_package` 充值套餐表
+- **新增**：管理端充值套餐 CRUD 接口 `/aigc/billing/recharge-package/**`
+- **新增**：用户端启用套餐列表接口 `/aigc/billing/recharge-package/list-enabled`
+- **新增**：用户端按套餐创建订单接口 `/aigc/wallet/recharge/create-by-package`
+- **规则**：前端只传 `packageId`，后端按启用套餐配置生成订单金额和到账积分
+- **文件**：`AigcRechargePackageDO.java`、`AigcRechargePackageController.java`、`AigcRechargePackageServiceImpl.java`、`AigcRechargeOrderServiceImpl.java`、`AigcRechargeAppController.java`
+
 ### 16.2 新增错误码
 
 | 错误码 | 错误信息 | 说明 |
 | ------ | -------- | ---- |
 | 1042001004 | 冻结记录已确认扣费，不允许重复冻结 | 重复冻结已确认的业务 |
 | 1042001005 | 冻结记录已释放，不允许重复冻结 | 重复冻结已释放的业务 |
+| 1042005000 | 充值套餐不存在 | 套餐不存在或未启用 |
 
 ### 16.3 事务顺序优化
 
@@ -1282,7 +1344,8 @@ Gateway 路由建议：
 | 类型 | 服务内路径 | 对外路径 |
 | ---- | ---------- | -------- |
 | 管理端 | `/aigc/billing/**` | `/admin-api/aigc/billing/**` |
-| 用户端 | `/aigc/wallet/**` | `/app-api/aigc/wallet/**` |
+| 用户端钱包 | `/aigc/wallet/**` | `/app-api/aigc/wallet/**` |
+| 用户端套餐 | `/aigc/billing/recharge-package/list-enabled` | `/app-api/aigc/billing/recharge-package/list-enabled` |
 | RPC | `/rpc-api/aigc/billing/**` | 内部服务调用 |
 
 ## 16. 第一阶段落地范围
@@ -1294,6 +1357,7 @@ Gateway 路由建议：
 - `aigc_billing_record` 流水表
 - `aigc_cost_record` 成本表
 - `aigc_recharge_order` 充值订单表
+- `aigc_recharge_package` 充值套餐表
 - `AigcBillingApi` 内部 RPC
 - 钱包获取和自动创建
 - 积分冻结
@@ -1304,12 +1368,14 @@ Gateway 路由建议：
 - 用户端钱包详情和流水分页
 - 管理端钱包、冻结、流水、成本分页查询
 - 后台赠送积分和手工充值
+- 管理端充值套餐配置
+- 用户端读取启用充值套餐
+- 用户端按套餐创建充值订单
 - 冻结超时补偿任务
 
 ### 16.2 可以后置
 
 - 真实支付订单接入
-- 用户端充值套餐
 - 退款到原支付渠道
 - 多币种成本换算
 - 分销佣金

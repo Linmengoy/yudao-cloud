@@ -225,24 +225,35 @@ draw2video-admin/src/views/aigc/billing/
 
 ### 4.5 充值页面
 
-第一阶段充值能力可按后端支付链路成熟度分两种方式落地。
+第一阶段充值能力采用“后台可配置充值套餐 + 用户端按套餐创建充值订单”的方式落地。
 
-方式一：支付链路已完成。
+充值套餐展示：
 
-- 展示充值套餐
-- 用户选择套餐并创建充值订单
-- 跳转支付或展示支付二维码
-- 支付成功后同步状态并刷新钱包余额
+- 用户端 `/pricing` 页面读取后台启用的充值套餐
+- 套餐字段包含套餐名称、支付金额、充值积分、赠送积分、到账总积分、描述、权益说明、是否推荐、排序、状态
+- 支付金额后端按“分”存储，用户端展示为“元”
+- 权益说明按换行拆分为卡片列表
+- 接口加载失败时展示错误态，不再把接口异常误展示为“暂无可用价格方案”
 
-方式二：支付链路未完成。
+创建订单：
 
-- 展示充值入口
-- 提示“充值功能即将开放”或引导联系管理员
-- 后台通过人工充值或赠送积分完成入账
+- 用户点击套餐后调用按套餐创建充值订单接口
+- 前端只传 `packageId`，不传支付金额和到账积分
+- 后端校验套餐存在且启用
+- 后端以套餐配置快照生成充值订单，保证展示价、支付金额、到账积分一致
+- 创建成功后跳转钱包页，并携带 `rechargeOrderId`
+
+支付链路：
+
+- 当前阶段先完成套餐配置、套餐展示和订单创建闭环
+- 支付渠道、收银台、二维码、支付状态轮询可在支付模块接入后继续补齐
+- 支付成功后通过充值通知入账，并刷新钱包余额和充值流水
 
 接口：
 
+- `GET /app-api/aigc/billing/recharge-package/list-enabled`
 - `POST /app-api/aigc/wallet/recharge/create`
+- `POST /app-api/aigc/wallet/recharge/create-by-package?packageId=xxx`
 - `GET /app-api/aigc/wallet/recharge/get`
 - `GET /app-api/aigc/wallet/recharge/page`
 - `POST /app-api/aigc/wallet/recharge/sync-pay-status`
@@ -328,6 +339,20 @@ export interface AigcRechargeOrder {
   payTime?: string
   createTime: string
 }
+
+export interface AigcRechargePackage {
+  id: number
+  name: string
+  payAmount: number
+  pointAmount: number
+  giftAmount: number
+  totalPointAmount: number
+  description?: string
+  features?: string
+  recommendStatus?: boolean
+  sort?: number
+  status?: number
+}
 ```
 
 ### 5.2 API 封装
@@ -363,6 +388,14 @@ export function createAigcRechargeOrder(data: {
   payChannelCode?: string
 }) {
   return api.post('/aigc/wallet/recharge/create', data)
+}
+
+export function getEnabledAigcRechargePackages() {
+  return api.get<AigcRechargePackage[]>('/aigc/billing/recharge-package/list-enabled')
+}
+
+export function createAigcRechargeOrderByPackage(packageId: number) {
+  return api.post<number>(`/aigc/wallet/recharge/create-by-package${toQuery({ packageId })}`)
 }
 
 export function getAigcRechargeOrder(id: number) {
@@ -444,11 +477,24 @@ export function syncRechargePayStatus(id: number) {
 
 ### 6.8 充值入口
 
-- 展示充值套餐或充值入口
-- 创建充值订单
+- 展示后台启用的充值套餐
+- 点击套餐后按 `packageId` 创建充值订单
+- 前端不允许自行传入支付金额、充值积分和赠送积分
+- 创建订单成功后携带 `rechargeOrderId` 跳转钱包页
+- 加载套餐失败时展示错误态
 - 展示待支付状态
 - 支持同步支付状态
 - 支付成功后刷新钱包余额
+
+### 6.9 价格方案页
+
+- `/pricing` 页面不再维护静态套餐常量
+- 从 `GET /aigc/billing/recharge-package/list-enabled` 拉取启用套餐
+- 推荐套餐使用 `recommendStatus` 高亮展示
+- `payAmount` 按分转元展示
+- `totalPointAmount` 展示到账积分总数
+- `features` 按换行拆分为权益列表
+- 点击“立即充值”调用 `create-by-package` 创建订单
 
 ## 七、管理端页面规划
 
@@ -503,7 +549,26 @@ export function syncRechargePayStatus(id: number) {
 - 关闭充值订单
 - 导出充值订单
 
-### 7.5 成本记录管理
+### 7.5 充值套餐管理
+
+页面能力：
+
+- 充值套餐分页查询
+- 新增、编辑、删除充值套餐
+- 配置支付金额、充值积分、赠送积分、描述、权益说明、推荐状态、排序、启用状态
+- 管理端支付金额按“元”输入和回显，提交时转换为后端“分”
+- 只允许用户端读取启用套餐
+
+接口：
+
+- `GET /aigc/billing/recharge-package/page`
+- `GET /aigc/billing/recharge-package/get`
+- `POST /aigc/billing/recharge-package/create`
+- `PUT /aigc/billing/recharge-package/update`
+- `DELETE /aigc/billing/recharge-package/delete`
+- `GET /aigc/billing/recharge-package/list-enabled`
+
+### 7.6 成本记录管理
 
 页面能力：
 
