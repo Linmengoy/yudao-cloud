@@ -47,6 +47,8 @@ Use existing project helpers and components before adding new abstractions.
 - `src/app/app-api/ai/video/generation/task/[taskId]/route.ts`: server-side video task polling proxy.
 - `src/app/app-api/ai/video/wan/task/*`: server-side Wan 2.2 task creation, polling, and protected video streaming proxy.
 - `src/features/auth/*`: current mock auth layer.
+- `src/features/auth/VerificationCodeField.tsx`: shared email/SMS verification-code sending UI for auth and profile email binding.
+- `src/features/theme/*`: theme provider/toggle for light and dark mode.
 - `src/features/wallet/mock-wallet.ts`: current mock balance layer.
 - `src/lib/api-client.ts`: future Yudao app API client integration.
 
@@ -176,6 +178,9 @@ Disallow self-connections and unrelated node type combinations.
 - Set `zoomOnScroll={false}`, `panOnScroll`, and `zoomOnPinch` so trackpad two-finger scroll pans the canvas while pinch gestures zoom.
 - Hide selected-node composers while a node is being dragged; only the node card should move during drag.
 - Fixed preview slots should be used for draft image/video placeholders so parameter changes do not move the selected-node composer.
+- Keep the dotted canvas positioning background low-contrast and sparse in both light and dark themes.
+- Node preview cards must use opaque surfaces so canvas dots do not show through the card body.
+- Selected-node composers, small node headers/toolbars, and side create handles should visually keep a stable screen size across React Flow zoom levels.
 - Do not animate React Flow's outer node transform or canvas transform. Motion should only animate node internals, floating menus, banners, popovers, and preview-card width/height inside the fixed preview slot.
 
 ## Motion Rules
@@ -186,6 +191,16 @@ Disallow self-connections and unrelated node type combinations.
 - Parameter segmented controls should use a moving selected-state indicator instead of abrupt background class swaps when practical.
 - Floating UI should animate in/out but still obey outside click, Escape, and action-completion close behavior.
 - Respect React Flow drag behavior: selected-node composers should not appear while `dragging` is true, and animation wrappers must not block node dragging from preview bodies.
+
+## Auth, Email, And Theme Rules
+
+- Default auth entry should stay simple: email/password first, with email-code login, phone-code login, registration, and reset as secondary flows.
+- Auth modal transitions should use `motion/react` and remain short and utilitarian.
+- Avoid browser-native focus rings on auth inputs; use the project `input-base` focus treatment.
+- Theme state should go through `ThemeProvider` and `ThemeToggle`, not one-off local toggles.
+- Use `VerificationCodeField` for email/SMS verification-code sending UI instead of duplicating send buttons and countdown logic.
+- Member email verification content is backed by Yudao mail templates, not client UI. Template codes are defined in `yudao-module-member/.../MemberEmailCodeSceneEnum.java`; initializer content is in `yudao-module-member/yudao-module-member-server/src/main/resources/member-email-register.sql`.
+- If an existing database already has old `system_mail_template` rows, update them through the admin mail-template page or add a migration. Editing the initializer only affects fresh environments.
 
 ## Canvas Persistence
 

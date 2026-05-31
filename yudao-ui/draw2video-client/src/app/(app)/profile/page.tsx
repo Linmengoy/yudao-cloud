@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { LogOut, Mail, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/features/auth/auth-store";
+import { VerificationCodeField } from "@/features/auth/VerificationCodeField";
 import { updateEmail, updateProfile } from "@/features/profile/profile-api";
 
 function maskMobile(value?: string) {
@@ -162,35 +163,33 @@ export default function ProfilePage() {
             <span className="text-muted-gray">修改密码功能待开放</span>
           </div>
         </div>
-        <form onSubmit={handleUpdateEmail} className="mt-4 rounded-xl border border-border-warm bg-muted p-4">
+        <form onSubmit={handleUpdateEmail} className="mt-4 rounded-xl border border-border-warm bg-background p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-charcoal">
             <Mail className="size-4" />
             {user?.email ? "换绑邮箱" : "绑定邮箱"}
           </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_160px]">
+          <div className="mt-3">
             <input value={email} onChange={(event) => setEmail(event.target.value.trim())} className="input-base" placeholder="请输入新邮箱" />
-            <button
-              type="button"
-              disabled={emailSending || emailCountdown > 0 || !isEmail(email)}
-              onClick={handleSendEmailCode}
-              className="rounded-md border border-[rgba(28,28,28,0.4)] px-3 py-2.5 text-sm text-charcoal active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {emailSending ? "发送中" : emailCountdown > 0 ? `${emailCountdown}s` : "获取验证码"}
-            </button>
           </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_160px]">
-            <input
-              inputMode="numeric"
-              value={emailCode}
-              onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-              className="input-base"
-              placeholder="请输入 6 位验证码"
-            />
+          <VerificationCodeField
+            channel="email"
+            label={user?.email ? "换绑验证码" : "绑定验证码"}
+            value={emailCode}
+            onChange={setEmailCode}
+            onSend={handleSendEmailCode}
+            disabled={emailSending || emailCountdown > 0 || !isEmail(email)}
+            sending={emailSending}
+            countdown={emailCountdown}
+            recipient={email}
+            placeholder="请输入 4 位验证码"
+            className="mt-3"
+          />
+          <div className="mt-3 flex justify-end">
             <button type="submit" disabled={emailSaving} className="primary-button disabled:opacity-50">
               {emailSaving ? "保存中..." : user?.email ? "确认换绑" : "确认绑定"}
             </button>
           </div>
-          <p className="mt-2 text-xs text-muted-gray">验证码场景会根据当前邮箱状态自动选择绑定或换绑。</p>
+          <p className="mt-2 text-xs text-muted-gray">验证码 10 分钟内有效，请确认邮箱地址无误后再发送。</p>
         </form>
         <button
           type="button"

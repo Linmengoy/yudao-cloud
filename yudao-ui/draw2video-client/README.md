@@ -133,6 +133,9 @@ Canvas navigation:
 - Trackpad two-finger scroll pans the canvas.
 - Trackpad pinch zooms the canvas.
 - Double-clicking the blank canvas opens the create menu instead of zooming.
+- The canvas uses a low-contrast dotted positioning background in both light and dark themes.
+- Node preview cards use opaque background surfaces so the positioning dots do not show through cards.
+- Selected node toolbars, selected-node composers, and side create handles keep a stable screen size while the React Flow canvas zoom changes. This keeps prompt entry usable even when the canvas is zoomed out.
 
 Canvas motion:
 
@@ -153,6 +156,24 @@ Canvas persistence is split:
 
 Large image `dataUrl` values are stripped before saving the canvas graph to `localStorage`.
 Uploaded video `data:` URLs are also stripped before saving; generated remote video URLs can stay in the graph.
+
+## Auth, Theme, And Email Code UI
+
+The public and authenticated shells support light/dark theme switching through `ThemeProvider` and `ThemeToggle`.
+
+Auth is handled by `src/features/auth/*`:
+
+- `AuthModal` owns the animated modal surface.
+- `AuthPanel` keeps the default flow focused on email/password login.
+- Secondary flows are available for email-code login, phone-code login, registration, and password reset.
+- `VerificationCodeField` is the shared email/SMS code sending UI used by auth and profile email binding.
+- Successful login with no explicit redirect lands on `/app`.
+
+Email verification content is not hardcoded in the client. The member email code service uses Yudao mail templates:
+
+- Template codes live in `yudao-module-member/.../MemberEmailCodeSceneEnum.java`.
+- Initial template content lives in `yudao-module-member/yudao-module-member-server/src/main/resources/member-email-register.sql`.
+- Existing databases may need an admin mail-template update or a migration because changing the SQL initializer only affects newly initialized environments.
 
 ## Useful Commands
 
@@ -176,3 +197,5 @@ Run both before handing off canvas changes.
 - `src/features/image-generation/*`: image model and parameter UI.
 - `src/features/canvas/use-canvas-storage.ts`: localStorage persistence.
 - `src/features/canvas/image-store.ts`: IndexedDB image cache.
+- `src/features/auth/VerificationCodeField.tsx`: shared email/SMS verification-code send control.
+- `src/features/theme/*`: local theme provider and toggle.
