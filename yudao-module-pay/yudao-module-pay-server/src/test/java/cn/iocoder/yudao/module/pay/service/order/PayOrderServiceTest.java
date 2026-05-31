@@ -536,7 +536,8 @@ public class PayOrderServiceTest extends BaseDbAndRedisUnitTest {
         PayChannelDO channel = randomPojo(PayChannelDO.class, o -> o.setId(10L));
         PayOrderRespDTO notify = randomPojo(PayOrderRespDTO.class,
                 o -> o.setStatus(PayOrderStatusEnum.SUCCESS.getStatus())
-                        .setOutTradeNo("P110"));
+                        .setOutTradeNo("P110")
+                        .setChannelPrice(10));
 
         // 调用，并断言异常
         assertServiceException(() -> orderService.notifyOrder(channel, notify),
@@ -554,7 +555,8 @@ public class PayOrderServiceTest extends BaseDbAndRedisUnitTest {
         PayChannelDO channel = randomPojo(PayChannelDO.class, o -> o.setId(10L));
         PayOrderRespDTO notify = randomPojo(PayOrderRespDTO.class,
                 o -> o.setStatus(PayOrderStatusEnum.SUCCESS.getStatus())
-                        .setOutTradeNo("P110"));
+                        .setOutTradeNo("P110")
+                        .setChannelPrice(10));
 
         // 调用，并断言异常
         assertServiceException(() -> orderService.notifyOrder(channel, notify),
@@ -587,7 +589,8 @@ public class PayOrderServiceTest extends BaseDbAndRedisUnitTest {
         PayChannelDO channel = randomPojo(PayChannelDO.class, o -> o.setId(10L));
         PayOrderRespDTO notify = randomPojo(PayOrderRespDTO.class,
                 o -> o.setStatus(PayOrderStatusEnum.SUCCESS.getStatus())
-                        .setOutTradeNo("P110"));
+                        .setOutTradeNo("P110")
+                        .setChannelPrice(10));
 
         // 调用，并断言异常
         assertServiceException(() -> orderService.notifyOrder(channel, notify),
@@ -615,7 +618,8 @@ public class PayOrderServiceTest extends BaseDbAndRedisUnitTest {
         PayChannelDO channel = randomPojo(PayChannelDO.class, o -> o.setId(10L));
         PayOrderRespDTO notify = randomPojo(PayOrderRespDTO.class,
                 o -> o.setStatus(PayOrderStatusEnum.SUCCESS.getStatus())
-                        .setOutTradeNo("P110"));
+                        .setOutTradeNo("P110")
+                        .setChannelPrice(10));
 
         // 调用，并断言异常
         orderService.notifyOrder(channel, notify);
@@ -645,7 +649,8 @@ public class PayOrderServiceTest extends BaseDbAndRedisUnitTest {
                 .setFeeRate(10D));
         PayOrderRespDTO notify = randomPojo(PayOrderRespDTO.class,
                 o -> o.setStatus(PayOrderStatusEnum.SUCCESS.getStatus())
-                        .setOutTradeNo("P110"));
+                        .setOutTradeNo("P110")
+                        .setChannelPrice(10));
 
         // 调用，并断言异常
         orderService.notifyOrder(channel, notify);
@@ -665,6 +670,37 @@ public class PayOrderServiceTest extends BaseDbAndRedisUnitTest {
         // 断言，调用
         verify(notifyService).createPayNotifyTask(eq(PayNotifyTypeEnum.ORDER.getType()),
             eq(orderExtension.getOrderId()));
+    }
+
+    @Test
+    public void testNotifyOrderSuccess_order_priceNotMatch() {
+        // mock 数据（PayOrderDO）
+        PayOrderDO order = randomPojo(PayOrderDO.class,
+                o -> o.setStatus(PayOrderStatusEnum.WAITING.getStatus())
+                        .setPrice(10));
+        orderMapper.insert(order);
+        // mock 数据（PayOrderExtensionDO）
+        PayOrderExtensionDO orderExtension = randomPojo(PayOrderExtensionDO.class,
+                o -> o.setStatus(PayOrderStatusEnum.WAITING.getStatus())
+                        .setNo("P110")
+                        .setOrderId(order.getId()));
+        orderExtensionMapper.insert(orderExtension);
+        // 准备参数
+        PayChannelDO channel = randomPojo(PayChannelDO.class, o -> o.setId(10L)
+                .setFeeRate(10D));
+        PayOrderRespDTO notify = randomPojo(PayOrderRespDTO.class,
+                o -> o.setStatus(PayOrderStatusEnum.SUCCESS.getStatus())
+                        .setOutTradeNo("P110")
+                        .setChannelPrice(9));
+
+        // 调用，并断言异常
+        assertServiceException(() -> orderService.notifyOrder(channel, notify),
+                PAY_ORDER_CHANNEL_PRICE_NOT_MATCH);
+        // 断言 PayOrderExtensionDO ：数据更新被回滚
+        assertPojoEquals(orderExtension, orderExtensionMapper.selectOne(null));
+        assertPojoEquals(order, orderMapper.selectOne(null));
+        // 断言，调用
+        verify(notifyService, never()).createPayNotifyTask(anyInt(), anyLong());
     }
 
     @Test

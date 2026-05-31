@@ -124,6 +124,9 @@
 | `notifyContentType` | 否 | 回调内容类型，如 `FORM`、`JSON` |
 | `sandbox` | 是 | 是否沙箱环境 |
 | `timeoutSeconds` | 否 | 调用 EasyPay 接口超时时间 |
+| `unifiedOrderPath` | 否 | EasyPay 下单接口路径，默认 `/pay/unified-order`，以官方文档为准 |
+| `queryOrderPath` | 否 | EasyPay 查单接口路径，默认 `/pay/query-order`，以官方文档为准 |
+| `successResponse` | 否 | EasyPay 回调成功响应文本，默认 `success`，需按官方要求配置 |
 
 ### 5.2 配置存储
 
@@ -140,7 +143,10 @@ EasyPay 渠道配置存储在 `pay_channel.config` 字段中，与支付宝、�
   "returnUrl": "https://www.example.com/pay/result",
   "notifyContentType": "JSON",
   "sandbox": false,
-  "timeoutSeconds": 10
+  "timeoutSeconds": 10,
+  "unifiedOrderPath": "/pay/unified-order",
+  "queryOrderPath": "/pay/query-order",
+  "successResponse": "success"
 }
 ```
 
@@ -173,10 +179,11 @@ PayChannelServiceImpl.parseConfig
 | `framework/pay/core/client/impl/easypay` | 新增 EasyPay 客户端实现目录 |
 | `EasyPayClientConfig` | 定义 EasyPay 渠道配置字段、校验规则和敏感字段处理 |
 | `EasyPayClient` | 实现 `PayClient` 统一接口 |
+| `PayOrderRespDTO` | 增加渠道支付金额字段 `channelPrice`，用于回调与查单金额校验 |
 | `PayClientFactoryImpl` | 注册 EasyPay 渠道编码和客户端实现类映射 |
 | `PayChannelServiceImpl` | 支持 EasyPay 配置 JSON 反序列化 |
-| `PayNotifyController` | 原则上无需新增接口，复用 `/pay/notify/order/{channelId}` |
-| `PayOrderServiceImpl` | 原则上无需改主流程，复用现有提交支付、回调更新和业务通知逻辑 |
+| `PayNotifyController` | 复用 `/pay/notify/order/{channelId}`，并按 EasyPay 配置返回回调成功响应文本 |
+| `PayOrderServiceImpl` | 复用现有提交支付、回调更新和业务通知逻辑，并在订单置为成功前校验渠道支付金额 |
 
 ### 6.3 管理端前端
 
@@ -248,12 +255,16 @@ yudao-module-pay-server
 | 收银台跳转链接 | `displayMode=url`，`displayContent=payUrl` |
 | HTML 表单 | `displayMode=form`，`displayContent=formHtml` |
 | 二维码链接 | `displayMode=qr_code_url`，`displayContent=qrCodeUrl` |
-| 已支付状态 | `status=SUCCESS`，并携带 EasyPay 订单号 |
+| 已支付状态 | `status=SUCCESS`，携带 EasyPay 订单号、支付用户标识、支付金额 `channelPrice` |
 | 等待支付状态 | `status=WAITING`，并返回展示内容 |
+
+下单响应如果直接返回成功状态，也必须携带 EasyPay 实际支付金额字段。Pay 模块会将该金额标准化为分并写入 `PayOrderRespDTO.channelPrice`，用于后续统一订单成功校验。
 
 ### 7.3 查单实现
 
 `EasyPayClient.getOrder` 负责根据 `pay_order_extension.no` 查询 EasyPay 订单状态，并转换为 `PayOrderRespDTO`。
+
+查单响应如果返回支付成功，必须解析 EasyPay 返回的交易金额字段，并转换为内部分单位写入 `PayOrderRespDTO.channelPrice`。主动同步、定时补偿和异步回调走同一套 `notifyOrder` 成功更新逻辑，因此查单金额也必须与本地 `pay_order.price` 完全一致，否则拒绝把订单更新为成功。
 
 状态映射建议如下：
 
@@ -274,10 +285,12 @@ yudao-module-pay-server
 2. 校验签名，签名失败直接拒绝，不更新订单状态。
 3. 校验商户号、应用 ID、订单号、金额、币种和支付状态。
 4. 使用 EasyPay 回调中的商户订单号匹配 `pay_order_extension.no`。
-5. 将 EasyPay 交易号、支付用户标识、支付成功时间、手续费等字段写入 `PayOrderRespDTO`。
+5. 将 EasyPay 交易号、支付用户标识、支付成功时间、实际支付金额、手续费等字段写入 `PayOrderRespDTO`。
 6. 返回 EasyPay 要求的成功响应文本，避免 EasyPay 重复通知。
 
-回调验签必须使用原始请求参数构造待签名字符串，不能使用反序列化后无序 Map 直接拼接，避免参数顺序、空值处理、字符集差异导致验签失败。
+回调验签必须使用原始请求参数构造待签名字符串，不能使用反序列化后无序 Map 直接拼接，避免参数顺序、空值处理、字符集差异导致验签失败。当前实现兼容 `body` 与 `params` 两类来源，但同名字段值不一致时必须直接拒绝回调，避免查询参数覆盖请求体参数造成验签对象和业务对象不一致。
+
+EasyPay 回调金额必须转换为内部分单位写入 `PayOrderRespDTO.channelPrice`。`PayOrderServiceImpl.notifyOrder` 在更新 `pay_order` 为成功前，必须校验 `channelPrice` 与 `pay_order.price` 完全一致；缺少金额或金额不一致均不得更新订单状态，也不得创建业务通知任务。
 
 ### 7.5 退款实现
 
@@ -356,11 +369,13 @@ INSERT INTO pay_channel (
 | EasyPay 下单超时 | 返回支付提交失败，允许用户重新提交并生成新的 `pay_order_extension` |
 | EasyPay 下单成功但响应丢失 | 通过前端同步或定时任务按拓展单号查单补偿 |
 | EasyPay 回调验签失败 | 记录安全日志，不更新订单，不通知业务 |
+| EasyPay 回调参数冲突 | 同名字段值不一致时拒绝回调，不更新订单，不通知业务 |
+| EasyPay 回调金额缺失或不一致 | 拒绝更新订单成功，不创建业务通知任务 |
 | EasyPay 重复回调 | 依赖 `notifyOrder` 幂等处理，订单已成功则直接返回成功响应 |
 | Pay 通知业务失败 | 写入 `pay_notify_task` 和 `pay_notify_log`，由 `PayNotifyJob` 重试 |
 | 前端支付后未跳转 | 用户端继续轮询 `/pay/order/get?id={id}&sync=true` |
 | EasyPay 查单返回支付中 | 保持待支付，等待后续回调或下一次补偿 |
-| EasyPay 查单返回成功但本地未成功 | 复用 `notifyOrder` 更新本地状态并触发业务通知 |
+| EasyPay 查单返回成功但本地未成功 | 校验查单金额与本地订单金额一致后，复用 `notifyOrder` 更新本地状态并触发业务通知 |
 
 ## 11. AIGC 充值接入方式
 
@@ -420,7 +435,9 @@ AIGC 充值订单需要保存 `payOrderId`、`payAppKey`、`merchantOrderId`、�
 | ------ | -------- |
 | 签名生成 | 参数排序、空值过滤、字符集、签名类型正确 |
 | 回调验签 | 正确签名通过，篡改金额或订单号失败 |
+| 回调参数冲突 | `body` 与 `params` 存在同名不同值字段时拒绝回调 |
 | 下单参数 | 金额单位、订单号、回调地址、过期时间转换正确 |
+| 金额转换 | EasyPay 金额字段正确转换为内部分单位 |
 | 状态映射 | EasyPay 成功、支付中、关闭、失败状态映射正确 |
 | 重复回调 | 已成功订单重复通知不重复入账 |
 
@@ -441,7 +458,9 @@ AIGC 充值订单需要保存 `payOrderId`、`payAppKey`、`merchantOrderId`、�
 | ------ | -------- |
 | 签名错误回调 | 不更新订单状态 |
 | 金额不一致回调 | 不更新订单状态 |
+| 金额缺失回调 | 不更新订单状态 |
 | 商户号不一致回调 | 不更新订单状态 |
+| 回调参数冲突 | 不更新订单状态 |
 | 重放回调 | 幂等处理，不重复通知业务入账 |
 | 日志脱敏 | 日志不出现私钥、密钥、完整签名 |
 
@@ -451,9 +470,11 @@ AIGC 充值订单需要保存 `payOrderId`、`payAppKey`、`merchantOrderId`、�
 - 用户端可以查询到启用的 EasyPay 渠道并提交支付。
 - EasyPay 下单成功后，前端可以按 `displayMode` 正确跳转或展示二维码。
 - EasyPay 支付成功回调后，`pay_order_extension` 和 `pay_order` 状态正确更新为成功。
+- EasyPay 支付成功回调或主动查单成功时，渠道支付金额必须与 `pay_order.price` 完全一致后才允许更新成功。
 - Pay 模块可以向业务模块发送支付成功通知，并在失败时自动重试。
 - 重复回调、主动同步、定时同步不会造成重复入账。
-- 签名错误、金额错误、商户号错误的回调不会更新订单。
+- 签名错误、金额错误、金额缺失、商户号错误、回调参数冲突的回调不会更新订单。
+- Pay 模块返回给 EasyPay 的回调成功响应文本可通过 `successResponse` 配置，并符合 EasyPay 官方要求。
 - 日志、配置、文档中不包含真实密钥和证书。
 
 ## 15. 风险与待确认事项

@@ -28,6 +28,7 @@ public interface ErrorCodeConstants {
     ErrorCode PAY_ORDER_IS_EXPIRED = new ErrorCode(1_007_002_003, "支付订单已经过期");
     ErrorCode PAY_ORDER_SUBMIT_CHANNEL_ERROR = new ErrorCode(1_007_002_004, "发起支付报错，错误码：{}，错误提示：{}");
     ErrorCode PAY_ORDER_REFUND_FAIL_STATUS_ERROR = new ErrorCode(1_007_002_005, "支付订单退款失败，原因：状态不是已支付或已退款");
+    ErrorCode PAY_ORDER_CHANNEL_PRICE_NOT_MATCH = new ErrorCode(1_007_002_006, "支付渠道回调金额不匹配");
 
     // ========== ORDER 模块(拓展单) 1-007-003-000 ==========
     ErrorCode PAY_ORDER_EXTENSION_NOT_FOUND = new ErrorCode(1_007_003_000, "支付交易拓展单不存在");

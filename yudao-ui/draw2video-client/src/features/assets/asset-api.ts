@@ -1,6 +1,8 @@
 import { api } from "@/lib/api-client";
+import { API_BASE_URL, API_TENANT_ID, API_TERMINAL, getAccessToken } from "@/lib/api-client";
 import type {
   AigcAsset,
+  AigcAssetType,
   AigcAssetDownloadReq,
   AigcAssetPageParams,
   AigcAssetUpdateReq,
@@ -41,4 +43,30 @@ export function deleteMyAsset(id: number | string) {
 
 export function downloadMyAsset(data: AigcAssetDownloadReq) {
   return api.post<string>("/aigc/asset/download", data);
+}
+
+export async function uploadAsset(file: File, assetType: AigcAssetType, title?: string) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("assetType", assetType);
+  if (title) form.append("title", title);
+
+  const headers: Record<string, string> = {
+    Accept: "*/*",
+    "tenant-id": API_TENANT_ID,
+    terminal: API_TERMINAL,
+  };
+  const token = getAccessToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}/aigc/asset/upload`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  const body = await response.json() as { code: number; data: number; msg: string };
+  if (body.code !== 0) {
+    throw new Error(body.msg || `API error ${body.code}`);
+  }
+  return body.data;
 }

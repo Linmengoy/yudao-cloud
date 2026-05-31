@@ -15,6 +15,7 @@ import cn.iocoder.yudao.module.pay.dal.dataobject.channel.PayChannelDO;
 import cn.iocoder.yudao.module.pay.dal.mysql.channel.PayChannelMapper;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.NonePayClientConfig;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.alipay.AlipayPayClientConfig;
+import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.easypay.EasyPayClientConfig;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.weixin.WxPayClientConfig;
 import jakarta.annotation.Resource;
 import jakarta.validation.Validator;
@@ -84,6 +85,7 @@ public class PayChannelServiceImpl implements PayChannelService {
         // 解析配置
         Class<? extends PayClientConfig> payClass = PayChannelEnum.isAlipay(code) ? AlipayPayClientConfig.class
                 : PayChannelEnum.isWeixin(code) ? WxPayClientConfig.class
+                : PayChannelEnum.isEasyPay(code) ? EasyPayClientConfig.class
                 : NonePayClientConfig.class;
         if (ObjectUtil.isNull(payClass)) {
             throw exception(CHANNEL_NOT_FOUND);

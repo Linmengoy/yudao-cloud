@@ -356,6 +356,11 @@ public class PayOrderServiceImpl implements PayOrderService {
         if (!PayOrderStatusEnum.WAITING.getStatus().equals(order.getStatus())) { // 校验状态，必须是待支付
             throw exception(PAY_ORDER_STATUS_IS_NOT_WAITING);
         }
+        if (notify.getChannelPrice() == null || ObjectUtil.notEqual(order.getPrice(), notify.getChannelPrice())) {
+            log.error("[updateOrderExtensionSuccess][order({}) 支付渠道回调金额不匹配，orderPrice({}) channelPrice({})]",
+                    order.getId(), order.getPrice(), notify.getChannelPrice());
+            throw exception(PAY_ORDER_CHANNEL_PRICE_NOT_MATCH);
+        }
 
         // 2. 更新 PayOrderDO
         int updateCounts = orderMapper.updateByIdAndStatus(order.getId(), PayOrderStatusEnum.WAITING.getStatus(),

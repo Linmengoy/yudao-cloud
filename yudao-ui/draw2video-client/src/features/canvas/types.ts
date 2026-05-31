@@ -27,6 +27,15 @@ export type NodeCreateMenuEventDetail = {
   clientY: number;
 };
 
+export type NodeDataPatchEventDetail = {
+  nodeId: string;
+  patch: Record<string, unknown>;
+};
+
+export type NodeEditingPresenceEventDetail = {
+  nodeId: string | null;
+};
+
 export type PromptNode = Node<PromptNodeData, "prompt">;
 
 // --- Result Node ---
@@ -71,6 +80,9 @@ export type ResultNode = Node<ResultNodeData, "result">;
 export interface ImageNodeData {
   [key: string]: unknown;
   imageId: string;
+  assetId?: number | null;
+  assetVersionId?: number | null;
+  previewUrl?: string | null;
   fileName: string;
   dataUrl: string;
   mimeType: string;
@@ -87,6 +99,11 @@ export interface ImageNodeData {
   status?: "idle" | "pending" | "failed";
   taskId?: string | null;
   errorMessage?: string | null;
+  taskStatus?: string | null;
+  progress?: number | null;
+  outputAssetId?: number | null;
+  outputPreviewUrl?: string | null;
+  sourceTaskId?: number | null;
   safetyStatus?: string | null;
   safetyReason?: string | null;
   generationStartedAt?: string | null;
@@ -109,6 +126,11 @@ export interface TextNodeData {
   status: "idle" | "pending" | "failed";
   taskId?: string | null;
   errorMessage?: string | null;
+  taskStatus?: string | null;
+  progress?: number | null;
+  outputAssetId?: number | null;
+  outputPreviewUrl?: string | null;
+  sourceTaskId?: number | null;
   safetyStatus?: string | null;
   safetyReason?: string | null;
   generationStartedAt?: string | null;
@@ -127,6 +149,9 @@ export type TextNode = Node<TextNodeData, "text">;
 export interface VideoNodeData {
   [key: string]: unknown;
   videoId?: string;
+  assetId?: number | null;
+  assetVersionId?: number | null;
+  previewUrl?: string | null;
   fileName?: string;
   mimeType?: string;
   width?: number;
@@ -144,6 +169,11 @@ export interface VideoNodeData {
   taskId?: string | null;
   videoUrl?: string | null;
   errorMessage?: string | null;
+  taskStatus?: string | null;
+  progress?: number | null;
+  outputAssetId?: number | null;
+  outputPreviewUrl?: string | null;
+  sourceTaskId?: number | null;
   safetyStatus?: string | null;
   safetyReason?: string | null;
   ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9";
@@ -167,11 +197,147 @@ export type VideoNode = Node<VideoNodeData, "video">;
 export type AppNode = PromptNode | ResultNode | ImageNode | TextNode | VideoNode;
 export type AppEdge = Edge;
 
+export const SYNCABLE_NODE_DATA_KEYS = [
+  "imageId",
+  "videoId",
+  "assetId",
+  "assetVersionId",
+  "previewUrl",
+  "fileName",
+  "mimeType",
+  "width",
+  "height",
+  "durationSec",
+  "sizeBytes",
+  "kind",
+  "prompt",
+  "content",
+  "modelId",
+  "provider",
+  "providerModel",
+  "modelName",
+  "aigcModelId",
+  "params",
+  "status",
+  "taskId",
+  "errorMessage",
+  "taskStatus",
+  "progress",
+  "outputAssetId",
+  "outputPreviewUrl",
+  "sourceTaskId",
+  "safetyStatus",
+  "safetyReason",
+  "generationStartedAt",
+  "generationCompletedAt",
+  "generationRunStartedAt",
+  "elapsedMs",
+  "upstreamStatus",
+  "ratio",
+  "resolution",
+  "duration",
+  "size",
+  "generateAudio",
+  "watermark",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+export const BLOCKED_NODE_DATA_KEYS = [
+  "dataUrl",
+  "videoUrl",
+  "blobUrl",
+  "objectUrl",
+  "localUrl",
+  "inputImages",
+  "imageUrls",
+] as const;
+
 // --- Canvas draft state (localStorage) ---
 
 export interface CanvasState {
   nodes: AppNode[];
   edges: AppEdge[];
+  viewport?: { x: number; y: number; zoom: number };
+}
+
+export type CanvasProjectKind = "image" | "video" | "mixed";
+export type CanvasProjectRole = "owner" | "editor" | "viewer";
+
+export interface CanvasProject {
+  id: number;
+  ownerUserId: number;
+  name: string;
+  kind: CanvasProjectKind;
+  coverAssetId?: number | null;
+  currentVersion: number;
+  latestSnapshotId?: number | null;
+  status: string;
+  nodeCount: number;
+  assetCount: number;
+  role?: CanvasProjectRole | null;
+  canEdit?: boolean;
+  readonly?: boolean;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface CanvasMember {
+  id: number;
+  projectId: number;
+  userId: number;
+  role: CanvasProjectRole;
+  inviteUserId?: number | null;
+  joinedTime?: string;
+  lastActiveTime?: string;
+}
+
+export interface CanvasSnapshotRecord {
+  id: number;
+  projectId: number;
+  version: number;
+  nodesJson: string;
+  edgesJson: string;
+  viewportJson?: string | null;
+  createdBy?: number | null;
+  createTime?: string;
+}
+
+export interface CanvasOperationPayload {
+  type: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CanvasOperationRecord {
+  id: number;
+  projectId: number;
+  clientId: string;
+  opId: string;
+  actorUserId: number;
+  baseVersion: number;
+  nextVersion: number;
+  operationType: string;
+  operationJson: string;
+  inverseOperationJson?: string | null;
+  createTime?: string;
+}
+
+export interface CanvasOperationSyncResult {
+  mode: "delta" | "snapshot";
+  fromVersion?: number | null;
+  toVersion?: number | null;
+  operations?: CanvasOperationRecord[] | null;
+  snapshot?: CanvasSnapshotRecord | null;
+}
+
+export interface CanvasPresence {
+  projectId: string;
+  userId?: number;
+  clientId: string;
+  cursor?: { x: number; y: number } | null;
+  screenCursor?: { x: number; y: number } | null;
+  selectedNodeIds?: string[];
+  editingNodeId?: string | null;
   viewport?: { x: number; y: number; zoom: number };
 }
 

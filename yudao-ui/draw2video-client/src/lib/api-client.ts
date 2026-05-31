@@ -1,8 +1,8 @@
-const BASE_URL =
+export const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL ?? "") +
   (process.env.NEXT_PUBLIC_APP_API_PREFIX ?? "/app-api");
-const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID ?? "1";
-const TERMINAL = process.env.NEXT_PUBLIC_TERMINAL ?? "20";
+export const API_TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID ?? "1";
+export const API_TERMINAL = process.env.NEXT_PUBLIC_TERMINAL ?? "20";
 
 interface ApiResponse<T = unknown> {
   code: number;
@@ -62,11 +62,11 @@ export async function refreshAccessToken(): Promise<string> {
       : null);
   if (!rt) throw new Error("No refresh token");
 
-  const res = await fetch(`${BASE_URL}/member/auth/refresh-token?refreshToken=${rt}`, {
+  const res = await fetch(`${API_BASE_URL}/member/auth/refresh-token?refreshToken=${rt}`, {
     method: "POST",
     headers: {
-      "tenant-id": TENANT_ID,
-      terminal: TERMINAL,
+      "tenant-id": API_TENANT_ID,
+      terminal: API_TERMINAL,
     },
   });
   const body: ApiResponse<{ accessToken: string; refreshToken: string }> =
@@ -85,15 +85,15 @@ async function request<T>(
   const headers: Record<string, string> = {
     Accept: "*/*",
     "Content-Type": "application/json;charset=UTF-8",
-    "tenant-id": TENANT_ID,
-    terminal: TERMINAL,
+    "tenant-id": API_TENANT_ID,
+    terminal: API_TERMINAL,
     ...(options.headers as Record<string, string>),
   };
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  let res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  let res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
   let body: ApiResponse<T> = await res.json();
 
   if (body.code === 401) {
@@ -102,7 +102,7 @@ async function request<T>(
         refreshQueue.push({
           resolve: (newToken: string) => {
             headers["Authorization"] = `Bearer ${newToken}`;
-            fetch(`${BASE_URL}${path}`, { ...options, headers })
+            fetch(`${API_BASE_URL}${path}`, { ...options, headers })
               .then((r) => r.json())
               .then((b: ApiResponse<T>) => {
                 if (b.code === 0) resolve(b.data);
@@ -123,7 +123,7 @@ async function request<T>(
       refreshQueue = [];
 
       headers["Authorization"] = `Bearer ${newToken}`;
-      res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+      res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
       body = await res.json();
     } catch (err) {
       isRefreshing = false;

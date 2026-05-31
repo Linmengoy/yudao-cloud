@@ -39,6 +39,11 @@ public class PayOrderRespDTO {
     private String channelUserId;
 
     /**
+     * 渠道支付金额，单位：分
+     */
+    private Integer channelPrice;
+
+    /**
      * 支付成功时间
      */
     private LocalDateTime successTime;
@@ -96,10 +101,16 @@ public class PayOrderRespDTO {
      */
     public static PayOrderRespDTO successOf(String channelOrderNo, String channelUserId, LocalDateTime successTime,
                                             String outTradeNo, Object rawData) {
+        return successOf(channelOrderNo, channelUserId, null, successTime, outTradeNo, rawData);
+    }
+
+    public static PayOrderRespDTO successOf(String channelOrderNo, String channelUserId, Integer channelPrice,
+                                            LocalDateTime successTime, String outTradeNo, Object rawData) {
         PayOrderRespDTO respDTO = new PayOrderRespDTO();
         respDTO.status = PayOrderStatusEnum.SUCCESS.getStatus();
         respDTO.channelOrderNo = channelOrderNo;
         respDTO.channelUserId = channelUserId;
+        respDTO.channelPrice = channelPrice;
         respDTO.successTime = successTime;
         // 相对通用的字段
         respDTO.outTradeNo = outTradeNo;
@@ -112,10 +123,16 @@ public class PayOrderRespDTO {
      */
     public static PayOrderRespDTO of(Integer status, String channelOrderNo, String channelUserId, LocalDateTime successTime,
                                      String outTradeNo, Object rawData) {
+        return of(status, channelOrderNo, channelUserId, null, successTime, outTradeNo, rawData);
+    }
+
+    public static PayOrderRespDTO of(Integer status, String channelOrderNo, String channelUserId, Integer channelPrice,
+                                     LocalDateTime successTime, String outTradeNo, Object rawData) {
         PayOrderRespDTO respDTO = new PayOrderRespDTO();
         respDTO.status = status;
         respDTO.channelOrderNo = channelOrderNo;
         respDTO.channelUserId = channelUserId;
+        respDTO.channelPrice = channelPrice;
         respDTO.successTime = successTime;
         // 相对通用的字段
         respDTO.outTradeNo = outTradeNo;

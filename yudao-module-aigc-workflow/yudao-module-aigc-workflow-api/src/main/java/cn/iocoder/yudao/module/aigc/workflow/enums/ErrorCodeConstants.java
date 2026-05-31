@@ -22,5 +22,12 @@ public interface ErrorCodeConstants {
     ErrorCode WORKFLOW_NODE_KEY_EXISTS = new ErrorCode(1_046_000_015, "工作流节点键已存在");
     ErrorCode WORKFLOW_EDGE_KEY_EXISTS = new ErrorCode(1_046_000_016, "工作流连线键已存在");
     ErrorCode WORKFLOW_GRAPH_INVALID = new ErrorCode(1_046_000_017, "工作流图结构无效");
+    ErrorCode CANVAS_PROJECT_NOT_EXISTS = new ErrorCode(1_046_000_100, "画布项目不存在");
+    ErrorCode CANVAS_NO_PERMISSION = new ErrorCode(1_046_000_101, "无权访问该画布项目");
+    ErrorCode CANVAS_SNAPSHOT_NOT_EXISTS = new ErrorCode(1_046_000_102, "画布快照不存在");
+    ErrorCode CANVAS_OPERATION_TYPE_INVALID = new ErrorCode(1_046_000_103, "画布操作类型不支持");
+    ErrorCode CANVAS_OPERATION_PAYLOAD_INVALID = new ErrorCode(1_046_000_104, "画布操作内容不合法");
+    ErrorCode CANVAS_OPERATION_PAYLOAD_TOO_LARGE = new ErrorCode(1_046_000_105, "画布操作内容过大");
+    ErrorCode CANVAS_SNAPSHOT_VERSION_CONFLICT = new ErrorCode(1_046_000_106, "画布快照版本已过期，请同步后重试");
 
 }

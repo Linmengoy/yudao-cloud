@@ -19,10 +19,11 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import type { AppEdge, AppNode, ImageNodeData, ReferencePickerEventDetail, VideoNodeData } from "./types";
+import type { AppNode, ImageNodeData, NodeDataPatchEventDetail, ReferencePickerEventDetail, VideoNodeData } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
+import { canvasNodeRunApi, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { cn } from "@/lib/utils";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
@@ -167,6 +168,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
+  const videoSrc = data.videoUrl || data.previewUrl;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
@@ -185,6 +187,9 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           node.id === id ? { ...node, data: { ...node.data, ...patch } } : node
         )
       );
+      window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
+        detail: { nodeId: id, patch },
+      }));
     },
     [id, setNodes]
   );
@@ -293,6 +298,41 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
       elapsedMs: null,
     });
 
+    const projectId = new URLSearchParams(window.location.search).get("projectId");
+    if (projectId) {
+      const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      try {
+        const run = await canvasNodeRunApi.runNode(projectId, id, {
+          clientId,
+          baseVersion: 0,
+          runId: clientId,
+          nodeType: "video",
+          generateType: "VIDEO",
+          generateMode: referenceImages.length > 0 ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO",
+          modelId: data.aigcModelId,
+          prompt,
+          inputParams: JSON.stringify({
+            providerModel: data.providerModel ?? data.modelId,
+            ratio: data.ratio,
+            resolution: data.resolution,
+            duration: data.duration,
+            size: data.size,
+            generateAudio: data.generateAudio,
+            watermark: data.watermark,
+            referenceImageIds: referenceImages.map((image) => image.id),
+          }),
+          sync: false,
+        });
+        await waitCanvasNodeRunResult(projectId, id, {
+          taskId: run.taskId,
+          baseVersion: 0,
+          nodeType: "video",
+        });
+        return;
+      } catch {
+      }
+    }
+
     try {
       const submit = await generationApi.submit({
         generateType: "VIDEO",
@@ -353,7 +393,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [data.aigcModelId, data.duration, data.generateAudio, data.modelId, data.prompt, data.providerModel, data.ratio, data.resolution, data.size, data.watermark, isGenerating, referenceImages, updateData]);
+  }, [data.aigcModelId, data.duration, data.generateAudio, data.modelId, data.prompt, data.providerModel, data.ratio, data.resolution, data.size, data.watermark, id, isGenerating, referenceImages, updateData]);
 
   return (
     <div className="relative" style={{ width: CARD_WIDTH }}>
@@ -403,8 +443,8 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             style={{ width: displaySize.width, height: displaySize.height }}
           >
             <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[inherit]">
-              {data.videoUrl ? (
-                <video src={data.videoUrl} className="size-full object-contain" controls />
+              {videoSrc ? (
+                <video src={videoSrc} className="size-full object-contain" controls />
               ) : (
                 <Play className="size-12 text-muted-gray/40" />
               )}
@@ -476,8 +516,8 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               {referenceImages.map((image) => (
                 <div key={image.edgeId} className="group relative shrink-0">
                   <div className="size-9 overflow-hidden rounded-lg border border-border-warm bg-muted">
-                    {image.data.dataUrl ? (
-                      <img src={image.data.dataUrl} alt={image.data.fileName} className="size-full object-cover" draggable={false} />
+                    {(image.data.previewUrl || image.data.dataUrl) ? (
+                      <img src={image.data.previewUrl || image.data.dataUrl} alt={image.data.fileName} className="size-full object-cover" draggable={false} />
                     ) : (
                       <ImageIcon className="m-2 size-5 text-muted-gray/40" />
                     )}

@@ -26,17 +26,23 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, ImageNodeData, NodeCreateMenuEventDetail, ReferencePickerEventDetail, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
+import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { PromptNodeComponent } from "@/features/canvas/PromptNode";
 import { ResultNodeComponent } from "@/features/canvas/ResultNode";
 import { ImageNodeComponent } from "@/features/canvas/ImageNode";
 import { TextNodeComponent } from "@/features/canvas/TextNode";
 import { VideoNodeComponent } from "@/features/canvas/VideoNode";
 import { loadCanvas, saveCanvas, clearCanvas } from "@/features/canvas/use-canvas-storage";
+import { filterSyncableNodeDataPatch, sanitizeNodeForCanvasOperation } from "@/features/canvas/canvas-syncable-data";
+import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
+import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
+import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
 import { saveImage, loadImage, clearImages, saveVideo, loadVideo, clearVideos } from "@/features/canvas/image-store";
 import { ToolbarIconButton } from "@/features/canvas/ToolbarIconButton";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
+import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
 import {
   isEditableElement,
   getImageFilesFromPasteEvent,
@@ -44,7 +50,7 @@ import {
 } from "@/features/canvas/clipboard";
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
-import { createProject, getProject, touchProject, updateProject, type ProjectKind } from "@/features/projects/project-store";
+import { createProject, touchProject, updateProject, type ProjectKind } from "@/features/projects/project-store";
 import { Plus, Trash2, ImagePlus, Type, Video } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
@@ -65,6 +71,13 @@ type PendingConnectionPreview = {
 };
 
 const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "video"];
+
+function getPresenceColor(clientId: string) {
+  const colors = ["#7c3aed", "#0891b2", "#ea580c", "#16a34a", "#dc2626", "#2563eb"];
+  let hash = 0;
+  for (let i = 0; i < clientId.length; i++) hash = (hash + clientId.charCodeAt(i)) % colors.length;
+  return colors[hash];
+}
 
 function isValidNodeKindConnection(sourceType: AppNode["type"] | CreateNodeKind, targetType: AppNode["type"] | CreateNodeKind) {
   return (
@@ -325,6 +338,13 @@ function isValidCanvasConnection(connection: { source: string; target: string },
   );
 }
 
+function isSameCanvasEdge(left: AppEdge, right: AppEdge) {
+  return left.source === right.source &&
+    left.target === right.target &&
+    (left.sourceHandle ?? null) === (right.sourceHandle ?? null) &&
+    (left.targetHandle ?? null) === (right.targetHandle ?? null);
+}
+
 async function blobFromDataUrl(dataUrl: string): Promise<Blob> {
   const response = await fetch(dataUrl);
   return response.blob();
@@ -355,6 +375,11 @@ function CanvasFlow() {
   const [saveError, setSaveError] = useState("");
   const [pasteToast, setPasteToast] = useState("");
   const [isHydrated, setIsHydrated] = useState(false);
+  const [isReadOnly, setIsReadOnly] = useState(false);
+  const [projectRole, setProjectRole] = useState<string | null>(null);
+  const [projectMembers, setProjectMembers] = useState<CanvasMember[]>([]);
+  const [lastAppliedVersion, setLastAppliedVersion] = useState(0);
+  const [latestKnownVersion, setLatestKnownVersion] = useState(0);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
   const [createMenu, setCreateMenu] = useState<{
     x: number;
@@ -389,26 +414,266 @@ function CanvasFlow() {
   const restoringHistoryRef = useRef(false);
   const projectCreationRef = useRef(false);
   const ignoreNextPaneClickRef = useRef(false);
+  const [clientId] = useState(() => `canvas_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+  const { createProject: createServerProject, loadProject, saveSnapshot } = useCanvasServerStorage();
+  const canvasRealtime = useCanvasRealtime(activeProjectId, clientId, lastAppliedVersion);
+  const canvasOperations = useCanvasOperations(activeProjectId, clientId, latestKnownVersion, setLatestKnownVersion, canvasRealtime.sendOperation, canvasRealtime.isConnected);
+  const processedRealtimeMessageCountRef = useRef(0);
+  const [remotePresences, setRemotePresences] = useState<Record<string, CanvasPresence>>({});
+  const lastPresenceSentAtRef = useRef(0);
+  const editingNodeIdRef = useRef<string | null>(null);
+  const nodeDataPatchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const lastAppliedVersionRef = useRef(0);
+
+  const markAppliedVersion = useCallback((version: number) => {
+    lastAppliedVersionRef.current = Math.max(lastAppliedVersionRef.current, version);
+    setLastAppliedVersion((prev) => Math.max(prev, version));
+    setLatestKnownVersion((prev) => Math.max(prev, version));
+  }, []);
+
+  const applyRemoteOperation = useCallback((operationType: string, payload: Record<string, unknown>) => {
+    if (operationType === "NODE_MOVE" && typeof payload.nodeId === "string") {
+      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? { ...node, position: payload.position as AppNode["position"] } : node));
+      return;
+    }
+    if (operationType === "NODE_RESIZE" && typeof payload.nodeId === "string") {
+      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? { ...node, measured: payload.dimensions as AppNode["measured"] } : node));
+      return;
+    }
+    if (operationType === "NODE_DELETE" && typeof payload.nodeId === "string") {
+      setNodes((nds) => nds.filter((node) => node.id !== payload.nodeId));
+      setEdges((eds) => eds.filter((edge) => edge.source !== payload.nodeId && edge.target !== payload.nodeId));
+      return;
+    }
+    if (operationType === "NODE_CREATE" && payload.node) {
+      const node = payload.node as AppNode;
+      setNodes((nds) => nds.some((item) => item.id === node.id) ? nds : [...nds.map((item) => ({ ...item, selected: false })), node]);
+      return;
+    }
+    if ((operationType === "NODE_UPDATE_DATA" || operationType === "TASK_STATUS_PATCH") && typeof payload.nodeId === "string" && payload.patch) {
+      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? { ...node, data: { ...node.data, ...(payload.patch as Record<string, unknown>) } } : node));
+      return;
+    }
+    if (operationType === "ASSET_ATTACH" && typeof payload.nodeId === "string") {
+      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? {
+        ...node,
+        data: {
+          ...node.data,
+          assetId: payload.assetId,
+          assetVersionId: payload.assetVersionId ?? node.data.assetVersionId,
+          previewUrl: payload.previewUrl ?? node.data.previewUrl,
+        },
+      } : node));
+      return;
+    }
+    if (operationType === "EDGE_CREATE" && payload.edge) {
+      const edge = payload.edge as AppEdge;
+      setEdges((eds) => {
+        const nodes = getNodes() as AppNode[];
+        if (!isValidCanvasConnection(edge, nodes)) return eds;
+        if (eds.some((item) => item.id === edge.id || isSameCanvasEdge(item, edge))) return eds;
+        return addEdge(edge, eds);
+      });
+      return;
+    }
+    if (operationType === "EDGE_DELETE" && typeof payload.edgeId === "string") {
+      setEdges((eds) => eds.filter((edge) => edge.id !== payload.edgeId));
+      return;
+    }
+    if (operationType === "CANVAS_CLEAR") {
+      setNodes(defaultNodes());
+      setEdges([]);
+    }
+  }, [getNodes, setEdges, setNodes]);
+
+  const hydrateRemoteSnapshot = useCallback((snapshot: Parameters<typeof snapshotRecordToCanvasState>[0]) => {
+    const state = snapshotRecordToCanvasState(snapshot);
+    if (!state) return;
+    setNodes(state.nodes.map(migrateNode));
+    setEdges(state.edges.map(migrateEdge));
+    if (state.viewport) setViewport(state.viewport);
+    if (typeof snapshot?.version === "number") markAppliedVersion(snapshot.version);
+  }, [markAppliedVersion, setEdges, setNodes, setViewport]);
+
+  const applyOperationRecord = useCallback((operationRecord: { clientId: string; nextVersion: number; operationType: string; operationJson: string }) => {
+    setLatestKnownVersion((prev) => Math.max(prev, operationRecord.nextVersion));
+    if (operationRecord.clientId !== clientId) {
+      try {
+        const operation = JSON.parse(operationRecord.operationJson) as { type?: string; payload?: Record<string, unknown> };
+        applyRemoteOperation(operation.type ?? operationRecord.operationType, operation.payload ?? {});
+      } catch {
+      }
+    }
+    markAppliedVersion(operationRecord.nextVersion);
+  }, [applyRemoteOperation, clientId, markAppliedVersion]);
+
+  const syncFromVersion = useCallback((afterVersion: number) => {
+    if (!activeProjectId) return;
+    canvasApi.syncOperations(activeProjectId, afterVersion)
+      .then((syncResult) => {
+        if (syncResult.mode === "snapshot") {
+          hydrateRemoteSnapshot(syncResult.snapshot);
+          return;
+        }
+        for (const operationRecord of syncResult.operations ?? []) {
+          applyOperationRecord(operationRecord);
+        }
+        if (typeof syncResult.toVersion === "number") {
+          setLatestKnownVersion((prev) => Math.max(prev, syncResult.toVersion ?? prev));
+        }
+      })
+      .catch(() => undefined);
+  }, [activeProjectId, applyOperationRecord, hydrateRemoteSnapshot]);
+
+  useEffect(() => {
+    const newMessages = canvasRealtime.messages.slice(processedRealtimeMessageCountRef.current);
+    processedRealtimeMessageCountRef.current = canvasRealtime.messages.length;
+    for (const message of newMessages) {
+      if (message.type === "canvas-presence") {
+        if (message.clientId && message.clientId !== clientId) {
+          setRemotePresences((prev) => ({ ...prev, [message.clientId]: { ...message, updatedAt: Date.now() } }));
+        }
+        continue;
+      }
+      if (message.type === "canvas-member-updated" && message.event === "leave" && typeof message.clientId === "string") {
+        setRemotePresences((prev) => {
+          const next = { ...prev };
+          delete next[message.clientId as string];
+          return next;
+        });
+        continue;
+      }
+      if (message.type === "canvas-op-rejected") {
+        if (message.clientId === clientId && typeof message.opId === "string") {
+          canvasOperations.markOperationRejected(message.opId);
+        }
+        syncFromVersion(lastAppliedVersionRef.current);
+        continue;
+      }
+      if (message.type !== "canvas-op-applied") continue;
+      setLatestKnownVersion((prev) => Math.max(prev, message.version));
+      if (message.clientId === clientId && typeof message.opId === "string") {
+        canvasOperations.markOperationAcked(message.opId, message.version);
+      }
+      if (message.version > lastAppliedVersionRef.current + 1) {
+        syncFromVersion(lastAppliedVersionRef.current);
+        continue;
+      }
+      applyOperationRecord({
+        clientId: message.clientId,
+        nextVersion: message.version,
+        operationType: message.operationType,
+        operationJson: message.operationJson,
+      });
+    }
+  }, [applyOperationRecord, canvasOperations, canvasRealtime.messages, clientId, syncFromVersion]);
+
+  useEffect(() => {
+    if (!activeProjectId || !isHydrated || !canvasRealtime.isConnected) return;
+    syncFromVersion(lastAppliedVersionRef.current);
+  }, [activeProjectId, canvasRealtime.isConnected, isHydrated, syncFromVersion]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setRemotePresences((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [presenceClientId, presence] of Object.entries(prev)) {
+          const updatedAt = typeof (presence as CanvasPresence & { updatedAt?: number }).updatedAt === "number"
+            ? (presence as CanvasPresence & { updatedAt: number }).updatedAt
+            : now;
+          if (now - updatedAt > 10_000) {
+            delete next[presenceClientId];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    function handleNodeDataPatch(event: Event) {
+      if (isReadOnly) return;
+      const detail = (event as CustomEvent<NodeDataPatchEventDetail>).detail;
+      if (!detail?.nodeId || !detail.patch) return;
+      const key = `${detail.nodeId}:${Object.keys(detail.patch).sort().join(",")}`;
+      clearTimeout(nodeDataPatchTimersRef.current[key]);
+      nodeDataPatchTimersRef.current[key] = setTimeout(() => {
+        const patch = filterSyncableNodeDataPatch(detail.patch);
+        if (Object.keys(patch).length === 0) {
+          delete nodeDataPatchTimersRef.current[key];
+          return;
+        }
+        canvasOperations.submitOperation("NODE_UPDATE_DATA", {
+          nodeId: detail.nodeId,
+          patch,
+        });
+        delete nodeDataPatchTimersRef.current[key];
+      }, 160);
+    }
+    window.addEventListener("copse:node-data-patch", handleNodeDataPatch);
+    return () => window.removeEventListener("copse:node-data-patch", handleNodeDataPatch);
+  }, [canvasOperations, isReadOnly]);
+
+  useEffect(() => {
+    function handleNodeEditingPresence(event: Event) {
+      const detail = (event as CustomEvent<NodeEditingPresenceEventDetail>).detail;
+      editingNodeIdRef.current = detail?.nodeId ?? null;
+      canvasRealtime.sendPresence({
+        editingNodeId: editingNodeIdRef.current,
+        selectedNodeIds: nodes.filter((node) => node.selected).map((node) => node.id),
+        viewport: getViewport(),
+      });
+    }
+    window.addEventListener("copse:node-editing-presence", handleNodeEditingPresence);
+    return () => window.removeEventListener("copse:node-editing-presence", handleNodeEditingPresence);
+  }, [canvasRealtime, getViewport, nodes]);
+
+  const handleCanvasMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!activeProjectId) return;
+    const now = Date.now();
+    if (now - lastPresenceSentAtRef.current < 120) return;
+    lastPresenceSentAtRef.current = now;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const screenCursor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const cursor = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    canvasRealtime.sendPresence({
+      cursor,
+      screenCursor,
+      selectedNodeIds: nodes.filter((node) => node.selected).map((node) => node.id),
+      editingNodeId: editingNodeIdRef.current,
+      viewport: getViewport(),
+    });
+  }, [activeProjectId, canvasRealtime, getViewport, nodes, screenToFlowPosition]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (routeProjectId) {
-        const existing = getProject(routeProjectId);
-        if (existing) {
-          touchProject(routeProjectId);
-          setActiveProjectId(routeProjectId);
-          return;
-        }
+        setActiveProjectId(routeProjectId);
+        touchProject(routeProjectId);
+        return;
       }
 
       if (projectCreationRef.current) return;
       projectCreationRef.current = true;
-      const project = createProject({ name: "未命名项目", kind: "image" });
-      router.replace(`/create/image?projectId=${encodeURIComponent(project.id)}`);
-      setActiveProjectId(project.id);
+      createServerProject("未命名项目", "image")
+        .then((projectId) => {
+          const id = String(projectId);
+          createProject({ name: "未命名项目", kind: "image" });
+          router.replace(`/create/image?projectId=${encodeURIComponent(id)}`);
+          setActiveProjectId(id);
+        })
+        .catch(() => {
+          const project = createProject({ name: "未命名项目", kind: "image" });
+          router.replace(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+          setActiveProjectId(project.id);
+        });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [routeProjectId, router]);
+  }, [createServerProject, routeProjectId, router]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -451,31 +716,69 @@ function CanvasFlow() {
   );
 
   const undo = useCallback(() => {
+    if (isReadOnly) return;
     const previous = historyPastRef.current.pop();
     if (!previous) return;
     historyFutureRef.current.push(cloneSnapshot(nodes, edges));
     restoreSnapshot(previous);
-  }, [edges, nodes, restoreSnapshot]);
+  }, [edges, isReadOnly, nodes, restoreSnapshot]);
 
   const redo = useCallback(() => {
+    if (isReadOnly) return;
     const next = historyFutureRef.current.pop();
     if (!next) return;
     historyPastRef.current.push(cloneSnapshot(nodes, edges));
     restoreSnapshot(next);
-  }, [edges, nodes, restoreSnapshot]);
+  }, [edges, isReadOnly, nodes, restoreSnapshot]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<AppNode>[]) => {
+      if (isReadOnly) {
+        const selectionChanges = changes.filter((change) => change.type === "select");
+        if (selectionChanges.length > 0) setNodes((nds) => applyNodeChanges(selectionChanges, nds));
+        return;
+      }
       setNodes((nds) => applyNodeChanges(changes, nds));
+      for (const change of changes) {
+        if (change.type === "position" && change.dragging === false && change.position) {
+          canvasOperations.submitOperation("NODE_MOVE", {
+            nodeId: change.id,
+            position: change.position,
+          });
+        }
+        if (change.type === "dimensions" && change.dimensions) {
+          canvasOperations.submitOperation("NODE_RESIZE", {
+            nodeId: change.id,
+            dimensions: change.dimensions,
+          });
+        }
+        if (change.type === "remove") {
+          canvasOperations.submitOperation("NODE_DELETE", {
+            nodeId: change.id,
+          });
+        }
+      }
     },
-    [setNodes]
+    [canvasOperations, isReadOnly, setNodes]
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<AppEdge>[]) => {
+      if (isReadOnly) {
+        const selectionChanges = changes.filter((change) => change.type === "select");
+        if (selectionChanges.length > 0) setEdges((eds) => applyEdgeChanges(selectionChanges, eds));
+        return;
+      }
       setEdges((eds) => applyEdgeChanges(changes, eds));
+      for (const change of changes) {
+        if (change.type === "remove") {
+          canvasOperations.submitOperation("EDGE_DELETE", {
+            edgeId: change.id,
+          });
+        }
+      }
     },
-    [setEdges]
+    [canvasOperations, isReadOnly, setEdges]
   );
 
   useEffect(() => {
@@ -501,8 +804,16 @@ function CanvasFlow() {
 
   // --- Connection handling ---
   const onConnect = useCallback((connection: Connection) => {
-    setEdges((eds) => addEdge({ ...connection, type: "default" }, eds));
-  }, [setEdges]);
+    if (isReadOnly) return;
+    const edge: AppEdge = { ...connection, id: `e-${connection.source}-${connection.target}-${Date.now()}`, type: "default" };
+    let shouldSubmit = false;
+    setEdges((eds) => {
+      if (eds.some((item) => isSameCanvasEdge(item, edge))) return eds;
+      shouldSubmit = true;
+      return addEdge(edge, eds);
+    });
+    if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge });
+  }, [canvasOperations, isReadOnly, setEdges]);
 
   // Hydrate from localStorage + IndexedDB when the project changes
   useEffect(() => {
@@ -515,7 +826,16 @@ function CanvasFlow() {
       historyFutureRef.current = [];
       lastHistorySignatureRef.current = null;
 
-      const saved = loadCanvas(activeProjectId);
+      let saved = loadCanvas(activeProjectId);
+      try {
+        const serverResult = await loadProject(activeProjectId);
+        saved = serverResult.state ?? saved;
+        setIsReadOnly(serverResult.project.readonly === true || serverResult.project.canEdit === false);
+        setProjectRole(serverResult.project.role ?? null);
+        canvasApi.getProjectMembers(activeProjectId).then(setProjectMembers).catch(() => setProjectMembers([]));
+        markAppliedVersion(serverResult.project.currentVersion ?? 0);
+      } catch {
+      }
       if (!saved) {
         if (!cancelled) {
           setNodes(defaultNodes());
@@ -583,7 +903,7 @@ function CanvasFlow() {
 
     hydrate();
     return () => { cancelled = true; };
-  }, [activeProjectId, setNodes, setEdges, setViewport]);
+  }, [activeProjectId, loadProject, markAppliedVersion, setNodes, setEdges, setViewport]);
 
   // Debounced save — only after hydration completes
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -593,17 +913,30 @@ function CanvasFlow() {
     saveTimer.current = setTimeout(() => {
       try {
         saveCanvas({ nodes, edges, viewport: getViewport() }, activeProjectId);
-        updateProject(activeProjectId, summarizeCanvas(nodes));
+        if (!isReadOnly && canvasOperations.pendingOperationCount === 0) {
+          saveSnapshot(activeProjectId, {
+            nodes,
+            edges,
+            viewport: getViewport(),
+            baseVersion: lastAppliedVersionRef.current,
+            clientId,
+            ...summarizeCanvas(nodes),
+          }).then((snapshot) => {
+            markAppliedVersion(snapshot.version);
+          }).catch(() => syncFromVersion(lastAppliedVersionRef.current));
+          updateProject(activeProjectId, summarizeCanvas(nodes));
+        }
         setSaveError("");
       } catch {
         setSaveError("图片太大，当前浏览器无法保存到本地草稿");
       }
     }, 500);
     return () => clearTimeout(saveTimer.current);
-  }, [activeProjectId, isHydrated, nodes, edges, getViewport]);
+  }, [activeProjectId, canvasOperations.pendingOperationCount, clientId, isHydrated, isReadOnly, markAppliedVersion, nodes, edges, getViewport, saveSnapshot, syncFromVersion]);
 
   // --- Add nodes ---
   const addImageDraftNode = useCallback((position?: { x: number; y: number }) => {
+    if (isReadOnly) return null;
     const center = position ?? screenToFlowPosition({
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
@@ -635,10 +968,12 @@ function CanvasFlow() {
       selected: true,
     };
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
-  }, [getNodes, screenToFlowPosition, setNodes]);
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
   const addTextNode = useCallback((position?: { x: number; y: number }) => {
+    if (isReadOnly) return null;
     const center = position ?? screenToFlowPosition({
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
@@ -666,10 +1001,12 @@ function CanvasFlow() {
       selected: true,
     };
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
-  }, [getNodes, screenToFlowPosition, setNodes]);
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
   const addVideoNode = useCallback((position?: { x: number; y: number }) => {
+    if (isReadOnly) return null;
     const center = position ?? screenToFlowPosition({
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
@@ -709,8 +1046,9 @@ function CanvasFlow() {
       selected: true,
     };
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
-  }, [getNodes, screenToFlowPosition, setNodes]);
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
   const closeReferencePicker = useCallback(() => {
     window.dispatchEvent(new CustomEvent<ReferencePickerEventDetail>("copse:reference-picker", {
@@ -740,6 +1078,7 @@ function CanvasFlow() {
 
   const handleFiles = useCallback(
     async (files: File[], position?: { x: number; y: number }) => {
+      if (isReadOnly) return;
       const center = position ?? screenToFlowPosition({
         x: window.innerWidth / 2,
         y: window.innerHeight / 2,
@@ -755,7 +1094,11 @@ function CanvasFlow() {
             y: center.y + i * 80 - ((files.length - 1) * 40),
           };
           if (isAcceptedImageType(file.type)) {
-            const imageData: ImageNodeData = await fileToImageNodeData(file);
+            let imageData: ImageNodeData = await fileToImageNodeData(file);
+            try {
+              imageData = await attachImageAsset(file, imageData);
+            } catch {
+            }
             await saveImage(imageData);
             newNodes.push({
               id: imageData.imageId,
@@ -771,7 +1114,12 @@ function CanvasFlow() {
             continue;
           }
           if (isAcceptedVideoFile(file)) {
-            const { data: videoData, blob } = await fileToVideoNodeData(file);
+            const { data, blob } = await fileToVideoNodeData(file);
+            let videoData = data;
+            try {
+              videoData = await attachVideoAsset(file, videoData);
+            } catch {
+            }
             await saveVideo(videoData, blob);
             newNodes.push({
               id: videoData.videoId ?? `uploaded_video_${Date.now()}`,
@@ -792,9 +1140,21 @@ function CanvasFlow() {
       }
       if (newNodes.length > 0) {
         setNodes((nds) => [...nds, ...newNodes]);
+        for (const node of newNodes) {
+          canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(node) });
+          if ((node.data as ImageNodeData | VideoNodeData).assetId) {
+            const mediaData = node.data as ImageNodeData | VideoNodeData;
+            canvasApi.bindNodeAsset(activeProjectId, node.id, {
+              assetId: mediaData.assetId!,
+              assetVersionId: mediaData.assetVersionId ?? null,
+              previewUrl: mediaData.previewUrl ?? null,
+              usageType: "source",
+            }).catch(() => undefined);
+          }
+        }
       }
     },
-    [getNodes, screenToFlowPosition, setNodes]
+    [activeProjectId, canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]
   );
 
   const handleFileInputChange = useCallback(
@@ -811,10 +1171,11 @@ function CanvasFlow() {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (isReadOnly) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
     setIsDragOver(true);
-  }, []);
+  }, [isReadOnly]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -837,6 +1198,7 @@ function CanvasFlow() {
   // --- Paste from clipboard (keyboard) ---
   const handlePaste = useCallback(
     (e: ClipboardEvent) => {
+      if (isReadOnly) return;
       if (isEditableElement(e.target)) return;
       const files = getImageFilesFromPasteEvent(e);
       if (files.length === 0) return;
@@ -844,7 +1206,7 @@ function CanvasFlow() {
       const pos = screenToFlowPosition(lastMouseRef.current);
       handleFiles(files, pos);
     },
-    [screenToFlowPosition, handleFiles]
+    [handleFiles, isReadOnly, screenToFlowPosition]
   );
 
   useEffect(() => {
@@ -879,6 +1241,7 @@ function CanvasFlow() {
   }, []);
 
   const handleMenuPaste = useCallback(async () => {
+    if (isReadOnly) return;
     const files = await getImageFilesFromClipboardAPI();
     if (files && files.length > 0) {
       const pos = screenToFlowPosition(contextMenu);
@@ -888,7 +1251,7 @@ function CanvasFlow() {
       setPasteToast("请使用 ⌘V 粘贴图片");
       setTimeout(() => setPasteToast(""), 2500);
     }
-  }, [contextMenu, screenToFlowPosition, handleFiles, setPasteToast]);
+  }, [contextMenu, screenToFlowPosition, handleFiles, isReadOnly, setPasteToast]);
 
   const handleMenuZoomIn = useCallback(() => { zoomIn({ duration: 200 }); }, [zoomIn]);
   const handleMenuZoomOut = useCallback(() => { zoomOut({ duration: 200 }); }, [zoomOut]);
@@ -909,6 +1272,7 @@ function CanvasFlow() {
       origin?: { nodeId: string; direction: LinkedCreateDirection },
       preview?: PendingConnectionPreview | null
     ) => {
+      if (isReadOnly) return;
       const originNode = origin ? nodes.find((node) => node.id === origin.nodeId) : undefined;
       if (origin && getCreateKindsForOrigin(originNode?.type, origin.direction).length === 0) return;
 
@@ -926,7 +1290,7 @@ function CanvasFlow() {
       });
       setPendingConnectionPreview(preview ?? null);
     },
-    [closeContextMenu, closeReferencePicker, nodes, screenToFlowPosition]
+    [closeContextMenu, closeReferencePicker, isReadOnly, nodes, screenToFlowPosition]
   );
 
   const createNodeAtMenu = useCallback(
@@ -939,6 +1303,8 @@ function CanvasFlow() {
             ? addImageDraftNode(position)
             : addVideoNode(position);
 
+      if (!newNode) return;
+
       if (createMenu.originNodeId && createMenu.direction) {
         const connection =
           createMenu.direction === "incoming"
@@ -950,28 +1316,30 @@ function CanvasFlow() {
         ];
 
         if (isValidCanvasConnection(connection, connectionNodes)) {
+          const edge: AppEdge = {
+            ...connection,
+            id: `e-${connection.source}-${connection.target}-${Date.now()}`,
+            type: "default",
+          };
+          let shouldSubmit = false;
           setEdges((eds) => {
             const exists = eds.some((edge) => edge.source === connection.source && edge.target === connection.target);
             if (exists) return eds;
-            return addEdge(
-              {
-                ...connection,
-                id: `e-${connection.source}-${connection.target}-${Date.now()}`,
-                type: "default",
-              },
-              eds
-            );
+            shouldSubmit = true;
+            return addEdge(edge, eds);
           });
+          if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge });
         }
       }
 
       closeCreateMenu();
     },
-    [addImageDraftNode, addTextNode, addVideoNode, closeCreateMenu, createMenu, getNodes, setEdges]
+    [addImageDraftNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
   );
 
   const handleConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+      if (isReadOnly) return;
       window.dispatchEvent(new CustomEvent("copse:canvas-interaction"));
       if (connectionState.toHandle || !connectionState.from || !connectionState.fromNode?.id || !connectionState.fromHandle?.type) return;
 
@@ -990,7 +1358,7 @@ function CanvasFlow() {
         direction,
       });
     },
-    [flowToScreenPosition, openCreateMenuAt]
+    [flowToScreenPosition, isReadOnly, openCreateMenuAt]
   );
 
   useEffect(() => {
@@ -1011,19 +1379,21 @@ function CanvasFlow() {
   const [confirmClear, setConfirmClear] = useState(false);
 
   const handleClear = useCallback(() => {
+    if (isReadOnly) return;
     if (!confirmClear) {
       setConfirmClear(true);
       return;
     }
     closeReferencePicker();
     closeCreateMenu();
+    canvasOperations.submitOperation("CANVAS_CLEAR", {});
     setNodes(defaultNodes());
     setEdges([]);
     clearCanvas(activeProjectId);
     clearImages();
     clearVideos();
     setConfirmClear(false);
-  }, [activeProjectId, closeCreateMenu, closeReferencePicker, confirmClear, setNodes, setEdges]);
+  }, [activeProjectId, canvasOperations, closeCreateMenu, closeReferencePicker, confirmClear, isReadOnly, setNodes, setEdges]);
 
   useEffect(() => {
     if (!confirmClear) return;
@@ -1065,6 +1435,7 @@ function CanvasFlow() {
   return (
     <div
       className="relative h-full w-full"
+      onMouseMove={handleCanvasMouseMove}
       onContextMenu={handleContextMenu}
       onDoubleClick={(event) => {
         const target = event.target as HTMLElement;
@@ -1094,7 +1465,7 @@ function CanvasFlow() {
         selectionOnDrag
         selectionMode={SelectionMode.Partial}
         zoomOnDoubleClick={false}
-        deleteKeyCode="Backspace"
+        deleteKeyCode={isReadOnly ? null : "Backspace"}
         fitView
         defaultEdgeOptions={{
           type: "default",
@@ -1117,10 +1488,13 @@ function CanvasFlow() {
           closeReferencePicker();
           window.dispatchEvent(new CustomEvent("copse:canvas-interaction"));
         }}
-        onNodeDragStart={() => { window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
-        onConnectStart={() => { setPendingConnectionPreview(null); window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
+        nodesDraggable={!isReadOnly}
+        nodesConnectable={!isReadOnly}
+        elementsSelectable
+        onNodeDragStart={() => { if (!isReadOnly) window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
+        onConnectStart={() => { if (isReadOnly) return; setPendingConnectionPreview(null); window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
         onConnectEnd={handleConnectEnd}
-        isValidConnection={(connection) => isValidCanvasConnection(connection, nodes)}
+        isValidConnection={(connection) => !isReadOnly && isValidCanvasConnection(connection, nodes)}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#eceae4" />
         <Controls
@@ -1133,6 +1507,56 @@ function CanvasFlow() {
           }}
         />
       </ReactFlow>
+
+      {Object.entries(remotePresences).map(([presenceClientId, presence]) => {
+        const cursor = presence.screenCursor;
+        if (!cursor) return null;
+        const color = getPresenceColor(presenceClientId);
+        return (
+          <div
+            key={presenceClientId}
+            className="pointer-events-none absolute z-50"
+            style={{ left: cursor.x, top: cursor.y, color }}
+          >
+            <div
+              className="h-0 w-0 border-y-[6px] border-l-[10px] border-y-transparent"
+              style={{ borderLeftColor: color }}
+            />
+            <div
+              className="mt-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm"
+              style={{ backgroundColor: color }}
+            >
+              协作者
+            </div>
+          </div>
+        );
+      })}
+
+      {Object.keys(remotePresences).length > 0 && (
+        <div className="pointer-events-none absolute right-4 top-4 z-50 rounded-full border border-border-warm bg-background px-3 py-1.5 text-xs text-charcoal/70 shadow-sm">
+          {Object.keys(remotePresences).length} 人在线协作 · {projectMembers.length || Object.keys(remotePresences).length + 1} 位成员
+        </div>
+      )}
+
+      {Object.entries(remotePresences).map(([presenceClientId, presence]) => {
+        if (!presence.editingNodeId) return null;
+        const color = getPresenceColor(presenceClientId);
+        return (
+          <div
+            key={`${presenceClientId}:${presence.editingNodeId}`}
+            className="pointer-events-none absolute left-4 top-16 z-50 rounded-full px-3 py-1.5 text-xs font-medium text-white shadow-sm"
+            style={{ backgroundColor: color }}
+          >
+            协作者正在编辑 {presence.editingNodeId}
+          </div>
+        );
+      })}
+
+      {isReadOnly && (
+        <div className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border border-border-warm bg-background px-3 py-1.5 text-xs text-charcoal/70 shadow-sm">
+          只读模式{projectRole ? ` · ${projectRole}` : ""}
+        </div>
+      )}
 
       {createMenu.visible && pendingConnectionPreview && (
         <svg className="pointer-events-none fixed inset-0 z-40 overflow-visible" aria-hidden="true">
@@ -1221,7 +1645,7 @@ function CanvasFlow() {
       </AnimatePresence>
 
       {/* Floating toolbar */}
-      {!referencePickerPromptId && (
+      {!referencePickerPromptId && !isReadOnly && (
         <div className="pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-border-warm bg-background px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
           <ToolbarIconButton
             label="新建 Image"

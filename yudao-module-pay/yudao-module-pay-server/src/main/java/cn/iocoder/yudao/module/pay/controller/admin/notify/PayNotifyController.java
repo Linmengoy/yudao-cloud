@@ -8,6 +8,7 @@ import cn.iocoder.yudao.module.pay.framework.pay.core.client.PayClient;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.dto.order.PayOrderRespDTO;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.dto.refund.PayRefundRespDTO;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.dto.transfer.PayTransferRespDTO;
+import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.easypay.EasyPayClientConfig;
 import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
 import cn.iocoder.yudao.module.pay.controller.admin.notify.vo.PayNotifyTaskDetailRespVO;
 import cn.iocoder.yudao.module.pay.controller.admin.notify.vo.PayNotifyTaskPageReqVO;
@@ -79,6 +80,9 @@ public class PayNotifyController {
         // 2. 解析通知数据
         PayOrderRespDTO notify = payClient.parseOrderNotify(params, body, headers);
         orderService.notifyOrder(channelId, notify);
+        if (payClient.getConfig() instanceof EasyPayClientConfig config) {
+            return config.getSuccessResponse();
+        }
         return "success";
     }
 

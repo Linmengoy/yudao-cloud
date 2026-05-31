@@ -176,3 +176,105 @@ CREATE TABLE IF NOT EXISTS `aigc_workflow_log` (
   KEY `idx_instance_node` (`workflow_instance_id`, `node_instance_id`),
   KEY `idx_user_time` (`user_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 工作流日志表';
+
+CREATE TABLE IF NOT EXISTS `aigc_canvas_project` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `owner_user_id` bigint NOT NULL COMMENT '拥有者用户 ID',
+  `name` varchar(128) NOT NULL COMMENT '项目名称',
+  `kind` varchar(32) NOT NULL DEFAULT 'image' COMMENT '项目类型',
+  `cover_asset_id` bigint DEFAULT NULL COMMENT '封面资产 ID',
+  `current_version` bigint NOT NULL DEFAULT 0 COMMENT '当前画布版本',
+  `latest_snapshot_id` bigint DEFAULT NULL COMMENT '最新快照 ID',
+  `status` varchar(32) NOT NULL DEFAULT 'NORMAL' COMMENT '项目状态',
+  `node_count` int NOT NULL DEFAULT 0 COMMENT '节点数',
+  `asset_count` int NOT NULL DEFAULT 0 COMMENT '资产数',
+  `creator` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  KEY `idx_owner_update_time` (`tenant_id`, `owner_user_id`, `update_time`),
+  KEY `idx_status` (`tenant_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 画布项目表';
+
+CREATE TABLE IF NOT EXISTS `aigc_canvas_member` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `project_id` bigint NOT NULL COMMENT '项目 ID',
+  `user_id` bigint NOT NULL COMMENT '用户 ID',
+  `role` varchar(32) NOT NULL COMMENT '角色 owner/editor/viewer',
+  `invite_user_id` bigint DEFAULT NULL COMMENT '邀请人',
+  `joined_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '加入时间',
+  `last_active_time` datetime DEFAULT NULL COMMENT '最后活跃时间',
+  `creator` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_user` (`tenant_id`, `project_id`, `user_id`),
+  KEY `idx_user` (`tenant_id`, `user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 画布成员表';
+
+CREATE TABLE IF NOT EXISTS `aigc_canvas_snapshot` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `project_id` bigint NOT NULL COMMENT '项目 ID',
+  `version` bigint NOT NULL COMMENT '快照版本',
+  `nodes_json` json NOT NULL COMMENT '节点 JSON',
+  `edges_json` json NOT NULL COMMENT '连线 JSON',
+  `viewport_json` json DEFAULT NULL COMMENT '视口 JSON',
+  `created_by` bigint DEFAULT NULL COMMENT '创建用户',
+  `creator` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_version` (`tenant_id`, `project_id`, `version`),
+  KEY `idx_project_time` (`tenant_id`, `project_id`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 画布快照表';
+
+CREATE TABLE IF NOT EXISTS `aigc_canvas_operation_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `project_id` bigint NOT NULL COMMENT '项目 ID',
+  `client_id` varchar(128) NOT NULL COMMENT '客户端实例 ID',
+  `op_id` varchar(128) NOT NULL COMMENT '客户端操作 ID',
+  `actor_user_id` bigint NOT NULL COMMENT '操作用户 ID',
+  `base_version` bigint NOT NULL COMMENT '客户端基于版本',
+  `next_version` bigint NOT NULL COMMENT '服务端应用后版本',
+  `operation_type` varchar(64) NOT NULL COMMENT '操作类型',
+  `operation_json` json NOT NULL COMMENT '操作 JSON',
+  `inverse_operation_json` json DEFAULT NULL COMMENT '反向操作 JSON',
+  `creator` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_client_op` (`tenant_id`, `project_id`, `client_id`, `op_id`),
+  UNIQUE KEY `uk_project_next_version` (`tenant_id`, `project_id`, `next_version`),
+  KEY `idx_project_version` (`tenant_id`, `project_id`, `next_version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 画布操作日志表';
+
+CREATE TABLE IF NOT EXISTS `aigc_canvas_asset_ref` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `project_id` bigint NOT NULL COMMENT '项目 ID',
+  `node_id` varchar(128) NOT NULL COMMENT '节点 ID',
+  `asset_id` bigint NOT NULL COMMENT '资产 ID',
+  `usage_type` varchar(64) NOT NULL COMMENT '用途 source/input/output/cover/reference',
+  `source_task_id` bigint DEFAULT NULL COMMENT '来源任务 ID',
+  `creator` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_node_asset_usage` (`tenant_id`, `project_id`, `node_id`, `asset_id`, `usage_type`),
+  KEY `idx_project_node` (`tenant_id`, `project_id`, `node_id`),
+  KEY `idx_asset` (`tenant_id`, `asset_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 画布资产引用表';

@@ -21,6 +21,7 @@ import type {
   AppEdge,
   AppNode,
   ImageNodeData,
+  NodeDataPatchEventDetail,
   PromptNodeData,
   ReferencePickerEventDetail,
   ResultNodeData,
@@ -35,6 +36,7 @@ import { calculateImageSize, normalizeImageSize, type SizeTier } from "@/feature
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import { PriceEstimate } from "@/features/generation/PriceEstimate";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
+import { canvasNodeRunApi, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
@@ -223,6 +225,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const aigcModels = useAigcModels({ type: 2, capability: "TEXT_TO_IMAGE", params });
   const activeModelName = aigcModels.selectedModel?.name ?? data.modelName ?? currentModel.name;
   const activeProviderModel = aigcModels.selectedModel?.model ?? data.providerModel ?? modelId;
+  const imageSrc = data.previewUrl || data.dataUrl;
   const sizeSelection = useMemo(() => getSizeSelection(params.size), [params.size]);
   const [customW, setCustomW] = useState(sizeSelection.customW);
   const [customH, setCustomH] = useState(sizeSelection.customH);
@@ -273,6 +276,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       setNodes((nds) =>
         nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
       );
+      window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
+        detail: { nodeId: id, patch },
+      }));
     },
     [id, setNodes]
   );
@@ -310,26 +316,26 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
   const copyImageToClipboard = useCallback(async () => {
     setNodeMenu((prev) => ({ ...prev, visible: false }));
-    if (!data.dataUrl) return;
+    if (!imageSrc) return;
 
     try {
-      if (data.dataUrl.startsWith("data:") && "ClipboardItem" in window) {
-        const response = await fetch(data.dataUrl);
+      if (imageSrc.startsWith("data:") && "ClipboardItem" in window) {
+        const response = await fetch(imageSrc);
         const blob = await response.blob();
         await navigator.clipboard.write([
           new ClipboardItem({ [blob.type || data.mimeType || "image/png"]: blob }),
         ]);
         return;
       }
-      await navigator.clipboard.writeText(data.dataUrl);
+      await navigator.clipboard.writeText(imageSrc);
     } catch {
       try {
-        await navigator.clipboard.writeText(data.dataUrl);
+        await navigator.clipboard.writeText(imageSrc);
       } catch {
         // Clipboard permissions can be denied by the browser; keep the menu action silent.
       }
     }
-  }, [data.dataUrl, data.mimeType]);
+  }, [imageSrc, data.mimeType]);
 
   const updateParams = useCallback(
     (patch: Record<string, unknown>) => {
@@ -340,8 +346,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           return { ...n, data: { ...d, params: { ...(d.params ?? DEFAULT_PROMPT_DATA.params), ...patch } } };
         })
       );
+      window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
+        detail: { nodeId: id, patch: { params: { ...(data.params ?? DEFAULT_PROMPT_DATA.params), ...patch } } },
+      }));
     },
-    [id, setNodes]
+    [data.params, id, setNodes]
   );
 
   const handleNodeClick = useCallback(
@@ -508,6 +517,32 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       generationCompletedAt: null,
       elapsedMs: null,
     });
+
+    const projectId = new URLSearchParams(window.location.search).get("projectId");
+    if (projectId && selectedAigcModelId) {
+      const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      try {
+        const run = await canvasNodeRunApi.runNode(projectId, id, {
+          clientId,
+          baseVersion: 0,
+          runId: clientId,
+          nodeType: "image",
+          generateType: "IMAGE",
+          generateMode: mode === "edit" ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE",
+          modelId: selectedAigcModelId,
+          prompt: cleanPrompt,
+          inputParams: JSON.stringify({ ...params, inputImageIds: ids }),
+          sync: false,
+        });
+        await waitCanvasNodeRunResult(projectId, id, {
+          taskId: run.taskId,
+          baseVersion: 0,
+          nodeType: "image",
+        });
+        return;
+      } catch {
+      }
+    }
 
     let updates: Partial<ResultNodeData>;
     try {
@@ -703,9 +738,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
               style={{ width: displaySize.width, height: displaySize.height }}
             >
               <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[inherit]">
-                {data.dataUrl ? (
+                {imageSrc ? (
                   <img
-                    src={data.dataUrl}
+                    src={imageSrc}
                     alt={data.fileName}
                     className="size-full object-contain"
                     draggable={false}

@@ -5,10 +5,11 @@ import type { Node, NodeProps } from "@xyflow/react";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowUp, Loader2, Sparkles, Text, X } from "lucide-react";
-import type { TextNodeData } from "./types";
+import type { NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, TextNodeData } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
+import { canvasNodeRunApi, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { cn } from "@/lib/utils";
 
 type TextNodeProps = NodeProps<Node<TextNodeData, "text">>;
@@ -36,6 +37,12 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
 
+  const sendEditingPresence = useCallback((nodeId: string | null) => {
+    window.dispatchEvent(new CustomEvent<NodeEditingPresenceEventDetail>("copse:node-editing-presence", {
+      detail: { nodeId },
+    }));
+  }, []);
+
   const updateData = useCallback(
     (patch: Partial<TextNodeData>) => {
       setNodes((nds) =>
@@ -43,14 +50,18 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
           node.id === id ? { ...node, data: { ...node.data, ...patch } } : node
         )
       );
+      window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
+        detail: { nodeId: id, patch },
+      }));
     },
     [id, setNodes]
   );
 
   const commitContent = useCallback(() => {
     setEditing(false);
+    sendEditingPresence(null);
     updateData({ content: draftContent, updatedAt: new Date().toISOString() });
-  }, [draftContent, updateData]);
+  }, [draftContent, sendEditingPresence, updateData]);
 
   const handleGenerate = useCallback(async () => {
     const prompt = data.prompt.trim();
@@ -63,6 +74,34 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
 
     const startedAt = new Date().toISOString();
     updateData({ status: "pending", taskId: null, errorMessage: null, generationStartedAt: startedAt, generationCompletedAt: null, elapsedMs: null });
+
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get("projectId");
+    const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    if (projectId) {
+      try {
+        await canvasNodeRunApi.runNode(projectId, id, {
+          clientId,
+          baseVersion: 0,
+          runId: clientId,
+          nodeType: "text",
+          generateType: "TEXT",
+          generateMode: "TEXT_GENERATE",
+          modelId: data.aigcModelId,
+          prompt,
+          inputParams: JSON.stringify({ previousContent: data.content }),
+          sync: false,
+        }).then(async (run) => {
+          await waitCanvasNodeRunResult(projectId, id, {
+            taskId: run.taskId,
+            baseVersion: 0,
+            nodeType: "text",
+          });
+        });
+        return;
+      } catch {
+      }
+    }
 
     try {
       const submit = await generationApi.generateText({
@@ -103,7 +142,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [data.aigcModelId, data.content, data.prompt, isGenerating, updateData]);
+  }, [data.aigcModelId, data.content, data.prompt, id, isGenerating, updateData]);
 
   useEffect(() => {
     if (!resizing) return;
@@ -152,6 +191,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
           event.stopPropagation();
           setDraftContent(data.content);
           setEditing(true);
+          sendEditingPresence(id);
         }}
       >
         {editing ? (
@@ -166,6 +206,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
               }
               if (event.key === "Escape") {
                 setEditing(false);
+                sendEditingPresence(null);
                 setDraftContent(data.content);
               }
             }}
