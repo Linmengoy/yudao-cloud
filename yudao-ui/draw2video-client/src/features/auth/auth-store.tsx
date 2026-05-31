@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authReason: null,
   });
   const [modalOpen, setModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<AuthMode>("sms");
+  const [authMode, setAuthMode] = useState<AuthMode>("email");
   const [redirectTo, setRedirectTo] = useState<string | null>(null);
 
   const fetchUser = useCallback(async () => {
@@ -102,11 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const completeLogin = useCallback(async () => {
     await fetchUser();
     setModalOpen(false);
-    const target = redirectTo;
+    const target = redirectTo ?? "/app";
     setRedirectTo(null);
-    if (target) {
-      router.push(target);
-    }
+    router.push(target);
   }, [fetchUser, redirectTo, router]);
 
   useEffect(() => {
@@ -150,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return onAuthExpired(() => {
       clearAuthState("expired");
-      setAuthMode("sms");
+      setAuthMode("email");
       setRedirectTo(pathname);
       setModalOpen(true);
     });
@@ -225,7 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return wallet;
   }, []);
 
-  const openModal = useCallback((mode: AuthMode = "sms", nextRedirectTo: string | null = null, reason: AuthReason = "required") => {
+  const openModal = useCallback((mode: AuthMode = "email", nextRedirectTo: string | null = null, reason: AuthReason = "required") => {
     setAuthMode(mode);
     setRedirectTo(nextRedirectTo);
     setState((current) => ({ ...current, authReason: reason }));

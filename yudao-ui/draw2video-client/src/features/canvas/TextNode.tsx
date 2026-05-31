@@ -36,6 +36,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
   const isGenerating = data.status === "pending";
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
+  const fixedUiScale = 1 / zoom;
 
   const sendEditingPresence = useCallback((nodeId: string | null) => {
     window.dispatchEvent(new CustomEvent<NodeEditingPresenceEventDetail>("copse:node-editing-presence", {
@@ -171,7 +172,14 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
 
   return (
     <div className="relative" style={{ width: data.width }}>
-      <div className="mb-2 flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray">
+      <div
+        className="flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
+        style={{
+          marginBottom: 8 * fixedUiScale,
+          transform: `scale(${fixedUiScale})`,
+          transformOrigin: "bottom left",
+        }}
+      >
         <Text className="size-4" />
         <span>Text</span>
       </div>
@@ -183,7 +191,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
         className={cn(
-          "group relative rounded-xl border bg-muted shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
+          "group relative rounded-xl border bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
           selected ? "border-charcoal/60 ring-2 ring-charcoal/35" : "border-border-warm"
         )}
         style={{ width: data.width, height: data.height }}
@@ -268,12 +276,17 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
       <AnimatePresence>
         {isOnlySelectedNode && !dragging && (
           <motion.div
-            initial={{ opacity: 0, y: -8, scale: 0.99 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.99 }}
+            initial={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
+            animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
+            exit={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="nodrag nowheel mt-3 rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
-            style={{ width: COMPOSER_WIDTH, marginLeft: (data.width - COMPOSER_WIDTH) / 2 }}
+            className="nodrag nowheel rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
+            style={{
+              width: COMPOSER_WIDTH,
+              marginLeft: (data.width - COMPOSER_WIDTH) / 2,
+              marginTop: 12 * fixedUiScale,
+              transformOrigin: "top center",
+            }}
           >
           <textarea
             value={data.prompt}
