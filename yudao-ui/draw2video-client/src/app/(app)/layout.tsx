@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/auth-store";
+import { ThemeToggle } from "@/features/theme/ThemeToggle";
 
 const sidebarLinks = [
   { href: "/app", icon: Home, label: "首页" },
@@ -134,6 +135,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <HelpCircle className="size-5" />
           </Link>
+
+          <ThemeToggle className="size-10 rounded-lg p-0" />
 
           <Link
             href="/wallet"

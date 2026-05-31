@@ -7,6 +7,7 @@ import { Menu, X, ChevronRight, LogOut, Settings, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/auth-store";
 import { formatPoints } from "@/features/wallet/wallet-api";
+import { ThemeToggle } from "@/features/theme/ThemeToggle";
 
 const guestLinks = [
   { href: "/", label: "首页" },
@@ -65,7 +66,7 @@ export default function MarketingLayout({
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-border-warm bg-background">
+      <header className="sticky top-0 z-50 border-b border-border-warm bg-background/95">
         <div className="mx-auto flex h-14 max-w-[1200px] items-center justify-between px-4">
           <Link href="/" className="text-lg font-semibold text-charcoal">
             Copse
@@ -87,25 +88,23 @@ export default function MarketingLayout({
           </nav>
 
           <div className="hidden items-center gap-3 md:flex">
+            <ThemeToggle />
             {loggedIn ? (
               <>
-                <Link
-                  href="/app"
-                  className="inline-flex items-center gap-1 rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80"
-                >
+                <Link href="/app" className="primary-button inline-flex items-center gap-1">
                   进入工作台
                   <ChevronRight className="size-4" />
                 </Link>
                 <div className="relative" ref={accountRef}>
                   <button
                     onClick={() => setAccountOpen((open) => !open)}
-                    className="flex size-9 items-center justify-center rounded-full bg-muted text-xs font-medium text-charcoal hover:bg-border-warm"
+                    className="flex size-9 items-center justify-center rounded-full bg-muted text-xs font-medium text-charcoal transition-colors hover:bg-border-warm focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
                     aria-label="打开账户菜单"
                   >
                     {user?.nickname?.[0] ?? "U"}
                   </button>
                   {accountOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-border-warm bg-background py-2 shadow-lg">
+                    <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-border-warm bg-background py-2 shadow-[rgba(0,0,0,0.1)_0px_4px_12px]">
                       <div className="border-b border-border-warm px-4 pb-3 pt-2">
                         <p className="truncate text-sm font-medium text-charcoal">{user?.nickname ?? "用户"}</p>
                         <p className="mt-1 truncate text-xs text-muted-gray">{maskAccount(user?.email ?? user?.mobile)}</p>
@@ -141,7 +140,7 @@ export default function MarketingLayout({
             ) : (
               <button
                 onClick={() => openModal("email")}
-                className="inline-flex items-center rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80"
+                className="primary-button inline-flex items-center"
               >
                 登录 / 注册
               </button>
@@ -150,7 +149,7 @@ export default function MarketingLayout({
 
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="inline-flex items-center justify-center rounded-md p-2 text-charcoal hover:bg-muted md:hidden"
+            className="inline-flex items-center justify-center rounded-md p-2 text-charcoal hover:bg-muted focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px] md:hidden"
             aria-label="打开导航菜单"
           >
             {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
@@ -190,11 +189,12 @@ export default function MarketingLayout({
                     setMobileOpen(false);
                     openModal("email");
                   }}
-                  className="inline-flex w-fit items-center rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px]"
+                  className="primary-button inline-flex w-fit items-center"
                 >
                   登录 / 注册
                 </button>
               )}
+              <ThemeToggle showLabel className="w-fit px-0 py-0 hover:bg-transparent" />
             </div>
           </nav>
         )}

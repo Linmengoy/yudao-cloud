@@ -1122,7 +1122,7 @@ function CanvasFlow() {
         onConnectEnd={handleConnectEnd}
         isValidConnection={(connection) => isValidCanvasConnection(connection, nodes)}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#eceae4" />
+        <Background variant={BackgroundVariant.Dots} gap={36} size={1.8} color="var(--canvas-dot)" />
         <Controls
           showInteractive={false}
           style={{

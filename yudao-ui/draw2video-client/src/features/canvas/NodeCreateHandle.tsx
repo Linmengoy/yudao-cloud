@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
-import { Handle, Position } from "@xyflow/react";
+import { Handle, Position, useStore } from "@xyflow/react";
 import { Plus } from "lucide-react";
 import type { NodeCreateMenuEventDetail } from "./types";
 import { cn } from "@/lib/utils";
@@ -41,10 +41,15 @@ function dispatchCreateMenu(
 }
 
 export function NodeCreateHandle({ nodeId, direction, enabled = true, selected = false, showButton = true }: NodeCreateHandleProps) {
+  const zoom = useStore((s) => s.transform[2] || 1);
+  const toFlowUnit = (value: number) => value / zoom;
   const isIncoming = direction === "incoming";
   const label = isIncoming ? "添加上游卡片" : "创建下游卡片";
-  const visualLeft = isIncoming ? -52 : 32;
-  const zoneLeft = visualLeft + BUTTON_SIZE / 2 - HOVER_ZONE_WIDTH / 2;
+  const buttonSize = toFlowUnit(BUTTON_SIZE);
+  const hoverZoneWidth = toFlowUnit(HOVER_ZONE_WIDTH);
+  const hoverZoneHeight = toFlowUnit(HOVER_ZONE_HEIGHT);
+  const visualLeft = toFlowUnit(isIncoming ? -52 : 32);
+  const zoneLeft = visualLeft + buttonSize / 2 - hoverZoneWidth / 2;
   const [followOffset, setFollowOffset] = useState({ x: 0, y: 0 });
   const [isFollowing, setIsFollowing] = useState(false);
 
@@ -101,8 +106,8 @@ export function NodeCreateHandle({ nodeId, direction, enabled = true, selected =
           }}
           style={{
             left: zoneLeft,
-            width: HOVER_ZONE_WIDTH,
-            height: HOVER_ZONE_HEIGHT,
+            width: hoverZoneWidth,
+            height: hoverZoneHeight,
           }}
         >
           <span
@@ -112,11 +117,16 @@ export function NodeCreateHandle({ nodeId, direction, enabled = true, selected =
               !isFollowing && "transition-[left,top,opacity,border-color,color] duration-200 ease-out"
             )}
             style={{
-              left: HOVER_ZONE_WIDTH / 2 - BUTTON_SIZE / 2 + followOffset.x,
-              top: HOVER_ZONE_HEIGHT / 2 - BUTTON_SIZE / 2 + followOffset.y,
+              left: hoverZoneWidth / 2 - buttonSize / 2 + toFlowUnit(followOffset.x),
+              top: hoverZoneHeight / 2 - buttonSize / 2 + toFlowUnit(followOffset.y),
+              width: buttonSize,
+              height: buttonSize,
             }}
           >
-            <Plus className="pointer-events-none size-4" />
+            <Plus
+              className="pointer-events-none"
+              style={{ width: toFlowUnit(16), height: toFlowUnit(16) }}
+            />
           </span>
         </span>
       )}

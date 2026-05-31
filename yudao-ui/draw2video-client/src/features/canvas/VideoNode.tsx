@@ -56,12 +56,6 @@ function isRunningStatus(status: string | null | undefined) {
   return status === "running" || status === "processing" || status === "submitted" || status === "RUNNING" || status === "SYNCING" || status === "DOWNLOADING" || status === "ASSET_CREATING";
 }
 
-function getRunElapsedMs(runStartedAt: string | null | undefined, fallbackStartedAtMs: number) {
-  const runStartedAtMs = runStartedAt ? new Date(runStartedAt).getTime() : fallbackStartedAtMs;
-  if (!runStartedAtMs || Number.isNaN(runStartedAtMs)) return null;
-  return Date.now() - runStartedAtMs;
-}
-
 function ratioToSize(ratio: VideoNodeData["ratio"]) {
   const [w, h] = ratio.split(":").map(Number);
   if (!w || !h) return { width: CARD_WIDTH, height: CARD_HEIGHT };
@@ -139,6 +133,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const updateNodeInternals = useUpdateNodeInternals();
   const edges = useStore((s) => s.edges) as AppEdge[];
   const nodes = useStore((s) => s.nodes) as AppNode[];
+  const zoom = useStore((s) => s.transform[2] || 1);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
@@ -167,6 +162,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
+  const fixedUiScale = 1 / zoom;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
@@ -363,10 +359,12 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           initial={false}
           animate={{
             left: displayLeft,
-            top: Math.max(0, displayTop - 28),
+            top: Math.max(0, displayTop - 28 * fixedUiScale),
             width: displaySize.width,
+            scale: fixedUiScale,
           }}
           transition={{ type: "spring", stiffness: 360, damping: 34 }}
+          style={{ transformOrigin: "bottom left" }}
         >
           <Video className="size-4" />
           <span className="line-clamp-1" title={data.fileName}>
@@ -397,7 +395,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               height: { type: "spring", stiffness: 360, damping: 34 },
             }}
             className={cn(
-              "group relative rounded-xl border bg-muted shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
+              "group relative rounded-xl border bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
               selected ? "border-charcoal/60 ring-2 ring-charcoal/35" : "border-border-warm"
             )}
             style={{ width: displaySize.width, height: displaySize.height }}
@@ -453,14 +451,16 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
       <AnimatePresence>
         {isOnlySelectedNode && !dragging && canCompose && (
           <motion.div
-            initial={{ opacity: 0, y: -8, scale: 0.99 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.99 }}
+            initial={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
+            animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
+            exit={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="nodrag nowheel mt-3 rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
+            className="nodrag nowheel rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
             style={{
               width: COMPOSER_WIDTH,
               marginLeft: (PREVIEW_SLOT_WIDTH - COMPOSER_WIDTH) / 2,
+              marginTop: 12 * fixedUiScale,
+              transformOrigin: "top center",
             }}
           >
           <div className="mb-3 flex items-start justify-between gap-3">
