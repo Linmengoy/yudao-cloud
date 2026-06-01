@@ -10,16 +10,19 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSketchSaveReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSnapshotSaveReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasAssetRefDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasMemberDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasOperationLogDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectDO;
+import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasSketchDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasSnapshotDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasMemberMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasAssetRefMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasOperationLogMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasProjectMapper;
+import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasSketchMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasSnapshotMapper;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.AigcCanvasRoomService;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasMemberMessage;
@@ -58,6 +61,8 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     private AigcCanvasMemberMapper memberMapper;
     @Resource
     private AigcCanvasSnapshotMapper snapshotMapper;
+    @Resource
+    private AigcCanvasSketchMapper sketchMapper;
     @Resource
     private AigcCanvasAssetRefMapper assetRefMapper;
     @Resource
@@ -199,6 +204,29 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         projectMapper.updateById(update);
         operationService.invalidateGraphState(project.getId());
         return snapshot;
+    }
+
+    @Override
+    public AigcCanvasSketchDO getSketch(Long projectId, String nodeId, Long userId) {
+        validateReadableProject(projectId, userId);
+        return sketchMapper.selectByProjectIdAndNodeId(projectId, nodeId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigcCanvasSketchDO saveSketch(AigcCanvasSketchSaveReqVO reqVO, Long userId) {
+        validateEditableProject(reqVO.getProjectId(), userId);
+        AigcCanvasSketchDO existed = sketchMapper.selectByProjectIdAndNodeId(reqVO.getProjectId(), reqVO.getNodeId());
+        AigcCanvasSketchDO sketch = BeanUtils.toBean(reqVO, AigcCanvasSketchDO.class);
+        sketch.setMimeType(StrUtil.blankToDefault(reqVO.getMimeType(), "image/png"));
+        sketch.setBackground(StrUtil.blankToDefault(reqVO.getBackground(), "white"));
+        if (existed == null) {
+            sketchMapper.insert(sketch);
+            return sketch;
+        }
+        sketch.setId(existed.getId());
+        sketchMapper.updateById(sketch);
+        return sketchMapper.selectById(existed.getId());
     }
 
     @Override

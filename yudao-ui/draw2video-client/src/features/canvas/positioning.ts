@@ -7,6 +7,7 @@ type Rect = Point & Size;
 const NODE_SIZES: Record<string, Size> = {
   prompt: { width: 380, height: 430 },
   image: { width: 220, height: 260 },
+  sketch: { width: 300, height: 240 },
   result: { width: 260, height: 320 },
   text: { width: 320, height: 260 },
   video: { width: 420, height: 448 },

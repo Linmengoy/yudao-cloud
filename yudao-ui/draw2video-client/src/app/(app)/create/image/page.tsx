@@ -1,6 +1,7 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
+import "tldraw/tldraw.css";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -27,13 +28,14 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
 import { PromptNodeComponent } from "@/features/canvas/PromptNode";
 import { ResultNodeComponent } from "@/features/canvas/ResultNode";
 import { ImageNodeComponent } from "@/features/canvas/ImageNode";
+import { SketchNodeComponent } from "@/features/canvas/SketchNode";
 import { TextNodeComponent } from "@/features/canvas/TextNode";
 import { VideoNodeComponent } from "@/features/canvas/VideoNode";
 import { CanvasSignalEdge } from "@/features/canvas/CanvasSignalEdge";
@@ -55,13 +57,14 @@ import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/Canv
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { createProject, updateProject as updateLocalProject, type ProjectKind } from "@/features/projects/project-store";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, ImagePlus, Share2, Type, Video, Map as MapIcon, Grid3X3, Scan } from "lucide-react";
+import { Plus, Trash2, ImagePlus, Share2, Type, Video, Map as MapIcon, Grid3X3, Scan, PenLine } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
   prompt: PromptNodeComponent,
   result: ResultNodeComponent,
   image: ImageNodeComponent,
+  sketch: SketchNodeComponent,
   text: TextNodeComponent,
   video: VideoNodeComponent,
 } satisfies NodeTypes;
@@ -70,7 +73,7 @@ const CANVAS_EDGE_TYPES = {
   signal: CanvasSignalEdge,
 } satisfies EdgeTypes;
 
-type CreateNodeKind = "text" | "image" | "video";
+type CreateNodeKind = "text" | "image" | "sketch" | "video";
 type LinkedCreateDirection = "incoming" | "outgoing";
 type PendingConnectionPreview = {
   from: { x: number; y: number };
@@ -78,7 +81,7 @@ type PendingConnectionPreview = {
   direction: LinkedCreateDirection;
 };
 
-const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "video"];
+const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video"];
 
 function getPresenceColor(clientId: string) {
   const colors = ["#7c3aed", "#0891b2", "#ea580c", "#16a34a", "#dc2626", "#2563eb"];
@@ -92,6 +95,8 @@ function isValidNodeKindConnection(sourceType: AppNode["type"] | CreateNodeKind,
     (sourceType === "image" && targetType === "image") ||
     (sourceType === "image" && targetType === "video") ||
     (sourceType === "image" && targetType === "text") ||
+    (sourceType === "sketch" && targetType === "image") ||
+    (sourceType === "sketch" && targetType === "video") ||
     (sourceType === "text" && targetType === "image") ||
     (sourceType === "text" && targetType === "text")
   );
@@ -351,6 +356,26 @@ function migrateNode(n: AppNode): AppNode {
       },
     } as AppNode;
   }
+  if (n.type === "sketch") {
+    const d = n.data as Record<string, unknown>;
+    return {
+      ...n,
+      data: {
+        sketchId: typeof d.sketchId === "string" ? d.sketchId : n.id,
+        projectId: typeof d.projectId === "string" || typeof d.projectId === "number" ? d.projectId : null,
+        fileName: typeof d.fileName === "string" ? d.fileName : "Sketch",
+        sceneJson: d.sceneJson,
+        previewUrl: typeof d.previewUrl === "string" ? d.previewUrl : null,
+        dataUrl: typeof d.dataUrl === "string" ? d.dataUrl : "",
+        mimeType: typeof d.mimeType === "string" ? d.mimeType : "image/png",
+        width: typeof d.width === "number" ? d.width : undefined,
+        height: typeof d.height === "number" ? d.height : undefined,
+        background: d.background === "transparent" ? "transparent" : "white",
+        createdAt: typeof d.createdAt === "string" ? d.createdAt : new Date().toISOString(),
+        updatedAt: typeof d.updatedAt === "string" ? d.updatedAt : undefined,
+      },
+    } as AppNode;
+  }
   if (n.type === "video") {
     const d = n.data as Record<string, unknown>;
     const status = d.status === "pending" || d.status === "complete" || d.status === "failed" ? d.status : "idle";
@@ -407,6 +432,8 @@ function isValidCanvasConnection(connection: { source: string; target: string },
     (source?.type === "image" && target?.type === "image" && connection.source !== connection.target) ||
     (source?.type === "image" && target?.type === "video") ||
     (source?.type === "image" && target?.type === "text") ||
+    (source?.type === "sketch" && target?.type === "image") ||
+    (source?.type === "sketch" && target?.type === "video") ||
     (source?.type === "text" && target?.type === "image") ||
     (source?.type === "text" && target?.type === "text" && connection.source !== connection.target) ||
     (source?.type === "image" && target?.type === "prompt") ||
@@ -435,6 +462,7 @@ function summarizeCanvas(nodes: AppNode[]): { kind: ProjectKind; nodeCount: numb
     nodeCount: nodes.length,
     assetCount: nodes.filter((node) => {
       if (node.type === "image") return Boolean((node.data as ImageNodeData).dataUrl);
+      if (node.type === "sketch") return Boolean((node.data as SketchNodeData).dataUrl || (node.data as SketchNodeData).sceneJson);
       if (node.type === "video") return Boolean((node.data as VideoNodeData).videoUrl);
       return false;
     }).length,
@@ -1092,6 +1120,42 @@ function CanvasFlow() {
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
+  const addSketchNode = useCallback((position?: { x: number; y: number }) => {
+    if (isReadOnly) return null;
+    const center = position ?? screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const id = `sketch_${Date.now()}`;
+    const now = new Date().toISOString();
+    const sketchData: SketchNodeData = {
+      sketchId: id,
+      projectId: serverProjectId,
+      fileName: "Sketch",
+      sceneJson: undefined,
+      previewUrl: null,
+      dataUrl: "",
+      mimeType: "image/png",
+      background: "white",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const newNode: AppNode = {
+      id,
+      type: "sketch",
+      position: findOpenNodePosition(
+        { x: center.x - 150, y: center.y - 110 },
+        { width: 300, height: 240 },
+        getNodes() as AppNode[]
+      ),
+      data: sketchData,
+      selected: true,
+    };
+    setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
+    return newNode;
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
+
   const addTextNode = useCallback((position?: { x: number; y: number }) => {
     if (isReadOnly) return null;
     const center = position ?? screenToFlowPosition({
@@ -1446,7 +1510,9 @@ function CanvasFlow() {
           ? addTextNode(position)
           : kind === "image"
             ? addImageDraftNode(position)
-            : addVideoNode(position);
+            : kind === "sketch"
+              ? addSketchNode(position)
+              : addVideoNode(position);
 
       if (!newNode) return;
 
@@ -1479,7 +1545,7 @@ function CanvasFlow() {
 
       closeCreateMenu();
     },
-    [addImageDraftNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
+    [addImageDraftNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
   );
 
   const handleConnectEnd = useCallback(
@@ -1819,8 +1885,9 @@ function CanvasFlow() {
               >
                 {kind === "text" && <Type className="size-4 text-muted-gray" />}
                 {kind === "image" && <ImagePlus className="size-4 text-muted-gray" />}
+                {kind === "sketch" && <PenLine className="size-4 text-muted-gray" />}
                 {kind === "video" && <Video className="size-4 text-muted-gray" />}
-                {kind === "text" ? "Text" : kind === "image" ? "Image" : "Video"}
+                {kind === "text" ? "Text" : kind === "image" ? "Image" : kind === "sketch" ? "Sketch" : "Video"}
               </button>
             ))}
           </motion.div>
@@ -1835,6 +1902,11 @@ function CanvasFlow() {
             icon={<Plus className="size-3.5" />}
             onClick={() => addImageDraftNode()}
             variant="primary"
+          />
+          <ToolbarIconButton
+            label="新建 Sketch"
+            icon={<PenLine className="size-3.5" />}
+            onClick={() => addSketchNode()}
           />
           <ToolbarIconButton
             label="上传素材"

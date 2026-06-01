@@ -1,4 +1,4 @@
-import type { AppNode, AppEdge, PromptNodeData, ResultNodeData, ImageNodeData, InputImageSnapshot, GenerationMode, ResultStatus } from "./types";
+import type { AppNode, AppEdge, PromptNodeData, ResultNodeData, ImageNodeData, InputImageSnapshot, GenerationMode, ResultStatus, SketchNodeData } from "./types";
 import { generationApi } from "@/features/generation/generation-api";
 import { parseGenerateResult } from "@/features/generation/generation-result";
 import type { GenerateResult, GenerateSubmitResponse } from "@/features/generation/generation-types";
@@ -29,23 +29,24 @@ export function resolveInputImages(promptNodeId: string, ctx: GenerateContext): 
   const incoming = ctx.edges.filter((e) => e.target === promptNodeId);
   const imageNodes = incoming
     .map((e) => ctx.nodes.find((n) => n.id === e.source))
-    .filter((n): n is AppNode => n?.type === "image");
+    .filter((n): n is AppNode => n?.type === "image" || n?.type === "sketch");
 
   const snapshots: InputImageSnapshot[] = imageNodes.map((n) => {
-    const d = n.data as ImageNodeData;
+    const d = n.data as ImageNodeData | SketchNodeData;
+    const imageId = n.type === "sketch" ? (d as SketchNodeData).sketchId : (d as ImageNodeData).imageId;
     return {
-      imageId: d.imageId,
+      imageId,
       fileName: d.fileName,
-      dataUrl: d.dataUrl,
+      dataUrl: d.dataUrl || d.previewUrl || "",
       width: d.width,
       height: d.height,
       mimeType: d.mimeType,
     };
-  });
+  }).filter((snapshot) => Boolean(snapshot.dataUrl));
 
   return {
     snapshots,
-    ids: imageNodes.map((n) => (n.data as ImageNodeData).imageId),
+    ids: snapshots.map((snapshot) => snapshot.imageId),
     mode: snapshots.length > 0 ? "edit" : "generate",
   };
 }

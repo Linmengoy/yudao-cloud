@@ -25,6 +25,7 @@ import type {
   PromptNodeData,
   ReferencePickerEventDetail,
   ResultNodeData,
+  SketchNodeData,
 } from "./types";
 import { deleteImage, saveImage } from "./image-store";
 import { DEFAULT_PROMPT_DATA } from "./types";
@@ -239,9 +240,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     .filter((edge) => edge.target === id)
     .map((edge) => {
       const node = nodes.find((n) => n.id === edge.source);
-      return node?.type === "image" ? { edgeId: edge.id, data: node.data as ImageNodeData } : null;
+      return node?.type === "image" || node?.type === "sketch"
+        ? { edgeId: edge.id, data: node.data as ImageNodeData | SketchNodeData }
+        : null;
     })
-    .filter((item): item is { edgeId: string; data: ImageNodeData } => item !== null);
+    .filter((item): item is { edgeId: string; data: ImageNodeData | SketchNodeData } => item !== null);
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
@@ -537,7 +540,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           generateMode: mode === "edit" ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE",
           modelId: selectedAigcModelId,
           prompt: cleanPrompt,
-          inputParams: JSON.stringify({ ...params, inputImageIds: ids }),
+          inputParams: JSON.stringify({ ...params, inputImageIds: ids, inputImages: snapshots }),
           sync: false,
         });
         await waitCanvasNodeRunResult(projectId, id, {
@@ -857,8 +860,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 {connectedImages.map((img) => (
                   <div key={img.edgeId} className="group relative shrink-0">
                     <div className="size-9 overflow-hidden rounded-lg border border-border-warm bg-muted">
-                      {img.data.dataUrl ? (
-                        <img src={img.data.dataUrl} alt={img.data.fileName} className="size-full object-cover" draggable={false} />
+                      {(img.data.previewUrl || img.data.dataUrl) ? (
+                        <img src={img.data.previewUrl || img.data.dataUrl} alt={img.data.fileName} className="size-full object-cover" draggable={false} />
                       ) : (
                         <ImageIcon className="m-2 size-5 text-muted-gray/40" />
                       )}

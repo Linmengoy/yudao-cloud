@@ -62,6 +62,37 @@ export interface BindCanvasAssetInput {
   sourceTaskId?: number | null;
 }
 
+export interface CanvasSketchRecord {
+  id: number;
+  projectId: number;
+  nodeId: string;
+  sceneJson: string;
+  previewUrl?: string | null;
+  previewDataUrl?: string | null;
+  previewAssetId?: number | null;
+  previewAssetVersionId?: number | null;
+  mimeType: string;
+  width?: number | null;
+  height?: number | null;
+  background?: string | null;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface SaveCanvasSketchInput {
+  projectId?: string | number;
+  nodeId?: string;
+  sceneJson: string;
+  previewUrl?: string | null;
+  previewDataUrl?: string | null;
+  previewAssetId?: number | null;
+  previewAssetVersionId?: number | null;
+  mimeType?: string;
+  width?: number | null;
+  height?: number | null;
+  background?: string | null;
+}
+
 function parseJsonArray<T>(value: string | null | undefined): T[] {
   if (!value) return [];
   try {
@@ -158,4 +189,14 @@ export const canvasApi = {
 
   bindNodeAsset: (projectId: string | number, nodeId: string, input: BindCanvasAssetInput) =>
     api.post<number>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/assets`, input),
+
+  getSketch: (projectId: string | number, nodeId: string) =>
+    api.get<CanvasSketchRecord | null>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/sketch`),
+
+  saveSketch: (projectId: string | number, nodeId: string, input: SaveCanvasSketchInput) =>
+    api.put<CanvasSketchRecord>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/sketch`, {
+      ...input,
+      projectId,
+      nodeId,
+    }),
 };
