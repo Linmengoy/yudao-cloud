@@ -43,6 +43,19 @@ function isHttpUrl(value?: string) {
   return !!value && /^https?:\/\//i.test(value);
 }
 
+function isValidId(value: number) {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+function parseNumberParam(value: string | null) {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function getOrderPayAppId(rechargeOrder: AigcRechargeOrder | null, payOrder: PayOrder | null, fallbackPayAppId: number) {
+  return Number(rechargeOrder?.payAppId || payOrder?.appId || fallbackPayAppId || 0);
+}
+
 function openPayContent(displayMode?: string, displayContent?: string) {
   if (!displayContent) return;
   const mode = normalizeDisplayMode(displayMode);
@@ -64,6 +77,13 @@ export default function RechargeCheckoutPage() {
   const rechargeOrderId = Number(searchParams.get("rechargeOrderId") || 0);
   const payOrderId = Number(searchParams.get("payOrderId") || 0);
   const payAppId = Number(searchParams.get("payAppId") || 0);
+  const fallbackSummary = useMemo(() => ({
+    rechargeNo: searchParams.get("rechargeNo") || undefined,
+    payAmount: parseNumberParam(searchParams.get("payAmount")),
+    pointAmount: parseNumberParam(searchParams.get("pointAmount")),
+    giftAmount: parseNumberParam(searchParams.get("giftAmount")),
+    totalPointAmount: parseNumberParam(searchParams.get("totalPointAmount")),
+  }), [searchParams]);
   const [rechargeOrder, setRechargeOrder] = useState<AigcRechargeOrder | null>(null);
   const [payOrder, setPayOrder] = useState<PayOrder | null>(null);
   const [channels, setChannels] = useState<string[]>([]);
@@ -98,7 +118,7 @@ export default function RechargeCheckoutPage() {
   }, [rechargeOrderId, refreshWallet, router]);
 
   const loadCheckout = useCallback(async () => {
-    if (!rechargeOrderId || !payOrderId || !payAppId) {
+    if (!isValidId(rechargeOrderId) || !isValidId(payOrderId)) {
       setError("充值订单参数不完整，请返回价格页重新下单");
       setLoading(false);
       return;
@@ -106,11 +126,23 @@ export default function RechargeCheckoutPage() {
     setLoading(true);
     setError("");
     try {
-      const [rechargeData, payData, channelData] = await Promise.all([
+      const [rechargeData, payData] = await Promise.all([
         getAigcRechargeOrder(rechargeOrderId),
         getPayOrder({ id: payOrderId, sync: true }),
-        getEnablePayChannelCodeList(payAppId),
       ]);
+      if (!rechargeData) throw new Error("充值订单不存在，请返回价格页重新下单");
+      if (!payData) throw new Error("支付订单不存在，请返回价格页重新下单");
+      if (Number(rechargeData.payOrderId || 0) !== payOrderId) {
+        throw new Error("充值订单与支付订单不匹配，请返回价格页重新下单");
+      }
+      if (Number(payData.price ?? 0) !== Number(rechargeData.payAmount ?? 0)) {
+        throw new Error("充值订单金额与支付订单金额不一致，请返回价格页重新下单");
+      }
+      const effectivePayAppId = getOrderPayAppId(rechargeData, payData, payAppId);
+      if (!isValidId(effectivePayAppId)) {
+        throw new Error("支付应用参数缺失，请联系管理员检查 AIGC 支付应用配置");
+      }
+      const channelData = await getEnablePayChannelCodeList(effectivePayAppId);
       setRechargeOrder(rechargeData);
       setPayOrder(payData);
       setChannels(channelData ?? []);
@@ -252,9 +284,13 @@ export default function RechargeCheckoutPage() {
           <aside className="rounded-xl border border-border-warm bg-background p-5">
             <h2 className="text-base font-medium text-charcoal">订单摘要</h2>
             <div className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between gap-4"><span className="text-muted-gray">支付金额</span><span className="text-charcoal">{formatMoney(rechargeOrder?.payAmount)}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-gray">到账积分</span><span className="text-charcoal">{formatPoints(rechargeOrder?.totalPointAmount)}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-gray">充值单号</span><span className="break-all text-right text-charcoal">{rechargeOrder?.rechargeNo}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-gray">支付金额</span><span className="text-charcoal">{formatMoney(rechargeOrder?.payAmount ?? fallbackSummary.payAmount)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-gray">充值积分</span><span className="text-charcoal">{formatPoints(rechargeOrder?.pointAmount ?? fallbackSummary.pointAmount)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-gray">赠送积分</span><span className="text-charcoal">{formatPoints(rechargeOrder?.giftAmount ?? fallbackSummary.giftAmount)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-gray">到账积分</span><span className="text-charcoal">{formatPoints(rechargeOrder?.totalPointAmount ?? fallbackSummary.totalPointAmount)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-gray">充值单号</span><span className="break-all text-right text-charcoal">{rechargeOrder?.rechargeNo ?? fallbackSummary.rechargeNo ?? "-"}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-gray">支付单号</span><span className="break-all text-right text-charcoal">{rechargeOrder?.payOrderNo ?? payOrder?.no ?? "-"}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-gray">订单状态</span><span className="text-right text-charcoal">{rechargeOrder?.statusName ?? rechargeOrder?.status ?? "待支付"}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-gray">创建时间</span><span className="text-right text-charcoal">{formatDateTime(rechargeOrder?.createTime)}</span></div>
             </div>
             {isPaySuccess(payOrder?.status) && (
