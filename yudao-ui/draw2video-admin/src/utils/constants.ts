@@ -148,6 +148,10 @@ export const PayChannelEnum = {
   MOCK: {
     code: 'mock',
     name: '模拟支付'
+  },
+  EASYPAY_CASHIER: {
+    code: 'easypay_cashier',
+    name: 'EasyPay 收银台支付'
   }
 }
 
