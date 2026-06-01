@@ -20,6 +20,8 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSketchRespVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSketchSaveReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSnapshotRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSnapshotSaveReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasMemberDO;
@@ -143,6 +145,23 @@ public class AigcCanvasAppController {
     public CommonResult<AigcCanvasSnapshotRespVO> saveSnapshot(@PathVariable("id") Long id, @Valid @RequestBody AigcCanvasSnapshotSaveReqVO reqVO) {
         reqVO.setProjectId(id);
         return success(BeanUtils.toBean(projectService.saveSnapshot(reqVO, getLoginUserId()), AigcCanvasSnapshotRespVO.class));
+    }
+
+    @GetMapping("/projects/{id}/nodes/{nodeId}/sketch")
+    @Operation(summary = "获取画布节点草图")
+    public CommonResult<AigcCanvasSketchRespVO> getSketch(@PathVariable("id") Long id,
+                                                         @PathVariable("nodeId") String nodeId) {
+        return success(BeanUtils.toBean(projectService.getSketch(id, nodeId, getLoginUserId()), AigcCanvasSketchRespVO.class));
+    }
+
+    @PutMapping("/projects/{id}/nodes/{nodeId}/sketch")
+    @Operation(summary = "保存画布节点草图")
+    public CommonResult<AigcCanvasSketchRespVO> saveSketch(@PathVariable("id") Long id,
+                                                          @PathVariable("nodeId") String nodeId,
+                                                          @Valid @RequestBody AigcCanvasSketchSaveReqVO reqVO) {
+        reqVO.setProjectId(id);
+        reqVO.setNodeId(nodeId);
+        return success(BeanUtils.toBean(projectService.saveSketch(reqVO, getLoginUserId()), AigcCanvasSketchRespVO.class));
     }
 
     @GetMapping("/projects/{id}/operations")

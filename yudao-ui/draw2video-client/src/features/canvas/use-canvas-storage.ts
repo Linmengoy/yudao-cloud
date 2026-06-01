@@ -17,6 +17,11 @@ function stripDataUrlFromNodes(nodes: AppNode[]): unknown[] {
       const { dataUrl: _dataUrl, ...rest } = n.data as Record<string, unknown>;
       return { ...n, data: rest };
     }
+    if (n.type === "sketch") {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { dataUrl: _dataUrl, ...rest } = n.data as Record<string, unknown>;
+      return { ...n, data: rest };
+    }
     if (n.type === "video") {
       const data = n.data as Record<string, unknown>;
       if (typeof data.videoUrl !== "string" || (!data.videoUrl.startsWith("data:") && !data.videoUrl.startsWith("blob:"))) return n;

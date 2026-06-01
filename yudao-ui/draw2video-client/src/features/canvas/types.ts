@@ -113,6 +113,26 @@ export interface ImageNodeData {
 
 export type ImageNode = Node<ImageNodeData, "image">;
 
+// --- Sketch Node ---
+
+export interface SketchNodeData {
+  [key: string]: unknown;
+  sketchId: string;
+  projectId?: string | number | null;
+  fileName: string;
+  sceneJson?: unknown;
+  previewUrl?: string | null;
+  dataUrl?: string;
+  mimeType: string;
+  width?: number;
+  height?: number;
+  background?: "white" | "transparent";
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type SketchNode = Node<SketchNodeData, "sketch">;
+
 // --- Text Node ---
 
 export interface TextNodeData {
@@ -194,15 +214,18 @@ export type VideoNode = Node<VideoNodeData, "video">;
 
 // --- Union ---
 
-export type AppNode = PromptNode | ResultNode | ImageNode | TextNode | VideoNode;
+export type AppNode = PromptNode | ResultNode | ImageNode | SketchNode | TextNode | VideoNode;
 export type AppEdge = Edge;
 
 export const SYNCABLE_NODE_DATA_KEYS = [
   "imageId",
+  "sketchId",
   "videoId",
+  "projectId",
   "assetId",
   "assetVersionId",
   "previewUrl",
+  "background",
   "fileName",
   "mimeType",
   "width",

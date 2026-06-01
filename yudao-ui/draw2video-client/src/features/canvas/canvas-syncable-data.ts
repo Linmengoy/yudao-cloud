@@ -23,7 +23,7 @@ export function filterSyncableNodeDataPatch(patch: Record<string, unknown>) {
 }
 
 export function sanitizeNodeForCanvasOperation(node: AppNode): AppNode {
-  if (node.type !== "image" && node.type !== "video") return node;
+  if (node.type !== "image" && node.type !== "video" && node.type !== "sketch") return node;
   const data = { ...(node.data as Record<string, unknown>) };
   for (const key of blockedKeys) {
     delete data[key];
