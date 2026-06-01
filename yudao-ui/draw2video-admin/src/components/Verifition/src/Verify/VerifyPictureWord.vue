@@ -52,6 +52,7 @@
  * */
 import { resetSize } from '../utils/util'
 import { aesEncrypt } from '../utils/ase'
+import { getCaptchaResponse } from '../utils/captchaResponse'
 import { getCode, reqCheck } from '@/api/login'
 import { getCurrentInstance, nextTick, onMounted, reactive, ref, toRefs } from 'vue'
 
@@ -142,6 +143,7 @@ const submit = () => {
     token: backToken.value
   }
   reqCheck(data).then((res) => {
+    res = getCaptchaResponse(res)
     if (res.repCode === '0000') {
       barAreaColor.value = '#4cae4c'
       barAreaBorderColor.value = '#5cb85c'
@@ -184,13 +186,14 @@ const getPicture = async () => {
     captchaType: captchaType.value
   }
   const res = await getCode(data)
-  if (res.repCode === '0000') {
-    verificationCodeImg.value = res.repData.originalImageBase64
-    backToken.value = res.repData.token
-    secretKey.value = res.repData.secretKey
+  const captchaRes = getCaptchaResponse(res)
+  if (captchaRes.repCode === '0000') {
+    verificationCodeImg.value = captchaRes.repData.originalImageBase64
+    backToken.value = captchaRes.repData.token
+    secretKey.value = captchaRes.repData.secretKey
     text.value = t('captcha.code')
   } else {
-    text.value = res.repMsg
+    text.value = captchaRes.repMsg
   }
 }
 </script>

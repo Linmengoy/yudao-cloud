@@ -182,6 +182,30 @@
           </template>
         </el-table-column>
       </el-table-column>
+      <el-table-column align="center" label="EasyPay 二维码配置">
+        <el-table-column :label="PayChannelEnum.EASYPAY_CASHIER.name" align="center" min-width="140">
+          <template #default="scope">
+            <el-button
+              v-if="isChannelExists(scope.row.channelCodes, PayChannelEnum.EASYPAY_CASHIER.code)"
+              circle
+              size="small"
+              type="success"
+              @click="openChannelForm(scope.row, PayChannelEnum.EASYPAY_CASHIER.code)"
+            >
+              <Icon icon="ep:check" />
+            </el-button>
+            <el-button
+              v-else
+              circle
+              size="small"
+              type="danger"
+              @click="openChannelForm(scope.row, PayChannelEnum.EASYPAY_CASHIER.code)"
+            >
+              <Icon icon="ep:close" />
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table-column>
       <el-table-column align="center" fixed="right" label="操作" min-width="110">
         <template #default="scope">
           <el-button
@@ -218,6 +242,7 @@
   <WeixinChannelForm ref="weixinFormRef" @success="getList" />
   <MockChannelForm ref="mockFormRef" @success="getList" />
   <WalletChannelForm ref="walletFormRef" @success="getList" />
+  <EasyPayChannelForm ref="easyPayFormRef" @success="getList" />
 </template>
 <script lang="ts" setup>
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
@@ -228,6 +253,7 @@ import AlipayChannelForm from './components/channel/AlipayChannelForm.vue'
 import WeixinChannelForm from './components/channel/WeixinChannelForm.vue'
 import MockChannelForm from './components/channel/MockChannelForm.vue'
 import WalletChannelForm from './components/channel/WalletChannelForm.vue'
+import EasyPayChannelForm from './components/channel/EasyPayChannelForm.vue'
 
 defineOptions({ name: 'PayApp' })
 
@@ -342,6 +368,7 @@ const alipayFormRef = ref()
 const weixinFormRef = ref()
 const mockFormRef = ref()
 const walletFormRef = ref()
+const easyPayFormRef = ref()
 const channelParam = reactive({
   appId: null, // 应用 ID
   payCode: null // 渠道编码
@@ -362,6 +389,10 @@ const openChannelForm = async (row, payCode) => {
   }
   if (payCode.indexOf('wallet') === 0) {
     walletFormRef.value.open(row.id, payCode)
+    return
+  }
+  if (payCode.indexOf('easypay_') === 0) {
+    easyPayFormRef.value.open(row.id, payCode)
   }
 }
 

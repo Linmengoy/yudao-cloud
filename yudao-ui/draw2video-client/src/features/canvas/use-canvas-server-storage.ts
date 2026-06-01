@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { canvasApi, snapshotRecordToCanvasState, type SaveCanvasSnapshotInput } from "@/features/canvas/canvas-api";
-import type { CanvasProject, CanvasState } from "@/features/canvas/types";
+import type { CanvasProject, CanvasSnapshotRecord, CanvasState } from "@/features/canvas/types";
 
 export function useCanvasServerStorage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -13,7 +13,7 @@ export function useCanvasServerStorage() {
     return canvasApi.createProject({ name, kind });
   }, []);
 
-  const loadProject = useCallback(async (projectId: string | number): Promise<{ project: CanvasProject; state: CanvasState | null }> => {
+  const loadProject = useCallback(async (projectId: string | number): Promise<{ project: CanvasProject; snapshot: CanvasSnapshotRecord | null; state: CanvasState | null }> => {
     setIsLoading(true);
     setError(null);
     try {
@@ -21,7 +21,7 @@ export function useCanvasServerStorage() {
         canvasApi.getProject(projectId),
         canvasApi.getSnapshot(projectId).catch(() => null),
       ]);
-      return { project, state: snapshotRecordToCanvasState(snapshot) };
+      return { project, snapshot, state: snapshotRecordToCanvasState(snapshot) };
     } catch (err) {
       const message = err instanceof Error ? err.message : "加载画布失败";
       setError(message);

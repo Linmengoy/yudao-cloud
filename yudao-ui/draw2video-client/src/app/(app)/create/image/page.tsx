@@ -40,12 +40,11 @@ import { SketchNodeComponent } from "@/features/canvas/SketchNode";
 import { TextNodeComponent } from "@/features/canvas/TextNode";
 import { VideoNodeComponent } from "@/features/canvas/VideoNode";
 import { CanvasSignalEdge } from "@/features/canvas/CanvasSignalEdge";
-import { loadCanvas, saveCanvas, clearCanvas } from "@/features/canvas/use-canvas-storage";
 import { filterSyncableNodeDataPatch, sanitizeNodeForCanvasOperation } from "@/features/canvas/canvas-syncable-data";
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
-import { saveImage, loadImage, clearImages, saveVideo, loadVideo, clearVideos } from "@/features/canvas/image-store";
+import { clearImages, clearVideos } from "@/features/canvas/image-store";
 import { ToolbarIconButton } from "@/features/canvas/ToolbarIconButton";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
@@ -56,7 +55,7 @@ import {
 } from "@/features/canvas/clipboard";
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
-import { createProject, updateProject as updateLocalProject, type ProjectKind } from "@/features/projects/project-store";
+import type { ProjectKind } from "@/features/projects/project-store";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2, ImagePlus, Share2, Type, Video, Map as MapIcon, Grid3X3, Scan, PenLine } from "lucide-react";
 
@@ -506,11 +505,6 @@ function isSameCanvasEdge(left: AppEdge, right: AppEdge) {
     (left.targetHandle ?? null) === (right.targetHandle ?? null);
 }
 
-async function blobFromDataUrl(dataUrl: string): Promise<Blob> {
-  const response = await fetch(dataUrl);
-  return response.blob();
-}
-
 function summarizeCanvas(nodes: AppNode[]): { kind: ProjectKind; nodeCount: number; assetCount: number } {
   const hasImage = nodes.some((node) => node.type === "image");
   const hasVideo = nodes.some((node) => node.type === "video");
@@ -642,6 +636,12 @@ function CanvasFlow() {
     lastAppliedVersionRef.current = Math.max(lastAppliedVersionRef.current, version);
     setLastAppliedVersion((prev) => Math.max(prev, version));
     setLatestKnownVersion((prev) => Math.max(prev, version));
+  }, []);
+
+  const resetAppliedVersion = useCallback((version = 0) => {
+    lastAppliedVersionRef.current = version;
+    setLastAppliedVersion(version);
+    setLatestKnownVersion(version);
   }, []);
 
   const applyRemoteOperation = useCallback((operationType: string, payload: Record<string, unknown>) => {
@@ -902,9 +902,8 @@ function CanvasFlow() {
           setActiveProjectId(id);
         })
         .catch(() => {
-          const project = createProject({ name: "未命名项目", kind: "image" });
-          router.replace(`/create/image?projectId=${encodeURIComponent(project.id)}`);
-          setActiveProjectId(project.id);
+          setSaveError("服务端项目创建失败，请稍后重试");
+          projectCreationRef.current = false;
         });
     }, 0);
     return () => window.clearTimeout(timer);
@@ -1062,7 +1061,7 @@ function CanvasFlow() {
     if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge });
   }, [canvasOperations, isReadOnly, setEdges]);
 
-  // Hydrate from localStorage + IndexedDB when the project changes
+  // Hydrate from server state when the project changes
   useEffect(() => {
     if (!activeProjectId) return;
     const projectId = activeProjectId;
@@ -1070,95 +1069,73 @@ function CanvasFlow() {
 
     async function hydrate() {
       setIsHydrated(false);
+      resetAppliedVersion(0);
       historyPastRef.current = [];
       historyFutureRef.current = [];
       lastHistorySignatureRef.current = null;
 
-      let saved = loadCanvas(projectId);
-      if (isServerProjectId(projectId)) {
-        try {
-          const serverResult = await loadProject(projectId);
-          saved = serverResult.state ?? saved;
-          setIsReadOnly(serverResult.project.readonly === true || serverResult.project.canEdit === false);
-          setProjectRole(serverResult.project.role ?? null);
-          canvasApi.getProjectMembers(projectId).then(setProjectMembers).catch(() => setProjectMembers([]));
-          markAppliedVersion(serverResult.project.currentVersion ?? 0);
-        } catch {
-        }
-      } else {
-        setIsReadOnly(false);
-        setProjectRole(null);
-        setProjectMembers([]);
-        markAppliedVersion(0);
-      }
-      if (!saved) {
-        if (!cancelled) {
-          setNodes(defaultNodes());
-          setEdges([]);
-          setIsHydrated(true);
-        }
+      if (!isServerProjectId(projectId)) {
+        router.replace("/create/image");
+        setSaveError("本地草稿已弃用，请使用服务端项目");
         return;
       }
 
-      const idMap = new Map<string, string>();
-      const migratedNodes = saved.nodes.map((node) => {
-        const migrated = migrateNode(node);
-        idMap.set(node.id, migrated.id);
-        return migrated;
-      });
-      const migratedEdges = saved.edges
-        .map(migrateEdge)
-        .map((edge) => ({
-          ...edge,
-          source: idMap.get(edge.source) ?? edge.source,
-          target: idMap.get(edge.target) ?? edge.target,
-        }))
-        .filter((edge) => isValidCanvasConnection(edge, migratedNodes));
+      try {
+        const serverResult = await loadProject(projectId);
+        const saved = serverResult.state;
+        setIsReadOnly(serverResult.project.readonly === true || serverResult.project.canEdit === false);
+        setProjectRole(serverResult.project.role ?? null);
+        canvasApi.getProjectMembers(projectId).then(setProjectMembers).catch(() => setProjectMembers([]));
 
-      const restoredNodes: AppNode[] = [];
+        const snapshotVersion = serverResult.snapshot?.version ?? 0;
+        const currentVersion = serverResult.project.currentVersion ?? snapshotVersion;
+        markAppliedVersion(snapshotVersion);
 
-      for (const node of migratedNodes) {
-        if (cancelled) return;
-        if (node.type !== "image" && node.type !== "video") {
-          restoredNodes.push(node);
-          continue;
+        if (!saved) {
+          if (!cancelled) {
+            setNodes(defaultNodes());
+            setEdges([]);
+            setIsHydrated(true);
+          }
+          if (currentVersion > snapshotVersion) syncFromVersion(snapshotVersion);
+          return;
         }
-        const d = node.data as Record<string, unknown>;
-        if (node.type === "image" && typeof d.dataUrl === "string" && d.dataUrl) {
-          await saveImage(d as ImageNodeData);
-          const full = await loadImage(d.imageId as string);
-          restoredNodes.push(full?.dataUrl ? { ...node, data: full } : { ...node, data: { ...(d as ImageNodeData), dataUrl: "" } });
-          continue;
+
+        const idMap = new Map<string, string>();
+        const migratedNodes = saved.nodes.map((node) => {
+          const migrated = migrateNode(node);
+          idMap.set(node.id, migrated.id);
+          return migrated;
+        });
+        const migratedEdges = saved.edges
+          .map(migrateEdge)
+          .map((edge) => ({
+            ...edge,
+            source: idMap.get(edge.source) ?? edge.source,
+            target: idMap.get(edge.target) ?? edge.target,
+          }))
+          .filter((edge) => isValidCanvasConnection(edge, migratedNodes));
+
+        if (!cancelled) {
+          setNodes(migratedNodes);
+          setEdges(migratedEdges);
+          if (saved.viewport) setViewport(saved.viewport);
+          setIsHydrated(true);
         }
-        if (node.type === "image") {
-          const full = await loadImage(d.imageId as string);
-          restoredNodes.push(full?.dataUrl ? { ...node, data: full } : { ...node, data: { ...(d as ImageNodeData), dataUrl: "" } });
-          continue;
+
+        if (currentVersion > snapshotVersion) syncFromVersion(snapshotVersion);
+      } catch {
+        if (!cancelled) {
+          setIsHydrated(true);
+          setIsReadOnly(true);
+          setSaveError("服务端画布加载失败，请刷新重试");
         }
-        if (node.type === "video" && typeof d.videoId === "string" && typeof d.videoUrl === "string" && d.videoUrl.startsWith("data:")) {
-          const blob = await blobFromDataUrl(d.videoUrl);
-          await saveVideo(d as VideoNodeData, blob);
-          restoredNodes.push({ ...node, data: { ...(d as VideoNodeData), videoUrl: URL.createObjectURL(blob) } });
-          continue;
-        }
-        if (node.type === "video" && typeof d.videoId === "string") {
-          const full = await loadVideo(d.videoId);
-          restoredNodes.push(full?.videoUrl ? { ...node, data: full } : node);
-          continue;
-        }
-        restoredNodes.push(node);
       }
-
-      if (cancelled) return;
-      setNodes(restoredNodes);
-      setEdges(migratedEdges);
-      if (saved.viewport) setViewport(saved.viewport);
-      setIsHydrated(true);
     }
 
     hydrate();
     return () => { cancelled = true; };
-  }, [activeProjectId, loadProject, markAppliedVersion, setNodes, setEdges, setViewport]);
+  }, [activeProjectId, loadProject, markAppliedVersion, resetAppliedVersion, router, setNodes, setEdges, setViewport, syncFromVersion]);
 
   // Debounced save — only after hydration completes
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -1167,7 +1144,6 @@ function CanvasFlow() {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       try {
-        saveCanvas({ nodes, edges, viewport: getViewport() }, activeProjectId);
         const summary = summarizeCanvas(nodes);
         if (!isReadOnly && serverProjectId && canvasOperations.pendingOperationCount === 0) {
           saveSnapshot(serverProjectId, {
@@ -1180,15 +1156,11 @@ function CanvasFlow() {
           }).then((snapshot) => {
             markAppliedVersion(snapshot.version);
           }).catch(() => syncFromVersion(lastAppliedVersionRef.current));
-          canvasApi.updateProject(serverProjectId, summary).catch(() => {
-            updateLocalProject(activeProjectId, summary);
-          });
-        } else if (!serverProjectId) {
-          updateLocalProject(activeProjectId, summary);
+          canvasApi.updateProject(serverProjectId, summary).catch(() => undefined);
         }
         setSaveError("");
       } catch {
-        setSaveError("图片太大，当前浏览器无法保存到本地草稿");
+        setSaveError("服务端画布保存失败，请稍后重试");
       }
     }, 500);
     return () => clearTimeout(saveTimer.current);
@@ -1712,11 +1684,10 @@ function CanvasFlow() {
     canvasOperations.submitOperation("CANVAS_CLEAR", {});
     setNodes(defaultNodes());
     setEdges([]);
-    clearCanvas(activeProjectId);
     clearImages();
     clearVideos();
     setConfirmClear(false);
-  }, [activeProjectId, canvasOperations, closeCreateMenu, closeReferencePicker, confirmClear, isReadOnly, setNodes, setEdges]);
+  }, [canvasOperations, closeCreateMenu, closeReferencePicker, confirmClear, isReadOnly, setNodes, setEdges]);
 
   useEffect(() => {
     if (!confirmClear) return;
