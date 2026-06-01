@@ -2,6 +2,10 @@ import type { CanvasState, AppNode } from "./types";
 
 const STORAGE_KEY = "copse_canvas_draft";
 
+type StoredCanvasState = CanvasState & {
+  projectId?: string | null;
+};
+
 function storageKey(projectId?: string | null) {
   return projectId ? `${STORAGE_KEY}:${projectId}` : STORAGE_KEY;
 }
@@ -28,8 +32,9 @@ export function loadCanvas(projectId?: string | null): CanvasState | null {
   try {
     const raw = localStorage.getItem(storageKey(projectId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as StoredCanvasState;
     if (!parsed || !Array.isArray(parsed.nodes)) return null;
+    if (projectId && parsed.projectId && parsed.projectId !== projectId) return null;
     return parsed as CanvasState;
   } catch {
     console.warn("Canvas draft data corrupted, starting fresh");
@@ -40,6 +45,7 @@ export function loadCanvas(projectId?: string | null): CanvasState | null {
 export function saveCanvas(state: CanvasState, projectId?: string | null): void {
   const lightweight = {
     ...state,
+    projectId: projectId ?? null,
     nodes: stripDataUrlFromNodes(state.nodes),
   };
   localStorage.setItem(storageKey(projectId), JSON.stringify(lightweight));

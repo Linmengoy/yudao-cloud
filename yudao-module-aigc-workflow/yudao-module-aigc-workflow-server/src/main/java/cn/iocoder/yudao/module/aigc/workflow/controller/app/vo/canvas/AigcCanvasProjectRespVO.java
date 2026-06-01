@@ -19,6 +19,8 @@ public class AigcCanvasProjectRespVO {
     private String kind;
     @Schema(description = "封面资产编号")
     private Long coverAssetId;
+    @Schema(description = "封面 URL")
+    private String coverUrl;
     @Schema(description = "当前版本")
     private Long currentVersion;
     @Schema(description = "最新快照编号")
