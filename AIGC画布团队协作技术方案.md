@@ -496,6 +496,13 @@ WebSocket 断开
 - IndexedDB 可缓存媒体预览和离线草稿，但必须能从服务端资产重新恢复。
 - 项目列表、项目名称、节点数量、资产数量应来自服务端 API。
 
+### 10.5 项目 ID 边界
+
+- 后端 `/app-api/canvas/projects/{id}` 系列 REST API 的 `id` 对应 `canvas_project.id`，类型为 `bigint`；WebSocket 消息里的 `projectId` 也必须使用该服务端项目 ID。
+- 前端 `project-store.ts` 生成的 `project_*` 仅表示本地离线草稿，只能作为 localStorage/IndexedDB key 和离线项目列表 ID 使用。
+- 画布页需要派生 `serverProjectId`：只有 `projectId` 为纯数字时，才允许调用项目详情、成员、快照、operation、资产绑定、节点运行、共享邀请和 WebSocket join。
+- 当创建服务端项目失败并降级到本地草稿时，前端保留本地编辑和本地保存能力，但必须禁用协作、共享、成员管理、节点运行服务端编排和资产绑定接口，避免 `project_*` 进入后端 Long 路由参数。
+
 ## 11. 后端改造方案
 
 ### 11.1 REST API

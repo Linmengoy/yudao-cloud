@@ -36,7 +36,7 @@ import { calculateImageSize, normalizeImageSize, type SizeTier } from "@/feature
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import { PriceEstimate } from "@/features/generation/PriceEstimate";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
-import { canvasNodeRunApi, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
@@ -521,7 +521,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
-    if (projectId && selectedAigcModelId) {
+    if (isServerCanvasProjectId(projectId) && selectedAigcModelId) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
         const run = await canvasNodeRunApi.runNode(projectId, id, {

@@ -38,6 +38,10 @@ export const canvasNodeRunApi = {
     api.post<CanvasNodeRunResponse>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/run/sync`, input),
 };
 
+export function isServerCanvasProjectId(projectId: string | number | null | undefined): projectId is string | number {
+  return typeof projectId === "number" || (typeof projectId === "string" && /^\d+$/.test(projectId));
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

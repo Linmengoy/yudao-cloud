@@ -9,7 +9,7 @@ import type { NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, TextNode
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
-import { canvasNodeRunApi, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { cn } from "@/lib/utils";
 
 type TextNodeProps = NodeProps<Node<TextNodeData, "text">>;
@@ -79,7 +79,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
     const params = new URLSearchParams(window.location.search);
     const projectId = params.get("projectId");
     const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    if (projectId) {
+    if (isServerCanvasProjectId(projectId)) {
       try {
         await canvasNodeRunApi.runNode(projectId, id, {
           clientId,

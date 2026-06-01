@@ -23,7 +23,7 @@ import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, Referen
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
-import { canvasNodeRunApi, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { cn } from "@/lib/utils";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
@@ -295,7 +295,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
-    if (projectId) {
+    if (isServerCanvasProjectId(projectId)) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
         const run = await canvasNodeRunApi.runNode(projectId, id, {
