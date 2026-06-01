@@ -1,0 +1,20 @@
+services:
+  draw2video-admin:
+    image: draw2video-admin:latest
+    container_name: draw2video-admin
+    restart: always
+    ports:
+      - "8081:80"
+
+  draw2video-client:
+    image: draw2video-client:latest
+    container_name: draw2video-client
+    restart: always
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      NEXT_PUBLIC_API_BASE_URL: ""
+      NEXT_PUBLIC_APP_API_PREFIX: /app-api
+    ports:
+      - "127.0.0.1:13000:3000"

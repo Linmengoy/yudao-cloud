@@ -78,6 +78,7 @@
  * */
 import { aesEncrypt } from './../utils/ase'
 import { resetSize } from './../utils/util'
+import { getCaptchaResponse } from './../utils/captchaResponse'
 import { getCode, reqCheck } from '@/api/login'
 
 const props = defineProps({
@@ -287,6 +288,7 @@ const end = () => {
       token: backToken.value
     }
     reqCheck(data).then((res) => {
+      res = getCaptchaResponse(res)
       if (res.repCode == '0000') {
         moveBlockBackgroundColor.value = '#5cb85c'
         leftBarBorderColor.value = '#5cb85c'
@@ -364,13 +366,14 @@ const getPictrue = async () => {
     captchaType: captchaType.value
   }
   const res = await getCode(data)
-  if (res.repCode == '0000') {
-    backImgBase.value = res.repData.originalImageBase64
-    blockBackImgBase.value = res.repData.jigsawImageBase64
-    backToken.value = res.repData.token
-    secretKey.value = res.repData.secretKey
+  const captchaRes = getCaptchaResponse(res)
+  if (captchaRes.repCode == '0000') {
+    backImgBase.value = captchaRes.repData.originalImageBase64
+    blockBackImgBase.value = captchaRes.repData.jigsawImageBase64
+    backToken.value = captchaRes.repData.token
+    secretKey.value = captchaRes.repData.secretKey
   } else {
-    tipWords.value = res.repMsg
+    tipWords.value = captchaRes.repMsg
   }
 }
 </script>

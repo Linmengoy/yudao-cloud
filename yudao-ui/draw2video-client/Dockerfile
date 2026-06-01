@@ -1,11 +1,16 @@
+# syntax=docker/dockerfile:1.7
+
 FROM docker.m.daocloud.io/library/node:22-alpine AS deps
 
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
-RUN npm config set registry https://registry.npmmirror.com \
+RUN --mount=type=cache,id=draw2video-client-npm,target=/root/.npm \
+  --mount=type=cache,id=draw2video-client-pnpm,target=/root/.local/share/pnpm/store \
+  npm config set registry https://registry.npmmirror.com \
   && npm install -g pnpm@10 \
   && pnpm config set registry https://registry.npmmirror.com \
+  && pnpm config set store-dir /root/.local/share/pnpm/store \
   && pnpm install --frozen-lockfile
 
 FROM docker.m.daocloud.io/library/node:22-alpine AS build
