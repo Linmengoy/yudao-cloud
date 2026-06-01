@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FolderPlus, ImageIcon, MoreHorizontal, Pencil, Search, Trash2, Video } from "lucide-react";
+import { canvasApi } from "@/features/canvas/canvas-api";
+import type { CanvasProject } from "@/features/canvas/types";
 import { clearCanvas } from "@/features/canvas/use-canvas-storage";
 import {
   createProject,
@@ -12,6 +14,19 @@ import {
   renameProject,
   type ProjectMeta,
 } from "@/features/projects/project-store";
+
+type ProjectListItem = {
+  id: string;
+  name: string;
+  kind: "image" | "video" | "mixed";
+  nodeCount: number;
+  assetCount: number;
+  lastOpenedAt: string;
+  thumbnailUrl?: string;
+  role?: string | null;
+  readonly?: boolean;
+  source: "server" | "local";
+};
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -24,35 +39,75 @@ function formatDate(value: string) {
   });
 }
 
-function projectKindLabel(project: ProjectMeta) {
+function toProjectListItem(project: CanvasProject): ProjectListItem {
+  return {
+    id: String(project.id),
+    name: project.name,
+    kind: project.kind,
+    nodeCount: project.nodeCount ?? 0,
+    assetCount: project.assetCount ?? 0,
+    lastOpenedAt: project.updateTime ?? project.createTime ?? "",
+    role: project.role,
+    readonly: project.readonly,
+    source: "server",
+  };
+}
+
+function localProjectToListItem(project: ProjectMeta): ProjectListItem {
+  return {
+    id: project.id,
+    name: project.name,
+    kind: project.kind,
+    nodeCount: project.nodeCount,
+    assetCount: project.assetCount,
+    lastOpenedAt: project.lastOpenedAt,
+    thumbnailUrl: project.thumbnailUrl,
+    source: "local",
+  };
+}
+
+function projectKindLabel(project: ProjectListItem) {
   if (project.kind === "video") return "视频项目";
   if (project.kind === "mixed") return "混合项目";
   return "图片项目";
 }
 
-function ProjectIcon({ project }: { project: ProjectMeta }) {
+function ProjectIcon({ project }: { project: ProjectListItem }) {
   if (project.kind === "video") return <Video className="size-5" />;
   return <ImageIcon className="size-5" />;
 }
 
 export default function ProjectsPage() {
   const router = useRouter();
-  const [projects, setProjects] = useState<ProjectMeta[]>([]);
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [query, setQuery] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
 
-  function refreshProjects() {
-    setProjects(listProjects());
-  }
+  const refreshProjects = useCallback(async (search = query) => {
+    setIsLoading(true);
+    try {
+      const page = await canvasApi.listProjects({
+        pageNo: 1,
+        pageSize: 60,
+        name: search.trim() || undefined,
+      });
+      setProjects(page.list.map(toProjectListItem));
+      setStatusMessage("");
+    } catch {
+      setProjects(listProjects().map(localProjectToListItem));
+      setStatusMessage("暂时无法连接项目服务，已显示本机草稿。");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [query]);
 
   useEffect(() => {
-    const timer = window.setTimeout(refreshProjects, 0);
-    window.addEventListener("copse:projects-changed", refreshProjects);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("copse:projects-changed", refreshProjects);
-    };
-  }, []);
+    const timer = window.setTimeout(() => refreshProjects(query), 0);
+    return () => window.clearTimeout(timer);
+  }, [query, refreshProjects]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -73,19 +128,42 @@ export default function ProjectsPage() {
     return projects.filter((project) => project.name.toLowerCase().includes(keyword));
   }, [projects, query]);
 
-  function handleCreateProject() {
-    const project = createProject({ name: "未命名项目", kind: "image" });
-    router.push(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+  async function handleCreateProject() {
+    if (isCreating) return;
+    setIsCreating(true);
+    try {
+      const projectId = await canvasApi.createProject({ name: "未命名项目", kind: "image" });
+      router.push(`/create/image?projectId=${encodeURIComponent(String(projectId))}`);
+    } catch {
+      const project = createProject({ name: "未命名项目", kind: "image" });
+      setStatusMessage("项目服务暂不可用，已创建本机草稿。");
+      router.push(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+    } finally {
+      setIsCreating(false);
+    }
   }
 
-  function handleRename(project: ProjectMeta) {
+  async function handleRename(project: ProjectListItem) {
     const nextName = window.prompt("项目名称", project.name);
     if (!nextName) return;
-    renameProject(project.id, nextName);
-    refreshProjects();
+    if (project.source === "local") {
+      renameProject(project.id, nextName);
+      refreshProjects();
+      return;
+    }
+    try {
+      await canvasApi.updateProject(project.id, { name: nextName.trim() });
+      refreshProjects();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "重命名失败，请稍后再试。");
+    }
   }
 
-  function handleDelete(project: ProjectMeta) {
+  function handleDelete(project: ProjectListItem) {
+    if (project.source === "server") {
+      setStatusMessage("服务端项目归档/删除接口尚未开放，这期先保留项目。");
+      return;
+    }
     const confirmed = window.confirm(`删除项目「${project.name}」？`);
     if (!confirmed) return;
     deleteProject(project.id);
@@ -103,10 +181,11 @@ export default function ProjectsPage() {
         <button
           type="button"
           onClick={handleCreateProject}
+          disabled={isCreating}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px]"
         >
           <FolderPlus className="size-4" />
-          新建项目
+          {isCreating ? "创建中" : "新建项目"}
         </button>
       </div>
 
@@ -120,7 +199,19 @@ export default function ProjectsPage() {
         />
       </div>
 
-      {filteredProjects.length === 0 ? (
+      {statusMessage && (
+        <div className="mt-4 rounded-lg border border-border-warm bg-muted px-3 py-2 text-xs text-muted-gray">
+          {statusMessage}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="mt-16 flex flex-col items-center rounded-2xl border border-dashed border-border-warm bg-background/70 px-6 py-16 text-center">
+          <ImageIcon className="size-8 text-muted-gray" />
+          <p className="mt-4 text-sm font-medium text-charcoal">正在加载项目</p>
+          <p className="mt-1 text-xs text-muted-gray">从云端同步你的项目库。</p>
+        </div>
+      ) : filteredProjects.length === 0 ? (
         <div className="mt-16 flex flex-col items-center rounded-2xl border border-dashed border-border-warm bg-background/70 px-6 py-16 text-center">
           <ImageIcon className="size-8 text-muted-gray" />
           <p className="mt-4 text-sm font-medium text-charcoal">{query ? "没有匹配的项目" : "还没有项目"}</p>
@@ -151,7 +242,11 @@ export default function ProjectsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
-                      <p className="mt-1 text-xs text-muted-gray">{projectKindLabel(project)}</p>
+                      <p className="mt-1 text-xs text-muted-gray">
+                        {projectKindLabel(project)}
+                        {project.role ? ` · ${project.role}` : ""}
+                        {project.source === "local" ? " · 本机草稿" : ""}
+                      </p>
                     </div>
                     <div className="shrink-0 text-right text-xs text-muted-gray">
                       <p>{project.nodeCount} 节点</p>

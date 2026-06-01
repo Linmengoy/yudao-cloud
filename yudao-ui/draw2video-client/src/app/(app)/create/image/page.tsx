@@ -50,7 +50,7 @@ import {
 } from "@/features/canvas/clipboard";
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
-import { createProject, touchProject, updateProject, type ProjectKind } from "@/features/projects/project-store";
+import { createProject, updateProject as updateLocalProject, type ProjectKind } from "@/features/projects/project-store";
 import { Plus, Trash2, ImagePlus, Type, Video } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
@@ -170,6 +170,8 @@ type CanvasSnapshot = {
   nodes: AppNode[];
   edges: AppEdge[];
 };
+
+type RemoteCanvasPresence = CanvasPresence & { updatedAt?: number };
 
 function cloneSnapshot(nodes: AppNode[], edges: AppEdge[]): CanvasSnapshot {
   return {
@@ -419,7 +421,7 @@ function CanvasFlow() {
   const canvasRealtime = useCanvasRealtime(activeProjectId, clientId, lastAppliedVersion);
   const canvasOperations = useCanvasOperations(activeProjectId, clientId, latestKnownVersion, setLatestKnownVersion, canvasRealtime.sendOperation, canvasRealtime.isConnected);
   const processedRealtimeMessageCountRef = useRef(0);
-  const [remotePresences, setRemotePresences] = useState<Record<string, CanvasPresence>>({});
+  const [remotePresences, setRemotePresences] = useState<Record<string, RemoteCanvasPresence>>({});
   const lastPresenceSentAtRef = useRef(0);
   const editingNodeIdRef = useRef<string | null>(null);
   const nodeDataPatchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -451,19 +453,21 @@ function CanvasFlow() {
       return;
     }
     if ((operationType === "NODE_UPDATE_DATA" || operationType === "TASK_STATUS_PATCH") && typeof payload.nodeId === "string" && payload.patch) {
-      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? { ...node, data: { ...node.data, ...(payload.patch as Record<string, unknown>) } } : node));
+      setNodes((nds) => nds.map((node) => node.id === payload.nodeId
+        ? ({ ...node, data: { ...node.data, ...(payload.patch as Record<string, unknown>) } } as AppNode)
+        : node));
       return;
     }
     if (operationType === "ASSET_ATTACH" && typeof payload.nodeId === "string") {
-      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? {
-        ...node,
-        data: {
-          ...node.data,
-          assetId: payload.assetId,
-          assetVersionId: payload.assetVersionId ?? node.data.assetVersionId,
-          previewUrl: payload.previewUrl ?? node.data.previewUrl,
-        },
-      } : node));
+      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? ({
+          ...node,
+          data: {
+            ...node.data,
+            assetId: payload.assetId,
+            assetVersionId: payload.assetVersionId ?? node.data.assetVersionId,
+            previewUrl: payload.previewUrl ?? node.data.previewUrl,
+          },
+        } as AppNode) : node));
       return;
     }
     if (operationType === "EDGE_CREATE" && payload.edge) {
@@ -530,8 +534,15 @@ function CanvasFlow() {
     processedRealtimeMessageCountRef.current = canvasRealtime.messages.length;
     for (const message of newMessages) {
       if (message.type === "canvas-presence") {
-        if (message.clientId && message.clientId !== clientId) {
-          setRemotePresences((prev) => ({ ...prev, [message.clientId]: { ...message, updatedAt: Date.now() } }));
+        if (typeof message.clientId === "string" && message.clientId !== clientId) {
+          const remoteClientId = message.clientId;
+          const presence = {
+            ...(message as CanvasPresence),
+            projectId: String(message.projectId ?? activeProjectId ?? ""),
+            clientId: remoteClientId,
+            updatedAt: Date.now(),
+          } satisfies RemoteCanvasPresence;
+          setRemotePresences((prev) => ({ ...prev, [remoteClientId]: presence }));
         }
         continue;
       }
@@ -551,22 +562,27 @@ function CanvasFlow() {
         continue;
       }
       if (message.type !== "canvas-op-applied") continue;
-      setLatestKnownVersion((prev) => Math.max(prev, message.version));
+      if (typeof message.version !== "number") continue;
+      const appliedVersion = message.version;
+      setLatestKnownVersion((prev) => Math.max(prev, appliedVersion));
       if (message.clientId === clientId && typeof message.opId === "string") {
-        canvasOperations.markOperationAcked(message.opId, message.version);
+        canvasOperations.markOperationAcked(message.opId, appliedVersion);
       }
-      if (message.version > lastAppliedVersionRef.current + 1) {
+      if (appliedVersion > lastAppliedVersionRef.current + 1) {
         syncFromVersion(lastAppliedVersionRef.current);
+        continue;
+      }
+      if (typeof message.clientId !== "string" || typeof message.operationType !== "string" || typeof message.operationJson !== "string") {
         continue;
       }
       applyOperationRecord({
         clientId: message.clientId,
-        nextVersion: message.version,
+        nextVersion: appliedVersion,
         operationType: message.operationType,
         operationJson: message.operationJson,
       });
     }
-  }, [applyOperationRecord, canvasOperations, canvasRealtime.messages, clientId, syncFromVersion]);
+  }, [activeProjectId, applyOperationRecord, canvasOperations, canvasRealtime.messages, clientId, syncFromVersion]);
 
   useEffect(() => {
     if (!activeProjectId || !isHydrated || !canvasRealtime.isConnected) return;
@@ -653,7 +669,6 @@ function CanvasFlow() {
     const timer = window.setTimeout(() => {
       if (routeProjectId) {
         setActiveProjectId(routeProjectId);
-        touchProject(routeProjectId);
         return;
       }
 
@@ -662,7 +677,6 @@ function CanvasFlow() {
       createServerProject("未命名项目", "image")
         .then((projectId) => {
           const id = String(projectId);
-          createProject({ name: "未命名项目", kind: "image" });
           router.replace(`/create/image?projectId=${encodeURIComponent(id)}`);
           setActiveProjectId(id);
         })
@@ -818,6 +832,7 @@ function CanvasFlow() {
   // Hydrate from localStorage + IndexedDB when the project changes
   useEffect(() => {
     if (!activeProjectId) return;
+    const projectId = activeProjectId;
     let cancelled = false;
 
     async function hydrate() {
@@ -826,13 +841,13 @@ function CanvasFlow() {
       historyFutureRef.current = [];
       lastHistorySignatureRef.current = null;
 
-      let saved = loadCanvas(activeProjectId);
+      let saved = loadCanvas(projectId);
       try {
-        const serverResult = await loadProject(activeProjectId);
+        const serverResult = await loadProject(projectId);
         saved = serverResult.state ?? saved;
         setIsReadOnly(serverResult.project.readonly === true || serverResult.project.canEdit === false);
         setProjectRole(serverResult.project.role ?? null);
-        canvasApi.getProjectMembers(activeProjectId).then(setProjectMembers).catch(() => setProjectMembers([]));
+        canvasApi.getProjectMembers(projectId).then(setProjectMembers).catch(() => setProjectMembers([]));
         markAppliedVersion(serverResult.project.currentVersion ?? 0);
       } catch {
       }
@@ -924,7 +939,9 @@ function CanvasFlow() {
           }).then((snapshot) => {
             markAppliedVersion(snapshot.version);
           }).catch(() => syncFromVersion(lastAppliedVersionRef.current));
-          updateProject(activeProjectId, summarizeCanvas(nodes));
+          canvasApi.updateProject(activeProjectId, summarizeCanvas(nodes)).catch(() => {
+            updateLocalProject(activeProjectId, summarizeCanvas(nodes));
+          });
         }
         setSaveError("");
       } catch {
@@ -1079,6 +1096,7 @@ function CanvasFlow() {
   const handleFiles = useCallback(
     async (files: File[], position?: { x: number; y: number }) => {
       if (isReadOnly) return;
+      const projectId = activeProjectId;
       const center = position ?? screenToFlowPosition({
         x: window.innerWidth / 2,
         y: window.innerHeight / 2,
@@ -1142,9 +1160,9 @@ function CanvasFlow() {
         setNodes((nds) => [...nds, ...newNodes]);
         for (const node of newNodes) {
           canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(node) });
-          if ((node.data as ImageNodeData | VideoNodeData).assetId) {
+          if (projectId && (node.data as ImageNodeData | VideoNodeData).assetId) {
             const mediaData = node.data as ImageNodeData | VideoNodeData;
-            canvasApi.bindNodeAsset(activeProjectId, node.id, {
+            canvasApi.bindNodeAsset(projectId, node.id, {
               assetId: mediaData.assetId!,
               assetVersionId: mediaData.assetVersionId ?? null,
               previewUrl: mediaData.previewUrl ?? null,
