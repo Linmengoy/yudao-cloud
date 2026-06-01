@@ -270,6 +270,7 @@ export interface CanvasProject {
   name: string;
   kind: CanvasProjectKind;
   coverAssetId?: number | null;
+  coverUrl?: string | null;
   currentVersion: number;
   latestSnapshotId?: number | null;
   status: string;

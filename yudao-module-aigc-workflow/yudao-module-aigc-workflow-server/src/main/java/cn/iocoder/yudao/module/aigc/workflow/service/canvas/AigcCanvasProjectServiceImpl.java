@@ -205,6 +205,7 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         String usageType = StrUtil.blankToDefault(reqVO.getUsageType(), "source");
         AigcCanvasAssetRefDO existed = assetRefMapper.selectByNodeAndAsset(reqVO.getProjectId(), reqVO.getNodeId(), reqVO.getAssetId(), usageType);
         if (existed != null) {
+            updateProjectCoverIfAbsent(project, reqVO.getAssetId());
             return existed.getId();
         }
         AigcCanvasAssetRefDO assetRef = BeanUtils.toBean(reqVO, AigcCanvasAssetRefDO.class);
@@ -245,8 +246,21 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         update.setId(project.getId());
         update.setCurrentVersion(nextVersion);
         update.setAssetCount(project.getAssetCount() == null ? 1 : project.getAssetCount() + 1);
+        if (project.getCoverAssetId() == null) {
+            update.setCoverAssetId(reqVO.getAssetId());
+        }
         projectMapper.updateById(update);
         return operation;
+    }
+
+    private void updateProjectCoverIfAbsent(AigcCanvasProjectDO project, Long assetId) {
+        if (project.getCoverAssetId() != null || assetId == null) {
+            return;
+        }
+        AigcCanvasProjectDO update = new AigcCanvasProjectDO();
+        update.setId(project.getId());
+        update.setCoverAssetId(assetId);
+        projectMapper.updateById(update);
     }
 
     private AigcCanvasOperationAppliedMessage buildAppliedMessage(AigcCanvasOperationLogDO operation) {

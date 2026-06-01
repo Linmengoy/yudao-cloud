@@ -222,7 +222,7 @@ spring:
             - id: aigc-workflow-app-api
               uri: grayLb://aigc-workflow-server
               predicates:
-                - Path=/app-api/aigc/workflow/**
+                - Path=/app-api/aigc/workflow/**, /app-api/canvas/**
               filters:
                 - RewritePath=/app-api/aigc/workflow/v3/api-docs, /v3/api-docs
             - id: iot-admin-api

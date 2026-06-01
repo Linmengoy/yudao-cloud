@@ -51,8 +51,13 @@ import {
 } from "@/features/canvas/clipboard";
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
+<<<<<<< HEAD
 import { createProject, touchProject, updateProject, type ProjectKind } from "@/features/projects/project-store";
 import { Plus, Trash2, ImagePlus, Share2, Type, Video } from "lucide-react";
+=======
+import { createProject, updateProject as updateLocalProject, type ProjectKind } from "@/features/projects/project-store";
+import { Plus, Trash2, ImagePlus, Type, Video } from "lucide-react";
+>>>>>>> 9bd07fbd9fb765e300f239c71059f26b1ae846e7
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -171,6 +176,8 @@ type CanvasSnapshot = {
   nodes: AppNode[];
   edges: AppEdge[];
 };
+
+type RemoteCanvasPresence = CanvasPresence & { updatedAt?: number };
 
 function cloneSnapshot(nodes: AppNode[], edges: AppEdge[]): CanvasSnapshot {
   return {
@@ -421,7 +428,7 @@ function CanvasFlow() {
   const canvasRealtime = useCanvasRealtime(activeProjectId, clientId, lastAppliedVersion);
   const canvasOperations = useCanvasOperations(activeProjectId, clientId, latestKnownVersion, setLatestKnownVersion, canvasRealtime.sendOperation, canvasRealtime.isConnected);
   const processedRealtimeMessageCountRef = useRef(0);
-  const [remotePresences, setRemotePresences] = useState<Record<string, CanvasPresence>>({});
+  const [remotePresences, setRemotePresences] = useState<Record<string, RemoteCanvasPresence>>({});
   const lastPresenceSentAtRef = useRef(0);
   const editingNodeIdRef = useRef<string | null>(null);
   const nodeDataPatchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -532,10 +539,22 @@ function CanvasFlow() {
     processedRealtimeMessageCountRef.current = canvasRealtime.messages.length;
     for (const message of newMessages) {
       if (message.type === "canvas-presence") {
+<<<<<<< HEAD
         if (message.clientId && message.clientId !== clientId) {
           const presenceClientId = String(message.clientId);
           const presence = message as CanvasPresence;
           setRemotePresences((prev) => ({ ...prev, [presenceClientId]: { ...presence, updatedAt: Date.now() } }));
+=======
+        if (typeof message.clientId === "string" && message.clientId !== clientId) {
+          const remoteClientId = message.clientId;
+          const presence = {
+            ...(message as CanvasPresence),
+            projectId: String(message.projectId ?? activeProjectId ?? ""),
+            clientId: remoteClientId,
+            updatedAt: Date.now(),
+          } satisfies RemoteCanvasPresence;
+          setRemotePresences((prev) => ({ ...prev, [remoteClientId]: presence }));
+>>>>>>> 9bd07fbd9fb765e300f239c71059f26b1ae846e7
         }
         continue;
       }
@@ -577,11 +596,21 @@ function CanvasFlow() {
         syncFromVersion(lastAppliedVersionRef.current);
         continue;
       }
+      if (typeof message.clientId !== "string" || typeof message.operationType !== "string" || typeof message.operationJson !== "string") {
+        continue;
+      }
       applyOperationRecord({
+<<<<<<< HEAD
         clientId: String(message.clientId),
         nextVersion: version,
         operationType: String(message.operationType),
         operationJson: String(message.operationJson),
+=======
+        clientId: message.clientId,
+        nextVersion: appliedVersion,
+        operationType: message.operationType,
+        operationJson: message.operationJson,
+>>>>>>> 9bd07fbd9fb765e300f239c71059f26b1ae846e7
       });
     }
   }, [activeProjectId, applyOperationRecord, canvasOperations, canvasRealtime.messages, clientId, syncFromVersion]);
@@ -671,7 +700,6 @@ function CanvasFlow() {
     const timer = window.setTimeout(() => {
       if (routeProjectId) {
         setActiveProjectId(routeProjectId);
-        touchProject(routeProjectId);
         return;
       }
 
@@ -680,7 +708,6 @@ function CanvasFlow() {
       createServerProject("未命名项目", "image")
         .then((projectId) => {
           const id = String(projectId);
-          createProject({ name: "未命名项目", kind: "image" });
           router.replace(`/create/image?projectId=${encodeURIComponent(id)}`);
           setActiveProjectId(id);
         })
@@ -943,7 +970,9 @@ function CanvasFlow() {
           }).then((snapshot) => {
             markAppliedVersion(snapshot.version);
           }).catch(() => syncFromVersion(lastAppliedVersionRef.current));
-          updateProject(activeProjectId, summarizeCanvas(nodes));
+          canvasApi.updateProject(activeProjectId, summarizeCanvas(nodes)).catch(() => {
+            updateLocalProject(activeProjectId, summarizeCanvas(nodes));
+          });
         }
         setSaveError("");
       } catch {
@@ -1098,6 +1127,7 @@ function CanvasFlow() {
   const handleFiles = useCallback(
     async (files: File[], position?: { x: number; y: number }) => {
       if (isReadOnly) return;
+      const projectId = activeProjectId;
       const center = position ?? screenToFlowPosition({
         x: window.innerWidth / 2,
         y: window.innerHeight / 2,
@@ -1163,7 +1193,7 @@ function CanvasFlow() {
         setNodes((nds) => [...nds, ...newNodes]);
         for (const node of newNodes) {
           canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(node) });
-          if ((node.data as ImageNodeData | VideoNodeData).assetId) {
+          if (projectId && (node.data as ImageNodeData | VideoNodeData).assetId) {
             const mediaData = node.data as ImageNodeData | VideoNodeData;
             canvasApi.bindNodeAsset(projectId, node.id, {
               assetId: mediaData.assetId!,

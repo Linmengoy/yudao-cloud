@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FolderPlus, ImageIcon, MoreHorizontal, Pencil, Search, Trash2, Video } from "lucide-react";
+import { canvasApi } from "@/features/canvas/canvas-api";
+import type { CanvasProject } from "@/features/canvas/types";
 import { clearCanvas } from "@/features/canvas/use-canvas-storage";
 import {
   createProject,
@@ -12,6 +14,21 @@ import {
   renameProject,
   type ProjectMeta,
 } from "@/features/projects/project-store";
+
+const PAGE_SIZE = 12;
+
+type ProjectListItem = {
+  id: string;
+  name: string;
+  kind: "image" | "video" | "mixed";
+  nodeCount: number;
+  assetCount: number;
+  lastOpenedAt: string;
+  coverUrl?: string | null;
+  role?: string | null;
+  readonly?: boolean;
+  source: "server" | "local";
+};
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -24,35 +41,112 @@ function formatDate(value: string) {
   });
 }
 
-function projectKindLabel(project: ProjectMeta) {
+function toProjectListItem(project: CanvasProject): ProjectListItem {
+  return {
+    id: String(project.id),
+    name: project.name,
+    kind: project.kind,
+    nodeCount: project.nodeCount ?? 0,
+    assetCount: project.assetCount ?? 0,
+    lastOpenedAt: project.updateTime ?? project.createTime ?? "",
+    coverUrl: project.coverUrl,
+    role: project.role,
+    readonly: project.readonly,
+    source: "server",
+  };
+}
+
+function localProjectToListItem(project: ProjectMeta): ProjectListItem {
+  return {
+    id: project.id,
+    name: project.name,
+    kind: project.kind,
+    nodeCount: project.nodeCount,
+    assetCount: project.assetCount,
+    lastOpenedAt: project.lastOpenedAt,
+    coverUrl: project.thumbnailUrl,
+    source: "local",
+  };
+}
+
+function projectKindLabel(project: ProjectListItem) {
   if (project.kind === "video") return "视频项目";
   if (project.kind === "mixed") return "混合项目";
   return "图片项目";
 }
 
-function ProjectIcon({ project }: { project: ProjectMeta }) {
+function ProjectIcon({ project }: { project: ProjectListItem }) {
   if (project.kind === "video") return <Video className="size-5" />;
   return <ImageIcon className="size-5" />;
 }
 
+function ProjectCover({ project }: { project: ProjectListItem }) {
+  if (project.coverUrl) {
+    return (
+      <div
+        className="aspect-[4/3] bg-muted bg-cover bg-center"
+        style={{ backgroundImage: `url(${project.coverUrl})` }}
+        aria-label={`${project.name} 封面`}
+      />
+    );
+  }
+  return (
+    <div className="flex aspect-[4/3] flex-col items-center justify-center bg-muted text-muted-gray">
+      <ProjectIcon project={project} />
+      <span className="mt-2 text-xs">空白项目</span>
+    </div>
+  );
+}
+
 export default function ProjectsPage() {
   const router = useRouter();
-  const [projects, setProjects] = useState<ProjectMeta[]>([]);
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [query, setQuery] = useState("");
+  const [pageNo, setPageNo] = useState(1);
+  const [total, setTotal] = useState(0);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
 
-  function refreshProjects() {
-    setProjects(listProjects());
-  }
+  const refreshProjects = useCallback(async (search = query, nextPageNo = pageNo) => {
+    setIsLoading(true);
+    try {
+      const page = await canvasApi.listProjects({
+        pageNo: nextPageNo,
+        pageSize: PAGE_SIZE,
+        name: search.trim() || undefined,
+      });
+      const nextPageCount = Math.max(1, Math.ceil(page.total / PAGE_SIZE));
+      if (nextPageNo > nextPageCount) {
+        setPageNo(nextPageCount);
+        return;
+      }
+      setProjects(page.list.map(toProjectListItem));
+      setTotal(page.total);
+      setStatusMessage("");
+    } catch {
+      const keyword = search.trim().toLowerCase();
+      const localProjects = listProjects()
+        .filter((project) => !keyword || project.name.toLowerCase().includes(keyword))
+        .map(localProjectToListItem);
+      const nextPageCount = Math.max(1, Math.ceil(localProjects.length / PAGE_SIZE));
+      if (nextPageNo > nextPageCount) {
+        setPageNo(nextPageCount);
+        return;
+      }
+      setProjects(localProjects.slice((nextPageNo - 1) * PAGE_SIZE, nextPageNo * PAGE_SIZE));
+      setTotal(localProjects.length);
+      setStatusMessage("暂时无法连接项目服务，已显示本机草稿。");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [pageNo, query]);
 
   useEffect(() => {
-    const timer = window.setTimeout(refreshProjects, 0);
-    window.addEventListener("copse:projects-changed", refreshProjects);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("copse:projects-changed", refreshProjects);
-    };
-  }, []);
+    const timer = window.setTimeout(() => refreshProjects(query, pageNo), 0);
+    return () => window.clearTimeout(timer);
+  }, [pageNo, query, refreshProjects]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -67,25 +161,44 @@ export default function ProjectsPage() {
     };
   }, [openMenuId]);
 
-  const filteredProjects = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) return projects;
-    return projects.filter((project) => project.name.toLowerCase().includes(keyword));
-  }, [projects, query]);
+  const pageCount = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
-  function handleCreateProject() {
-    const project = createProject({ name: "未命名项目", kind: "image" });
-    router.push(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+  async function handleCreateProject() {
+    if (isCreating) return;
+    setIsCreating(true);
+    try {
+      const projectId = await canvasApi.createProject({ name: "未命名项目", kind: "image" });
+      router.push(`/create/image?projectId=${encodeURIComponent(String(projectId))}`);
+    } catch {
+      const project = createProject({ name: "未命名项目", kind: "image" });
+      setStatusMessage("项目服务暂不可用，已创建本机草稿。");
+      router.push(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+    } finally {
+      setIsCreating(false);
+    }
   }
 
-  function handleRename(project: ProjectMeta) {
+  async function handleRename(project: ProjectListItem) {
     const nextName = window.prompt("项目名称", project.name);
     if (!nextName) return;
-    renameProject(project.id, nextName);
-    refreshProjects();
+    if (project.source === "local") {
+      renameProject(project.id, nextName);
+      refreshProjects();
+      return;
+    }
+    try {
+      await canvasApi.updateProject(project.id, { name: nextName.trim() });
+      refreshProjects();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "重命名失败，请稍后再试。");
+    }
   }
 
-  function handleDelete(project: ProjectMeta) {
+  function handleDelete(project: ProjectListItem) {
+    if (project.source === "server") {
+      setStatusMessage("服务端项目归档/删除接口尚未开放，这期先保留项目。");
+      return;
+    }
     const confirmed = window.confirm(`删除项目「${project.name}」？`);
     if (!confirmed) return;
     deleteProject(project.id);
@@ -103,10 +216,11 @@ export default function ProjectsPage() {
         <button
           type="button"
           onClick={handleCreateProject}
+          disabled={isCreating}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px]"
         >
           <FolderPlus className="size-4" />
-          新建项目
+          {isCreating ? "创建中" : "新建项目"}
         </button>
       </div>
 
@@ -114,13 +228,28 @@ export default function ProjectsPage() {
         <Search className="size-4 text-muted-gray" />
         <input
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setPageNo(1);
+          }}
           placeholder="搜索项目"
           className="w-full bg-transparent text-sm text-charcoal placeholder:text-muted-gray focus:outline-none"
         />
       </div>
 
-      {filteredProjects.length === 0 ? (
+      {statusMessage && (
+        <div className="mt-4 rounded-lg border border-border-warm bg-muted px-3 py-2 text-xs text-muted-gray">
+          {statusMessage}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="mt-16 flex flex-col items-center rounded-2xl border border-dashed border-border-warm bg-background/70 px-6 py-16 text-center">
+          <ImageIcon className="size-8 text-muted-gray" />
+          <p className="mt-4 text-sm font-medium text-charcoal">正在加载项目</p>
+          <p className="mt-1 text-xs text-muted-gray">从云端同步你的项目库。</p>
+        </div>
+      ) : projects.length === 0 ? (
         <div className="mt-16 flex flex-col items-center rounded-2xl border border-dashed border-border-warm bg-background/70 px-6 py-16 text-center">
           <ImageIcon className="size-8 text-muted-gray" />
           <p className="mt-4 text-sm font-medium text-charcoal">{query ? "没有匹配的项目" : "还没有项目"}</p>
@@ -138,20 +267,22 @@ export default function ProjectsPage() {
         </div>
       ) : (
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredProjects.map((project) => (
+          {projects.map((project) => (
             <div
               key={project.id}
               className="group relative overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
             >
               <Link href={`/create/image?projectId=${encodeURIComponent(project.id)}`} className="block">
-                <div className="flex aspect-[4/3] items-center justify-center bg-muted text-muted-gray">
-                  <ProjectIcon project={project} />
-                </div>
+                <ProjectCover project={project} />
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
-                      <p className="mt-1 text-xs text-muted-gray">{projectKindLabel(project)}</p>
+                      <p className="mt-1 text-xs text-muted-gray">
+                        {projectKindLabel(project)}
+                        {project.role ? ` · ${project.role}` : ""}
+                        {project.source === "local" ? " · 本机草稿" : ""}
+                      </p>
                     </div>
                     <div className="shrink-0 text-right text-xs text-muted-gray">
                       <p>{project.nodeCount} 节点</p>
@@ -208,6 +339,32 @@ export default function ProjectsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {!isLoading && total > PAGE_SIZE && (
+        <div className="mt-8 flex items-center justify-between border-t border-border-warm pt-4 text-sm text-muted-gray">
+          <span>
+            第 {pageNo} / {pageCount} 页 · 共 {total} 个项目
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={pageNo <= 1}
+              onClick={() => setPageNo((value) => Math.max(1, value - 1))}
+              className="rounded-lg border border-border-warm px-3 py-1.5 transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              上一页
+            </button>
+            <button
+              type="button"
+              disabled={pageNo >= pageCount}
+              onClick={() => setPageNo((value) => Math.min(pageCount, value + 1))}
+              className="rounded-lg border border-border-warm px-3 py-1.5 transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              下一页
+            </button>
+          </div>
         </div>
       )}
     </div>

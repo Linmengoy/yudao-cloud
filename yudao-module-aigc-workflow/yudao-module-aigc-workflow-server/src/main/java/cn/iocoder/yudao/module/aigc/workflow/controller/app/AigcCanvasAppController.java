@@ -1,9 +1,12 @@
 package cn.iocoder.yudao.module.aigc.workflow.controller.app;
 
+import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
+import cn.iocoder.yudao.module.aigc.asset.api.AigcAssetApi;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunReqVO;
@@ -57,6 +60,8 @@ public class AigcCanvasAppController {
     private AigcCanvasOperationService operationService;
     @Resource
     private AigcCanvasNodeRunService nodeRunService;
+    @Resource
+    private AigcAssetApi assetApi;
 
     @GetMapping("/projects")
     @Operation(summary = "画布项目分页")
@@ -64,7 +69,10 @@ public class AigcCanvasAppController {
         Long userId = getLoginUserId();
         PageResult<AigcCanvasProjectDO> pageResult = projectService.getProjectPage(reqVO, userId);
         PageResult<AigcCanvasProjectRespVO> respPageResult = BeanUtils.toBean(pageResult, AigcCanvasProjectRespVO.class);
-        respPageResult.getList().forEach(project -> fillProjectPermissions(project, projectService.getProjectMember(project.getId(), userId)));
+        respPageResult.getList().forEach(project -> {
+            fillProjectPermissions(project, projectService.getProjectMember(project.getId(), userId));
+            fillProjectCover(project);
+        });
         return success(respPageResult);
     }
 
@@ -81,6 +89,7 @@ public class AigcCanvasAppController {
         Long userId = getLoginUserId();
         AigcCanvasProjectRespVO project = BeanUtils.toBean(projectService.getProject(id, userId), AigcCanvasProjectRespVO.class);
         fillProjectPermissions(project, projectService.getProjectMember(id, userId));
+        fillProjectCover(project);
         return success(project);
     }
 
@@ -194,6 +203,18 @@ public class AigcCanvasAppController {
         project.setRole(role);
         project.setCanEdit(canEdit);
         project.setReadonly(!canEdit);
+    }
+
+    private void fillProjectCover(AigcCanvasProjectRespVO project) {
+        if (project.getCoverAssetId() == null) {
+            return;
+        }
+        try {
+            AigcAssetRespDTO asset = assetApi.getAsset(project.getCoverAssetId()).getCheckedData();
+            project.setCoverUrl(StrUtil.blankToDefault(asset.getThumbnailUrl(),
+                    StrUtil.blankToDefault(asset.getCoverUrl(), asset.getFileUrl())));
+        } catch (Exception ignored) {
+        }
     }
 
 }
