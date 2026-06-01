@@ -459,7 +459,7 @@ export function PromptNodeComponent({ id, data, selected }: PromptNodeProps) {
       {modelPopoverOpen && (
         <div
           ref={modelPopoverRef}
-          className="fixed z-[200] w-[340px] rounded-2xl border border-border-warm bg-background shadow-lg"
+          className="fixed z-[260] w-[340px] rounded-2xl border border-border-warm bg-background shadow-lg"
           style={modelPopoverPos ? { left: modelPopoverPos.x, top: modelPopoverPos.y } : { visibility: "hidden" }}
         >
           <div className="border-b border-border-warm px-4 py-3">
@@ -499,7 +499,7 @@ export function PromptNodeComponent({ id, data, selected }: PromptNodeProps) {
       {paramsPopoverOpen && (
         <div
           ref={paramsPopoverRef}
-          className="fixed z-[200] w-[360px] rounded-2xl border border-border-warm bg-background p-4 shadow-lg"
+          className="fixed z-[260] w-[360px] rounded-2xl border border-border-warm bg-background p-4 shadow-lg"
           style={paramsPopoverPos ? { left: paramsPopoverPos.x, top: paramsPopoverPos.y } : { visibility: "hidden" }}
         >
           <div className="mb-3 flex items-center justify-between">

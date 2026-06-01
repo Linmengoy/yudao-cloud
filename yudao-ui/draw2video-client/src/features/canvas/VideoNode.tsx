@@ -24,6 +24,9 @@ import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
 import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
+import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
+import { downloadMedia, videoNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
@@ -138,6 +141,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [startedAtMs, setStartedAtMs] = useState(() =>
     data.generationRunStartedAt ? new Date(data.generationRunStartedAt).getTime() : 0
   );
@@ -157,6 +161,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const pickerActiveForThisNode = referencePickerPromptId === id;
   const elapsedMs = isRunning && startedAtMs > 0 ? now - startedAtMs : data.elapsedMs;
   const progressLabel = isQueued ? "排队中" : isRunning ? `生成中 ${formatElapsed(elapsedMs)}` : "提交中";
+  const previewItem = useMemo(() => videoNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
   const displaySize = getDisplaySize(data);
   const displayLeft = (PREVIEW_SLOT_WIDTH - displaySize.width) / 2;
   const displayTop = 28 + PREVIEW_SLOT_HEIGHT - displaySize.height;
@@ -226,6 +231,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
       }));
     }
   }, [pickerActiveForThisNode, selected]);
+
+  const handlePreviewDownload = useCallback(() => {
+    if (!previewItem) return;
+    downloadMedia(previewItem);
+  }, [previewItem]);
 
   useEffect(() => {
     if (!paramsOpen && !modelOpen) return;
@@ -392,8 +402,24 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   }, [data.aigcModelId, data.duration, data.generateAudio, data.modelId, data.prompt, data.providerModel, data.ratio, data.resolution, data.size, data.watermark, id, isGenerating, referenceImages, updateData]);
 
   return (
+    <>
     <div className="relative" style={{ width: CARD_WIDTH }}>
       <div className="relative" style={{ width: PREVIEW_SLOT_WIDTH, height: PREVIEW_SLOT_HEIGHT + 28 }}>
+        <AnimatePresence>
+          {isOnlySelectedNode && !dragging && previewItem && (
+            <SelectedMediaToolbar
+              canDownload={Boolean(previewItem.url)}
+              onDownload={handlePreviewDownload}
+              onOpenPreview={() => setPreviewOpen(true)}
+              uiScale={fixedUiScale}
+              style={{
+                left: displayLeft + displaySize.width / 2,
+                top: displayTop - 54 * fixedUiScale,
+                pointerEvents: "auto",
+              }}
+            />
+          )}
+        </AnimatePresence>
         <motion.div
           className="absolute flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
           initial={false}
@@ -581,7 +607,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, scale: 0.98 }}
                     transition={{ duration: 0.14, ease: "easeOut" }}
-                    className="absolute bottom-full left-0 z-[200] mb-2 w-[320px] rounded-2xl border border-border-warm bg-background p-3 shadow-lg"
+                    className="absolute bottom-full left-0 z-[260] mb-2 w-[320px] rounded-2xl border border-border-warm bg-background p-3 shadow-lg"
                   >
                     <div className="flex flex-col gap-2">
                       <button
@@ -662,7 +688,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, scale: 0.98 }}
                     transition={{ duration: 0.14, ease: "easeOut" }}
-                    className="absolute bottom-full left-0 z-[200] mb-2 w-[420px] rounded-2xl border border-border-warm bg-background p-4 shadow-lg"
+                    className="absolute bottom-full left-0 z-[260] mb-2 w-[420px] rounded-2xl border border-border-warm bg-background p-4 shadow-lg"
                   >
                     <p className="mb-3 text-sm font-medium text-muted-gray">Generate method</p>
                     <div className="mb-4 rounded-xl bg-muted p-1">
@@ -792,5 +818,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
         )}
       </AnimatePresence>
     </div>
+    <MediaPreviewDialog item={previewItem} open={previewOpen} onClose={() => setPreviewOpen(false)} />
+    </>
   );
 }

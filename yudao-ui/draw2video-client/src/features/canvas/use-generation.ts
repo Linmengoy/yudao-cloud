@@ -99,7 +99,7 @@ export function createResultDraft(
     id: `e-${promptNodeId}-${resultId}`,
     source: promptNodeId,
     target: resultId,
-    type: "default",
+    type: "signal",
   });
 
   return { newNodes, newEdges };

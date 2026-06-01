@@ -53,6 +53,61 @@
   --color-muted-gray: var(--muted-gray);
 }
 
+.copse-signal-edge-gradient {
+  fill: none;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 1.5px var(--canvas-edge-glow));
+  pointer-events: none;
+}
+
+.dark .copse-signal-edge-gradient {
+  filter: drop-shadow(0 0 3px var(--canvas-edge-glow));
+}
+
+.canvas-zoom-slider {
+  height: 16px;
+  cursor: pointer;
+  appearance: none;
+  background: transparent;
+}
+
+.canvas-zoom-slider:focus {
+  outline: none;
+}
+
+.canvas-zoom-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--canvas-slider-track);
+}
+
+.canvas-zoom-slider::-webkit-slider-thumb {
+  width: 17px;
+  height: 17px;
+  margin-top: -6.5px;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--charcoal);
+  box-shadow: rgba(255, 255, 255, 0.2) 0 0.5px 0 0 inset, rgba(0, 0, 0, 0.2) 0 0 0 0.5px inset, rgba(0, 0, 0, 0.08) 0 1px 3px;
+}
+
+.canvas-zoom-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--canvas-slider-track);
+}
+
+.canvas-zoom-slider::-moz-range-thumb {
+  width: 17px;
+  height: 17px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--charcoal);
+  box-shadow: rgba(255, 255, 255, 0.2) 0 0.5px 0 0 inset, rgba(0, 0, 0, 0.2) 0 0 0 0.5px inset, rgba(0, 0, 0, 0.08) 0 1px 3px;
+}
+
 :root {
   color-scheme: light;
   --cream: #f7f4ed;
@@ -93,6 +148,12 @@
   --sidebar-border: #eceae4;
   --sidebar-ring: rgba(59, 130, 246, 0.5);
   --canvas-dot: rgba(28, 28, 28, 0.18);
+  --canvas-edge-base: rgba(28, 28, 28, 0.26);
+  --canvas-edge-selected: rgba(28, 28, 28, 0.54);
+  --canvas-edge-signal: #1c1c1c;
+  --canvas-edge-glow: rgba(28, 28, 28, 0.1);
+  --canvas-minimap-mask: rgba(28, 28, 28, 0.08);
+  --canvas-slider-track: rgba(28, 28, 28, 0.18);
 }
 
 .dark {
@@ -134,6 +195,12 @@
   --sidebar-border: #34302a;
   --sidebar-ring: rgba(244, 239, 230, 0.22);
   --canvas-dot: rgba(244, 239, 230, 0.16);
+  --canvas-edge-base: rgba(244, 239, 230, 0.26);
+  --canvas-edge-selected: rgba(244, 239, 230, 0.56);
+  --canvas-edge-signal: #f4efe6;
+  --canvas-edge-glow: rgba(244, 239, 230, 0.14);
+  --canvas-minimap-mask: rgba(244, 239, 230, 0.08);
+  --canvas-slider-track: rgba(244, 239, 230, 0.18);
 }
 
 @layer base {
