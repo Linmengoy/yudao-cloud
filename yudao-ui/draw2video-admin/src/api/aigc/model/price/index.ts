@@ -4,7 +4,7 @@ import type { AigcModelPriceRespVO } from '@/api/aigc/model/types'
 export type AigcModelPriceSaveReqVO = AigcModelPriceRespVO
 
 export const AigcModelPriceApi = {
-  getPriceList: async (params: { modelId?: number; capability?: string }) => {
+  getPriceList: async (params: { modelId: number; capability: string }) => {
     return await request.get({ url: '/aigc/model/price/list', params })
   },
   getPrice: async (id: number) => {
@@ -20,7 +20,6 @@ export const AigcModelPriceApi = {
     return await request.delete({ url: '/aigc/model/price/delete?id=' + id })
   },
   updatePriceStatus: async (id: number, status: number) => {
-    return await request.put({ url: '/aigc/model/price/status', data: { id, status } })
+    return await request.put({ url: '/aigc/model/price/status', params: { id, status } })
   }
 }
-

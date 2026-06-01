@@ -26,9 +26,10 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
+import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
 import { PromptNodeComponent } from "@/features/canvas/PromptNode";
 import { ResultNodeComponent } from "@/features/canvas/ResultNode";
 import { ImageNodeComponent } from "@/features/canvas/ImageNode";
@@ -51,7 +52,7 @@ import {
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { createProject, touchProject, updateProject, type ProjectKind } from "@/features/projects/project-store";
-import { Plus, Trash2, ImagePlus, Type, Video } from "lucide-react";
+import { Plus, Trash2, ImagePlus, Share2, Type, Video } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -376,8 +377,9 @@ function CanvasFlow() {
   const [pasteToast, setPasteToast] = useState("");
   const [isHydrated, setIsHydrated] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
-  const [projectRole, setProjectRole] = useState<string | null>(null);
+  const [projectRole, setProjectRole] = useState<CanvasProjectRole | null>(null);
   const [projectMembers, setProjectMembers] = useState<CanvasMember[]>([]);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [lastAppliedVersion, setLastAppliedVersion] = useState(0);
   const [latestKnownVersion, setLatestKnownVersion] = useState(0);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
@@ -451,7 +453,7 @@ function CanvasFlow() {
       return;
     }
     if ((operationType === "NODE_UPDATE_DATA" || operationType === "TASK_STATUS_PATCH") && typeof payload.nodeId === "string" && payload.patch) {
-      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? { ...node, data: { ...node.data, ...(payload.patch as Record<string, unknown>) } } : node));
+      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? migrateNode({ ...node, data: { ...node.data, ...(payload.patch as Record<string, unknown>) } } as AppNode) : node));
       return;
     }
     if (operationType === "ASSET_ATTACH" && typeof payload.nodeId === "string") {
@@ -463,7 +465,7 @@ function CanvasFlow() {
           assetVersionId: payload.assetVersionId ?? node.data.assetVersionId,
           previewUrl: payload.previewUrl ?? node.data.previewUrl,
         },
-      } : node));
+      } as AppNode : node));
       return;
     }
     if (operationType === "EDGE_CREATE" && payload.edge) {
@@ -531,16 +533,30 @@ function CanvasFlow() {
     for (const message of newMessages) {
       if (message.type === "canvas-presence") {
         if (message.clientId && message.clientId !== clientId) {
-          setRemotePresences((prev) => ({ ...prev, [message.clientId]: { ...message, updatedAt: Date.now() } }));
+          const presenceClientId = String(message.clientId);
+          const presence = message as CanvasPresence;
+          setRemotePresences((prev) => ({ ...prev, [presenceClientId]: { ...presence, updatedAt: Date.now() } }));
         }
         continue;
       }
-      if (message.type === "canvas-member-updated" && message.event === "leave" && typeof message.clientId === "string") {
-        setRemotePresences((prev) => {
-          const next = { ...prev };
-          delete next[message.clientId as string];
-          return next;
-        });
+      if (message.type === "canvas-member-updated") {
+        if (message.event === "leave" && typeof message.clientId === "string") {
+          setRemotePresences((prev) => {
+            const next = { ...prev };
+            delete next[message.clientId as string];
+            return next;
+          });
+        }
+        if (activeProjectId) {
+          canvasApi.getProjectMembers(activeProjectId).then(setProjectMembers).catch(() => undefined);
+          canvasApi.getProject(activeProjectId).then((project) => {
+            setProjectRole((project.role ?? null) as CanvasProjectRole | null);
+            setIsReadOnly(Boolean(project.readonly) || project.role === "viewer" || project.canEdit === false);
+          }).catch(() => {
+            setIsReadOnly(true);
+            setSaveError("你已无权访问该画布");
+          });
+        }
         continue;
       }
       if (message.type === "canvas-op-rejected") {
@@ -551,22 +567,24 @@ function CanvasFlow() {
         continue;
       }
       if (message.type !== "canvas-op-applied") continue;
-      setLatestKnownVersion((prev) => Math.max(prev, message.version));
+      const version = Number(message.version);
+      if (!Number.isFinite(version)) continue;
+      setLatestKnownVersion((prev) => Math.max(prev, version));
       if (message.clientId === clientId && typeof message.opId === "string") {
-        canvasOperations.markOperationAcked(message.opId, message.version);
+        canvasOperations.markOperationAcked(message.opId, version);
       }
-      if (message.version > lastAppliedVersionRef.current + 1) {
+      if (version > lastAppliedVersionRef.current + 1) {
         syncFromVersion(lastAppliedVersionRef.current);
         continue;
       }
       applyOperationRecord({
-        clientId: message.clientId,
-        nextVersion: message.version,
-        operationType: message.operationType,
-        operationJson: message.operationJson,
+        clientId: String(message.clientId),
+        nextVersion: version,
+        operationType: String(message.operationType),
+        operationJson: String(message.operationJson),
       });
     }
-  }, [applyOperationRecord, canvasOperations, canvasRealtime.messages, clientId, syncFromVersion]);
+  }, [activeProjectId, applyOperationRecord, canvasOperations, canvasRealtime.messages, clientId, syncFromVersion]);
 
   useEffect(() => {
     if (!activeProjectId || !isHydrated || !canvasRealtime.isConnected) return;
@@ -818,6 +836,7 @@ function CanvasFlow() {
   // Hydrate from localStorage + IndexedDB when the project changes
   useEffect(() => {
     if (!activeProjectId) return;
+    const projectId = activeProjectId;
     let cancelled = false;
 
     async function hydrate() {
@@ -826,13 +845,13 @@ function CanvasFlow() {
       historyFutureRef.current = [];
       lastHistorySignatureRef.current = null;
 
-      let saved = loadCanvas(activeProjectId);
+      let saved = loadCanvas(projectId);
       try {
-        const serverResult = await loadProject(activeProjectId);
+        const serverResult = await loadProject(projectId);
         saved = serverResult.state ?? saved;
         setIsReadOnly(serverResult.project.readonly === true || serverResult.project.canEdit === false);
         setProjectRole(serverResult.project.role ?? null);
-        canvasApi.getProjectMembers(activeProjectId).then(setProjectMembers).catch(() => setProjectMembers([]));
+        canvasApi.getProjectMembers(projectId).then(setProjectMembers).catch(() => setProjectMembers([]));
         markAppliedVersion(serverResult.project.currentVersion ?? 0);
       } catch {
       }
@@ -1139,12 +1158,14 @@ function CanvasFlow() {
         }
       }
       if (newNodes.length > 0) {
+        if (!activeProjectId) return;
+        const projectId = activeProjectId;
         setNodes((nds) => [...nds, ...newNodes]);
         for (const node of newNodes) {
           canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(node) });
           if ((node.data as ImageNodeData | VideoNodeData).assetId) {
             const mediaData = node.data as ImageNodeData | VideoNodeData;
-            canvasApi.bindNodeAsset(activeProjectId, node.id, {
+            canvasApi.bindNodeAsset(projectId, node.id, {
               assetId: mediaData.assetId!,
               assetVersionId: mediaData.assetVersionId ?? null,
               previewUrl: mediaData.previewUrl ?? null,
@@ -1557,6 +1578,23 @@ function CanvasFlow() {
           只读模式{projectRole ? ` · ${projectRole}` : ""}
         </div>
       )}
+
+      <div className="pointer-events-auto absolute right-4 top-4 z-50">
+        <ToolbarIconButton
+          label="共享"
+          icon={<Share2 className="size-3.5" />}
+          onClick={() => setShareDialogOpen(true)}
+        />
+      </div>
+
+      <CanvasShareDialog
+        open={shareDialogOpen}
+        projectId={activeProjectId}
+        projectRole={projectRole}
+        members={projectMembers}
+        onOpenChange={setShareDialogOpen}
+        onMembersChange={setProjectMembers}
+      />
 
       {createMenu.visible && pendingConnectionPreview && (
         <svg className="pointer-events-none fixed inset-0 z-40 overflow-visible" aria-hidden="true">

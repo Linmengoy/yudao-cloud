@@ -28,13 +28,12 @@ export const AigcModelApi = {
     return await request.delete({ url: '/aigc/model/delete?id=' + id })
   },
   updateModelStatus: async (id: number, status: number) => {
-    return await request.put({ url: '/aigc/model/status', data: { id, status } })
+    return await request.put({ url: '/aigc/model/status', params: { id, status } })
   },
   updateModelVisible: async (id: number, publicVisible: boolean) => {
-    return await request.put({ url: '/aigc/model/visible', data: { id, publicVisible } })
+    return await request.put({ url: '/aigc/model/visible', params: { id, publicVisible } })
   },
   updateModelDefault: async (id: number, defaultModel: boolean) => {
-    return await request.put({ url: '/aigc/model/default', data: { id, defaultModel } })
+    return await request.put({ url: '/aigc/model/default', params: { id, defaultModel } })
   }
 }
-

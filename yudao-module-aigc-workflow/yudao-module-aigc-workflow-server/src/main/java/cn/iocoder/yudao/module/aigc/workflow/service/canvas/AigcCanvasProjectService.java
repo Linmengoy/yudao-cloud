@@ -1,6 +1,8 @@
 package cn.iocoder.yudao.module.aigc.workflow.service.canvas;
 
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
@@ -23,6 +25,12 @@ public interface AigcCanvasProjectService {
     AigcCanvasMemberDO getProjectMember(Long id, Long userId);
 
     List<AigcCanvasMemberDO> getProjectMembers(Long id, Long userId);
+
+    void inviteProjectMember(Long id, AigcCanvasMemberInviteReqVO reqVO, Long userId);
+
+    void updateProjectMemberRole(Long id, Long memberId, AigcCanvasMemberUpdateRoleReqVO reqVO, Long userId);
+
+    void removeProjectMember(Long id, Long memberId, Long userId);
 
     PageResult<AigcCanvasProjectDO> getProjectPage(AigcCanvasProjectPageReqVO reqVO, Long userId);
 

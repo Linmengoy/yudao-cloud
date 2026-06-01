@@ -613,3 +613,47 @@ INSERT INTO `system_menu` (
 ('取消实例', 'aigc:workflow:update', 3, 3, @workflowInstanceMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
 
 COMMIT;
+
+-- ===================================================================
+-- AIGC 生成记录详情（隐藏菜单/路由）
+-- ===================================================================
+
+SELECT @genRecordMenuId := `id`
+FROM `system_menu`
+WHERE `deleted` = b'0'
+  AND `component` = 'aigc/gen/record/index'
+LIMIT 1;
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '生成记录详情', 'aigc:gen:query', 2, 99, @genRecordMenuId,
+    'detail/:id', '', 'aigc/gen/record/detail', 'AigcGenerateRecordDetail',
+    0, b'0', b'0', b'0',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+-- ===================================================================
+-- AIGC 任务详情（隐藏菜单/路由）
+-- ===================================================================
+
+SELECT @taskListMenuId := `id`
+FROM `system_menu`
+WHERE `deleted` = b'0'
+  AND `component` = 'aigc/task/index'
+LIMIT 1;
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '任务详情', 'aigc:task:query', 2, 99, @taskListMenuId,
+    'detail/:id', '', 'aigc/task/detail', 'AigcTaskDetail',
+    0, b'0', b'0', b'0',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);

@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.system.service.notify;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.system.controller.admin.notify.vo.message.NotifyMessageMyPageReqVO;
 import cn.iocoder.yudao.module.system.controller.admin.notify.vo.message.NotifyMessagePageReqVO;
+import cn.iocoder.yudao.module.system.controller.app.notify.vo.AppNotifyMessagePageReqVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.notify.NotifyMessageDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.notify.NotifyTemplateDO;
 import cn.iocoder.yudao.module.system.dal.mysql.notify.NotifyMessageMapper;
@@ -44,6 +45,11 @@ public class NotifyMessageServiceImpl implements NotifyMessageService {
 
     @Override
     public PageResult<NotifyMessageDO> getMyMyNotifyMessagePage(NotifyMessageMyPageReqVO pageReqVO, Long userId, Integer userType) {
+        return notifyMessageMapper.selectPage(pageReqVO, userId, userType);
+    }
+
+    @Override
+    public PageResult<NotifyMessageDO> getAppNotifyMessagePage(AppNotifyMessagePageReqVO pageReqVO, Long userId, Integer userType) {
         return notifyMessageMapper.selectPage(pageReqVO, userId, userType);
     }
 

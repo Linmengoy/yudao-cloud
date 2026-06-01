@@ -17,4 +17,8 @@ public interface AigcCanvasMemberMapper extends BaseMapperX<AigcCanvasMemberDO> 
         return selectList(AigcCanvasMemberDO::getProjectId, projectId);
     }
 
+    default AigcCanvasMemberDO selectByProjectIdAndId(Long projectId, Long id) {
+        return selectOne(AigcCanvasMemberDO::getProjectId, projectId, AigcCanvasMemberDO::getId, id);
+    }
+
 }

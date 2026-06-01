@@ -29,5 +29,9 @@ public interface ErrorCodeConstants {
     ErrorCode CANVAS_OPERATION_PAYLOAD_INVALID = new ErrorCode(1_046_000_104, "画布操作内容不合法");
     ErrorCode CANVAS_OPERATION_PAYLOAD_TOO_LARGE = new ErrorCode(1_046_000_105, "画布操作内容过大");
     ErrorCode CANVAS_SNAPSHOT_VERSION_CONFLICT = new ErrorCode(1_046_000_106, "画布快照版本已过期，请同步后重试");
+    ErrorCode CANVAS_MEMBER_NOT_EXISTS = new ErrorCode(1_046_000_107, "画布项目成员不存在");
+    ErrorCode CANVAS_MEMBER_ROLE_INVALID = new ErrorCode(1_046_000_108, "画布项目成员角色不支持");
+    ErrorCode CANVAS_MEMBER_EXISTS = new ErrorCode(1_046_000_109, "画布项目成员已存在");
+    ErrorCode CANVAS_OWNER_CAN_NOT_CHANGE = new ErrorCode(1_046_000_110, "画布项目拥有者不能被修改或移除");
 
 }

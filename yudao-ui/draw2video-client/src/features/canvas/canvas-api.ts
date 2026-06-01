@@ -4,11 +4,13 @@ import type {
   AppNode,
   CanvasOperationRecord,
   CanvasOperationSyncResult,
+  InviteCanvasMemberRequest,
   CanvasMember,
   CanvasProject,
   CanvasProjectKind,
   CanvasSnapshotRecord,
   CanvasState,
+  UpdateCanvasMemberRoleRequest,
 } from "@/features/canvas/types";
 
 export interface PageResult<T> {
@@ -107,6 +109,15 @@ export const canvasApi = {
   getProject: (projectId: string | number) => api.get<CanvasProject>(`/canvas/projects/${projectId}`),
 
   getProjectMembers: (projectId: string | number) => api.get<CanvasMember[]>(`/canvas/projects/${projectId}/members`),
+
+  inviteProjectMember: (projectId: string | number, input: InviteCanvasMemberRequest) =>
+    api.post<boolean>(`/canvas/projects/${projectId}/members`, input),
+
+  updateProjectMemberRole: (projectId: string | number, memberId: string | number, input: UpdateCanvasMemberRoleRequest) =>
+    api.put<boolean>(`/canvas/projects/${projectId}/members/${memberId}`, input),
+
+  removeProjectMember: (projectId: string | number, memberId: string | number) =>
+    api.delete<boolean>(`/canvas/projects/${projectId}/members/${memberId}`),
 
   updateProject: (projectId: string | number, input: UpdateCanvasProjectInput) =>
     api.put<boolean>(`/canvas/projects/${projectId}`, input),

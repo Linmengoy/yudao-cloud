@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.system.service.notify;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.system.controller.admin.notify.vo.message.NotifyMessageMyPageReqVO;
 import cn.iocoder.yudao.module.system.controller.admin.notify.vo.message.NotifyMessagePageReqVO;
+import cn.iocoder.yudao.module.system.controller.app.notify.vo.AppNotifyMessagePageReqVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.notify.NotifyMessageDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.notify.NotifyTemplateDO;
 
@@ -47,6 +48,8 @@ public interface NotifyMessageService {
      * @return 站内信分页
      */
     PageResult<NotifyMessageDO> getMyMyNotifyMessagePage(NotifyMessageMyPageReqVO pageReqVO, Long userId, Integer userType);
+
+    PageResult<NotifyMessageDO> getAppNotifyMessagePage(AppNotifyMessagePageReqVO pageReqVO, Long userId, Integer userType);
 
     /**
      * 获得站内信

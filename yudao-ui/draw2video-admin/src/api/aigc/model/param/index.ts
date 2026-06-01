@@ -4,7 +4,7 @@ import type { AigcModelParamTemplateRespVO } from '@/api/aigc/model/types'
 export type AigcModelParamTemplateSaveReqVO = AigcModelParamTemplateRespVO
 
 export const AigcModelParamApi = {
-  getParamList: async (params: { modelId?: number; capability?: string }) => {
+  getParamList: async (params: { modelId: number; capability: string }) => {
     return await request.get({ url: '/aigc/model/param/list', params })
   },
   getParam: async (id: number) => {
@@ -20,4 +20,3 @@ export const AigcModelParamApi = {
     return await request.delete({ url: '/aigc/model/param/delete?id=' + id })
   }
 }
-

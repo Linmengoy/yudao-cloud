@@ -37,14 +37,18 @@ defineOptions({ name: 'AigcModelParam' })
 
 const message = useMessage()
 const { t } = useI18n()
-const loading = ref(true)
+const loading = ref(false)
 const list = ref<AigcModelParamTemplateRespVO[]>([])
 const queryFormRef = ref()
 const queryParams = reactive<{ modelId?: number; capability?: string }>({ modelId: undefined, capability: undefined })
 const getList = async () => {
+  if (!queryParams.modelId || !queryParams.capability) {
+    list.value = []
+    return
+  }
   loading.value = true
   try {
-    list.value = await AigcModelParamApi.getParamList(queryParams)
+    list.value = await AigcModelParamApi.getParamList({ modelId: queryParams.modelId, capability: queryParams.capability })
   } finally {
     loading.value = false
   }

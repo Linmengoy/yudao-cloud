@@ -3,7 +3,9 @@ package cn.iocoder.yudao.module.aigc.workflow.controller.app;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberRespVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunSyncReqVO;
@@ -28,6 +30,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -85,6 +88,31 @@ public class AigcCanvasAppController {
     @Operation(summary = "画布项目成员列表")
     public CommonResult<List<AigcCanvasMemberRespVO>> getProjectMembers(@PathVariable("id") Long id) {
         return success(BeanUtils.toBean(projectService.getProjectMembers(id, getLoginUserId()), AigcCanvasMemberRespVO.class));
+    }
+
+    @PostMapping("/projects/{id}/members")
+    @Operation(summary = "邀请画布项目成员")
+    public CommonResult<Boolean> inviteProjectMember(@PathVariable("id") Long id,
+                                                     @Valid @RequestBody AigcCanvasMemberInviteReqVO reqVO) {
+        projectService.inviteProjectMember(id, reqVO, getLoginUserId());
+        return success(true);
+    }
+
+    @PutMapping("/projects/{id}/members/{memberId}")
+    @Operation(summary = "更新画布项目成员角色")
+    public CommonResult<Boolean> updateProjectMemberRole(@PathVariable("id") Long id,
+                                                         @PathVariable("memberId") Long memberId,
+                                                         @Valid @RequestBody AigcCanvasMemberUpdateRoleReqVO reqVO) {
+        projectService.updateProjectMemberRole(id, memberId, reqVO, getLoginUserId());
+        return success(true);
+    }
+
+    @DeleteMapping("/projects/{id}/members/{memberId}")
+    @Operation(summary = "移除画布项目成员")
+    public CommonResult<Boolean> removeProjectMember(@PathVariable("id") Long id,
+                                                     @PathVariable("memberId") Long memberId) {
+        projectService.removeProjectMember(id, memberId, getLoginUserId());
+        return success(true);
     }
 
     @PutMapping("/projects/{id}")

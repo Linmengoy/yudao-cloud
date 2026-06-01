@@ -38,14 +38,18 @@ defineOptions({ name: 'AigcModelPrice' })
 
 const message = useMessage()
 const { t } = useI18n()
-const loading = ref(true)
+const loading = ref(false)
 const list = ref<AigcModelPriceRespVO[]>([])
 const queryFormRef = ref()
 const queryParams = reactive<{ modelId?: number; capability?: string }>({ modelId: undefined, capability: undefined })
 const getList = async () => {
+  if (!queryParams.modelId || !queryParams.capability) {
+    list.value = []
+    return
+  }
   loading.value = true
   try {
-    list.value = await AigcModelPriceApi.getPriceList(queryParams)
+    list.value = await AigcModelPriceApi.getPriceList({ modelId: queryParams.modelId, capability: queryParams.capability })
   } finally {
     loading.value = false
   }

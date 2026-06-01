@@ -56,6 +56,11 @@ export const AIGC_HEALTH_STATUSES = [
   { label: '余额不足', value: 'BALANCE_LOW' }
 ]
 
+export const AIGC_USAGE_STATUSES = [
+  { label: '成功', value: 0 },
+  { label: '失败', value: 1 }
+]
+
 export const getOptionLabel = (options: Array<{ label: string; value: string | number }>, value?: string | number) => {
   return options.find((item) => item.value === value)?.label || value || '-'
 }

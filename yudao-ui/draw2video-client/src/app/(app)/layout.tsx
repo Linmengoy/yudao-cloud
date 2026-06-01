@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/auth-store";
 import { ThemeToggle } from "@/features/theme/ThemeToggle";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
 
 const sidebarLinks = [
   { href: "/app", icon: Home, label: "首页" },
@@ -135,6 +136,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <HelpCircle className="size-5" />
           </Link>
+
+          <NotificationBell />
 
           <ThemeToggle className="size-10 rounded-lg p-0" />
 

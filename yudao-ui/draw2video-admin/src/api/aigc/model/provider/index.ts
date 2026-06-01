@@ -26,10 +26,9 @@ export const AigcModelProviderApi = {
     return await request.delete({ url: '/aigc/model/provider/delete?id=' + id })
   },
   updateProviderStatus: async (id: number, status: number) => {
-    return await request.put({ url: '/aigc/model/provider/status', data: { id, status } })
+    return await request.put({ url: '/aigc/model/provider/status', params: { id, status } })
   },
   testProvider: async (id: number) => {
-    return await request.post({ url: '/aigc/model/provider/test', data: { id } })
+    return await request.post({ url: '/aigc/model/provider/test', params: { id } })
   }
 }
-

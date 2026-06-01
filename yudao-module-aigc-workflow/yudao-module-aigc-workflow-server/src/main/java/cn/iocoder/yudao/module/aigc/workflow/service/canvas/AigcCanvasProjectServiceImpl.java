@@ -4,6 +4,8 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
@@ -20,6 +22,7 @@ import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasOperatio
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasProjectMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasSnapshotMapper;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.AigcCanvasRoomService;
+import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasMemberMessage;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasOperationAppliedMessage;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
@@ -32,7 +35,11 @@ import java.util.List;
 import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_MEMBER_EXISTS;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_MEMBER_NOT_EXISTS;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_MEMBER_ROLE_INVALID;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_NO_PERMISSION;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_OWNER_CAN_NOT_CHANGE;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_PROJECT_NOT_EXISTS;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_SNAPSHOT_VERSION_CONFLICT;
 
@@ -42,6 +49,8 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
 
     private static final String PROJECT_STATUS_NORMAL = "NORMAL";
     private static final String MEMBER_ROLE_OWNER = "owner";
+    private static final String MEMBER_ROLE_EDITOR = "editor";
+    private static final String MEMBER_ROLE_VIEWER = "viewer";
 
     @Resource
     private AigcCanvasProjectMapper projectMapper;
@@ -102,6 +111,54 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     public List<AigcCanvasMemberDO> getProjectMembers(Long id, Long userId) {
         validateReadableProject(id, userId);
         return memberMapper.selectListByProjectId(id);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void inviteProjectMember(Long id, AigcCanvasMemberInviteReqVO reqVO, Long userId) {
+        validateOwnerProject(id, userId);
+        validateManageableRole(reqVO.getRole());
+        AigcCanvasMemberDO existed = memberMapper.selectByProjectIdAndUserId(id, reqVO.getUserId());
+        if (existed != null) {
+            throw exception(CANVAS_MEMBER_EXISTS);
+        }
+        AigcCanvasMemberDO member = new AigcCanvasMemberDO();
+        member.setProjectId(id);
+        member.setUserId(reqVO.getUserId());
+        member.setRole(reqVO.getRole());
+        member.setInviteUserId(userId);
+        member.setJoinedTime(LocalDateTime.now());
+        member.setLastActiveTime(LocalDateTime.now());
+        memberMapper.insert(member);
+        broadcastMemberUpdated(id, reqVO.getUserId(), "member-added");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateProjectMemberRole(Long id, Long memberId, AigcCanvasMemberUpdateRoleReqVO reqVO, Long userId) {
+        validateOwnerProject(id, userId);
+        validateManageableRole(reqVO.getRole());
+        AigcCanvasMemberDO member = validateProjectMember(id, memberId);
+        if (MEMBER_ROLE_OWNER.equals(member.getRole())) {
+            throw exception(CANVAS_OWNER_CAN_NOT_CHANGE);
+        }
+        AigcCanvasMemberDO update = new AigcCanvasMemberDO();
+        update.setId(member.getId());
+        update.setRole(reqVO.getRole());
+        memberMapper.updateById(update);
+        broadcastMemberUpdated(id, member.getUserId(), "role-updated");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void removeProjectMember(Long id, Long memberId, Long userId) {
+        validateOwnerProject(id, userId);
+        AigcCanvasMemberDO member = validateProjectMember(id, memberId);
+        if (MEMBER_ROLE_OWNER.equals(member.getRole())) {
+            throw exception(CANVAS_OWNER_CAN_NOT_CHANGE);
+        }
+        memberMapper.deleteById(memberId);
+        broadcastMemberUpdated(id, member.getUserId(), "member-removed");
     }
 
     @Override
@@ -226,6 +283,35 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
             throw exception(CANVAS_NO_PERMISSION);
         }
         return project;
+    }
+
+    private void validateOwnerProject(Long projectId, Long userId) {
+        validateReadableProject(projectId, userId);
+        AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndUserId(projectId, userId);
+        if (member == null || !MEMBER_ROLE_OWNER.equals(member.getRole())) {
+            throw exception(CANVAS_NO_PERMISSION);
+        }
+    }
+
+    private AigcCanvasMemberDO validateProjectMember(Long projectId, Long memberId) {
+        AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndId(projectId, memberId);
+        if (member == null) {
+            throw exception(CANVAS_MEMBER_NOT_EXISTS);
+        }
+        return member;
+    }
+
+    private void validateManageableRole(String role) {
+        if (!MEMBER_ROLE_EDITOR.equals(role) && !MEMBER_ROLE_VIEWER.equals(role)) {
+            throw exception(CANVAS_MEMBER_ROLE_INVALID);
+        }
+    }
+
+    private void broadcastMemberUpdated(Long projectId, Long userId, String event) {
+        roomService.broadcastMemberEvent(projectId, new AigcCanvasMemberMessage()
+                .setProjectId(projectId)
+                .setUserId(userId)
+                .setEvent(event), null);
     }
 
 }

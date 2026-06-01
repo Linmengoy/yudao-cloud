@@ -6,6 +6,7 @@ import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.QueryWrapperX;
 import cn.iocoder.yudao.module.system.controller.admin.notify.vo.message.NotifyMessageMyPageReqVO;
 import cn.iocoder.yudao.module.system.controller.admin.notify.vo.message.NotifyMessagePageReqVO;
+import cn.iocoder.yudao.module.system.controller.app.notify.vo.AppNotifyMessagePageReqVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.notify.NotifyMessageDO;
 import org.apache.ibatis.annotations.Mapper;
 
@@ -29,6 +30,17 @@ public interface NotifyMessageMapper extends BaseMapperX<NotifyMessageDO> {
     default PageResult<NotifyMessageDO> selectPage(NotifyMessageMyPageReqVO reqVO, Long userId, Integer userType) {
         return selectPage(reqVO, new LambdaQueryWrapperX<NotifyMessageDO>()
                 .eqIfPresent(NotifyMessageDO::getReadStatus, reqVO.getReadStatus())
+                .betweenIfPresent(NotifyMessageDO::getCreateTime, reqVO.getCreateTime())
+                .eq(NotifyMessageDO::getUserId, userId)
+                .eq(NotifyMessageDO::getUserType, userType)
+                .orderByDesc(NotifyMessageDO::getId));
+    }
+
+    default PageResult<NotifyMessageDO> selectPage(AppNotifyMessagePageReqVO reqVO, Long userId, Integer userType) {
+        return selectPage(reqVO, new LambdaQueryWrapperX<NotifyMessageDO>()
+                .eqIfPresent(NotifyMessageDO::getReadStatus, reqVO.getReadStatus())
+                .eqIfPresent(NotifyMessageDO::getTemplateType, reqVO.getTemplateType())
+                .likeIfPresent(NotifyMessageDO::getTemplateCode, reqVO.getTemplateCode())
                 .betweenIfPresent(NotifyMessageDO::getCreateTime, reqVO.getCreateTime())
                 .eq(NotifyMessageDO::getUserId, userId)
                 .eq(NotifyMessageDO::getUserType, userType)

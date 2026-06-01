@@ -292,6 +292,15 @@ export interface CanvasMember {
   lastActiveTime?: string;
 }
 
+export interface InviteCanvasMemberRequest {
+  userId: number;
+  role: Exclude<CanvasProjectRole, "owner">;
+}
+
+export interface UpdateCanvasMemberRoleRequest {
+  role: Exclude<CanvasProjectRole, "owner">;
+}
+
 export interface CanvasSnapshotRecord {
   id: number;
   projectId: number;

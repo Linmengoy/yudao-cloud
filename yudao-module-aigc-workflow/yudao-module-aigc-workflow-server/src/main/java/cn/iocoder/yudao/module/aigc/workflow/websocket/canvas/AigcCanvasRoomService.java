@@ -2,7 +2,6 @@ package cn.iocoder.yudao.module.aigc.workflow.websocket.canvas;
 
 import cn.iocoder.yudao.framework.websocket.core.sender.WebSocketMessageSender;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasMemberMessage;
-import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -17,7 +16,6 @@ public class AigcCanvasRoomService {
     private final Map<Long, Set<String>> projectSessions = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionProjects = new ConcurrentHashMap<>();
 
-    @Resource
     @Autowired(required = false)
     private WebSocketMessageSender webSocketMessageSender;
 

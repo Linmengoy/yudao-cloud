@@ -19,7 +19,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import type { AppNode, ImageNodeData, NodeDataPatchEventDetail, ReferencePickerEventDetail, VideoNodeData } from "./types";
+import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, ReferencePickerEventDetail, VideoNodeData } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
@@ -194,9 +194,9 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     .filter((edge) => edge.target === id)
     .map((edge) => {
       const node = nodes.find((n) => n.id === edge.source);
-      return node?.type === "image" ? { edgeId: edge.id, data: node.data as ImageNodeData } : null;
+      return node?.type === "image" ? { edgeId: edge.id, nodeId: node.id, data: node.data as ImageNodeData } : null;
     })
-    .filter((item): item is { edgeId: string; data: ImageNodeData } => item !== null);
+    .filter((item): item is { edgeId: string; nodeId: string; data: ImageNodeData } => item !== null);
 
   const summary = useMemo(() => {
     if (isWanModel) return `Frames · ${data.size ?? "1280*704"} · 121f · 5s`;
@@ -315,7 +315,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             size: data.size,
             generateAudio: data.generateAudio,
             watermark: data.watermark,
-            referenceImageIds: referenceImages.map((image) => image.id),
+            referenceImageIds: referenceImages.map((image) => image.nodeId),
           }),
           sync: false,
         });
