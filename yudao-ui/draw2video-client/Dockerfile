@@ -1,11 +1,11 @@
-FROM node:22-alpine AS deps
+FROM docker.m.daocloud.io/library/node:22-alpine AS deps
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:22-alpine AS build
+FROM docker.m.daocloud.io/library/node:22-alpine AS build
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 ENV NEXT_PUBLIC_APP_API_PREFIX=${NEXT_PUBLIC_APP_API_PREFIX}
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM docker.m.daocloud.io/library/node:22-alpine AS runner
 
 WORKDIR /app
 
