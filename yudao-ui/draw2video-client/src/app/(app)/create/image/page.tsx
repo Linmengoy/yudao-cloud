@@ -1,6 +1,7 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
+import "tldraw/tldraw.css";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -10,7 +11,7 @@ import {
   ReactFlowProvider,
   Background,
   BackgroundVariant,
-  Controls,
+  MiniMap,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -22,19 +23,22 @@ import {
   type Connection,
   type FinalConnectionState,
   type NodeTypes,
+  type EdgeTypes,
   type NodeChange,
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
 import { PromptNodeComponent } from "@/features/canvas/PromptNode";
 import { ResultNodeComponent } from "@/features/canvas/ResultNode";
 import { ImageNodeComponent } from "@/features/canvas/ImageNode";
+import { SketchNodeComponent } from "@/features/canvas/SketchNode";
 import { TextNodeComponent } from "@/features/canvas/TextNode";
 import { VideoNodeComponent } from "@/features/canvas/VideoNode";
+import { CanvasSignalEdge } from "@/features/canvas/CanvasSignalEdge";
 import { loadCanvas, saveCanvas, clearCanvas } from "@/features/canvas/use-canvas-storage";
 import { filterSyncableNodeDataPatch, sanitizeNodeForCanvasOperation } from "@/features/canvas/canvas-syncable-data";
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
@@ -52,18 +56,24 @@ import {
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { createProject, updateProject as updateLocalProject, type ProjectKind } from "@/features/projects/project-store";
-import { Plus, Trash2, ImagePlus, Share2, Type, Video } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Plus, Trash2, ImagePlus, Share2, Type, Video, Map as MapIcon, Grid3X3, Scan, PenLine } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
   prompt: PromptNodeComponent,
   result: ResultNodeComponent,
   image: ImageNodeComponent,
+  sketch: SketchNodeComponent,
   text: TextNodeComponent,
   video: VideoNodeComponent,
 } satisfies NodeTypes;
 
-type CreateNodeKind = "text" | "image" | "video";
+const CANVAS_EDGE_TYPES = {
+  signal: CanvasSignalEdge,
+} satisfies EdgeTypes;
+
+type CreateNodeKind = "text" | "image" | "sketch" | "video";
 type LinkedCreateDirection = "incoming" | "outgoing";
 type PendingConnectionPreview = {
   from: { x: number; y: number };
@@ -71,7 +81,7 @@ type PendingConnectionPreview = {
   direction: LinkedCreateDirection;
 };
 
-const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "video"];
+const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video"];
 
 function getPresenceColor(clientId: string) {
   const colors = ["#7c3aed", "#0891b2", "#ea580c", "#16a34a", "#dc2626", "#2563eb"];
@@ -85,6 +95,8 @@ function isValidNodeKindConnection(sourceType: AppNode["type"] | CreateNodeKind,
     (sourceType === "image" && targetType === "image") ||
     (sourceType === "image" && targetType === "video") ||
     (sourceType === "image" && targetType === "text") ||
+    (sourceType === "sketch" && targetType === "image") ||
+    (sourceType === "sketch" && targetType === "video") ||
     (sourceType === "text" && targetType === "image") ||
     (sourceType === "text" && targetType === "text")
   );
@@ -164,6 +176,72 @@ function CanvasConnectionLine({
       strokeLinecap="round"
       strokeWidth={2}
     />
+  );
+}
+
+type CanvasViewToolbarProps = {
+  showMiniMap: boolean;
+  snapToGrid: boolean;
+  zoom: number;
+  onToggleMiniMap: () => void;
+  onToggleSnapToGrid: () => void;
+  onResetView: () => void;
+  onZoomChange: (zoom: number) => void;
+};
+
+function CanvasViewToolbar({
+  showMiniMap,
+  snapToGrid,
+  zoom,
+  onToggleMiniMap,
+  onToggleSnapToGrid,
+  onResetView,
+  onZoomChange,
+}: CanvasViewToolbarProps) {
+  const buttonClass =
+    "flex size-7 items-center justify-center rounded-full text-muted-gray transition-colors hover:bg-muted hover:text-charcoal focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px]";
+
+  return (
+    <div className="canvas-view-toolbar nowheel absolute bottom-4 left-4 z-[80] flex items-center gap-1.5 rounded-full border border-border-warm bg-background/95 px-2 py-1.5 shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] backdrop-blur-sm dark:shadow-[rgba(255,255,255,0.12)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.45)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.24)_0px_1px_2px_0px]">
+      <button
+        type="button"
+        aria-pressed={showMiniMap}
+        title="Open minimap"
+        onClick={onToggleMiniMap}
+        className={cn(buttonClass, showMiniMap && "bg-charcoal text-off-white hover:bg-charcoal hover:text-off-white")}
+      >
+        <MapIcon className="size-5" strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        aria-pressed={snapToGrid}
+        title="Snap to Grid"
+        onClick={onToggleSnapToGrid}
+        className={cn(buttonClass, snapToGrid && "bg-charcoal text-off-white hover:bg-charcoal hover:text-off-white")}
+      >
+        <Grid3X3 className="size-5" strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        title="Reset"
+        onClick={onResetView}
+        className={buttonClass}
+      >
+        <Scan className="size-5" strokeWidth={2} />
+      </button>
+      <div className="flex items-center pl-0.5" title="Zoom in/out canvas (Ctrl/⌘ + mouse wheel)">
+        <input
+          aria-label="Zoom in/out canvas"
+          className="canvas-zoom-slider w-[77px]"
+          type="range"
+          min={0.2}
+          max={2}
+          step={0.01}
+          value={zoom}
+          onChange={(event) => onZoomChange(Number(event.currentTarget.value))}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -278,6 +356,26 @@ function migrateNode(n: AppNode): AppNode {
       },
     } as AppNode;
   }
+  if (n.type === "sketch") {
+    const d = n.data as Record<string, unknown>;
+    return {
+      ...n,
+      data: {
+        sketchId: typeof d.sketchId === "string" ? d.sketchId : n.id,
+        projectId: typeof d.projectId === "string" || typeof d.projectId === "number" ? d.projectId : null,
+        fileName: typeof d.fileName === "string" ? d.fileName : "Sketch",
+        sceneJson: d.sceneJson,
+        previewUrl: typeof d.previewUrl === "string" ? d.previewUrl : null,
+        dataUrl: typeof d.dataUrl === "string" ? d.dataUrl : "",
+        mimeType: typeof d.mimeType === "string" ? d.mimeType : "image/png",
+        width: typeof d.width === "number" ? d.width : undefined,
+        height: typeof d.height === "number" ? d.height : undefined,
+        background: d.background === "transparent" ? "transparent" : "white",
+        createdAt: typeof d.createdAt === "string" ? d.createdAt : new Date().toISOString(),
+        updatedAt: typeof d.updatedAt === "string" ? d.updatedAt : undefined,
+      },
+    } as AppNode;
+  }
   if (n.type === "video") {
     const d = n.data as Record<string, unknown>;
     const status = d.status === "pending" || d.status === "complete" || d.status === "failed" ? d.status : "idle";
@@ -321,8 +419,8 @@ function migrateNode(n: AppNode): AppNode {
 }
 
 function migrateEdge(e: AppEdge): AppEdge {
-  if (e.type === "smoothstep" || e.type === "bezier") {
-    return { ...e, type: "default" };
+  if (!e.type || e.type === "default" || e.type === "smoothstep" || e.type === "bezier") {
+    return { ...e, type: "signal" };
   }
   return e;
 }
@@ -334,6 +432,8 @@ function isValidCanvasConnection(connection: { source: string; target: string },
     (source?.type === "image" && target?.type === "image" && connection.source !== connection.target) ||
     (source?.type === "image" && target?.type === "video") ||
     (source?.type === "image" && target?.type === "text") ||
+    (source?.type === "sketch" && target?.type === "image") ||
+    (source?.type === "sketch" && target?.type === "video") ||
     (source?.type === "text" && target?.type === "image") ||
     (source?.type === "text" && target?.type === "text" && connection.source !== connection.target) ||
     (source?.type === "image" && target?.type === "prompt") ||
@@ -362,6 +462,7 @@ function summarizeCanvas(nodes: AppNode[]): { kind: ProjectKind; nodeCount: numb
     nodeCount: nodes.length,
     assetCount: nodes.filter((node) => {
       if (node.type === "image") return Boolean((node.data as ImageNodeData).dataUrl);
+      if (node.type === "sketch") return Boolean((node.data as SketchNodeData).dataUrl || (node.data as SketchNodeData).sceneJson);
       if (node.type === "video") return Boolean((node.data as VideoNodeData).videoUrl);
       return false;
     }).length,
@@ -390,6 +491,9 @@ function CanvasFlow() {
   const [lastAppliedVersion, setLastAppliedVersion] = useState(0);
   const [latestKnownVersion, setLatestKnownVersion] = useState(0);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
+  const [showMiniMap, setShowMiniMap] = useState(false);
+  const [snapToGrid, setSnapToGrid] = useState(false);
+  const [canvasZoom, setCanvasZoom] = useState(1);
   const [createMenu, setCreateMenu] = useState<{
     x: number;
     y: number;
@@ -836,7 +940,7 @@ function CanvasFlow() {
   // --- Connection handling ---
   const onConnect = useCallback((connection: Connection) => {
     if (isReadOnly) return;
-    const edge: AppEdge = { ...connection, id: `e-${connection.source}-${connection.target}-${Date.now()}`, type: "default" };
+    const edge: AppEdge = { ...connection, id: `e-${connection.source}-${connection.target}-${Date.now()}`, type: "signal" };
     let shouldSubmit = false;
     setEdges((eds) => {
       if (eds.some((item) => isSameCanvasEdge(item, edge))) return eds;
@@ -1015,6 +1119,42 @@ function CanvasFlow() {
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+
+  const addSketchNode = useCallback((position?: { x: number; y: number }) => {
+    if (isReadOnly) return null;
+    const center = position ?? screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const id = `sketch_${Date.now()}`;
+    const now = new Date().toISOString();
+    const sketchData: SketchNodeData = {
+      sketchId: id,
+      projectId: serverProjectId,
+      fileName: "Sketch",
+      sceneJson: undefined,
+      previewUrl: null,
+      dataUrl: "",
+      mimeType: "image/png",
+      background: "white",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const newNode: AppNode = {
+      id,
+      type: "sketch",
+      position: findOpenNodePosition(
+        { x: center.x - 150, y: center.y - 110 },
+        { width: 300, height: 240 },
+        getNodes() as AppNode[]
+      ),
+      data: sketchData,
+      selected: true,
+    };
+    setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
+    return newNode;
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
 
   const addTextNode = useCallback((position?: { x: number; y: number }) => {
     if (isReadOnly) return null;
@@ -1305,6 +1445,30 @@ function CanvasFlow() {
     const vp = getViewport();
     setViewport({ x: vp.x, y: vp.y, zoom: 1 }, { duration: 200 });
   }, [getViewport, setViewport]);
+  const handleToolbarResetView = useCallback(() => {
+    fitView({ padding: 0.2, duration: 220 });
+  }, [fitView]);
+  const handleToolbarZoomChange = useCallback((zoom: number) => {
+    const vp = getViewport();
+    const flowElement = document.querySelector(".react-flow");
+    const rect = flowElement?.getBoundingClientRect();
+    if (rect) {
+      const centerScreen = {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+      const centerFlow = screenToFlowPosition(centerScreen);
+      setCanvasZoom(zoom);
+      setViewport({
+        x: centerScreen.x - centerFlow.x * zoom,
+        y: centerScreen.y - centerFlow.y * zoom,
+        zoom,
+      }, { duration: 80 });
+      return;
+    }
+    setCanvasZoom(zoom);
+    setViewport({ x: vp.x, y: vp.y, zoom }, { duration: 80 });
+  }, [getViewport, screenToFlowPosition, setViewport]);
 
   const closeCreateMenu = useCallback(() => {
     setCreateMenu((prev) => ({ ...prev, visible: false }));
@@ -1346,7 +1510,9 @@ function CanvasFlow() {
           ? addTextNode(position)
           : kind === "image"
             ? addImageDraftNode(position)
-            : addVideoNode(position);
+            : kind === "sketch"
+              ? addSketchNode(position)
+              : addVideoNode(position);
 
       if (!newNode) return;
 
@@ -1364,7 +1530,7 @@ function CanvasFlow() {
           const edge: AppEdge = {
             ...connection,
             id: `e-${connection.source}-${connection.target}-${Date.now()}`,
-            type: "default",
+            type: "signal",
           };
           let shouldSubmit = false;
           setEdges((eds) => {
@@ -1379,7 +1545,7 @@ function CanvasFlow() {
 
       closeCreateMenu();
     },
-    [addImageDraftNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
+    [addImageDraftNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
   );
 
   const handleConnectEnd = useCallback(
@@ -1487,6 +1653,7 @@ function CanvasFlow() {
         if (
           target.closest(".react-flow__node") ||
           target.closest(".react-flow__controls") ||
+          target.closest(".canvas-view-toolbar") ||
           isEditableElement(target)
         ) {
           return;
@@ -1500,12 +1667,16 @@ function CanvasFlow() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={CANVAS_NODE_TYPES}
+        edgeTypes={CANVAS_EDGE_TYPES}
         minZoom={0.2}
         maxZoom={2}
-        zoomOnScroll={false}
+        zoomOnScroll
+        zoomActivationKeyCode={["Meta", "Control"]}
         zoomOnPinch
         panOnScroll
         panOnScrollMode={PanOnScrollMode.Free}
+        snapToGrid={snapToGrid}
+        snapGrid={[36, 36]}
         panOnDrag={false}
         selectionOnDrag
         selectionMode={SelectionMode.Partial}
@@ -1513,11 +1684,13 @@ function CanvasFlow() {
         deleteKeyCode={isReadOnly ? null : "Backspace"}
         fitView
         defaultEdgeOptions={{
-          type: "default",
-          style: { stroke: "#eceae4", strokeWidth: 2 },
+          type: "signal",
         }}
         connectionLineComponent={CanvasConnectionLine}
         proOptions={{ hideAttribution: true }}
+        onMove={(_, viewport) => {
+          setCanvasZoom(viewport.zoom);
+        }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -1542,16 +1715,26 @@ function CanvasFlow() {
         isValidConnection={(connection) => !isReadOnly && isValidCanvasConnection(connection, nodes)}
       >
         <Background variant={BackgroundVariant.Dots} gap={36} size={1.8} color="var(--canvas-dot)" />
-        <Controls
-          showInteractive={false}
-          style={{
-            background: "#fcfbf8",
-            border: "1px solid #eceae4",
-            borderRadius: "8px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-          }}
-        />
+        {showMiniMap && (
+          <MiniMap
+            pannable
+            zoomable
+            nodeColor="var(--canvas-edge-selected)"
+            maskColor="var(--canvas-minimap-mask)"
+            className="!bottom-[104px] !left-5 !right-auto !rounded-2xl !border !border-border-warm !bg-background/92 !shadow-[0_14px_40px_rgba(0,0,0,0.16)]"
+          />
+        )}
       </ReactFlow>
+
+      <CanvasViewToolbar
+        showMiniMap={showMiniMap}
+        snapToGrid={snapToGrid}
+        zoom={canvasZoom}
+        onToggleMiniMap={() => setShowMiniMap((value) => !value)}
+        onToggleSnapToGrid={() => setSnapToGrid((value) => !value)}
+        onResetView={handleToolbarResetView}
+        onZoomChange={handleToolbarZoomChange}
+      />
 
       {Object.entries(remotePresences).map(([presenceClientId, presence]) => {
         const cursor = presence.screenCursor;
@@ -1702,8 +1885,9 @@ function CanvasFlow() {
               >
                 {kind === "text" && <Type className="size-4 text-muted-gray" />}
                 {kind === "image" && <ImagePlus className="size-4 text-muted-gray" />}
+                {kind === "sketch" && <PenLine className="size-4 text-muted-gray" />}
                 {kind === "video" && <Video className="size-4 text-muted-gray" />}
-                {kind === "text" ? "Text" : kind === "image" ? "Image" : "Video"}
+                {kind === "text" ? "Text" : kind === "image" ? "Image" : kind === "sketch" ? "Sketch" : "Video"}
               </button>
             ))}
           </motion.div>
@@ -1718,6 +1902,11 @@ function CanvasFlow() {
             icon={<Plus className="size-3.5" />}
             onClick={() => addImageDraftNode()}
             variant="primary"
+          />
+          <ToolbarIconButton
+            label="新建 Sketch"
+            icon={<PenLine className="size-3.5" />}
+            onClick={() => addSketchNode()}
           />
           <ToolbarIconButton
             label="上传素材"

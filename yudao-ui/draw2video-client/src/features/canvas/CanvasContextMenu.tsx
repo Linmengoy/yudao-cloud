@@ -83,7 +83,7 @@ export function CanvasContextMenu({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.98, y: -2 }}
           transition={{ duration: 0.14, ease: "easeOut" }}
-          className="fixed z-[200] min-w-[220px] origin-top-left rounded-xl border border-border-warm bg-background py-1 shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
+          className="fixed z-[260] min-w-[220px] origin-top-left rounded-xl border border-border-warm bg-background py-1 shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
           style={{ left: pos.x, top: pos.y }}
         >
           {items.map((item) => (

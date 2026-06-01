@@ -7,9 +7,11 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSketchSaveReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSnapshotSaveReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasMemberDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectDO;
+import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasSketchDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasSnapshotDO;
 
 import java.util.List;
@@ -37,6 +39,10 @@ public interface AigcCanvasProjectService {
     AigcCanvasSnapshotDO getLatestSnapshot(Long projectId, Long userId);
 
     AigcCanvasSnapshotDO saveSnapshot(AigcCanvasSnapshotSaveReqVO reqVO, Long userId);
+
+    AigcCanvasSketchDO getSketch(Long projectId, String nodeId, Long userId);
+
+    AigcCanvasSketchDO saveSketch(AigcCanvasSketchSaveReqVO reqVO, Long userId);
 
     Long bindAsset(AigcCanvasAssetBindReqVO reqVO, Long userId);
 

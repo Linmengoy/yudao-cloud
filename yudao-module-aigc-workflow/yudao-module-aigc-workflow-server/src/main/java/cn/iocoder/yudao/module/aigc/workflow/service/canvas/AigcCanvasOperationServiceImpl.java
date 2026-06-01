@@ -42,7 +42,7 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
             "NODE_CREATE", "NODE_DELETE", "NODE_MOVE", "NODE_RESIZE", "NODE_UPDATE_DATA",
             "EDGE_CREATE", "EDGE_DELETE", "ASSET_ATTACH", "ASSET_DETACH", "TASK_STATUS_PATCH", "CANVAS_CLEAR"));
     private static final Set<String> SYNCABLE_NODE_DATA_KEYS = new HashSet<>(Arrays.asList(
-            "imageId", "videoId", "assetId", "assetVersionId", "previewUrl", "fileName", "mimeType",
+            "imageId", "sketchId", "videoId", "projectId", "assetId", "assetVersionId", "previewUrl", "background", "fileName", "mimeType",
             "width", "height", "durationSec", "sizeBytes", "kind", "prompt", "content", "modelId",
             "provider", "providerModel", "modelName", "aigcModelId", "params", "status", "taskId",
             "errorMessage", "taskStatus", "progress", "outputAssetId", "outputPreviewUrl", "sourceTaskId", "videoUrl",

@@ -25,6 +25,7 @@ import type {
   PromptNodeData,
   ReferencePickerEventDetail,
   ResultNodeData,
+  SketchNodeData,
 } from "./types";
 import { deleteImage, saveImage } from "./image-store";
 import { DEFAULT_PROMPT_DATA } from "./types";
@@ -40,6 +41,9 @@ import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } fr
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
+import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
+import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
+import { downloadMedia, imageNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
 import { clampToViewport } from "./floating-position";
 
@@ -205,6 +209,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const paramsPopoverRef = useRef<HTMLDivElement>(null);
   const nodeMenuRef = useRef<HTMLDivElement>(null);
   const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number } | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; visible: boolean }>({
     x: 0,
     y: 0,
@@ -235,9 +240,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     .filter((edge) => edge.target === id)
     .map((edge) => {
       const node = nodes.find((n) => n.id === edge.source);
-      return node?.type === "image" ? { edgeId: edge.id, data: node.data as ImageNodeData } : null;
+      return node?.type === "image" || node?.type === "sketch"
+        ? { edgeId: edge.id, data: node.data as ImageNodeData | SketchNodeData }
+        : null;
     })
-    .filter((item): item is { edgeId: string; data: ImageNodeData } => item !== null);
+    .filter((item): item is { edgeId: string; data: ImageNodeData | SketchNodeData } => item !== null);
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
@@ -368,7 +375,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             id: `e-${id}-${referencePickerPromptId}`,
             source: id,
             target: referencePickerPromptId,
-            type: "default",
+            type: "signal",
           },
         ];
       });
@@ -533,7 +540,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           generateMode: mode === "edit" ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE",
           modelId: selectedAigcModelId,
           prompt: cleanPrompt,
-          inputParams: JSON.stringify({ ...params, inputImageIds: ids }),
+          inputParams: JSON.stringify({ ...params, inputImageIds: ids, inputImages: snapshots }),
           sync: false,
         });
         await waitCanvasNodeRunResult(projectId, id, {
@@ -644,6 +651,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const elapsedMs = data.elapsedMs ?? (isGenerating ? now - createdAtMs : null);
   const safetyStatus = normalizeSafetyStatus(data.safetyStatus) !== "idle" ? normalizeSafetyStatus(data.safetyStatus) : normalizeSafetyStatusFromError(data.safetyReason ?? data.errorMessage);
   const safety = getSafetyCopy(safetyStatus, "generation");
+  const previewItem = useMemo(() => imageNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
   const displaySize = getDisplaySize(data, measuredSize, params.size);
   const displayLeft = (PREVIEW_SLOT_WIDTH - displaySize.width) / 2;
   const displayTop = 28 + PREVIEW_SLOT_HEIGHT - displaySize.height;
@@ -659,6 +667,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       window.clearTimeout(timeout);
     };
   }, [displayLeft, displayTop, displaySize.width, displaySize.height, id, updateNodeInternals]);
+
+  const handlePreviewDownload = useCallback(() => {
+    if (!previewItem) return;
+    downloadMedia(previewItem);
+  }, [previewItem]);
 
   return (
     <>
@@ -688,6 +701,21 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         style={{ width: PREVIEW_SLOT_WIDTH }}
       >
         <div className="relative" style={{ width: PREVIEW_SLOT_WIDTH, height: PREVIEW_SLOT_HEIGHT + 28 }}>
+          <AnimatePresence>
+            {isOnlySelectedNode && !dragging && previewItem && (
+              <SelectedMediaToolbar
+                canDownload={Boolean(previewItem.url)}
+                onDownload={handlePreviewDownload}
+                onOpenPreview={() => setPreviewOpen(true)}
+                uiScale={fixedUiScale}
+                style={{
+                  left: displayLeft + displaySize.width / 2,
+                  top: displayTop - 54 * fixedUiScale,
+                  pointerEvents: "auto",
+                }}
+              />
+            )}
+          </AnimatePresence>
           <motion.div
             className="absolute flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
             initial={false}
@@ -832,8 +860,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 {connectedImages.map((img) => (
                   <div key={img.edgeId} className="group relative shrink-0">
                     <div className="size-9 overflow-hidden rounded-lg border border-border-warm bg-muted">
-                      {img.data.dataUrl ? (
-                        <img src={img.data.dataUrl} alt={img.data.fileName} className="size-full object-cover" draggable={false} />
+                      {(img.data.previewUrl || img.data.dataUrl) ? (
+                        <img src={img.data.previewUrl || img.data.dataUrl} alt={img.data.fileName} className="size-full object-cover" draggable={false} />
                       ) : (
                         <ImageIcon className="m-2 size-5 text-muted-gray/40" />
                       )}
@@ -904,7 +932,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 4, scale: 0.98 }}
                       transition={{ duration: 0.14, ease: "easeOut" }}
-                      className="absolute bottom-full left-0 z-[200] mb-2 w-[340px] rounded-xl border border-border-warm bg-background shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
+                      className="absolute bottom-full left-0 z-[260] mb-2 w-[340px] rounded-xl border border-border-warm bg-background shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
                     >
                       <div className="border-b border-border-warm px-4 py-3">
                         <p className="text-sm font-medium text-charcoal">模型偏好</p>
@@ -975,7 +1003,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 4, scale: 0.98 }}
                       transition={{ duration: 0.14, ease: "easeOut" }}
-                      className="absolute bottom-full left-0 z-[200] mb-2 w-[440px] rounded-xl border border-border-warm bg-background p-4 shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
+                      className="absolute bottom-full left-0 z-[260] mb-2 w-[440px] rounded-xl border border-border-warm bg-background p-4 shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
                     >
                       <div className="mb-4 flex items-center justify-between">
                         <div>
@@ -1233,6 +1261,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         </motion.div>,
         document.body
       )}
+      <MediaPreviewDialog item={previewItem} open={previewOpen} onClose={() => setPreviewOpen(false)} />
     </>
   );
 }

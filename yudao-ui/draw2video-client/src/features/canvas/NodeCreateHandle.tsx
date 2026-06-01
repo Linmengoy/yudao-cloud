@@ -82,7 +82,7 @@ export function NodeCreateHandle({ nodeId, direction, enabled = true, selected =
         });
       }}
       className={cn(
-        "group !z-20 !size-2 !overflow-visible !border-0 !bg-transparent !p-0 !shadow-none !outline-none !pointer-events-auto"
+        "group !z-0 !size-2 !overflow-visible !border-0 !bg-transparent !p-0 !shadow-none !outline-none !pointer-events-auto"
       )}
     >
       {showButton && (

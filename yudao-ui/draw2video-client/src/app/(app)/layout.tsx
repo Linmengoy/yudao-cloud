@@ -96,7 +96,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
-      <aside className="hidden w-[72px] shrink-0 flex-col items-center border-r border-border-warm bg-background py-4 md:flex">
+      <aside className="relative z-[160] hidden w-[72px] shrink-0 flex-col items-center border-r border-border-warm bg-background py-4 md:flex">
         <div className="mb-4 flex size-10 items-center justify-center rounded-lg bg-charcoal text-sm font-semibold text-off-white">
           C
         </div>
@@ -164,7 +164,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
             {/* Popover */}
             {popoverOpen && (
-              <div className="absolute bottom-0 left-full ml-2 w-[340px] rounded-xl border border-border-warm bg-background shadow-lg">
+              <div className="absolute bottom-0 left-full z-[220] ml-2 w-[340px] rounded-xl border border-border-warm bg-background shadow-lg">
                 {/* User info header */}
                 <div className="flex items-center gap-3 border-b border-border-warm px-4 py-4">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-charcoal text-sm font-medium text-off-white">
@@ -236,7 +236,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="relative z-0 flex flex-1 flex-col overflow-hidden">
         {/* Page content */}
         <div className="flex-1 overflow-auto">{children}</div>
       </div>
