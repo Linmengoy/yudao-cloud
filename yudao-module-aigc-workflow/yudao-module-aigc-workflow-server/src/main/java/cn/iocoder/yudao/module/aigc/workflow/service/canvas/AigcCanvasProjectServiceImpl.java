@@ -103,8 +103,12 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
 
     @Override
     public AigcCanvasMemberDO getProjectMember(Long id, Long userId) {
-        validateReadableProject(id, userId);
-        return memberMapper.selectByProjectIdAndUserId(id, userId);
+        AigcCanvasProjectDO project = validateReadableProject(id, userId);
+        AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndUserId(id, userId);
+        if (member == null && isProjectOwner(project, userId)) {
+            return buildOwnerMember(project, userId);
+        }
+        return member;
     }
 
     @Override
@@ -279,6 +283,9 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     @Override
     public AigcCanvasProjectDO validateEditableProject(Long projectId, Long userId) {
         AigcCanvasProjectDO project = validateReadableProject(projectId, userId);
+        if (isProjectOwner(project, userId)) {
+            return project;
+        }
         AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndUserId(projectId, userId);
         if (member == null || "viewer".equals(member.getRole())) {
             throw exception(CANVAS_NO_PERMISSION);
@@ -292,6 +299,9 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         if (project == null) {
             throw exception(CANVAS_PROJECT_NOT_EXISTS);
         }
+        if (isProjectOwner(project, userId)) {
+            return project;
+        }
         AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndUserId(projectId, userId);
         if (member == null) {
             throw exception(CANVAS_NO_PERMISSION);
@@ -300,11 +310,28 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     }
 
     private void validateOwnerProject(Long projectId, Long userId) {
-        validateReadableProject(projectId, userId);
+        AigcCanvasProjectDO project = validateReadableProject(projectId, userId);
+        if (isProjectOwner(project, userId)) {
+            return;
+        }
         AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndUserId(projectId, userId);
         if (member == null || !MEMBER_ROLE_OWNER.equals(member.getRole())) {
             throw exception(CANVAS_NO_PERMISSION);
         }
+    }
+
+    private boolean isProjectOwner(AigcCanvasProjectDO project, Long userId) {
+        return project != null && Objects.equals(project.getOwnerUserId(), userId);
+    }
+
+    private AigcCanvasMemberDO buildOwnerMember(AigcCanvasProjectDO project, Long userId) {
+        AigcCanvasMemberDO member = new AigcCanvasMemberDO();
+        member.setProjectId(project.getId());
+        member.setUserId(userId);
+        member.setRole(MEMBER_ROLE_OWNER);
+        member.setJoinedTime(project.getCreateTime());
+        member.setLastActiveTime(project.getUpdateTime());
+        return member;
     }
 
     private AigcCanvasMemberDO validateProjectMember(Long projectId, Long memberId) {
