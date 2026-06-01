@@ -6,7 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -31,8 +31,21 @@ function applyTheme(mode: ThemeMode) {
   document.documentElement.classList.toggle("dark", mode === "dark");
 }
 
+function subscribeTheme(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener("copse-theme-change", callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener("copse-theme-change", callback);
+  };
+}
+
+function getServerMode(): ThemeMode {
+  return "light";
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<ThemeMode>(() => getStoredMode());
+  const mode = useSyncExternalStore(subscribeTheme, getStoredMode, getServerMode);
 
   useEffect(() => {
     applyTheme(mode);
@@ -40,8 +53,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [mode]);
 
   const toggleMode = useCallback(() => {
-    setMode((current) => (current === "dark" ? "light" : "dark"));
-  }, []);
+    const nextMode = mode === "dark" ? "light" : "dark";
+    window.localStorage.setItem(STORAGE_KEY, nextMode);
+    applyTheme(nextMode);
+    window.dispatchEvent(new Event("copse-theme-change"));
+  }, [mode]);
 
   const value = useMemo(
     () => ({

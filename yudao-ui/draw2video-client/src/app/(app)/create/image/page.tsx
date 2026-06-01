@@ -95,9 +95,11 @@ function isValidNodeKindConnection(sourceType: AppNode["type"] | CreateNodeKind,
     (sourceType === "image" && targetType === "image") ||
     (sourceType === "image" && targetType === "video") ||
     (sourceType === "image" && targetType === "text") ||
+    (sourceType === "image" && targetType === "sketch") ||
     (sourceType === "sketch" && targetType === "image") ||
     (sourceType === "sketch" && targetType === "video") ||
     (sourceType === "text" && targetType === "image") ||
+    (sourceType === "text" && targetType === "sketch") ||
     (sourceType === "text" && targetType === "text")
   );
 }
@@ -432,9 +434,11 @@ function isValidCanvasConnection(connection: { source: string; target: string },
     (source?.type === "image" && target?.type === "image" && connection.source !== connection.target) ||
     (source?.type === "image" && target?.type === "video") ||
     (source?.type === "image" && target?.type === "text") ||
+    (source?.type === "image" && target?.type === "sketch") ||
     (source?.type === "sketch" && target?.type === "image") ||
     (source?.type === "sketch" && target?.type === "video") ||
     (source?.type === "text" && target?.type === "image") ||
+    (source?.type === "text" && target?.type === "sketch") ||
     (source?.type === "text" && target?.type === "text" && connection.source !== connection.target) ||
     (source?.type === "image" && target?.type === "prompt") ||
     (source?.type === "prompt" && target?.type === "result")
