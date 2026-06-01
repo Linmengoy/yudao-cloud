@@ -24,14 +24,14 @@
             </el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="网关地址" label-width="180px" prop="config.serverUrl">
-          <el-input v-model="formData.config.serverUrl" clearable placeholder="请输入 EasyPay 网关地址" />
+        <el-form-item label="支付网关地址" label-width="180px" prop="config.serverUrl">
+          <el-input v-model="formData.config.serverUrl" clearable placeholder="请输入第三方支付网关地址" />
         </el-form-item>
-        <el-form-item label="商户号" label-width="180px" prop="config.merchantNo">
-          <el-input v-model="formData.config.merchantNo" clearable placeholder="请输入 EasyPay 商户号" />
+        <el-form-item label="商户 ID" label-width="180px" prop="config.merchantNo">
+          <el-input v-model="formData.config.merchantNo" clearable placeholder="请输入第三方支付商户 ID" />
         </el-form-item>
         <el-form-item label="应用编号" label-width="180px" prop="config.appId">
-          <el-input v-model="formData.config.appId" clearable placeholder="请输入 EasyPay 应用编号" />
+          <el-input v-model="formData.config.appId" clearable placeholder="无应用编号可不填" />
         </el-form-item>
         <el-form-item label="签名类型" label-width="180px" prop="config.signType">
           <el-radio-group v-model="formData.config.signType">
@@ -61,36 +61,18 @@
           </el-form-item>
         </div>
         <div v-else>
-          <el-form-item label="对称密钥" label-width="180px" prop="config.secretKey">
-            <el-input v-model="formData.config.secretKey" clearable placeholder="请输入 EasyPay 对称密钥" />
+          <el-form-item label="商户密钥" label-width="180px" prop="config.secretKey">
+            <el-input v-model="formData.config.secretKey" clearable placeholder="请输入第三方支付商户密钥" />
           </el-form-item>
         </div>
-        <el-form-item label="支付返回地址" label-width="180px" prop="config.returnUrl">
-          <el-input v-model="formData.config.returnUrl" clearable placeholder="请输入支付完成后的返回地址" />
-        </el-form-item>
-        <el-form-item label="回调内容类型" label-width="180px" prop="config.notifyContentType">
-          <el-radio-group v-model="formData.config.notifyContentType">
-            <el-radio value="JSON">JSON</el-radio>
-            <el-radio value="FORM">FORM</el-radio>
-          </el-radio-group>
-        </el-form-item>
         <el-form-item label="沙箱环境" label-width="180px" prop="config.sandbox">
           <el-radio-group v-model="formData.config.sandbox">
             <el-radio :value="true">是</el-radio>
             <el-radio :value="false">否</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="超时时间" label-width="180px" prop="config.timeoutSeconds">
-          <el-input-number v-model="formData.config.timeoutSeconds" :min="1" :style="{ width: '100%' }" />
-        </el-form-item>
-        <el-form-item label="统一下单路径" label-width="180px" prop="config.unifiedOrderPath">
-          <el-input v-model="formData.config.unifiedOrderPath" clearable placeholder="请输入统一下单路径" />
-        </el-form-item>
-        <el-form-item label="查询订单路径" label-width="180px" prop="config.queryOrderPath">
-          <el-input v-model="formData.config.queryOrderPath" clearable placeholder="请输入查询订单路径" />
-        </el-form-item>
-        <el-form-item label="成功响应内容" label-width="180px" prop="config.successResponse">
-          <el-input v-model="formData.config.successResponse" clearable placeholder="请输入回调成功响应内容" />
+        <el-form-item label="支付返回地址" label-width="180px" prop="config.returnUrl">
+          <el-input v-model="formData.config.returnUrl" clearable placeholder="可不填，默认使用订单返回地址" />
         </el-form-item>
         <el-form-item label="备注" label-width="180px" prop="remark">
           <el-input v-model="formData.remark" :style="{ width: '100%' }" />
@@ -142,18 +124,13 @@ const formData = ref<any>({
 const formRules = {
   feeRate: [{ required: true, message: '请输入渠道费率', trigger: 'blur' }],
   status: [{ required: true, message: '渠道状态不能为空', trigger: 'blur' }],
-  'config.serverUrl': [{ required: true, message: '请输入 EasyPay 网关地址', trigger: 'blur' }],
-  'config.merchantNo': [{ required: true, message: '请输入 EasyPay 商户号', trigger: 'blur' }],
+  'config.serverUrl': [{ required: true, message: '请输入第三方支付网关地址', trigger: 'blur' }],
+  'config.merchantNo': [{ required: true, message: '请输入第三方支付商户 ID', trigger: 'blur' }],
   'config.signType': [{ required: true, message: '请选择 EasyPay 签名类型', trigger: 'blur' }],
   'config.privateKey': [{ required: true, message: '请输入 EasyPay 商户私钥', trigger: 'blur' }],
   'config.publicKey': [{ required: true, message: '请输入 EasyPay 平台公钥', trigger: 'blur' }],
-  'config.secretKey': [{ required: true, message: '请输入 EasyPay 对称密钥', trigger: 'blur' }],
-  'config.notifyContentType': [{ required: true, message: '请选择回调内容类型', trigger: 'blur' }],
-  'config.sandbox': [{ required: true, message: '请选择是否沙箱环境', trigger: 'blur' }],
-  'config.timeoutSeconds': [{ required: true, message: '请输入超时时间', trigger: 'blur' }],
-  'config.unifiedOrderPath': [{ required: true, message: '请输入统一下单路径', trigger: 'blur' }],
-  'config.queryOrderPath': [{ required: true, message: '请输入查询订单路径', trigger: 'blur' }],
-  'config.successResponse': [{ required: true, message: '请输入回调成功响应内容', trigger: 'blur' }]
+  'config.secretKey': [{ required: true, message: '请输入第三方支付商户密钥', trigger: 'blur' }],
+  'config.sandbox': [{ required: true, message: '请选择是否沙箱环境', trigger: 'blur' }]
 }
 const formRef = ref()
 

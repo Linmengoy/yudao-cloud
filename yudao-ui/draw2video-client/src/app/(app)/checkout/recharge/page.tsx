@@ -30,8 +30,31 @@ function channelLabel(code: string) {
     wx_pub: "微信支付",
     wx_lite: "微信小程序",
     wallet: "余额支付",
+    easypay_cashier: "EasyPay 二维码支付",
   };
   return labels[code] ?? code;
+}
+
+function normalizeDisplayMode(mode?: string) {
+  return mode?.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/-/g, "_").toLowerCase() ?? "";
+}
+
+function isHttpUrl(value?: string) {
+  return !!value && /^https?:\/\//i.test(value);
+}
+
+function openPayContent(displayMode?: string, displayContent?: string) {
+  if (!displayContent) return;
+  const mode = normalizeDisplayMode(displayMode);
+  if (["url", "iframe", "app"].includes(mode) || isHttpUrl(displayContent)) {
+    window.open(displayContent, "_blank", "noopener,noreferrer");
+    return;
+  }
+  if (mode === "form") {
+    const payWindow = window.open("", "_blank", "noopener,noreferrer");
+    payWindow?.document.write(displayContent);
+    payWindow?.document.close();
+  }
 }
 
 export default function RechargeCheckoutPage() {
@@ -132,9 +155,7 @@ export default function RechargeCheckoutPage() {
     try {
       const result = await submitPayOrder({ id: payOrderId, channelCode: selectedChannel, returnUrl });
       setSubmitResult(result);
-      if (result.displayMode === "url" && result.displayContent) {
-        window.open(result.displayContent, "_blank", "noopener,noreferrer");
-      }
+      openPayContent(result.displayMode, result.displayContent);
     } catch (err) {
       setError(err instanceof Error ? err.message : "支付提交失败");
     } finally {
@@ -185,10 +206,21 @@ export default function RechargeCheckoutPage() {
                   <QrCode className="size-4" />
                   支付信息已生成
                 </div>
-                {submitResult.displayMode === "qr_code" || submitResult.displayMode === "qr_code_url" ? (
-                  <div className="mt-3 break-all rounded-lg bg-background p-3 text-xs text-muted-gray">{submitResult.displayContent}</div>
-                ) : submitResult.displayMode === "form" ? (
-                  <div className="mt-3 break-all rounded-lg bg-background p-3 text-xs text-muted-gray">请在新打开的支付页面完成支付。</div>
+                {normalizeDisplayMode(submitResult.displayMode) === "qr_code_url" ? (
+                  <div className="mt-3 rounded-lg bg-background p-3 text-center">
+                    <img src={submitResult.displayContent} alt="支付二维码" className="mx-auto size-48 rounded-lg bg-white object-contain p-2" />
+                    <p className="mt-2 break-all text-xs text-muted-gray">请使用对应支付 App 扫码完成支付</p>
+                  </div>
+                ) : normalizeDisplayMode(submitResult.displayMode) === "qr_code" ? (
+                  <div className="mt-3 break-all rounded-lg bg-background p-3 text-xs text-muted-gray">
+                    {isHttpUrl(submitResult.displayContent) ? (
+                      <img src={submitResult.displayContent} alt="支付二维码" className="mx-auto size-48 rounded-lg bg-white object-contain p-2" />
+                    ) : (
+                      submitResult.displayContent
+                    )}
+                  </div>
+                ) : normalizeDisplayMode(submitResult.displayMode) === "form" ? (
+                  <div className="mt-3 break-all rounded-lg bg-background p-3 text-xs text-muted-gray">已打开第三方支付页面，请在新页面完成支付。</div>
                 ) : (
                   <p className="mt-3 text-xs text-muted-gray">请在支付页面完成支付，完成后本页面会自动同步状态。</p>
                 )}

@@ -182,7 +182,7 @@
           </template>
         </el-table-column>
       </el-table-column>
-      <el-table-column align="center" label="EasyPay 配置">
+      <el-table-column align="center" label="EasyPay 二维码配置">
         <el-table-column :label="PayChannelEnum.EASYPAY_CASHIER.name" align="center" min-width="140">
           <template #default="scope">
             <el-button

@@ -151,7 +151,7 @@ export const PayChannelEnum = {
   },
   EASYPAY_CASHIER: {
     code: 'easypay_cashier',
-    name: 'EasyPay 收银台支付'
+    name: 'EasyPay 二维码支付'
   }
 }
 
