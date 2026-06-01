@@ -2,8 +2,11 @@ FROM docker.m.daocloud.io/library/node:22-alpine AS deps
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+RUN npm config set registry https://registry.npmmirror.com \
+  && npm install -g pnpm@10 \
+  && pnpm config set registry https://registry.npmmirror.com \
+  && pnpm install --frozen-lockfile
 
 FROM docker.m.daocloud.io/library/node:22-alpine AS build
 
@@ -15,7 +18,7 @@ ARG NEXT_PUBLIC_API_BASE_URL=""
 ARG NEXT_PUBLIC_APP_API_PREFIX=/app-api
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 ENV NEXT_PUBLIC_APP_API_PREFIX=${NEXT_PUBLIC_APP_API_PREFIX}
-RUN npm run build
+RUN pnpm build
 
 FROM docker.m.daocloud.io/library/node:22-alpine AS runner
 
