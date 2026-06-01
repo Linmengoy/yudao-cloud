@@ -180,27 +180,29 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
           whileHover={{ y: -1 }}
           onDoubleClick={() => setEditorOpen(true)}
           className={cn(
-            "relative overflow-hidden rounded-2xl border bg-background shadow-[0_8px_24px_rgba(28,28,28,0.08)] transition-colors",
+            "relative overflow-visible rounded-2xl border bg-background shadow-[0_8px_24px_rgba(28,28,28,0.08)] transition-colors",
             selected ? "border-charcoal ring-2 ring-charcoal/10" : "border-border-warm hover:border-charcoal/35"
           )}
           style={{ width: CARD_WIDTH, height: CARD_HEIGHT }}
         >
-          {previewSrc ? (
-            <img src={previewSrc} alt={data.fileName || "Sketch"} className="size-full object-cover" draggable={false} />
-          ) : sceneSnapshot ? (
-            <div className="flex size-full items-center justify-center bg-muted text-muted-gray">
-              <ImageIcon className="size-12 opacity-50" />
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditorOpen(true)}
-              className="flex size-full flex-col items-center justify-center gap-3 bg-muted text-muted-gray transition-colors hover:bg-border-warm/40 hover:text-charcoal"
-            >
-              <PenLine className="size-10" strokeWidth={1.8} />
-              <span className="text-sm font-medium">打开白板</span>
-            </button>
-          )}
+          <div className="size-full overflow-hidden rounded-2xl">
+            {previewSrc ? (
+              <img src={previewSrc} alt={data.fileName || "Sketch"} className="size-full object-cover" draggable={false} />
+            ) : sceneSnapshot ? (
+              <div className="flex size-full items-center justify-center bg-muted text-muted-gray">
+                <ImageIcon className="size-12 opacity-50" />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditorOpen(true)}
+                className="flex size-full flex-col items-center justify-center gap-3 bg-muted text-muted-gray transition-colors hover:bg-border-warm/40 hover:text-charcoal"
+              >
+                <PenLine className="size-10" strokeWidth={1.8} />
+                <span className="text-sm font-medium">打开白板</span>
+              </button>
+            )}
+          </div>
 
           <button
             type="button"
@@ -222,6 +224,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
             </button>
           )}
 
+          <NodeCreateHandle nodeId={id} direction="incoming" selected={selected} showButton={showNodeActions} />
           <NodeCreateHandle nodeId={id} direction="outgoing" selected={selected} showButton={showNodeActions} />
         </motion.div>
       </div>
