@@ -147,6 +147,10 @@ spring:
               uri: grayLb://ai-server
               predicates:
                 - Path=/sse, /mcp/message
+            - id: aigc-canvas-app-api
+              uri: grayLb://aigc-workflow-server
+              predicates:
+                - Path=/app-api/canvas/**
             - id: iot-admin-api
               uri: grayLb://iot-server
               predicates:

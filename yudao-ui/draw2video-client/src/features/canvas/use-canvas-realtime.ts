@@ -12,7 +12,7 @@ import type { CanvasPresence } from "@/features/canvas/types";
 export function useCanvasRealtime(projectId: string | null, clientId: string, lastAppliedVersion: number) {
   const socketRef = useRef<WebSocket | null>(null);
   const lastAppliedVersionRef = useRef(lastAppliedVersion);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const closedByCleanupRef = useRef(false);
   const [isConnected, setIsConnected] = useState(false);

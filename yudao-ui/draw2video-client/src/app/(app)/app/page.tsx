@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FolderPlus, ImageIcon, Paperclip, Plus, Send, Video } from "lucide-react";
+import { canvasApi } from "@/features/canvas/canvas-api";
+import type { CanvasProject } from "@/features/canvas/types";
 import { createProject, listProjects, type ProjectMeta } from "@/features/projects/project-store";
 
 const MODELS = [
@@ -27,7 +29,32 @@ function formatDate(value: string) {
   });
 }
 
-function ProjectIcon({ project }: { project: ProjectMeta }) {
+type ProjectListItem = {
+  id: string;
+  name: string;
+  kind: "image" | "video" | "mixed";
+  lastOpenedAt: string;
+};
+
+function toProjectListItem(project: CanvasProject): ProjectListItem {
+  return {
+    id: String(project.id),
+    name: project.name,
+    kind: project.kind,
+    lastOpenedAt: project.updateTime ?? project.createTime ?? "",
+  };
+}
+
+function localProjectToListItem(project: ProjectMeta): ProjectListItem {
+  return {
+    id: project.id,
+    name: project.name,
+    kind: project.kind,
+    lastOpenedAt: project.lastOpenedAt,
+  };
+}
+
+function ProjectIcon({ project }: { project: ProjectListItem }) {
   if (project.kind === "video") return <Video className="size-5" />;
   return <ImageIcon className="size-5" />;
 }
@@ -37,31 +64,38 @@ export default function WorkspacePage() {
   const [prompt, setPrompt] = useState("");
   const [selectedModel, setSelectedModel] = useState("gpt-image");
   const [submitting, setSubmitting] = useState(false);
-  const [projects, setProjects] = useState<ProjectMeta[]>([]);
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const recentProjects = useMemo(() => projects.slice(0, 7), [projects]);
 
-  function refreshProjects() {
-    setProjects(listProjects());
+  async function refreshProjects() {
+    try {
+      const page = await canvasApi.listProjects({ pageNo: 1, pageSize: 7 });
+      setProjects(page.list.map(toProjectListItem));
+    } catch {
+      setProjects(listProjects().map(localProjectToListItem));
+    }
   }
 
   useEffect(() => {
     const timer = window.setTimeout(refreshProjects, 0);
-    window.addEventListener("copse:projects-changed", refreshProjects);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("copse:projects-changed", refreshProjects);
-    };
+    return () => window.clearTimeout(timer);
   }, []);
 
-  function openNewProject(name?: string) {
-    const project = createProject({ name: name?.trim() || "未命名项目", kind: "image" });
-    router.push(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+  async function openNewProject(name?: string) {
+    const projectName = name?.trim() || "未命名项目";
+    try {
+      const projectId = await canvasApi.createProject({ name: projectName, kind: "image" });
+      router.push(`/create/image?projectId=${encodeURIComponent(String(projectId))}`);
+    } catch {
+      const project = createProject({ name: projectName, kind: "image" });
+      router.push(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+    }
   }
 
   async function handleSubmit() {
     if (!prompt.trim() || submitting) return;
     setSubmitting(true);
-    openNewProject(prompt.trim().slice(0, 30));
+    await openNewProject(prompt.trim().slice(0, 30));
     setPrompt("");
     setSubmitting(false);
   }
@@ -153,7 +187,7 @@ export default function WorkspacePage() {
         <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           <button
             type="button"
-            onClick={() => openNewProject()}
+            onClick={() => { void openNewProject(); }}
             className="flex aspect-square flex-col items-center justify-center rounded-xl border-2 border-dashed border-border-warm text-muted-gray transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal"
           >
             <FolderPlus className="size-6" />
