@@ -121,14 +121,14 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
     private Map<String, String> buildUnifiedOrderRequest(PayOrderUnifiedReqDTO reqDTO) {
         Map<String, String> request = new HashMap<>();
         request.put("pid", config.getResolvedPid());
-        request.put("type", config.getPaymentType());
+        request.put("type", StrUtil.blankToDefault(config.getPaymentType(), "alipay"));
         request.put("out_trade_no", reqDTO.getOutTradeNo());
         request.put("notify_url", ObjectUtil.defaultIfBlank(reqDTO.getNotifyUrl(), config.getNotifyUrl()));
         request.put("return_url", ObjectUtil.defaultIfBlank(reqDTO.getReturnUrl(), config.getReturnUrl()));
         request.put("name", reqDTO.getSubject());
         request.put("money", EasyPayRequestUtils.formatAmount(reqDTO.getPrice()));
         request.put("clientip", reqDTO.getUserIp());
-        String cid = resolveCid(config.getPaymentType());
+        String cid = resolveCid(request.get("type"));
         if (StrUtil.isNotBlank(cid)) {
             request.put("cid", cid);
         }
@@ -138,6 +138,7 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
 
     private void sign(Map<String, String> request) {
         request.put("sign", EasyPaySigner.sign(request, config));
+        request.put("sign_type", config.getSignType());
     }
 
     private Map<String, String> post(String path, Map<String, String> request) {
