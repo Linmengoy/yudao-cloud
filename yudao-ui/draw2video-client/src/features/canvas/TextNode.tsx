@@ -100,7 +100,15 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
           });
         });
         return;
-      } catch {
+      } catch (error) {
+        updateData({
+          status: "failed",
+          taskId: null,
+          errorMessage: error instanceof Error ? error.message : "文本任务提交失败",
+          generationCompletedAt: new Date().toISOString(),
+          elapsedMs: Date.now() - new Date(startedAt).getTime(),
+        });
+        return;
       }
     }
 

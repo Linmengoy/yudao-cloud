@@ -163,6 +163,24 @@ function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {
   return null;
 }
 
+function buildServerInputParams(params: Record<string, unknown>, ids: string[], snapshots: ResultNodeData["inputImages"]) {
+  return JSON.stringify({
+    ...params,
+    inputImageIds: ids,
+    inputImageUrls: snapshots
+      .map((image) => image.dataUrl)
+      .filter((url) => /^https?:\/\//.test(url)),
+    inputImages: snapshots.map(({ imageId, fileName, dataUrl, width, height, mimeType }) => ({
+      imageId,
+      fileName,
+      dataUrl,
+      width,
+      height,
+      mimeType,
+    })),
+  });
+}
+
 function scaleToPreview(width: number, height: number) {
   const scale = Math.min(1, IMAGE_MAX_WIDTH / width, IMAGE_MAX_HEIGHT / height);
   return {
@@ -252,19 +270,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const params = data.params ?? DEFAULT_PROMPT_DATA.params;
   const prompt = data.prompt ?? "";
   const currentModel = getModelById(modelId) ?? getModelById(DEFAULT_MODEL_ID)!;
-  const aigcModels = useAigcModels({ type: 2, capability: "TEXT_TO_IMAGE", params });
-  const activeModelName = aigcModels.selectedModel?.name ?? data.modelName ?? currentModel.name;
-  const activeProviderModel = aigcModels.selectedModel?.model ?? data.providerModel ?? modelId;
-  const activeAigcModelId = selectedAigcModelId ?? aigcModels.selectedModel?.id;
-  const extraParamTemplates = useMemo(
-    () => aigcModels.templates.filter((item) => !BUILT_IN_IMAGE_PARAM_KEYS.has(item.paramKey)),
-    [aigcModels.templates]
-  );
-  const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
-  const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
-  const imageSrc = data.previewUrl || data.dataUrl;
-  const sizeSelection = useMemo(() => getSizeSelection(params.size), [params.size]);
-
   const connectedImages = edges
     .filter((edge) => edge.target === id)
     .map((edge) => {
@@ -274,6 +279,22 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         : null;
     })
     .filter((item): item is { edgeId: string; data: ImageNodeData | SketchNodeData } => item !== null);
+  const generationCapability = connectedImages.length > 0 ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
+  const aigcModels = useAigcModels({ type: 2, capability: generationCapability, params });
+  const storedAigcModel = aigcModels.models.find((item) => item.id === selectedAigcModelId);
+  const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
+  const activeModelName = activeAigcModel?.name ?? data.modelName ?? currentModel.name;
+  const activeProviderModel = activeAigcModel?.model ?? data.providerModel ?? modelId;
+  const activeAigcModelId = activeAigcModel?.id;
+  const extraParamTemplates = useMemo(
+    () => aigcModels.templates.filter((item) => !BUILT_IN_IMAGE_PARAM_KEYS.has(item.paramKey)),
+    [aigcModels.templates]
+  );
+  const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
+  const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
+  const imageSrc = data.previewUrl || data.dataUrl;
+  const sizeSelection = useMemo(() => getSizeSelection(params.size), [params.size]);
+
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
@@ -552,7 +573,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           generateMode: mode === "edit" ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE",
           modelId: activeAigcModelId,
           prompt: cleanPrompt,
-          inputParams: JSON.stringify({ ...params, inputImageIds: ids, inputImages: snapshots }),
+          inputParams: buildServerInputParams(params, ids, snapshots),
           sync: false,
         });
         await waitCanvasNodeRunResult(projectId, id, {
@@ -561,7 +582,17 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           nodeType: "image",
         });
         return;
-      } catch {
+      } catch (error) {
+        updateData({
+          status: "failed",
+          taskId: null,
+          errorMessage: error instanceof Error ? error.message : "图片任务提交失败",
+          safetyStatus: null,
+          safetyReason: null,
+          generationCompletedAt: new Date().toISOString(),
+          elapsedMs: Date.now() - new Date(startedAt).getTime(),
+        });
+        return;
       }
     }
 

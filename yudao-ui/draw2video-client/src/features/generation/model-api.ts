@@ -54,8 +54,11 @@ export type AigcModelPrice = {
   priceDetail?: Record<string, unknown>;
 };
 
-export function getAigcModelList(type?: number) {
-  const query = typeof type === "number" ? `?type=${encodeURIComponent(type)}` : "";
+export function getAigcModelList(type?: number, capability?: string) {
+  const params = new URLSearchParams();
+  if (typeof type === "number") params.set("type", String(type));
+  if (capability) params.set("capability", capability);
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   return api.get<AigcModel[]>(`/aigc/model/list${query}`);
 }
 
@@ -72,4 +75,3 @@ export function getAigcModelParamList(modelId: number, capability: string) {
 export function calculateAigcModelPrice(data: AigcModelPriceCalculateReq) {
   return api.post<AigcModelPrice>("/aigc/model/price/calculate", data);
 }
-
