@@ -657,3 +657,252 @@ INSERT INTO `system_menu` (
     0, b'0', b'0', b'0',
     'admin', NOW(), 'admin', NOW(), b'0'
 );
+
+
+
+-- 当前准备提交版本：AIGC Billing 管理端菜单权限
+-- type: 1=目录，2=菜单，3=按钮
+-- status: 0=开启
+
+-- 1. AIGC 计费管理目录
+SELECT @billingParentId := id
+FROM system_menu
+WHERE name = 'AIGC 计费管理'
+  AND type = 1
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT
+    'AIGC 计费管理', '', 1, 90, 0,
+    '/aigc-billing', 'ep:coin', NULL, NULL,
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @billingParentId IS NULL;
+
+SELECT @billingParentId := id
+FROM system_menu
+WHERE name = 'AIGC 计费管理'
+  AND type = 1
+  AND deleted = b'0'
+LIMIT 1;
+
+
+-- 2. 钱包管理
+SELECT @walletMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:billing:wallet:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT
+    '钱包管理', 'aigc:billing:wallet:query', 2, 10, @billingParentId,
+    'wallet', 'ep:wallet', 'aigc/billing/wallet/index', 'AigcBillingWallet',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @walletMenuId IS NULL;
+
+SELECT @walletMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:billing:wallet:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '钱包查询', 'aigc:billing:wallet:query', 3, 1, @walletMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:wallet:query' AND type = 3 AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '手动调整积分', 'aigc:billing:wallet:update', 3, 2, @walletMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:wallet:update' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '运营赠送积分', 'aigc:billing:wallet:gift', 3, 3, @walletMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:wallet:gift' AND deleted = b'0');
+
+
+-- 3. 充值订单
+SELECT @rechargeMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:billing:recharge:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT
+    '充值订单', 'aigc:billing:recharge:query', 2, 20, @billingParentId,
+    'recharge', 'ep:money', 'aigc/billing/recharge/index', 'AigcBillingRecharge',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @rechargeMenuId IS NULL;
+
+SELECT @rechargeMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:billing:recharge:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '充值订单查询', 'aigc:billing:recharge:query', 3, 1, @rechargeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:recharge:query' AND type = 3 AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '手工充值', 'aigc:billing:recharge:create', 3, 2, @rechargeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:recharge:create' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '关闭充值订单', 'aigc:billing:recharge:update', 3, 3, @rechargeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:recharge:update' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '充值订单导出', 'aigc:billing:recharge:export', 3, 4, @rechargeMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:recharge:export' AND deleted = b'0');
+
+
+-- 4. 计费流水
+SELECT @recordMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:billing:record:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT
+    '计费流水', 'aigc:billing:record:query', 2, 30, @billingParentId,
+    'record', 'ep:tickets', 'aigc/billing/record/index', 'AigcBillingRecord',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @recordMenuId IS NULL;
+
+SELECT @recordMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:billing:record:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '计费流水查询', 'aigc:billing:record:query', 3, 1, @recordMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:record:query' AND type = 3 AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '计费流水导出', 'aigc:billing:record:export', 3, 2, @recordMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:record:export' AND deleted = b'0');
+
+
+-- 5. 成本记录
+SELECT @costMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:billing:cost:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT
+    '成本记录', 'aigc:billing:cost:query', 2, 40, @billingParentId,
+    'cost', 'ep:data-analysis', 'aigc/billing/cost/index', 'AigcBillingCost',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @costMenuId IS NULL;
+
+SELECT @costMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:billing:cost:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '成本记录查询', 'aigc:billing:cost:query', 3, 1, @costMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:cost:query' AND type = 3 AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '成本记录导出', 'aigc:billing:cost:export', 3, 2, @costMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:cost:export' AND deleted = b'0');

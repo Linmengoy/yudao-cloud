@@ -80,9 +80,9 @@ CREATE TABLE IF NOT EXISTS aigc_billing_record (
     tenant_id bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_record_no (record_no),
+    UNIQUE KEY uk_biz_tenant (biz_type, biz_id, tenant_id),
     KEY idx_wallet_time (wallet_id, create_time),
     KEY idx_user_time (user_id, create_time),
-    KEY idx_biz (biz_type, biz_id),
     KEY idx_task_id (task_id),
     KEY idx_record_type (record_type)
 ) COMMENT='AIGC 计费流水';
@@ -148,9 +148,9 @@ CREATE TABLE IF NOT EXISTS aigc_recharge_order (
     tenant_id bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
     PRIMARY KEY (id),
     UNIQUE KEY uk_recharge_no (recharge_no),
+    UNIQUE KEY uk_pay_order_id (pay_order_id),
     KEY idx_wallet_time (wallet_id, create_time),
     KEY idx_user_status (user_id, status),
-    KEY idx_pay_order_id (pay_order_id),
     KEY idx_status_create_time (status, create_time)
 ) COMMENT='AIGC 充值订单';
 

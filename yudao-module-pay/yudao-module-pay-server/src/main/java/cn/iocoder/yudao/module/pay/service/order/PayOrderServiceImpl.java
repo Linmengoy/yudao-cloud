@@ -57,6 +57,9 @@ import static cn.iocoder.yudao.module.pay.enums.ErrorCodeConstants.*;
 @Slf4j
 public class PayOrderServiceImpl implements PayOrderService {
 
+    private static final Integer SYNC_ORDER_CLIENT_MISSING = Integer.MIN_VALUE;
+    private static final Integer SYNC_ORDER_FAILED = Integer.MAX_VALUE;
+
     @Resource
     private PayProperties payProperties;
 
@@ -463,18 +466,29 @@ public class PayOrderServiceImpl implements PayOrderService {
 
     @Override
     public int syncOrder(LocalDateTime minCreateTime) {
-        // 1. 查询指定创建时间前的待支付订单
         List<PayOrderExtensionDO> orderExtensions = orderExtensionMapper.selectListByStatusAndCreateTimeGe(
                 PayOrderStatusEnum.WAITING.getStatus(), minCreateTime);
+        return syncOrder(orderExtensions);
+    }
+
+    @Override
+    public int syncOrder(LocalDateTime minCreateTime, LocalDateTime maxCreateTime) {
+        List<PayOrderExtensionDO> orderExtensions = orderExtensionMapper.selectListByStatusAndCreateTimeBetween(
+                PayOrderStatusEnum.WAITING.getStatus(), minCreateTime, maxCreateTime);
+        return syncOrder(orderExtensions);
+    }
+
+    private int syncOrder(List<PayOrderExtensionDO> orderExtensions) {
         if (CollUtil.isEmpty(orderExtensions)) {
             return 0;
         }
-        // 2. 遍历执行
-        int count = 0;
+        SyncOrderSummary summary = new SyncOrderSummary();
         for (PayOrderExtensionDO orderExtension : orderExtensions) {
-            count += syncOrder(orderExtension) ? 1 : 0;
+            summary.record(syncOrder(orderExtension));
         }
-        return count;
+        log.info("[syncOrder][支付订单同步完成，总数({}) 成功({}) 等待({}) 关闭({}) 客户端缺失({}) 异常({})]",
+                summary.total, summary.success, summary.waiting, summary.closed, summary.clientMissing, summary.failed);
+        return summary.success;
     }
 
     @Override
@@ -496,12 +510,15 @@ public class PayOrderServiceImpl implements PayOrderService {
      * @return 是否已支付
      */
     private boolean syncOrder(PayOrderExtensionDO orderExtension) {
+        return PayOrderStatusEnum.isSuccess(syncOrderStatus(orderExtension));
+    }
+
+    private Integer syncOrderStatus(PayOrderExtensionDO orderExtension) {
         try {
-            // 1.1 查询支付订单信息
             PayClient<?> payClient = channelService.getPayClient(orderExtension.getChannelId());
             if (payClient == null) {
                 log.error("[syncOrder][渠道编号({}) 找不到对应的支付客户端]", orderExtension.getChannelId());
-                return false;
+                return SYNC_ORDER_CLIENT_MISSING;
             }
             PayOrderRespDTO respDTO = payClient.getOrder(orderExtension.getNo());
             // 如果查询到订单不存在，PayClient 返回的状态为关闭。但此时不能关闭订单。存在以下一种场景：
@@ -510,17 +527,43 @@ public class PayOrderServiceImpl implements PayOrderService {
             // 考虑此定时任务是异常场景的兜底操作，因此这里不做变更，优先以回调为准。
             // 让订单自动随着支付渠道那边一起等到过期，确保渠道先过期关闭支付入口，而后通过订单过期定时任务关闭自己的订单。
             if (PayOrderStatusEnum.isClosed(respDTO.getStatus())) {
-                return false;
+                return PayOrderStatusEnum.CLOSED.getStatus();
             }
-            // 1.2 回调支付结果
             notifyOrder(orderExtension.getChannelId(), respDTO);
 
-            // 2. 如果是已支付，则返回 true
-            return PayOrderStatusEnum.isSuccess(respDTO.getStatus());
+            return respDTO.getStatus();
         } catch (Throwable e) {
             log.error("[syncOrder][orderExtension({}) 同步支付状态异常]", orderExtension.getId(), e);
-            return false;
+            return SYNC_ORDER_FAILED;
         }
+    }
+
+    private static final class SyncOrderSummary {
+
+        private int total;
+        private int success;
+        private int waiting;
+        private int closed;
+        private int clientMissing;
+        private int failed;
+
+        private void record(Integer status) {
+            total++;
+            if (PayOrderStatusEnum.isSuccess(status)) {
+                success++;
+            } else if (PayOrderStatusEnum.isWaiting(status)) {
+                waiting++;
+            } else if (PayOrderStatusEnum.isClosed(status)) {
+                closed++;
+            } else if (Objects.equals(status, SYNC_ORDER_CLIENT_MISSING)) {
+                clientMissing++;
+            } else if (Objects.equals(status, SYNC_ORDER_FAILED)) {
+                failed++;
+            } else {
+                failed++;
+            }
+        }
+
     }
 
     @Override

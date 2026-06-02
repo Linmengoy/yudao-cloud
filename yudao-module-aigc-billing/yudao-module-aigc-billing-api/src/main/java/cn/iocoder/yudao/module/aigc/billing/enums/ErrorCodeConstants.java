@@ -31,6 +31,7 @@ public interface ErrorCodeConstants {
     ErrorCode RECHARGE_PAY_ORDER_AMOUNT_NOT_MATCH = new ErrorCode(1_042_004_005, "充值支付订单金额不匹配");
     ErrorCode RECHARGE_PAY_ORDER_NOT_MATCH = new ErrorCode(1_042_004_006, "充值支付订单不匹配");
     ErrorCode RECHARGE_PAY_AMOUNT_INVALID = new ErrorCode(1_042_004_007, "充值支付金额不合法");
+    ErrorCode RECHARGE_PAY_NOTIFY_NOT_MATCH = new ErrorCode(1_042_004_008, "充值支付通知不匹配");
 
     ErrorCode RECHARGE_PACKAGE_NOT_EXISTS = new ErrorCode(1_042_005_000, "充值套餐不存在");
 

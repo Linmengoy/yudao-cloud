@@ -4,6 +4,7 @@ import cn.hutool.core.util.ObjectUtil;
 import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.billing.controller.admin.recharge.vo.AigcRechargeOrderDiagnosticRespVO;
 import cn.iocoder.yudao.module.aigc.billing.config.AigcBillingPayProperties;
 import cn.iocoder.yudao.module.aigc.billing.controller.app.recharge.vo.AppAigcRechargeOrderCreateRespVO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcBillingRecordDO;
@@ -21,18 +22,24 @@ import cn.iocoder.yudao.module.aigc.billing.service.no.AigcBillingNoGenerator;
 import cn.iocoder.yudao.module.aigc.billing.service.packageconfig.AigcRechargePackageService;
 import cn.iocoder.yudao.module.aigc.billing.service.record.AigcBillingRecordService;
 import cn.iocoder.yudao.module.aigc.billing.service.wallet.AigcWalletService;
+import cn.iocoder.yudao.module.pay.api.notify.PayNotifyApi;
+import cn.iocoder.yudao.module.pay.api.notify.dto.PayNotifyDiagnosticRespDTO;
+import cn.iocoder.yudao.module.pay.api.notify.dto.PayNotifyTaskRespDTO;
 import cn.iocoder.yudao.module.pay.api.notify.dto.PayOrderNotifyReqDTO;
 import cn.iocoder.yudao.module.pay.api.order.PayOrderApi;
 import cn.iocoder.yudao.module.pay.api.order.dto.PayOrderCreateReqDTO;
 import cn.iocoder.yudao.module.pay.api.order.dto.PayOrderRespDTO;
+import cn.iocoder.yudao.module.pay.enums.notify.PayNotifyTypeEnum;
 import cn.iocoder.yudao.module.pay.enums.order.PayOrderStatusEnum;
 import jakarta.annotation.Resource;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingBizTypeEnum.WALLET_RECHARGE;
@@ -57,6 +64,8 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
     private AigcRechargePackageService rechargePackageService;
     @Resource
     private PayOrderApi payOrderApi;
+    @Resource
+    private PayNotifyApi payNotifyApi;
     @Resource
     private AigcBillingPayProperties payProperties;
 
@@ -170,6 +179,10 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
             return false;
         }
         PayOrderRespDTO payOrder = validatePayOrder(order, order.getPayOrderId());
+        if (PayOrderStatusEnum.isClosed(payOrder.getStatus()) || isRechargeOrderExpired(order)) {
+            closeRechargeOrderIfNeeded(order);
+            return false;
+        }
         if (!PayOrderStatusEnum.isSuccess(payOrder.getStatus())) {
             return false;
         }
@@ -184,12 +197,22 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         if (order == null) {
             throw exception(RECHARGE_ORDER_NOT_EXISTS);
         }
+        validatePayNotifyTask(reqDTO);
         PayOrderRespDTO payOrder = validatePayOrder(order, reqDTO.getPayOrderId());
         if (!PayOrderStatusEnum.isSuccess(payOrder.getStatus())) {
             throw exception(RECHARGE_PAY_ORDER_STATUS_INVALID);
         }
         notifyRechargePaid(buildNotifyReq(order, payOrder));
         return true;
+    }
+
+    private void validatePayNotifyTask(PayOrderNotifyReqDTO reqDTO) {
+        PayNotifyDiagnosticRespDTO diagnostic = payNotifyApi.getNotifyDiagnostic(PayNotifyTypeEnum.ORDER.getType(), reqDTO.getPayOrderId()).getCheckedData();
+        PayNotifyTaskRespDTO task = diagnostic == null ? null : diagnostic.getTask();
+        if (task == null || !ObjectUtil.equals(task.getDataId(), reqDTO.getPayOrderId())
+                || !ObjectUtil.equals(task.getMerchantOrderId(), reqDTO.getMerchantOrderId())) {
+            throw exception(RECHARGE_PAY_NOTIFY_NOT_MATCH);
+        }
     }
 
     @Override
@@ -219,20 +242,12 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
             throw exception(RECHARGE_ORDER_STATUS_INVALID);
         }
         
-        walletService.recharge(order.getWalletId(), order.getTotalPointAmount());
-        
-        AigcBillingRecordCreateReqDTO record = new AigcBillingRecordCreateReqDTO();
-        record.setWalletId(order.getWalletId());
-        record.setUserId(order.getUserId());
-        record.setBizType(WALLET_RECHARGE.getCode());
-        record.setBizId(order.getRechargeNo());
-        record.setRecordType(AigcBillingRecordTypeEnum.RECHARGE.getCode());
-        record.setTitle("AIGC 钱包充值");
-        record.setAmount(order.getTotalPointAmount());
-        record.setCurrencyType(POINT.getCode());
-        billingRecordService.createBillingRecord(record);
+        rechargeWalletIfRecordCreated(order, "AIGC 钱包充值");
     }
 
+    /**
+     * 创建并绑定支付订单
+     */
     private void createAndBindPayOrder(AigcRechargeOrderDO order, String userIp, String subject) {
         Long payOrderId = payOrderApi.createOrder(new PayOrderCreateReqDTO()
                 .setAppKey(payProperties.getAppKey())
@@ -294,26 +309,38 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
     }
     
     private void compensateRechargeIfNeeded(AigcRechargeOrderDO order) {
-        AigcBillingRecordDO existingRecord = billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo());
-        if (existingRecord != null) {
+        rechargeWalletIfRecordCreated(order, "AIGC 钱包充值-补偿入账");
+    }
+
+    private void rechargeWalletIfRecordCreated(AigcRechargeOrderDO order, String title) {
+        if (billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo()) != null) {
             return;
         }
-        
         AigcWalletDO wallet = walletService.getWallet(order.getUserId());
-        BigDecimal expectedBalance = order.getTotalPointAmount();
-        
-        walletService.recharge(order.getWalletId(), order.getTotalPointAmount());
-        
-        AigcBillingRecordCreateReqDTO record = new AigcBillingRecordCreateReqDTO();
+        if (wallet == null) {
+            throw exception(WALLET_NOT_EXISTS);
+        }
+        AigcBillingRecordDO record = new AigcBillingRecordDO();
+        record.setRecordNo(billingNoGenerator.generateBillingRecordNo());
         record.setWalletId(order.getWalletId());
         record.setUserId(order.getUserId());
         record.setBizType(WALLET_RECHARGE.getCode());
         record.setBizId(order.getRechargeNo());
         record.setRecordType(AigcBillingRecordTypeEnum.RECHARGE.getCode());
-        record.setTitle("AIGC 钱包充值-补偿入账");
+        record.setTitle(title);
         record.setAmount(order.getTotalPointAmount());
+        record.setBalanceAfter(wallet.getBalance().add(order.getTotalPointAmount()));
+        record.setFrozenBalanceAfter(wallet.getFrozenBalance());
         record.setCurrencyType(POINT.getCode());
-        billingRecordService.createBillingRecord(record);
+        try {
+            billingRecordMapper.insert(record);
+        } catch (DuplicateKeyException ex) {
+            if (billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo()) != null) {
+                return;
+            }
+            throw ex;
+        }
+        walletService.recharge(order.getWalletId(), order.getTotalPointAmount());
     }
 
     @Override
@@ -322,9 +349,82 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         if (!AigcBillingRechargeStatusEnum.WAIT_PAY.getCode().equals(order.getStatus())) {
             throw exception(RECHARGE_ORDER_STATUS_INVALID);
         }
-        order.setStatus(AigcBillingRechargeStatusEnum.CLOSED.getCode());
-        order.setCloseTime(LocalDateTime.now());
-        rechargeOrderMapper.updateById(order);
+        closeRechargeOrderIfNeeded(order);
+    }
+
+    @Override
+    public int closeExpiredRechargeOrders(Integer limit) {
+        List<AigcRechargeOrderDO> orders = rechargeOrderMapper.selectExpiredWaitPayList(
+                LocalDateTime.now().minusMinutes(getPayExpireMinutes()), limit == null ? 100 : limit);
+        int count = 0;
+        for (AigcRechargeOrderDO order : orders) {
+            count += closeRechargeOrderIfNeeded(order) ? 1 : 0;
+        }
+        return count;
+    }
+
+    private boolean closeRechargeOrderIfNeeded(AigcRechargeOrderDO order) {
+        return rechargeOrderMapper.updateClosed(order.getId(), LocalDateTime.now()) > 0;
+    }
+
+    private boolean isRechargeOrderExpired(AigcRechargeOrderDO order) {
+        return order.getCreateTime() != null && order.getCreateTime().plusMinutes(getPayExpireMinutes()).isBefore(LocalDateTime.now());
+    }
+
+    private int getPayExpireMinutes() {
+        return payProperties.getExpireMinutes() == null ? 30 : payProperties.getExpireMinutes();
+    }
+
+    @Override
+    public AigcRechargeOrderDiagnosticRespVO getRechargeOrderDiagnostic(Long id) {
+        AigcRechargeOrderDO order = getRechargeOrder(id);
+        PayOrderRespDTO payOrder = order.getPayOrderId() == null ? null : payOrderApi.getOrder(order.getPayOrderId()).getCheckedData();
+        PayNotifyDiagnosticRespDTO payNotify = order.getPayOrderId() == null ? null : payNotifyApi.getNotifyDiagnostic(
+                PayNotifyTypeEnum.ORDER.getType(), order.getPayOrderId()).getCheckedData();
+        AigcBillingRecordDO billingRecord = billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo());
+        Boolean payOrderMatched = payOrder == null ? false : ObjectUtil.equals(payOrder.getMerchantOrderId(), order.getRechargeNo());
+        Boolean amountMatched = payOrder == null ? false : ObjectUtil.equals(payOrder.getPrice(), order.getPayAmount());
+        Boolean paySuccess = payOrder != null && PayOrderStatusEnum.isSuccess(payOrder.getStatus());
+        AigcRechargeOrderDiagnosticRespVO respVO = new AigcRechargeOrderDiagnosticRespVO();
+        respVO.setRechargeOrder(order);
+        respVO.setPayOrder(payOrder);
+        respVO.setBillingRecord(billingRecord);
+        respVO.setPayNotify(payNotify);
+        respVO.setPayOrderMatched(payOrderMatched);
+        respVO.setAmountMatched(amountMatched);
+        respVO.setPaySuccess(paySuccess);
+        respVO.setBillingRecordExists(billingRecord != null);
+        respVO.setDiagnosticMessage(buildDiagnosticMessage(order, payOrder, billingRecord, payOrderMatched, amountMatched, paySuccess));
+        return respVO;
+    }
+
+    private String buildDiagnosticMessage(AigcRechargeOrderDO order, PayOrderRespDTO payOrder, AigcBillingRecordDO billingRecord,
+            Boolean payOrderMatched, Boolean amountMatched, Boolean paySuccess) {
+        if (order.getPayOrderId() == null) {
+            return "充值订单未绑定 Pay 支付单，请检查创建支付单流程";
+        }
+        if (payOrder == null) {
+            return "Pay 支付单不存在，请检查 PayOrderApi 或 Pay 数据";
+        }
+        if (!payOrderMatched) {
+            return "Pay 支付单商户订单号与充值单号不匹配，请检查错单风险";
+        }
+        if (!amountMatched) {
+            return "Pay 支付单金额与充值订单金额不一致，禁止入账";
+        }
+        if (!paySuccess) {
+            return "Pay 支付单尚未成功，可等待渠道回调或触发 Pay 查单补偿";
+        }
+        if (AigcBillingRechargeStatusEnum.WAIT_PAY.getCode().equals(order.getStatus())) {
+            return "Pay 已成功但充值单仍待支付，请检查 Pay 业务通知或调用充值同步接口";
+        }
+        if (AigcBillingRechargeStatusEnum.PAID.getCode().equals(order.getStatus()) && billingRecord == null) {
+            return "充值单已支付但缺少入账流水，请检查 AIGC 入账补偿";
+        }
+        if (AigcBillingRechargeStatusEnum.PAID.getCode().equals(order.getStatus())) {
+            return "充值支付链路正常，已支付并已生成入账流水";
+        }
+        return "充值单状态异常，请结合 Pay 状态和业务状态人工排查";
     }
 
     @Override

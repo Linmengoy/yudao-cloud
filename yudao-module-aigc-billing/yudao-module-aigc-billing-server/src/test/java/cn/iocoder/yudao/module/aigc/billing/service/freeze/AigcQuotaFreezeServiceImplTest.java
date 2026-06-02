@@ -1,8 +1,10 @@
 package cn.iocoder.yudao.module.aigc.billing.service.freeze;
 
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
+import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcBillingRecordDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcQuotaFreezeDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcWalletDO;
+import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcBillingRecordMapper;
 import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcQuotaFreezeMapper;
 import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcWalletMapper;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcBillingConfirmReqDTO;
@@ -10,6 +12,7 @@ import cn.iocoder.yudao.module.aigc.billing.dto.AigcBillingFreezeReqDTO;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcBillingFreezeRespDTO;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcBillingReleaseReqDTO;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingFreezeStatusEnum;
+import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRecordTypeEnum;
 import cn.iocoder.yudao.module.aigc.billing.service.no.AigcBillingNoGenerator;
 import cn.iocoder.yudao.module.aigc.billing.service.record.AigcBillingRecordServiceImpl;
 import cn.iocoder.yudao.module.aigc.billing.service.wallet.AigcWalletServiceImpl;
@@ -18,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -30,6 +34,8 @@ public class AigcQuotaFreezeServiceImplTest extends BaseDbUnitTest {
     private AigcWalletMapper walletMapper;
     @Resource
     private AigcQuotaFreezeMapper freezeMapper;
+    @Resource
+    private AigcBillingRecordMapper billingRecordMapper;
 
     @Test
     public void testFreezeConfirmRelease_success() {
@@ -58,6 +64,19 @@ public class AigcQuotaFreezeServiceImplTest extends BaseDbUnitTest {
         assertEquals(AigcBillingFreezeStatusEnum.CONFIRMED.getCode(), freeze.getStatus());
         assertEquals(0, new BigDecimal("0.000000").compareTo(wallet.getFrozenBalance()));
         assertEquals(0, new BigDecimal("10.000000").compareTo(wallet.getTotalConsume()));
+
+        List<AigcBillingRecordDO> records = billingRecordMapper.selectList();
+        assertEquals(2, records.size());
+        AigcBillingRecordDO freezeRecord = records.stream()
+                .filter(record -> AigcBillingRecordTypeEnum.FREEZE.getCode().equals(record.getRecordType()))
+                .findFirst().orElseThrow();
+        AigcBillingRecordDO consumeRecord = records.stream()
+                .filter(record -> AigcBillingRecordTypeEnum.CONSUME.getCode().equals(record.getRecordType()))
+                .findFirst().orElseThrow();
+        assertEquals(0, new BigDecimal("90.000000").compareTo(freezeRecord.getBalanceAfter()));
+        assertEquals(0, new BigDecimal("10.000000").compareTo(freezeRecord.getFrozenBalanceAfter()));
+        assertEquals(0, new BigDecimal("90.000000").compareTo(consumeRecord.getBalanceAfter()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(consumeRecord.getFrozenBalanceAfter()));
     }
 
     @Test
@@ -78,6 +97,14 @@ public class AigcQuotaFreezeServiceImplTest extends BaseDbUnitTest {
         AigcWalletDO wallet = walletMapper.selectByUserId(100L);
         assertEquals(0, new BigDecimal("100.000000").compareTo(wallet.getBalance()));
         assertEquals(0, BigDecimal.ZERO.compareTo(wallet.getFrozenBalance()));
+
+        List<AigcBillingRecordDO> records = billingRecordMapper.selectList();
+        assertEquals(2, records.size());
+        AigcBillingRecordDO releaseRecord = records.stream()
+                .filter(record -> AigcBillingRecordTypeEnum.RELEASE.getCode().equals(record.getRecordType()))
+                .findFirst().orElseThrow();
+        assertEquals(0, new BigDecimal("100.000000").compareTo(releaseRecord.getBalanceAfter()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(releaseRecord.getFrozenBalanceAfter()));
     }
 
     private AigcWalletDO createWallet() {

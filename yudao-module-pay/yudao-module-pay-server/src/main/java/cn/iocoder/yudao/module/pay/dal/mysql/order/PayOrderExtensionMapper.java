@@ -35,4 +35,11 @@ public interface PayOrderExtensionMapper extends BaseMapperX<PayOrderExtensionDO
                 .ge(PayOrderExtensionDO::getCreateTime, minCreateTime));
     }
 
+    default List<PayOrderExtensionDO> selectListByStatusAndCreateTimeBetween(Integer status, LocalDateTime minCreateTime, LocalDateTime maxCreateTime) {
+        return selectList(new LambdaQueryWrapper<PayOrderExtensionDO>()
+                .eq(PayOrderExtensionDO::getStatus, status)
+                .ge(PayOrderExtensionDO::getCreateTime, minCreateTime)
+                .lt(PayOrderExtensionDO::getCreateTime, maxCreateTime));
+    }
+
 }

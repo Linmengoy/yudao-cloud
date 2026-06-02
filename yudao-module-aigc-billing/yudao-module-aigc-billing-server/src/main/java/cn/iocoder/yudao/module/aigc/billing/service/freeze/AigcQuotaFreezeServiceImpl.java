@@ -102,7 +102,7 @@ public class AigcQuotaFreezeServiceImpl implements AigcQuotaFreezeService {
         record.setWalletId(wallet.getId());
         record.setUserId(reqDTO.getUserId());
         record.setBizType(reqDTO.getBizType());
-        record.setBizId(reqDTO.getBizId());
+        record.setBizId(buildRecordBizId(reqDTO.getBizId(), AigcBillingRecordTypeEnum.FREEZE.getCode()));
         record.setRecordType(AigcBillingRecordTypeEnum.FREEZE.getCode());
         record.setTitle(reqDTO.getTitle());
         record.setAmount(BigDecimal.ZERO);
@@ -145,7 +145,7 @@ public class AigcQuotaFreezeServiceImpl implements AigcQuotaFreezeService {
         record.setWalletId(freeze.getWalletId());
         record.setUserId(freeze.getUserId());
         record.setBizType(freeze.getBizType());
-        record.setBizId(freeze.getBizId());
+        record.setBizId(buildRecordBizId(freeze.getBizId(), AigcBillingRecordTypeEnum.CONSUME.getCode()));
         record.setRecordType(AigcBillingRecordTypeEnum.CONSUME.getCode());
         record.setTitle("AIGC 任务扣费");
         record.setAmount(reqDTO.getActualAmount().negate());
@@ -185,7 +185,7 @@ public class AigcQuotaFreezeServiceImpl implements AigcQuotaFreezeService {
         record.setWalletId(freeze.getWalletId());
         record.setUserId(freeze.getUserId());
         record.setBizType(freeze.getBizType());
-        record.setBizId(freeze.getBizId());
+        record.setBizId(buildRecordBizId(freeze.getBizId(), AigcBillingRecordTypeEnum.RELEASE.getCode()));
         record.setRecordType(AigcBillingRecordTypeEnum.RELEASE.getCode());
         record.setTitle("AIGC 任务释放冻结");
         record.setAmount(BigDecimal.ZERO);
@@ -232,6 +232,10 @@ public class AigcQuotaFreezeServiceImpl implements AigcQuotaFreezeService {
             throw exception(FREEZE_NOT_EXISTS);
         }
         return freeze;
+    }
+
+    public static String buildRecordBizId(String bizId, String recordType) {
+        return bizId + ":" + recordType;
     }
 
 }

@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.pay.service.notify;
 
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.pay.api.notify.dto.PayNotifyDiagnosticRespDTO;
 import cn.iocoder.yudao.module.pay.controller.admin.notify.vo.PayNotifyTaskPageReqVO;
 import cn.iocoder.yudao.module.pay.dal.dataobject.notify.PayNotifyLogDO;
 import cn.iocoder.yudao.module.pay.dal.dataobject.notify.PayNotifyTaskDO;
@@ -53,5 +54,14 @@ public interface PayNotifyService {
      * @return 日志列表
      */
     List<PayNotifyLogDO> getNotifyLogList(Long taskId);
+
+    /**
+     * 获得支付通知排障信息
+     *
+     * @param type 通知类型
+     * @param dataId 数据编号
+     * @return 通知排障信息
+     */
+    PayNotifyDiagnosticRespDTO getNotifyDiagnostic(Integer type, Long dataId);
 
 }

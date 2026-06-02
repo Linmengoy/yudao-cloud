@@ -43,4 +43,12 @@ public interface PayNotifyTaskMapper extends BaseMapperX<PayNotifyTaskDO> {
                 .orderByDesc(PayNotifyTaskDO::getId));
     }
 
+    default PayNotifyTaskDO selectByTypeAndDataId(Integer type, Long dataId) {
+        return selectOne(new LambdaQueryWrapper<PayNotifyTaskDO>()
+                .eq(PayNotifyTaskDO::getType, type)
+                .eq(PayNotifyTaskDO::getDataId, dataId)
+                .orderByDesc(PayNotifyTaskDO::getId)
+                .last("LIMIT 1"));
+    }
+
 }

@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.apache.ibatis.annotations.Mapper;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Mapper
 public interface AigcRechargeOrderMapper extends BaseMapperX<AigcRechargeOrderDO> {
@@ -50,6 +51,22 @@ public interface AigcRechargeOrderMapper extends BaseMapperX<AigcRechargeOrderDO
                 .set(AigcRechargeOrderDO::getPayOrderNo, payOrderNo)
                 .eq(AigcRechargeOrderDO::getId, id)
                 .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.WAIT_PAY.getCode()));
+    }
+
+    default int updateClosed(Long id, LocalDateTime closeTime) {
+        return update(null, new LambdaUpdateWrapper<AigcRechargeOrderDO>()
+                .set(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.CLOSED.getCode())
+                .set(AigcRechargeOrderDO::getCloseTime, closeTime)
+                .eq(AigcRechargeOrderDO::getId, id)
+                .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.WAIT_PAY.getCode()));
+    }
+
+    default List<AigcRechargeOrderDO> selectExpiredWaitPayList(LocalDateTime expireTime, Integer limit) {
+        return selectList(new LambdaQueryWrapperX<AigcRechargeOrderDO>()
+                .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.WAIT_PAY.getCode())
+                .lt(AigcRechargeOrderDO::getCreateTime, expireTime)
+                .orderByAsc(AigcRechargeOrderDO::getId)
+                .last("LIMIT " + limit));
     }
 
 }

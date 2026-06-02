@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle2, Loader2, QrCode, RefreshCw } from "lucide-react";
+import QRCode from "qrcode";
+import { AlertCircle, CheckCircle2, Loader2, QrCode, RefreshCw } from "lucide-react";
 import {
   formatDateTime,
   formatPoints,
@@ -14,13 +15,14 @@ import {
 } from "@/features/wallet/wallet-api";
 import type { AigcRechargeOrder, PayOrder, PayOrderSubmitResult } from "@/features/wallet/wallet-types";
 import { useAuth } from "@/features/auth/auth-store";
+import { getPayStatusName, isPayClosed, isPayRefund, isPaySuccess } from "@/features/wallet/pay-order-status";
+
+const PAY_POLL_INTERVAL_MS = 3000;
+const PAY_POLL_MAX_DURATION_MS = 5 * 60 * 1000;
+const PAY_POLL_ERROR_NOTICE_THRESHOLD = 3;
 
 function formatMoney(value?: number | null) {
   return `¥${(Number(value ?? 0) / 100).toFixed(2)}`;
-}
-
-function isPaySuccess(status?: number) {
-  return status === 10;
 }
 
 function channelLabel(code: string) {
@@ -93,6 +95,10 @@ export default function RechargeCheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
+  const [pollingMessage, setPollingMessage] = useState("");
+  const pollingStartedAtRef = useRef(0);
+  const pollingErrorCountRef = useRef(0);
 
   const returnUrl = useMemo(() => {
     if (typeof window === "undefined") return undefined;
@@ -162,20 +168,69 @@ export default function RechargeCheckoutPage() {
 
   useEffect(() => {
     if (!submitResult || isPaySuccess(payOrder?.status)) return;
+    pollingStartedAtRef.current = Date.now();
+    pollingErrorCountRef.current = 0;
+    let stopped = false;
     const timer = window.setInterval(async () => {
+      if (document.visibilityState === "hidden") return;
+      if (Date.now() - pollingStartedAtRef.current >= PAY_POLL_MAX_DURATION_MS) {
+        window.clearInterval(timer);
+        stopped = true;
+        setPollingMessage("支付结果确认中，可稍后在钱包页查看，或点击“我已完成支付”手动刷新");
+        return;
+      }
       try {
         const latest = await getPayOrder({ id: payOrderId, sync: true });
+        pollingErrorCountRef.current = 0;
         setPayOrder(latest);
         if (isPaySuccess(latest?.status)) {
           window.clearInterval(timer);
+          stopped = true;
+          setPollingMessage("支付已成功，正在同步入账...");
           await handleSyncPaid(false);
+        } else if (isPayClosed(latest?.status) || isPayRefund(latest?.status)) {
+          window.clearInterval(timer);
+          stopped = true;
+          setPollingMessage("");
+          setError(`支付订单${getPayStatusName(latest?.status)}，请返回重新下单或联系客服处理`);
+        } else {
+          setPollingMessage("正在等待支付结果，请完成扫码支付后保持页面打开");
         }
       } catch {
-        window.clearInterval(timer);
+        pollingErrorCountRef.current += 1;
+        if (pollingErrorCountRef.current >= PAY_POLL_ERROR_NOTICE_THRESHOLD) {
+          setPollingMessage("网络波动，正在继续尝试同步支付结果");
+        }
       }
-    }, 3000);
-    return () => window.clearInterval(timer);
+    }, PAY_POLL_INTERVAL_MS);
+    return () => {
+      if (!stopped) window.clearInterval(timer);
+    };
   }, [handleSyncPaid, payOrder?.status, payOrderId, submitResult]);
+
+  useEffect(() => {
+    const mode = normalizeDisplayMode(submitResult?.displayMode);
+    const content = submitResult?.displayContent;
+    let cancelled = false;
+    if (mode !== "qr_code" || !content || isHttpUrl(content)) {
+      Promise.resolve().then(() => {
+        if (!cancelled) setQrCodeDataUrl("");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    QRCode.toDataURL(content, { width: 192, margin: 1, errorCorrectionLevel: "M" })
+      .then((dataUrl) => {
+        if (!cancelled) setQrCodeDataUrl(dataUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setQrCodeDataUrl("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [submitResult?.displayContent, submitResult?.displayMode]);
 
   async function handleSubmitPay() {
     if (!selectedChannel) {
@@ -187,6 +242,7 @@ export default function RechargeCheckoutPage() {
     try {
       const result = await submitPayOrder({ id: payOrderId, channelCode: selectedChannel, returnUrl });
       setSubmitResult(result);
+      setPollingMessage("正在等待支付结果，请完成扫码支付后保持页面打开");
       openPayContent(result.displayMode, result.displayContent);
     } catch (err) {
       setError(err instanceof Error ? err.message : "支付提交失败");
@@ -244,17 +300,26 @@ export default function RechargeCheckoutPage() {
                     <p className="mt-2 break-all text-xs text-muted-gray">请使用对应支付 App 扫码完成支付</p>
                   </div>
                 ) : normalizeDisplayMode(submitResult.displayMode) === "qr_code" ? (
-                  <div className="mt-3 break-all rounded-lg bg-background p-3 text-xs text-muted-gray">
+                  <div className="mt-3 rounded-lg bg-background p-3 text-center text-xs text-muted-gray">
                     {isHttpUrl(submitResult.displayContent) ? (
                       <img src={submitResult.displayContent} alt="支付二维码" className="mx-auto size-48 rounded-lg bg-white object-contain p-2" />
+                    ) : qrCodeDataUrl ? (
+                      <img src={qrCodeDataUrl} alt="支付二维码" className="mx-auto size-48 rounded-lg bg-white object-contain p-2" />
                     ) : (
-                      submitResult.displayContent
+                      <div className="break-all text-left">{submitResult.displayContent}</div>
                     )}
+                    <p className="mt-2 break-all text-xs text-muted-gray">请使用对应支付 App 扫码完成支付</p>
                   </div>
                 ) : normalizeDisplayMode(submitResult.displayMode) === "form" ? (
                   <div className="mt-3 break-all rounded-lg bg-background p-3 text-xs text-muted-gray">已打开第三方支付页面，请在新页面完成支付。</div>
                 ) : (
                   <p className="mt-3 text-xs text-muted-gray">请在支付页面完成支付，完成后本页面会自动同步状态。</p>
+                )}
+                {pollingMessage && (
+                  <div className="mt-3 flex items-center gap-2 rounded-lg bg-background px-3 py-2 text-xs text-muted-gray">
+                    <RefreshCw className="size-3 animate-spin" />
+                    {pollingMessage}
+                  </div>
                 )}
               </div>
             )}
@@ -297,6 +362,12 @@ export default function RechargeCheckoutPage() {
               <div className="mt-5 flex items-center gap-2 rounded-lg border border-border-warm bg-muted px-3 py-2 text-sm text-charcoal">
                 <CheckCircle2 className="size-4" />
                 支付已成功，正在同步入账
+              </div>
+            )}
+            {(isPayClosed(payOrder?.status) || isPayRefund(payOrder?.status)) && (
+              <div className="mt-5 flex items-center gap-2 rounded-lg border border-border-warm bg-muted px-3 py-2 text-sm text-charcoal">
+                <AlertCircle className="size-4" />
+                支付订单{getPayStatusName(payOrder?.status)}
               </div>
             )}
           </aside>

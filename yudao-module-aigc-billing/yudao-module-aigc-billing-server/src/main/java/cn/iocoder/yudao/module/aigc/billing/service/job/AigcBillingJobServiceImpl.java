@@ -15,6 +15,7 @@ import cn.iocoder.yudao.module.aigc.billing.service.record.AigcBillingRecordServ
 import cn.iocoder.yudao.module.aigc.billing.service.wallet.AigcWalletService;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,8 +24,10 @@ import java.util.List;
 
 import static cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingBizTypeEnum.WALLET_RECHARGE;
 import static cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingCurrencyTypeEnum.POINT;
+import static cn.iocoder.yudao.module.aigc.billing.service.freeze.AigcQuotaFreezeServiceImpl.buildRecordBizId;
 
 @Service
+@Slf4j
 public class AigcBillingJobServiceImpl implements AigcBillingJobService {
 
     @Resource
@@ -44,21 +47,27 @@ public class AigcBillingJobServiceImpl implements AigcBillingJobService {
     public int handleFreezeTimeout() {
         List<AigcQuotaFreezeDO> timeouts = quotaFreezeMapper.selectTimeoutFrozenList(LocalDateTime.now(), 100);
         int count = 0;
+        int failCount = 0;
         for (AigcQuotaFreezeDO freeze : timeouts) {
             try {
                 compensateTimeoutFreeze(freeze);
                 count++;
             } catch (Exception e) {
+                failCount++;
+                log.error("[handleFreezeTimeout][冻结超时补偿失败，freezeId({}) freezeNo({}) userId({}) bizType({}) bizId({}) amount({})]",
+                        freeze.getId(), freeze.getFreezeNo(), freeze.getUserId(), freeze.getBizType(), freeze.getBizId(), freeze.getAmount(), e);
             }
         }
+        log.info("[handleFreezeTimeout][冻结超时补偿完成，待处理({}) 成功({}) 失败({})]", timeouts.size(), count, failCount);
         return count;
     }
 
     @Override
     public int reconcile() {
-        int count = 0;
-        count += reconcileRechargeOrders();
-        count += reconcileConfirmedFreezes();
+        int rechargeCount = reconcileRechargeOrders();
+        int consumeCount = reconcileConfirmedFreezes();
+        int count = rechargeCount + consumeCount;
+        log.info("[reconcile][计费对账完成，充值补偿({}) 消费流水补偿({}) 总数({})]", rechargeCount, consumeCount, count);
         return count;
     }
 
@@ -74,6 +83,7 @@ public class AigcBillingJobServiceImpl implements AigcBillingJobService {
 
     private int reconcileRechargeOrders() {
         int count = 0;
+        int failCount = 0;
         List<AigcRechargeOrderDO> orders = rechargeOrderMapper.selectList(new LambdaQueryWrapperX<AigcRechargeOrderDO>()
                 .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.PAID.getCode())
                         .isNotNull(AigcRechargeOrderDO::getPayTime)
@@ -86,9 +96,13 @@ public class AigcBillingJobServiceImpl implements AigcBillingJobService {
                     compensateRechargeOrder(order);
                     count++;
                 } catch (Exception e) {
+                    failCount++;
+                    log.error("[reconcileRechargeOrders][充值补偿失败，rechargeOrderId({}) rechargeNo({}) userId({}) walletId({}) payOrderId({}) amount({})]",
+                            order.getId(), order.getRechargeNo(), order.getUserId(), order.getWalletId(), order.getPayOrderId(), order.getTotalPointAmount(), e);
                 }
             }
         }
+        log.info("[reconcileRechargeOrders][充值对账完成，扫描({}) 成功补偿({}) 失败({})]", orders.size(), count, failCount);
         return count;
     }
 
@@ -115,24 +129,31 @@ public class AigcBillingJobServiceImpl implements AigcBillingJobService {
 
     private int reconcileConfirmedFreezes() {
         int count = 0;
+        int failCount = 0;
         List<AigcQuotaFreezeDO> freezes = quotaFreezeMapper.selectConfirmedWithoutRecord(100L);
         
         for (AigcQuotaFreezeDO freeze : freezes) {
-            AigcBillingRecordDO record = billingRecordMapper.selectByBiz(freeze.getBizType(), freeze.getBizId());
+            AigcBillingRecordDO record = billingRecordMapper.selectByBiz(freeze.getBizType(),
+                    buildRecordBizId(freeze.getBizId(), AigcBillingRecordTypeEnum.CONSUME.getCode()));
             if (record == null) {
                 try {
                     compensateConsumeRecord(freeze);
                     count++;
                 } catch (Exception e) {
+                    failCount++;
+                    log.error("[reconcileConfirmedFreezes][消费流水补偿失败，freezeId({}) freezeNo({}) userId({}) bizType({}) bizId({}) confirmedAmount({})]",
+                            freeze.getId(), freeze.getFreezeNo(), freeze.getUserId(), freeze.getBizType(), freeze.getBizId(), freeze.getConfirmedAmount(), e);
                 }
             }
         }
+        log.info("[reconcileConfirmedFreezes][消费流水对账完成，扫描({}) 成功补偿({}) 失败({})]", freezes.size(), count, failCount);
         return count;
     }
 
     @Transactional(rollbackFor = Exception.class)
     public void compensateConsumeRecord(AigcQuotaFreezeDO freeze) {
-        AigcBillingRecordDO existingRecord = billingRecordMapper.selectByBiz(freeze.getBizType(), freeze.getBizId());
+        AigcBillingRecordDO existingRecord = billingRecordMapper.selectByBiz(freeze.getBizType(),
+                buildRecordBizId(freeze.getBizId(), AigcBillingRecordTypeEnum.CONSUME.getCode()));
         if (existingRecord != null) {
             return;
         }
@@ -141,7 +162,7 @@ public class AigcBillingJobServiceImpl implements AigcBillingJobService {
         record.setWalletId(freeze.getWalletId());
         record.setUserId(freeze.getUserId());
         record.setBizType(freeze.getBizType());
-        record.setBizId(freeze.getBizId());
+        record.setBizId(buildRecordBizId(freeze.getBizId(), AigcBillingRecordTypeEnum.CONSUME.getCode()));
         record.setRecordType(AigcBillingRecordTypeEnum.CONSUME.getCode());
         record.setTitle("AIGC 任务扣费-对账补偿");
         record.setAmount(freeze.getConfirmedAmount().negate());

@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.aigc.billing.controller.admin.wallet;
 
+import cn.iocoder.yudao.framework.apilog.core.annotation.ApiAccessLog;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
@@ -23,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import static cn.iocoder.yudao.framework.apilog.core.enums.OperateTypeEnum.CREATE;
+import static cn.iocoder.yudao.framework.apilog.core.enums.OperateTypeEnum.UPDATE;
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 
 @Tag(name = "管理后台 - AIGC 钱包")
@@ -54,6 +57,7 @@ public class AigcWalletController {
     @PutMapping("/adjust")
     @Operation(summary = "手动调整积分")
     @PreAuthorize("@ss.hasPermission('aigc:billing:wallet:update')")
+    @ApiAccessLog(operateType = UPDATE)
     public CommonResult<Boolean> adjustWallet(@Valid @RequestBody AigcWalletAmountReqVO reqVO) {
         walletService.adjustWithRecord(reqVO.getUserId(), reqVO.getAmount(), reqVO.getRemark());
         return success(true);
@@ -62,6 +66,7 @@ public class AigcWalletController {
     @PostMapping("/gift")
     @Operation(summary = "运营赠送积分")
     @PreAuthorize("@ss.hasPermission('aigc:billing:wallet:gift')")
+    @ApiAccessLog(operateType = CREATE)
     public CommonResult<Boolean> giftWallet(@Valid @RequestBody AigcWalletAmountReqVO reqVO) {
         walletService.giftWithRecord(reqVO.getUserId(), reqVO.getAmount(), reqVO.getRemark());
         return success(true);

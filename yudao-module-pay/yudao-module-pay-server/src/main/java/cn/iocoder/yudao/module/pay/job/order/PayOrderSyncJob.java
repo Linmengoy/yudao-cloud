@@ -31,6 +31,8 @@ public class PayOrderSyncJob {
      */
     private static final Duration CREATE_TIME_DURATION_BEFORE = Duration.ofMinutes(10);
 
+    private static final Duration LONG_CREATE_TIME_DURATION_BEFORE = Duration.ofHours(24);
+
     @Resource
     private PayOrderService orderService;
 
@@ -41,6 +43,17 @@ public class PayOrderSyncJob {
         int count = orderService.syncOrder(minCreateTime);
         log.info("[execute][同步支付订单 ({}) 个]", count);
         return StrUtil.format("同步支付订单 ({}) 个",count);
+    }
+
+    @XxlJob("payOrderLongSyncJob")
+    @TenantJob // 多租户
+    public String executeLongSync() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime minCreateTime = now.minus(LONG_CREATE_TIME_DURATION_BEFORE);
+        LocalDateTime maxCreateTime = now.minus(CREATE_TIME_DURATION_BEFORE);
+        int count = orderService.syncOrder(minCreateTime, maxCreateTime);
+        log.info("[executeLongSync][同步支付订单 ({}) 个，创建时间范围 {} - {}]", count, minCreateTime, maxCreateTime);
+        return StrUtil.format("同步支付订单 ({}) 个，创建时间范围 {} - {}", count, minCreateTime, maxCreateTime);
     }
 
 }

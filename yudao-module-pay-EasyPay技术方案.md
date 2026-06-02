@@ -477,7 +477,62 @@ AIGC 充值订单需要保存 `payOrderId`、`payAppKey`、`merchantOrderId`、�
 - Pay 模块返回给 EasyPay 的回调成功响应文本可通过 `successResponse` 配置，并符合 EasyPay 官方要求。
 - 日志、配置、文档中不包含真实密钥和证书。
 
-## 15. 风险与待确认事项
+## 15. 支付链路增强落地记录
+
+### 15.1 最终一致性链路
+
+本轮开发不再把 EasyPay 回调作为唯一成功来源，而是形成完整支付最终一致性链路：
+
+```text
+EasyPay 异步回调
+  -> Pay 模块验签、验金额、更新 pay_order
+  -> PayNotifyService 创建业务通知任务
+  -> AIGC 接收 Pay 通知并幂等入账
+
+前端 sync=true 主动同步
+  -> Pay 模块主动查询 EasyPay 订单
+  -> 成功后复用 Pay 内部订单成功逻辑
+  -> AIGC sync-pay-status 只触发后端反查，不相信前端支付结果
+
+PayOrderSyncJob 定时查单补偿
+  -> 扫描待支付订单
+  -> 主动查询渠道状态
+  -> 支付成功后触发业务通知
+
+PayNotifyJob 业务通知重试
+  -> 扫描 pay_notify_task
+  -> 重试通知业务模块
+  -> 直到成功或达到最大通知次数
+```
+
+### 15.2 Pay 侧已完成增强
+
+| 能力 | 落地内容 | 涉及文件 |
+| ---- | -------- | -------- |
+| 查单补偿可观测 | `syncOrder` 输出总数、成功、等待、关闭、客户端缺失、异常等分类统计 | `PayOrderServiceImpl.java` |
+| 业务通知日志 | 创建通知任务、通知成功、待重试、最终失败均输出结构化日志 | `PayNotifyServiceImpl.java` |
+| 通知任务诊断 RPC | 新增 `PayNotifyApi.getNotifyDiagnostic(type, dataId)`，返回通知任务和通知日志 | `PayNotifyApi.java`、`PayNotifyApiImpl.java` |
+| 通知任务查询 | 支持按 `type + dataId` 查询最新通知任务 | `PayNotifyTaskMapper.java` |
+| 通知诊断 DTO | 暴露 `PayNotifyDiagnosticRespDTO`、`PayNotifyTaskRespDTO`、`PayNotifyLogRespDTO` | `pay-api notify dto` |
+
+### 15.3 前端收银台已完成增强
+
+| 能力 | 落地内容 | 涉及文件 |
+| ---- | -------- | -------- |
+| 二维码展示 | 支持 `qr_code_url` 直接展示二维码 URL，支持 `qr_code` 文本生成二维码 | `page.tsx` |
+| 跳转/表单展示 | 继续支持 `url`、`form` 等 Pay 统一展示模式 | `page.tsx` |
+| 支付轮询 | 每 3 秒轮询 Pay 订单，使用 `sync=true` 触发 Pay 后端查单 | `page.tsx` |
+| 轮询保护 | 页面隐藏时暂停轮询，最大轮询 5 分钟，网络失败连续提示 | `page.tsx` |
+| 入账同步 | Pay 成功后调用 AIGC `sync-pay-status`，由后端反查 Pay 状态后入账 | `page.tsx` |
+
+### 15.4 排障与安全边界
+
+- Pay 成功但业务未入账时，可以通过 PayNotify 诊断查看通知任务、通知状态、下次通知时间、通知次数和通知日志。
+- 前端 `returnUrl` 只负责用户支付完成后的页面跳转，不替代 EasyPay 到 Pay 的异步回调地址，也不和后端回调地址冲突。
+- 前端 `sync=true` 只触发 Pay 后端查单，不允许前端直接声明支付成功。
+- AIGC 入账入口会反查 Pay 订单和 PayNotifyTask，防止外部伪造 `PayOrderNotifyReqDTO` 直接触发入账。
+
+## 16. 风险与待确认事项
 
 | 风险或问题 | 影响 | 处理建议 |
 | ---------- | ---- | -------- |
@@ -489,7 +544,7 @@ AIGC 充值订单需要保存 `payOrderId`、`payAppKey`、`merchantOrderId`、�
 | EasyPay 是否有沙箱环境未知 | 影响联调效率 | 优先申请沙箱商户和测试密钥 |
 | EasyPay 回调 IP 白名单未知 | 影响生产稳定性 | 确认是否需要配置服务器出口 IP 或回调白名单 |
 
-## 16. 推荐落地顺序
+## 17. 推荐落地顺序
 
 第一阶段只接入 `easypay_cashier` 统一收银台支付，支持下单、回调、查单和主动同步，暂不接入退款和转账。该阶段可以满足 AIGC 充值、会员订单等核心收款场景。
 

@@ -150,6 +150,15 @@ public interface PayOrderService {
     /**
      * 同步订单的支付状态
      *
+     * @param minCreateTime 最小创建时间
+     * @param maxCreateTime 最大创建时间
+     * @return 同步到已支付的订单数量
+     */
+    int syncOrder(LocalDateTime minCreateTime, LocalDateTime maxCreateTime);
+
+    /**
+     * 同步订单的支付状态
+     *
      * 1. Quietly 表示，即使同步失败，也不会抛出异常
      * 2. 什么时候回出现异常？因为是主动同步，可能和支付渠道的异步回调存在并发冲突，导致抛出异常
      *

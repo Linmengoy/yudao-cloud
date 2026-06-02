@@ -8,9 +8,13 @@ import cn.hutool.http.HttpResponse;
 import cn.hutool.http.HttpUtil;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.common.util.collection.CollectionUtils;
 import cn.iocoder.yudao.framework.common.util.date.DateUtils;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
+import cn.iocoder.yudao.module.pay.api.notify.dto.PayNotifyDiagnosticRespDTO;
+import cn.iocoder.yudao.module.pay.api.notify.dto.PayNotifyLogRespDTO;
+import cn.iocoder.yudao.module.pay.api.notify.dto.PayNotifyTaskRespDTO;
 import cn.iocoder.yudao.module.pay.api.notify.dto.PayOrderNotifyReqDTO;
 import cn.iocoder.yudao.module.pay.api.notify.dto.PayRefundNotifyReqDTO;
 import cn.iocoder.yudao.module.pay.api.notify.dto.PayTransferNotifyReqDTO;
@@ -115,6 +119,8 @@ public class PayNotifyServiceImpl implements PayNotifyService {
 
         // 执行插入
         notifyTaskMapper.insert(task);
+        log.info("[createPayNotifyTask][创建支付通知任务，taskId({}) type({}) dataId({}) merchantOrderId({}) notifyUrl({})]",
+                task.getId(), task.getType(), task.getDataId(), task.getMerchantOrderId(), task.getNotifyUrl());
 
         // 必须在事务提交后，在发起任务，否则 PayNotifyTaskDO 还没入库，就提前回调接入的业务
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -215,12 +221,33 @@ public class PayNotifyServiceImpl implements PayNotifyService {
 
         // 处理结果
         Integer newStatus = processNotifyResult(task, invokeResult, invokeException);
+        logNotifyResult(task, newStatus, invokeResult, invokeException);
 
         // 记录 PayNotifyLog 日志
         String response = invokeException != null ? ExceptionUtil.getRootCauseMessage(invokeException) :
                 JsonUtils.toJsonString(invokeResult);
         notifyLogMapper.insert(PayNotifyLogDO.builder().taskId(task.getId())
                 .notifyTimes(task.getNotifyTimes() + 1).status(newStatus).response(response).build());
+    }
+
+    private void logNotifyResult(PayNotifyTaskDO task, Integer newStatus, CommonResult<?> invokeResult, Throwable invokeException) {
+        int notifyTimes = task.getNotifyTimes() + 1;
+        String resultCode = invokeResult == null ? null : String.valueOf(invokeResult.getCode());
+        String resultMsg = invokeResult == null ? null : invokeResult.getMsg();
+        if (Objects.equals(newStatus, PayNotifyStatusEnum.SUCCESS.getStatus())) {
+            log.info("[executeNotify0][支付通知成功，taskId({}) type({}) dataId({}) merchantOrderId({}) notifyTimes({}) notifyUrl({})]",
+                    task.getId(), task.getType(), task.getDataId(), task.getMerchantOrderId(), notifyTimes, task.getNotifyUrl());
+            return;
+        }
+        if (Objects.equals(newStatus, PayNotifyStatusEnum.FAILURE.getStatus())) {
+            log.error("[executeNotify0][支付通知最终失败，taskId({}) type({}) dataId({}) merchantOrderId({}) notifyTimes({}) notifyUrl({}) resultCode({}) resultMsg({}) exception({})]",
+                    task.getId(), task.getType(), task.getDataId(), task.getMerchantOrderId(), notifyTimes, task.getNotifyUrl(),
+                    resultCode, resultMsg, invokeException == null ? null : ExceptionUtil.getRootCauseMessage(invokeException));
+            return;
+        }
+        log.warn("[executeNotify0][支付通知待重试，taskId({}) type({}) dataId({}) merchantOrderId({}) notifyTimes({}) nextStatus({}) notifyUrl({}) resultCode({}) resultMsg({}) exception({})]",
+                task.getId(), task.getType(), task.getDataId(), task.getMerchantOrderId(), notifyTimes, newStatus, task.getNotifyUrl(),
+                resultCode, resultMsg, invokeException == null ? null : ExceptionUtil.getRootCauseMessage(invokeException));
     }
 
     /**
@@ -309,6 +336,47 @@ public class PayNotifyServiceImpl implements PayNotifyService {
     @Override
     public List<PayNotifyLogDO> getNotifyLogList(Long taskId) {
         return notifyLogMapper.selectListByTaskId(taskId);
+    }
+
+    @Override
+    public PayNotifyDiagnosticRespDTO getNotifyDiagnostic(Integer type, Long dataId) {
+        PayNotifyTaskDO task = notifyTaskMapper.selectByTypeAndDataId(type, dataId);
+        PayNotifyDiagnosticRespDTO respDTO = new PayNotifyDiagnosticRespDTO();
+        if (task == null) {
+            return respDTO;
+        }
+        respDTO.setTask(convertTask(task));
+        respDTO.setLogs(CollectionUtils.convertList(notifyLogMapper.selectListByTaskId(task.getId()), this::convertLog));
+        return respDTO;
+    }
+
+    private PayNotifyTaskRespDTO convertTask(PayNotifyTaskDO task) {
+        PayNotifyTaskRespDTO respDTO = new PayNotifyTaskRespDTO();
+        respDTO.setId(task.getId());
+        respDTO.setAppId(task.getAppId());
+        respDTO.setType(task.getType());
+        respDTO.setDataId(task.getDataId());
+        respDTO.setMerchantOrderId(task.getMerchantOrderId());
+        respDTO.setMerchantRefundId(task.getMerchantRefundId());
+        respDTO.setMerchantTransferId(task.getMerchantTransferId());
+        respDTO.setStatus(task.getStatus());
+        respDTO.setNextNotifyTime(task.getNextNotifyTime());
+        respDTO.setLastExecuteTime(task.getLastExecuteTime());
+        respDTO.setNotifyTimes(task.getNotifyTimes());
+        respDTO.setMaxNotifyTimes(task.getMaxNotifyTimes());
+        respDTO.setNotifyUrl(task.getNotifyUrl());
+        return respDTO;
+    }
+
+    private PayNotifyLogRespDTO convertLog(PayNotifyLogDO log) {
+        PayNotifyLogRespDTO respDTO = new PayNotifyLogRespDTO();
+        respDTO.setId(log.getId());
+        respDTO.setTaskId(log.getTaskId());
+        respDTO.setNotifyTimes(log.getNotifyTimes());
+        respDTO.setResponse(log.getResponse());
+        respDTO.setStatus(log.getStatus());
+        respDTO.setCreateTime(log.getCreateTime());
+        return respDTO;
     }
 
     /**

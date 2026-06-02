@@ -1284,6 +1284,13 @@ Gateway 路由建议：
     - RewritePath=/app-api/(?<segment>.*), /${segment}
 ```
 
+### 15.4 用户端路径
+
+| 类型 | 服务内路径 | 对外路径 |
+| ---- | ---------- | -------- |
+| 管理端 | `/aigc/billing/**` | `/admin-api/aigc/billing/**` |
+| 用户端 | `/aigc/billing/**` | `/app-api/aigc/billing/**` |
+| RPC | `/rpc-api/aigc/billing/**` | 内部服务调用 |
 
 ### 15.5 用户端充值套餐接口
 
@@ -1363,12 +1370,48 @@ Gateway 路由建议：
 - **规则**：前端只传 `packageId`，后端按启用套餐配置生成订单金额和到账积分
 - **文件**：`AigcRechargePackageDO.java`、`AigcRechargePackageController.java`、`AigcRechargePackageServiceImpl.java`、`AigcRechargeOrderServiceImpl.java`、`AigcRechargeAppController.java`、`AppAigcRechargeOrderCreateRespVO.java`
 
+#### 16.1.10 充值支付链路最终一致性增强
+- **增强**：AIGC 充值链路采用 EasyPay 回调、Pay 主动查单、前端 `sync=true`、Pay 定时补偿、Pay 业务通知重试的组合方案
+- **增强**：`sync-pay-status` 只允许当前登录用户触发同步，后端反查 Pay 支付单状态后再处理入账，不相信前端支付结果
+- **增强**：`notifyPayOrder` 收到 Pay 通知后反查 Pay 订单，校验 Pay 单存在、状态成功、商户订单号匹配、金额匹配后才允许入账
+- **增强**：充值入账按 `WALLET_RECHARGE + rechargeNo` 幂等，重复通知不会重复增加钱包余额和累计充值
+- **文件**：`AigcRechargeOrderServiceImpl.java`、`AigcRechargeAppController.java`
+
+#### 16.1.11 管理端充值支付链路排障接口
+- **新增**：管理端接口 `GET /aigc/billing/recharge/diagnostic?id=xxx`
+- **新增**：排障响应聚合 AIGC 充值单、Pay 支付单、充值入账流水、Pay 业务通知任务和通知日志
+- **新增**：返回 `payOrderMatched`、`amountMatched`、`paySuccess`、`billingRecordExists` 和 `diagnosticMessage`
+- **用途**：定位“Pay 已成功但积分未到账”“Pay 通知失败”“AIGC 已支付但缺流水”“金额或订单号不匹配”等问题
+- **文件**：`AigcRechargeOrderController.java`、`AigcRechargeOrderService.java`、`AigcRechargeOrderServiceImpl.java`、`AigcRechargeOrderDiagnosticRespVO.java`
+
+#### 16.1.12 Pay 业务通知诊断接入
+- **新增**：AIGC 通过 `PayNotifyApi.getNotifyDiagnostic(type, dataId)` 聚合 PayNotify 诊断信息
+- **新增**：Pay 侧提供 `PayNotifyDiagnosticRespDTO`、`PayNotifyTaskRespDTO`、`PayNotifyLogRespDTO`
+- **新增**：Pay 侧按 `type + dataId` 查询最新 `pay_notify_task`，并返回对应 `pay_notify_log` 列表
+- **用途**：在 AIGC 后台排障页直接看到 Pay 到 AIGC 的业务通知是否创建、是否成功、失败响应、重试次数和下次重试时间
+- **文件**：`PayNotifyApi.java`、`PayNotifyApiImpl.java`、`PayNotifyService.java`、`PayNotifyServiceImpl.java`、`PayNotifyTaskMapper.java`
+
+#### 16.1.13 支付通知入口安全增强
+- **增强**：AIGC `/aigc/billing/recharge/pay-notify` 入账前校验 PayNotifyTask 存在且与通知体匹配
+- **校验**：`PayNotifyTask.type = ORDER`、`PayNotifyTask.dataId = reqDTO.payOrderId`、`PayNotifyTask.merchantOrderId = reqDTO.merchantOrderId`
+- **效果**：即使通知接口允许 Pay 模块匿名调用，也不能仅凭外部伪造的 `PayOrderNotifyReqDTO` 触发积分入账
+- **错误码**：新增 `RECHARGE_PAY_NOTIFY_NOT_MATCH = 1042004008`
+- **文件**：`AigcRechargeOrderServiceImpl.java`、`ErrorCodeConstants.java`
+
+#### 16.1.14 用户端 PC 收银台体验增强
+- **增强**：支持 Pay 返回 `qr_code_url` 时直接展示二维码图片
+- **增强**：支持 Pay 返回 `qr_code` 时生成二维码展示，若内容本身是 URL 则直接展示图片
+- **增强**：支持 `url`、`form` 展示模式，兼容跳转收银台和 HTML 表单支付
+- **增强**：支付轮询增加页面隐藏暂停、最大轮询时长、网络失败提示和支付成功后自动触发 AIGC 入账同步
+- **文件**：`yudao-ui/draw2video-client/src/app/(app)/checkout/recharge/page.tsx`
+
 ### 16.2 新增错误码
 
 | 错误码 | 错误信息 | 说明 |
 | ------ | -------- | ---- |
 | 1042001004 | 冻结记录已确认扣费，不允许重复冻结 | 重复冻结已确认的业务 |
 | 1042001005 | 冻结记录已释放，不允许重复冻结 | 重复冻结已释放的业务 |
+| 1042004008 | 充值支付通知不匹配 | PayNotifyTask 不存在或与 Pay 通知体不匹配 |
 | 1042005000 | 充值套餐不存在 | 套餐不存在或未启用 |
 
 ### 16.3 事务顺序优化
@@ -1390,7 +1433,7 @@ Gateway 路由建议：
 | 统计与导出 | 75 | 时间过滤已加，SQL聚合待优化 |
 | 补偿与对账 | 75 | 对账 Job 已实现 |
 | 安全与审计 | 70 | 权限拆分有，操作日志待完善 |
-| 测试覆盖 | 65 | 核心场景有测试 |
+| 测试覆盖 | 70 | 核心幂等场景有测试，支付通知安全分支待补充专项测试 |
 
 **综合评分：82 / 100**
 
@@ -1401,20 +1444,13 @@ Gateway 路由建议：
 | P0 | 流水余额快照 | 当前是变更前余额，需改为变更后余额 |
 | P1 | 安全审计日志 | 记录操作人、调整原因 |
 | P1 | SQL聚合优化 | MyBatis XML 优化统计性能 |
+| P1 | 支付通知安全测试 | 覆盖 PayNotifyTask 匹配、不存在、订单号不匹配、支付单 ID 不匹配 |
 | P2 | 补充测试场景 | 并发、多租户隔离、异常边界 |
 | P2 | 导出接口 | 实现 Excel 文件流能力 |
 
-### 15.4 用户端路径
+## 17. 第一阶段落地范围
 
-| 类型 | 服务内路径 | 对外路径 |
-| ---- | ---------- | -------- |
-| 管理端 | `/aigc/billing/**` | `/admin-api/aigc/billing/**` |
-| 用户端 | `/aigc/billing/**` | `/app-api/aigc/billing/**` |
-| RPC | `/rpc-api/aigc/billing/**` | 内部服务调用 |
-
-## 16. 第一阶段落地范围
-
-### 16.1 必须实现
+### 17.1 必须实现
 
 - `aigc_wallet` 钱包表
 - `aigc_quota_freeze` 冻结表
@@ -1437,7 +1473,7 @@ Gateway 路由建议：
 - 用户端按套餐创建充值订单
 - 冻结超时补偿任务
 
-### 16.2 可以后置
+### 17.2 可以后置
 
 - 真实支付订单接入
 - 退款到原支付渠道
@@ -1449,7 +1485,7 @@ Gateway 路由建议：
 - 月账单和发票
 - 完整财务对账中心
 
-### 16.3 建议测试覆盖
+### 17.3 建议测试覆盖
 
 - 钱包不存在时自动创建
 - 并发创建钱包只生成一条记录
@@ -1469,7 +1505,7 @@ Gateway 路由建议：
 - 用户端无法查询其他用户钱包流水
 - 不同租户同一用户钱包互相隔离
 
-## 17. 与其他 AIGC 服务的边界
+## 18. 与其他 AIGC 服务的边界
 
 | 调用方 | 调用 billing 的场景 | billing 返回 |
 | ------ | ------------------- | ------------ |
