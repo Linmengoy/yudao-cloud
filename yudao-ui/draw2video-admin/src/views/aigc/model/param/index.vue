@@ -6,7 +6,7 @@
       <el-form-item>
         <el-button @click="handleQuery"><Icon icon="ep:search" class="mr-5px" /> 搜索</el-button>
         <el-button @click="resetQuery"><Icon icon="ep:refresh" class="mr-5px" /> 重置</el-button>
-        <el-button type="primary" plain @click="openForm('create')" v-hasPermi="['aigc:model-param:create']"><Icon icon="ep:plus" class="mr-5px" /> 新增</el-button>
+        <el-button type="primary" plain @click="openForm('create')" v-hasPermi="['aigc:model:param:create']"><Icon icon="ep:plus" class="mr-5px" /> 新增</el-button>
       </el-form-item>
     </el-form>
   </ContentWrap>
@@ -21,7 +21,7 @@
       <el-table-column label="默认值" align="center" prop="defaultValue" min-width="120" />
       <el-table-column label="排序" align="center" prop="sort" min-width="80" />
       <el-table-column label="状态" align="center" prop="status" min-width="90"><template #default="scope"><dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" /></template></el-table-column>
-      <el-table-column label="操作" align="center" width="160" fixed="right"><template #default="scope"><el-button link type="primary" @click="openForm('update', scope.row.id)" v-hasPermi="['aigc:model-param:update']">编辑</el-button><el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['aigc:model-param:delete']">删除</el-button></template></el-table-column>
+      <el-table-column label="操作" align="center" width="160" fixed="right"><template #default="scope"><el-button link type="primary" @click="openForm('update', scope.row.id)" v-hasPermi="['aigc:model:param:update']">编辑</el-button><el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['aigc:model:param:delete']">删除</el-button></template></el-table-column>
     </el-table>
   </ContentWrap>
   <ParamForm ref="formRef" @success="getList" />

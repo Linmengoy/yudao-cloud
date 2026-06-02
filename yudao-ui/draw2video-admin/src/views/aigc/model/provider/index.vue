@@ -37,9 +37,9 @@
       <el-table-column label="创建时间" align="center" prop="createTime" :formatter="dateFormatter" width="180" />
       <el-table-column label="操作" align="center" width="220" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openForm('update', scope.row.id)" v-hasPermi="['aigc:model-provider:update']">编辑</el-button>
-          <el-button link type="success" @click="handleTest(scope.row.id)" v-hasPermi="['aigc:model-provider:test']">测试</el-button>
-          <el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['aigc:model-provider:delete']">删除</el-button>
+          <el-button link type="primary" @click="openForm('update', scope.row.id)" v-hasPermi="['aigc:model:provider:update']">编辑</el-button>
+          <el-button link type="success" @click="handleTest(scope.row.id)" v-hasPermi="['aigc:model:provider:query']">测试</el-button>
+          <el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['aigc:model:provider:delete']">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -100,4 +100,3 @@ const handleTest = async (id: number) => {
 
 onMounted(() => getList())
 </script>
-
