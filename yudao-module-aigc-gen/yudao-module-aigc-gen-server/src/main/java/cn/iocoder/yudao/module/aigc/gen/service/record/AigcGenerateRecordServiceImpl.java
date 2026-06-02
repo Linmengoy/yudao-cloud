@@ -2,6 +2,9 @@ package cn.iocoder.yudao.module.aigc.gen.service.record;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
@@ -103,6 +106,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             }
         }
         AigcGenerateRecordDO record = BeanUtils.toBean(reqDTO, AigcGenerateRecordDO.class)
+                .setInputParams(sanitizeInputParamsSnapshot(reqDTO.getInputParams()))
                 .setGenerateNo(generateGenerateNo())
                 .setStatus(AigcGenerateStatusEnum.CREATED.getCode());
         generateRecordMapper.insert(record);
@@ -121,17 +125,19 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         AigcModelRespDTO model = modelApi.validateModel(reqDTO.getModelId(), reqDTO.getGenerateMode()).getCheckedData();
         AigcModelProviderRespDTO provider = model.getProviderId() == null ? null : modelApi.getProvider(model.getProviderId()).getCheckedData();
         Map<String, Object> inputParams = parseInputParams(reqDTO.getInputParams());
+        String inputParamsSnapshot = sanitizeInputParamsSnapshot(reqDTO.getInputParams());
         modelApi.validateParams(new AigcModelValidateReqDTO().setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setParams(inputParams)).getCheckedData();
         AigcModelPriceCalculateRespDTO price = modelApi.calculatePrice(new AigcModelPriceCalculateReqDTO()
                 .setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setTaskType(reqDTO.getGenerateType()).setParams(inputParams)).getCheckedData();
         AigcBillingFreezeRespDTO freeze = billingApi.freeze(new AigcBillingFreezeReqDTO()
                 .setUserId(reqDTO.getUserId()).setBizType("AIGC_GENERATE").setBizId(reqDTO.getClientRequestId() == null ? generateGenerateNo() : reqDTO.getClientRequestId())
-                .setAmount(price.getSalePrice()).setTitle(reqDTO.getGenerateType() + "生成冻结").setPriceSnapshot(price.toString())).getCheckedData();
+                .setAmount(price.getSalePrice()).setTitle(reqDTO.getGenerateType() + "生成冻结").setPriceSnapshot(JsonUtils.toJsonString(price))).getCheckedData();
         Long taskId = taskApi.createTask(new AigcTaskCreateReqDTO()
                 .setClientRequestId(reqDTO.getClientRequestId()).setUserId(reqDTO.getUserId()).setTaskType(reqDTO.getGenerateType())
-                .setCapability(reqDTO.getGenerateMode()).setModelId(reqDTO.getModelId()).setProviderId(model.getProviderId()).setRequestParams(reqDTO.getInputParams())
-                .setPriceSnapshot(price.toString()).setFreezeId(freeze.getId()).setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
+                .setCapability(reqDTO.getGenerateMode()).setModelId(reqDTO.getModelId()).setProviderId(model.getProviderId()).setRequestParams(inputParamsSnapshot)
+                .setPriceSnapshot(JsonUtils.toJsonString(price)).setFreezeId(freeze.getId()).setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
         AigcGenerateRecordDO record = BeanUtils.toBean(reqDTO, AigcGenerateRecordDO.class)
+                .setInputParams(inputParamsSnapshot)
                 .setGenerateNo(generateGenerateNo()).setTaskId(taskId).setModelCode(model.getCode()).setProviderId(model.getProviderId())
                 .setProviderCode(resolveProviderCode(provider)).setFreezeId(freeze.getId())
                 .setPriceAmount(price.getSalePrice()).setCostAmount(price.getCostPrice()).setStatus(AigcGenerateStatusEnum.SUBMITTING.getCode()).setSubmitTime(LocalDateTime.now());
@@ -198,6 +204,25 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         }
         Map<String, Object> params = JsonUtils.parseObject(inputParams, Map.class);
         return params == null ? Map.of() : params;
+    }
+
+    private String sanitizeInputParamsSnapshot(String inputParams) {
+        if (StrUtil.isBlank(inputParams) || !JSONUtil.isTypeJSON(inputParams)) {
+            return inputParams;
+        }
+        JSONObject params = JSONUtil.parseObj(inputParams);
+        JSONArray inputImages = params.getJSONArray("inputImages");
+        if (inputImages == null || inputImages.isEmpty()) {
+            return params.toString();
+        }
+        JSONArray sanitizedImages = new JSONArray();
+        for (Object item : inputImages) {
+            JSONObject image = JSONUtil.parseObj(item);
+            image.remove("dataUrl");
+            sanitizedImages.add(image);
+        }
+        params.set("inputImages", sanitizedImages);
+        return params.toString();
     }
 
     @Override
@@ -283,7 +308,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setProviderBaseUrl(provider == null ? null : provider.getApiBaseUrl()).setProviderApiKey(provider == null ? null : provider.getApiKey())
                 .setProviderSecretKey(provider == null ? null : provider.getSecretKey()).setProviderExtraConfig(provider == null ? null : provider.getExtraConfig())
                 .setProviderTimeoutSeconds(provider == null ? null : provider.getTimeoutSeconds())
-                .setGenerateType(record.getGenerateType()).setGenerateMode(record.getGenerateMode()).setPrompt(record.getPrompt()).setInputParams(record.getInputParams()).setSync(reqDTO.getSync());
+                .setGenerateType(record.getGenerateType()).setGenerateMode(record.getGenerateMode()).setPrompt(record.getPrompt()).setInputParams(reqDTO.getInputParams()).setSync(reqDTO.getSync());
         long start = System.currentTimeMillis();
         AigcProviderSubmitRespDTO resp;
         MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
