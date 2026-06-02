@@ -44,7 +44,7 @@ import { filterSyncableNodeDataPatch, sanitizeNodeForCanvasOperation } from "@/f
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
-import { clearImages, clearVideos } from "@/features/canvas/image-store";
+import { clearImages, clearVideos, saveImage, saveVideo } from "@/features/canvas/image-store";
 import { ToolbarIconButton } from "@/features/canvas/ToolbarIconButton";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";

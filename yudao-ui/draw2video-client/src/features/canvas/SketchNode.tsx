@@ -14,7 +14,6 @@ import {
   DrawToolbarItem,
   EllipseToolbarItem,
   EraserToolbarItem,
-  FrameToolbarItem,
   HandToolbarItem,
   HighlightToolbarItem,
   LaserToolbarItem,
@@ -26,9 +25,11 @@ import {
   TriangleToolbarItem,
   getSnapshot,
   loadSnapshot,
+  createShapeId,
   type Editor,
   type TLComponents,
   type TLEditorSnapshot,
+  type TLShapeId,
   type TLUiOverrides,
 } from "tldraw";
 import { NodeCreateHandle } from "./NodeCreateHandle";
@@ -42,6 +43,10 @@ type SketchNodeProps = NodeProps<Node<SketchNodeData, "sketch">>;
 
 const CARD_WIDTH = 300;
 const CARD_HEIGHT = 220;
+const SKETCH_BOARD_WIDTH = 1024;
+const SKETCH_BOARD_HEIGHT = 768;
+const SKETCH_BOARD_ID = createShapeId("copse-sketch-board");
+const SKETCH_BOARD_INSET = 72;
 
 function SketchToolbar() {
   return (
@@ -59,7 +64,6 @@ function SketchToolbar() {
       <LineToolbarItem />
       <HighlightToolbarItem />
       <LaserToolbarItem />
-      <FrameToolbarItem />
     </DefaultToolbar>
   );
 }
@@ -74,6 +78,7 @@ const sketchTldrawOverrides: TLUiOverrides = {
     const nextTools = { ...tools };
     delete nextTools.note;
     delete nextTools.asset;
+    delete nextTools.frame;
     return nextTools;
   },
 };
@@ -91,8 +96,8 @@ function parseSceneJson(value: unknown): Partial<TLEditorSnapshot> | null {
 
 function createBlankPreview(): { url: string; width: number; height: number } {
   const canvas = document.createElement("canvas");
-  canvas.width = 960;
-  canvas.height = 640;
+  canvas.width = SKETCH_BOARD_WIDTH;
+  canvas.height = SKETCH_BOARD_HEIGHT;
   const ctx = canvas.getContext("2d");
   if (ctx) {
     ctx.fillStyle = "#f7f4ed";
@@ -107,6 +112,67 @@ function createBlankPreview(): { url: string; width: number; height: number } {
     }
   }
   return { url: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
+}
+
+function getSketchBoardViewportBounds() {
+  return {
+    x: -SKETCH_BOARD_INSET,
+    y: -SKETCH_BOARD_INSET,
+    w: SKETCH_BOARD_WIDTH + SKETCH_BOARD_INSET * 2,
+    h: SKETCH_BOARD_HEIGHT + SKETCH_BOARD_INSET * 2,
+  };
+}
+
+function ensureFixedSketchBoard(editor: Editor): TLShapeId {
+  const existingBoard = editor.getShape(SKETCH_BOARD_ID);
+  if (!existingBoard) {
+    editor.createShape({
+      id: SKETCH_BOARD_ID,
+      type: "frame",
+      x: 0,
+      y: 0,
+      isLocked: true,
+      props: {
+        w: SKETCH_BOARD_WIDTH,
+        h: SKETCH_BOARD_HEIGHT,
+        name: "Reference Canvas",
+        color: "black",
+      },
+      meta: { copseSketchBoard: true },
+    });
+  } else if (
+    existingBoard.type !== "frame" ||
+    existingBoard.x !== 0 ||
+    existingBoard.y !== 0 ||
+    existingBoard.isLocked !== true ||
+    ("w" in existingBoard.props && existingBoard.props.w !== SKETCH_BOARD_WIDTH) ||
+    ("h" in existingBoard.props && existingBoard.props.h !== SKETCH_BOARD_HEIGHT)
+  ) {
+    editor.updateShape({
+      id: SKETCH_BOARD_ID,
+      type: "frame",
+      x: 0,
+      y: 0,
+      isLocked: true,
+      props: {
+        w: SKETCH_BOARD_WIDTH,
+        h: SKETCH_BOARD_HEIGHT,
+        name: "Reference Canvas",
+        color: "black",
+      },
+      meta: { copseSketchBoard: true },
+    });
+  }
+  editor.sendToBack([SKETCH_BOARD_ID]);
+  return SKETCH_BOARD_ID;
+}
+
+function getExportShapeIds(editor: Editor): TLShapeId[] {
+  return Array.from(editor.getCurrentPageShapeIds()).filter((shapeId) => shapeId !== SKETCH_BOARD_ID);
+}
+
+function getSketchBoardPageBounds(editor: Editor) {
+  return editor.getShapePageBounds(SKETCH_BOARD_ID);
 }
 
 function enforceSinglePage(editor: Editor) {
@@ -196,16 +262,32 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
       }
     }
     enforceSinglePage(mountedEditor);
+    ensureFixedSketchBoard(mountedEditor);
+    mountedEditor.selectNone();
+    window.setTimeout(() => {
+      mountedEditor.zoomToBounds(getSketchBoardViewportBounds(), {
+        animation: { duration: 0 },
+      });
+    }, 0);
   }, [data.sceneJson]);
 
   const saveSketch = useCallback(async () => {
     if (!editor) return;
     setSaving(true);
     try {
+      ensureFixedSketchBoard(editor);
       const snapshot = getSnapshot(editor.store);
-      const shapeIds = Array.from(editor.getCurrentPageShapeIds());
-      const exportResult = shapeIds.length > 0
-        ? await editor.toImageDataUrl(shapeIds, { format: "png", background: true, padding: 24, scale: 1 })
+      const boardBounds = getSketchBoardPageBounds(editor);
+      const shapeIds = getExportShapeIds(editor);
+      const exportResult = shapeIds.length > 0 && boardBounds
+        ? await editor.toImageDataUrl(shapeIds, {
+          format: "png",
+          background: true,
+          bounds: boardBounds,
+          darkMode: false,
+          padding: 0,
+          scale: 1,
+        })
         : createBlankPreview();
       const updatedAt = new Date().toISOString();
       updateData({
@@ -285,7 +367,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
         >
           <div className="size-full overflow-hidden rounded-2xl">
             {previewSrc ? (
-              <img src={previewSrc} alt={data.fileName || "Sketch"} className="size-full object-cover" draggable={false} />
+              <img src={previewSrc} alt={data.fileName || "Sketch"} className="size-full object-contain" draggable={false} />
             ) : sceneSnapshot ? (
               <div className="flex size-full items-center justify-center bg-muted text-muted-gray">
                 <ImageIcon className="size-12 opacity-50" />

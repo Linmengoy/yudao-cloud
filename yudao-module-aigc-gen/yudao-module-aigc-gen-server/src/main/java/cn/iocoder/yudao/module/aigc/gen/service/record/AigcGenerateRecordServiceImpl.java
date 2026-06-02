@@ -1,7 +1,9 @@
 package cn.iocoder.yudao.module.aigc.gen.service.record;
 
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.asset.api.AigcAssetApi;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
@@ -118,9 +120,10 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         recordMetric("aigc_gen_submit_total");
         AigcModelRespDTO model = modelApi.validateModel(reqDTO.getModelId(), reqDTO.getGenerateMode()).getCheckedData();
         AigcModelProviderRespDTO provider = model.getProviderId() == null ? null : modelApi.getProvider(model.getProviderId()).getCheckedData();
-        modelApi.validateParams(new AigcModelValidateReqDTO().setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setParams(Map.of())).getCheckedData();
+        Map<String, Object> inputParams = parseInputParams(reqDTO.getInputParams());
+        modelApi.validateParams(new AigcModelValidateReqDTO().setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setParams(inputParams)).getCheckedData();
         AigcModelPriceCalculateRespDTO price = modelApi.calculatePrice(new AigcModelPriceCalculateReqDTO()
-                .setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setTaskType(reqDTO.getGenerateType()).setParams(Map.of())).getCheckedData();
+                .setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setTaskType(reqDTO.getGenerateType()).setParams(inputParams)).getCheckedData();
         AigcBillingFreezeRespDTO freeze = billingApi.freeze(new AigcBillingFreezeReqDTO()
                 .setUserId(reqDTO.getUserId()).setBizType("AIGC_GENERATE").setBizId(reqDTO.getClientRequestId() == null ? generateGenerateNo() : reqDTO.getClientRequestId())
                 .setAmount(price.getSalePrice()).setTitle(reqDTO.getGenerateType() + "生成冻结").setPriceSnapshot(price.toString())).getCheckedData();
@@ -186,6 +189,15 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     @Override
     public PageResult<AigcGenerateProviderLogDO> getProviderLogPage(AigcGenerateProviderLogPageReqVO reqVO) {
         return providerLogMapper.selectPage(reqVO);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseInputParams(String inputParams) {
+        if (StrUtil.isBlank(inputParams) || !JsonUtils.isJsonObject(inputParams)) {
+            return Map.of();
+        }
+        Map<String, Object> params = JsonUtils.parseObject(inputParams, Map.class);
+        return params == null ? Map.of() : params;
     }
 
     @Override
