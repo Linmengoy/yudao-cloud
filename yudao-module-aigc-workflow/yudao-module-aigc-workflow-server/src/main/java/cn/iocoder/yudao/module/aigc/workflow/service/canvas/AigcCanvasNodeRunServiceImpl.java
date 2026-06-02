@@ -5,6 +5,8 @@ import cn.hutool.json.JSONUtil;
 import cn.hutool.json.JSONObject;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.asset.api.AigcAssetApi;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.gen.api.AigcGenerateApi;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateResultRespDTO;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateSubmitReqDTO;
@@ -37,6 +39,8 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     private AigcCanvasRoomService roomService;
     @Resource
     private AigcGenerateApi generateApi;
+    @Resource
+    private AigcAssetApi assetApi;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -122,6 +126,14 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             List<Long> assetIds = parseLongList(result.getAssetIds());
             if (!assetIds.isEmpty()) {
                 patch.set("assetId", assetIds.get(0)).set("outputAssetId", assetIds.get(0));
+                String assetPreviewUrl = getAssetPreviewUrl(assetIds.get(0));
+                if (StrUtil.isNotBlank(assetPreviewUrl)) {
+                    if ("video".equals(nodeType)) {
+                        patch.set("videoUrl", assetPreviewUrl);
+                    } else {
+                        patch.set("previewUrl", assetPreviewUrl).set("outputPreviewUrl", assetPreviewUrl);
+                    }
+                }
             }
             patch.set("kind", "generated");
             return patch;
@@ -134,6 +146,20 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         }
         patch.set("status", "pending");
         return patch;
+    }
+
+    private String getAssetPreviewUrl(Long assetId) {
+        AigcAssetRespDTO asset = assetApi.getAsset(assetId).getCheckedData();
+        if (asset == null) {
+            return null;
+        }
+        if (StrUtil.isNotBlank(asset.getThumbnailUrl())) {
+            return asset.getThumbnailUrl();
+        }
+        if (StrUtil.isNotBlank(asset.getCoverUrl())) {
+            return asset.getCoverUrl();
+        }
+        return asset.getFileUrl();
     }
 
     private List<String> parseStringList(String value) {
