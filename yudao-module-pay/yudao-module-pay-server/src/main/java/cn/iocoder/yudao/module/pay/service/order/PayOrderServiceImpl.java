@@ -484,7 +484,7 @@ public class PayOrderServiceImpl implements PayOrderService {
         }
         SyncOrderSummary summary = new SyncOrderSummary();
         for (PayOrderExtensionDO orderExtension : orderExtensions) {
-            summary.record(syncOrder(orderExtension));
+            summary.record(syncOrderStatus(orderExtension));
         }
         log.info("[syncOrder][支付订单同步完成，总数({}) 成功({}) 等待({}) 关闭({}) 客户端缺失({}) 异常({})]",
                 summary.total, summary.success, summary.waiting, summary.closed, summary.clientMissing, summary.failed);
