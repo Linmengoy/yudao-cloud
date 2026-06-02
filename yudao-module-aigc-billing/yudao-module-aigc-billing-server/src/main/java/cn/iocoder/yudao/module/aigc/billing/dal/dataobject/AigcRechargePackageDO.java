@@ -20,16 +20,49 @@ public class AigcRechargePackageDO extends TenantBaseDO {
     @TableId
     private Long id;
 
-    private String name;
-    private Integer payAmount;
-    private BigDecimal pointAmount;
-    private BigDecimal giftAmount;
-    private BigDecimal totalPointAmount;
-    private String description;
-    private String features;
-    private Boolean recommendStatus;
-    private Integer sort;
-    private Integer status;
-    private String remark;
+    /**
+     * 套餐名称
+     */
+    private String name; 
+    /**
+     * 充值金额
+     */
+    private Integer payAmount; 
+    /**
+     * 充值积分
+     */
+    private BigDecimal pointAmount; 
+    /**
+     * 赠送积分
+     */
+    private BigDecimal giftAmount; 
+    /**
+     * 到账总积分
+     */
+    private BigDecimal totalPointAmount; 
+    /**
+     * 套餐描述
+     */
+    private String description; 
+    /**
+     * 套餐功能
+     */
+    private String features; 
+    /**
+     * 是否推荐
+     */
+    private Boolean recommendStatus; 
+    /**
+     * 排序
+     */
+    private Integer sort; 
+    /**
+     * 状态
+     */
+    private Integer status; 
+    /**
+     * 备注
+     */
+    private String remark; 
 
 }

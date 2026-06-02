@@ -16,6 +16,7 @@ import cn.iocoder.yudao.module.aigc.billing.dto.AigcBillingRecordCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcRechargeNotifyReqDTO;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRecordTypeEnum;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRechargeStatusEnum;
+import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRechargeTypeEnum;
 import cn.iocoder.yudao.module.aigc.billing.service.no.AigcBillingNoGenerator;
 import cn.iocoder.yudao.module.aigc.billing.service.packageconfig.AigcRechargePackageService;
 import cn.iocoder.yudao.module.aigc.billing.service.record.AigcBillingRecordService;
@@ -67,7 +68,7 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         order.setRechargeNo(billingNoGenerator.generateRechargeNo());
         order.setWalletId(wallet.getId());
         order.setUserId(userId);
-        order.setRechargeType("MANUAL");
+        order.setRechargeType(AigcBillingRechargeTypeEnum.MANUAL.getCode());
         order.setPayAmount(0);
         order.setPointAmount(amount);
         order.setGiftAmount(BigDecimal.ZERO);
@@ -101,7 +102,7 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         order.setRechargeNo(billingNoGenerator.generateRechargeNo());
         order.setWalletId(wallet.getId());
         order.setUserId(userId);
-        order.setRechargeType("PAY");
+        order.setRechargeType(AigcBillingRechargeTypeEnum.PAY.getCode());
         order.setPayAmount(payAmount);
         order.setPointAmount(amount);
         order.setGiftAmount(BigDecimal.ZERO);
@@ -116,7 +117,9 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AppAigcRechargeOrderCreateRespVO createRechargeOrderByPackage(Long userId, Long packageId, String userIp, String remark) {
+        // 校验套餐是否存在（后台配置的套餐）
         AigcRechargePackageDO rechargePackage = rechargePackageService.getEnabledRechargePackage(packageId);
+
         if (rechargePackage.getPayAmount() == null || rechargePackage.getPayAmount() <= 0) {
             throw exception(RECHARGE_PAY_AMOUNT_INVALID);
         }
@@ -125,7 +128,7 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         order.setRechargeNo(billingNoGenerator.generateRechargeNo());
         order.setWalletId(wallet.getId());
         order.setUserId(userId);
-        order.setRechargeType("PACKAGE");
+        order.setRechargeType(AigcBillingRechargeTypeEnum.PACKAGE.getCode());
         order.setPayAmount(rechargePackage.getPayAmount());
         order.setPointAmount(rechargePackage.getPointAmount());
         order.setGiftAmount(rechargePackage.getGiftAmount());
