@@ -170,7 +170,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         } else {
             updateObj.setStatus(AigcGenerateStatusEnum.CALLBACK_WAITING.getCode());
             generateRecordMapper.updateById(updateObj);
-            taskApi.markCallbackWaiting(new AigcTaskStatusUpdateReqDTO().setTaskId(taskId).setExternalTaskId(providerResp.getProviderTaskId()).setProgress(30)).getCheckedData();
+            taskApi.markCallbackWaiting(new AigcTaskStatusUpdateReqDTO().setTaskId(record.getTaskId()).setExternalTaskId(providerResp.getProviderTaskId()).setProgress(30)).getCheckedData();
         }
         return generateRecordMapper.selectById(record.getId());
     }
