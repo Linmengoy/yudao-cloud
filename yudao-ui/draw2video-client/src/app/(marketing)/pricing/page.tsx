@@ -20,6 +20,10 @@ function parseFeatures(value?: string) {
     .filter(Boolean);
 }
 
+function isValidId(value?: number | null) {
+  return Number.isSafeInteger(Number(value)) && Number(value) > 0;
+}
+
 export default function PricingPage() {
   const router = useRouter();
   const [packages, setPackages] = useState<AigcRechargePackage[]>([]);
@@ -52,11 +56,18 @@ export default function PricingPage() {
     setError("");
     try {
       const order = await createAigcRechargeOrderByPackage(packageId);
-      const params = new URLSearchParams({
-        rechargeOrderId: String(order.rechargeOrderId),
-        payOrderId: String(order.payOrderId),
-        payAppId: String(order.payAppId),
-      });
+      if (!isValidId(order.rechargeOrderId) || !isValidId(order.payOrderId)) {
+        throw new Error("支付订单创建失败，请稍后重试");
+      }
+      const params = new URLSearchParams();
+      params.set("rechargeOrderId", String(order.rechargeOrderId));
+      params.set("payOrderId", String(order.payOrderId));
+      if (isValidId(order.payAppId)) params.set("payAppId", String(order.payAppId));
+      params.set("payAmount", String(order.payAmount ?? 0));
+      params.set("pointAmount", String(order.pointAmount ?? 0));
+      params.set("giftAmount", String(order.giftAmount ?? 0));
+      params.set("totalPointAmount", String(order.totalPointAmount ?? 0));
+      if (order.rechargeNo) params.set("rechargeNo", order.rechargeNo);
       router.push(`/checkout/recharge?${params.toString()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "充值订单创建失败");
