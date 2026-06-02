@@ -464,10 +464,10 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               height: { type: "spring", stiffness: 360, damping: 34 },
             }}
             className={cn(
-              "group relative rounded-xl border bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
+              "canvas-node-drag-handle group relative rounded-xl border bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
               selected ? "border-charcoal/60 ring-2 ring-charcoal/35" : "border-border-warm"
             )}
-            style={{ width: displaySize.width, height: displaySize.height }}
+            style={{ width: displaySize.width, height: displaySize.height, pointerEvents: "auto" }}
           >
             <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[inherit]">
               {videoSrc ? (
@@ -530,6 +530,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               marginLeft: (PREVIEW_SLOT_WIDTH - COMPOSER_WIDTH) / 2,
               marginTop: 12 * fixedUiScale,
               transformOrigin: "top center",
+              pointerEvents: "auto",
             }}
           >
           <div className="mb-3 flex items-start justify-between gap-3">

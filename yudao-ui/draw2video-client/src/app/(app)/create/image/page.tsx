@@ -15,6 +15,7 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStoreApi,
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
@@ -72,12 +73,27 @@ const CANVAS_EDGE_TYPES = {
   signal: CanvasSignalEdge,
 } satisfies EdgeTypes;
 
+const CANVAS_NODE_DRAG_HANDLE = ".canvas-node-drag-handle";
+const TRANSPARENT_NODE_WRAPPER_STYLE = { pointerEvents: "none" as const };
+
 type CreateNodeKind = "text" | "image" | "sketch" | "video";
 type LinkedCreateDirection = "incoming" | "outgoing";
 type PendingConnectionPreview = {
   from: { x: number; y: number };
   to: { x: number; y: number };
   direction: LinkedCreateDirection;
+};
+
+type SelectionRectSnapshot = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type PointerSnapshot = {
+  x: number;
+  y: number;
 };
 
 const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video"];
@@ -110,6 +126,31 @@ function getCreateKindsForOrigin(originType: AppNode["type"] | undefined, direct
       ? isValidNodeKindConnection(kind, originType)
       : isValidNodeKindConnection(originType, kind)
   );
+}
+
+function rectsIntersect(a: SelectionRectSnapshot, b: SelectionRectSnapshot) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function getPreviewCardViewportRect(nodeId: string): SelectionRectSnapshot | null {
+  const escapedId = CSS.escape(nodeId);
+  const card =
+    document.querySelector<HTMLElement>(`[data-node-preview-card][data-node-id="${escapedId}"]`) ??
+    document.querySelector<HTMLElement>(`.react-flow__node[data-id="${escapedId}"] [data-node-preview-card]`);
+  if (!card) return null;
+  const rect = card.getBoundingClientRect();
+  return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+}
+
+function applyPreviewCardSelection(nodes: AppNode[], selectionRect: SelectionRectSnapshot): AppNode[] {
+  return nodes.map((node) => {
+    const cardRect = getPreviewCardViewportRect(node.id);
+    if (!cardRect) return node;
+    return {
+      ...node,
+      selected: rectsIntersect(selectionRect, cardRect),
+    };
+  });
 }
 
 function getClientPoint(event: MouseEvent | TouchEvent) {
@@ -264,10 +305,23 @@ function snapshotSignature(snapshot: CanvasSnapshot) {
   return JSON.stringify({ nodes: snapshot.nodes, edges: snapshot.edges });
 }
 
+function usesCardNodeInteraction(node: AppNode) {
+  return node.type === "image" || node.type === "video" || node.type === "sketch" || node.type === "text";
+}
+
+function withCardNodeInteraction(node: AppNode): AppNode {
+  if (!usesCardNodeInteraction(node)) return node;
+  return {
+    ...node,
+    dragHandle: CANVAS_NODE_DRAG_HANDLE,
+    style: { ...node.style, ...TRANSPARENT_NODE_WRAPPER_STYLE },
+  };
+}
+
 function defaultNodes(): AppNode[] {
   const id = "draft_default";
   return [
-    {
+    withCardNodeInteraction({
       id,
       type: "image",
       position: { x: 250, y: 200 },
@@ -286,14 +340,14 @@ function defaultNodes(): AppNode[] {
         errorMessage: null,
         elapsedMs: null,
       },
-    },
+    }),
   ];
 }
 
 function migrateNode(n: AppNode): AppNode {
   if (n.type === "prompt") {
     const d = n.data as Record<string, unknown>;
-    return {
+    return withCardNodeInteraction({
       id: `draft_${n.id}`,
       type: "image",
       position: n.position,
@@ -313,12 +367,12 @@ function migrateNode(n: AppNode): AppNode {
         errorMessage: null,
         elapsedMs: null,
       },
-    } as AppNode;
+    } as AppNode);
   }
   if (n.type === "result") {
     const d = n.data as Record<string, unknown>;
     const imageUrls = Array.isArray(d.imageUrls) ? d.imageUrls : d.imageUrl ? [d.imageUrl] : [];
-    return {
+    return withCardNodeInteraction({
       id: `generated_${n.id}`,
       type: "image",
       position: n.position,
@@ -338,11 +392,11 @@ function migrateNode(n: AppNode): AppNode {
         errorMessage: typeof d.errorMessage === "string" ? d.errorMessage : null,
         elapsedMs: typeof d.elapsedMs === "number" ? d.elapsedMs : null,
       },
-    } as AppNode;
+    } as AppNode);
   }
   if (n.type === "text") {
     const d = n.data as Record<string, unknown>;
-    return {
+    return withCardNodeInteraction({
       ...n,
       data: {
         content: typeof d.content === "string" ? d.content : "",
@@ -355,11 +409,11 @@ function migrateNode(n: AppNode): AppNode {
         createdAt: typeof d.createdAt === "string" ? d.createdAt : new Date().toISOString(),
         updatedAt: typeof d.updatedAt === "string" ? d.updatedAt : undefined,
       },
-    } as AppNode;
+    } as AppNode);
   }
   if (n.type === "sketch") {
     const d = n.data as Record<string, unknown>;
-    return {
+    return withCardNodeInteraction({
       ...n,
       data: {
         sketchId: typeof d.sketchId === "string" ? d.sketchId : n.id,
@@ -375,7 +429,7 @@ function migrateNode(n: AppNode): AppNode {
         createdAt: typeof d.createdAt === "string" ? d.createdAt : new Date().toISOString(),
         updatedAt: typeof d.updatedAt === "string" ? d.updatedAt : undefined,
       },
-    } as AppNode;
+    } as AppNode);
   }
   if (n.type === "video") {
     const d = n.data as Record<string, unknown>;
@@ -383,7 +437,7 @@ function migrateNode(n: AppNode): AppNode {
     const ratio = d.ratio === "4:3" || d.ratio === "1:1" || d.ratio === "3:4" || d.ratio === "9:16" || d.ratio === "21:9" ? d.ratio : "16:9";
     const resolution = d.resolution === "480p" || d.resolution === "720p" ? d.resolution : "1080p";
     const duration = d.duration === 10 ? 10 : 5;
-    return {
+    return withCardNodeInteraction({
       ...n,
       data: {
         videoId: typeof d.videoId === "string" ? d.videoId : undefined,
@@ -414,9 +468,9 @@ function migrateNode(n: AppNode): AppNode {
         elapsedMs: typeof d.elapsedMs === "number" ? d.elapsedMs : null,
         upstreamStatus: typeof d.upstreamStatus === "string" ? d.upstreamStatus : null,
       },
-    } as AppNode;
+    } as AppNode);
   }
-  return n;
+  return withCardNodeInteraction(n);
 }
 
 function migrateEdge(e: AppEdge): AppEdge {
@@ -502,6 +556,9 @@ function CanvasFlow() {
     direction: LinkedCreateDirection | null;
   }>({ x: 0, y: 0, flowX: 0, flowY: 0, visible: false, originNodeId: null, direction: null });
   const [pendingConnectionPreview, setPendingConnectionPreview] = useState<PendingConnectionPreview | null>(null);
+  const selectionStartRef = useRef<PointerSnapshot | null>(null);
+  const selectionRectRef = useRef<SelectionRectSnapshot | null>(null);
+  const storeApi = useStoreApi();
 
   const {
     getNodes,
@@ -513,6 +570,45 @@ function CanvasFlow() {
     zoomOut,
     fitView,
   } = useReactFlow();
+
+  const handleSelectionEnd = useCallback(() => {
+    const selectionRect = selectionRectRef.current;
+    selectionRectRef.current = null;
+
+    window.requestAnimationFrame(() => {
+      let selectedNodes = getNodes().filter((node) => node.selected);
+
+      if (selectionRect) {
+        const selectedIds = new Set(
+          selectedNodes
+            .filter((node) => {
+              const cardRect = getPreviewCardViewportRect(node.id);
+              return cardRect ? rectsIntersect(selectionRect, cardRect) : true;
+            })
+            .map((node) => node.id)
+        );
+
+        setNodes((nds) =>
+          nds.map((node) => ({
+            ...node,
+            selected: selectedIds.has(node.id),
+          }))
+        );
+        selectedNodes = selectedNodes.filter((node) => selectedIds.has(node.id));
+      }
+
+      if (selectedNodes.length !== 1) return;
+
+      const selectedId = selectedNodes[0].id;
+      storeApi.setState({ nodesSelectionActive: false });
+      setNodes((nds) =>
+        nds.map((node) => ({
+          ...node,
+          selected: node.id === selectedId,
+        }))
+      );
+    });
+  }, [getNodes, setNodes, storeApi]);
 
   // Track last mouse position for paste placement
   const lastMouseRef = useRef<{ x: number; y: number }>({
@@ -563,7 +659,7 @@ function CanvasFlow() {
       return;
     }
     if (operationType === "NODE_CREATE" && payload.node) {
-      const node = payload.node as AppNode;
+      const node = migrateNode(payload.node as AppNode);
       setNodes((nds) => nds.some((item) => item.id === node.id) ? nds : [...nds.map((item) => ({ ...item, selected: false })), node]);
       return;
     }
@@ -873,10 +969,22 @@ function CanvasFlow() {
     (changes: NodeChange<AppNode>[]) => {
       if (isReadOnly) {
         const selectionChanges = changes.filter((change) => change.type === "select");
-        if (selectionChanges.length > 0) setNodes((nds) => applyNodeChanges(selectionChanges, nds));
+        if (selectionChanges.length > 0) {
+          setNodes((nds) => {
+            const selectionRect = selectionRectRef.current;
+            const nextNodes = applyNodeChanges(selectionChanges, nds);
+            if (!selectionRect) return nextNodes;
+            return applyPreviewCardSelection(nextNodes, selectionRect);
+          });
+        }
         return;
       }
-      setNodes((nds) => applyNodeChanges(changes, nds));
+      setNodes((nds) => {
+        const selectionRect = selectionRectRef.current;
+        const nextNodes = applyNodeChanges(changes, nds);
+        if (!selectionRect || !changes.some((change) => change.type === "select")) return nextNodes;
+        return applyPreviewCardSelection(nextNodes, selectionRect);
+      });
       for (const change of changes) {
         if (change.type === "position" && change.dragging === false && change.position) {
           canvasOperations.submitOperation("NODE_MOVE", {
@@ -1066,7 +1174,7 @@ function CanvasFlow() {
       y: window.innerHeight / 2,
     });
     const id = `draft_${Date.now()}`;
-    const newNode: AppNode = {
+    const newNode: AppNode = withCardNodeInteraction({
       id,
       type: "image",
       position: findOpenNodePosition(
@@ -1090,7 +1198,7 @@ function CanvasFlow() {
         elapsedMs: null,
       },
       selected: true,
-    };
+    });
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
@@ -1116,7 +1224,7 @@ function CanvasFlow() {
       createdAt: now,
       updatedAt: now,
     };
-    const newNode: AppNode = {
+    const newNode: AppNode = withCardNodeInteraction({
       id,
       type: "sketch",
       position: findOpenNodePosition(
@@ -1126,7 +1234,7 @@ function CanvasFlow() {
       ),
       data: sketchData,
       selected: true,
-    };
+    });
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
@@ -1149,7 +1257,7 @@ function CanvasFlow() {
       height: 260,
       createdAt: new Date().toISOString(),
     };
-    const newNode: AppNode = {
+    const newNode: AppNode = withCardNodeInteraction({
       id,
       type: "text",
       position: findOpenNodePosition(
@@ -1159,7 +1267,7 @@ function CanvasFlow() {
       ),
       data: textData,
       selected: true,
-    };
+    });
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
@@ -1194,7 +1302,7 @@ function CanvasFlow() {
       elapsedMs: null,
       upstreamStatus: null,
     };
-    const newNode: AppNode = {
+    const newNode: AppNode = withCardNodeInteraction({
       id,
       type: "video",
       position: findOpenNodePosition(
@@ -1204,7 +1312,7 @@ function CanvasFlow() {
       ),
       data: videoData,
       selected: true,
-    };
+    });
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
@@ -1259,7 +1367,8 @@ function CanvasFlow() {
               imageData = await attachImageAsset(file, imageData);
             } catch {
             }
-            newNodes.push({
+            await saveImage(imageData);
+            newNodes.push(withCardNodeInteraction({
               id: imageData.imageId,
               type: "image",
               position: findOpenNodePosition(
@@ -1269,17 +1378,18 @@ function CanvasFlow() {
                 { padding: 28, stepX: 150, stepY: 130 }
               ),
               data: imageData,
-            });
+            }));
             continue;
           }
           if (isAcceptedVideoFile(file)) {
-            const { data } = await fileToVideoNodeData(file);
+            const { data, blob } = await fileToVideoNodeData(file);
             let videoData = data;
             try {
               videoData = await attachVideoAsset(file, videoData);
             } catch {
             }
-            newNodes.push({
+            await saveVideo(videoData, blob);
+            newNodes.push(withCardNodeInteraction({
               id: videoData.videoId ?? `uploaded_video_${Date.now()}`,
               type: "video",
               position: findOpenNodePosition(
@@ -1289,7 +1399,7 @@ function CanvasFlow() {
                 { padding: 28, stepX: 170, stepY: 140 }
               ),
               data: videoData,
-            });
+            }));
           }
         } catch (error) {
           setPasteToast(error instanceof Error ? error.message : "素材上传失败");
@@ -1621,6 +1731,34 @@ function CanvasFlow() {
       className="relative h-full w-full"
       onMouseMove={handleCanvasMouseMove}
       onContextMenu={handleContextMenu}
+      onPointerDownCapture={(event) => {
+        if (event.button !== 0) return;
+        const target = event.target as HTMLElement;
+        if (!target.classList.contains("react-flow__pane")) {
+          selectionStartRef.current = null;
+          selectionRectRef.current = null;
+          return;
+        }
+        selectionStartRef.current = { x: event.clientX, y: event.clientY };
+        selectionRectRef.current = { x: event.clientX, y: event.clientY, width: 0, height: 0 };
+      }}
+      onPointerMoveCapture={(event) => {
+        const start = selectionStartRef.current;
+        if (!start) return;
+        const selectionRect = {
+          x: Math.min(start.x, event.clientX),
+          y: Math.min(start.y, event.clientY),
+          width: Math.abs(event.clientX - start.x),
+          height: Math.abs(event.clientY - start.y),
+        };
+        selectionRectRef.current = selectionRect;
+        window.requestAnimationFrame(() => {
+          setNodes((current) => applyPreviewCardSelection(current, selectionRect));
+        });
+      }}
+      onPointerUpCapture={() => {
+        selectionStartRef.current = null;
+      }}
       onDoubleClick={(event) => {
         const target = event.target as HTMLElement;
         if (
@@ -1653,6 +1791,7 @@ function CanvasFlow() {
         panOnDrag={false}
         selectionOnDrag
         selectionMode={SelectionMode.Partial}
+        onSelectionEnd={handleSelectionEnd}
         zoomOnDoubleClick={false}
         deleteKeyCode={isReadOnly ? null : "Backspace"}
         fitView

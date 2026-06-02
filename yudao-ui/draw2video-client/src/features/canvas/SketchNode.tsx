@@ -5,18 +5,78 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Node, NodeProps } from "@xyflow/react";
 import { useReactFlow, useStore } from "@xyflow/react";
-import { motion } from "motion/react";
-import { Download, ImageIcon, Loader2, Maximize2, PenLine, Save, X } from "lucide-react";
-import { Tldraw, getSnapshot, loadSnapshot, type Editor, type TLEditorSnapshot } from "tldraw";
+import { AnimatePresence, motion } from "motion/react";
+import { ImageIcon, Loader2, PenLine, Save, X } from "lucide-react";
+import {
+  ArrowToolbarItem,
+  DefaultToolbar,
+  DiamondToolbarItem,
+  DrawToolbarItem,
+  EllipseToolbarItem,
+  EraserToolbarItem,
+  FrameToolbarItem,
+  HandToolbarItem,
+  HighlightToolbarItem,
+  LaserToolbarItem,
+  LineToolbarItem,
+  RectangleToolbarItem,
+  SelectToolbarItem,
+  TextToolbarItem,
+  Tldraw,
+  TriangleToolbarItem,
+  getSnapshot,
+  loadSnapshot,
+  type Editor,
+  type TLComponents,
+  type TLEditorSnapshot,
+  type TLUiOverrides,
+} from "tldraw";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import type { NodeDataPatchEventDetail, SketchNodeData } from "./types";
 import { canvasApi } from "@/features/canvas/canvas-api";
+import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
+import { compactInfo, downloadMedia } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
 
 type SketchNodeProps = NodeProps<Node<SketchNodeData, "sketch">>;
 
 const CARD_WIDTH = 300;
 const CARD_HEIGHT = 220;
+
+function SketchToolbar() {
+  return (
+    <DefaultToolbar>
+      <SelectToolbarItem />
+      <HandToolbarItem />
+      <DrawToolbarItem />
+      <EraserToolbarItem />
+      <ArrowToolbarItem />
+      <TextToolbarItem />
+      <RectangleToolbarItem />
+      <EllipseToolbarItem />
+      <TriangleToolbarItem />
+      <DiamondToolbarItem />
+      <LineToolbarItem />
+      <HighlightToolbarItem />
+      <LaserToolbarItem />
+      <FrameToolbarItem />
+    </DefaultToolbar>
+  );
+}
+
+const sketchTldrawComponents: TLComponents = {
+  PageMenu: null,
+  Toolbar: SketchToolbar,
+};
+
+const sketchTldrawOverrides: TLUiOverrides = {
+  tools(_editor, tools) {
+    const nextTools = { ...tools };
+    delete nextTools.note;
+    delete nextTools.asset;
+    return nextTools;
+  },
+};
 
 function parseSceneJson(value: unknown): Partial<TLEditorSnapshot> | null {
   if (!value) return null;
@@ -49,6 +109,16 @@ function createBlankPreview(): { url: string; width: number; height: number } {
   return { url: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
 }
 
+function enforceSinglePage(editor: Editor) {
+  const pages = editor.getPages();
+  if (pages.length === 0) return;
+  const [firstPage, ...extraPages] = pages;
+  editor.setCurrentPage(firstPage);
+  for (const page of extraPages) {
+    editor.deletePage(page);
+  }
+}
+
 export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
   const { setNodes } = useReactFlow();
   const zoom = useStore((s) => s.transform[2] || 1);
@@ -63,6 +133,22 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
 
   const previewSrc = data.previewUrl || data.dataUrl || "";
   const sceneSnapshot = useMemo(() => parseSceneJson(data.sceneJson), [data.sceneJson]);
+  const previewItem = useMemo(() => {
+    if (!previewSrc) return null;
+    return {
+      kind: "image" as const,
+      url: previewSrc,
+      title: data.fileName || "Sketch",
+      fileName: data.fileName || "sketch.png",
+      createdAt: data.updatedAt ?? data.createdAt,
+      information: compactInfo([
+        { label: "Type", value: "Sketch" },
+        { label: "Dimensions", value: data.width && data.height ? `${data.width} x ${data.height}` : null },
+        { label: "Format", value: data.mimeType?.replace("image/", "").toUpperCase() },
+        { label: "Background", value: data.background },
+      ]),
+    };
+  }, [data.background, data.createdAt, data.fileName, data.height, data.mimeType, data.updatedAt, data.width, previewSrc]);
 
   const updateData = useCallback(
     (patch: Partial<SketchNodeData>) => {
@@ -109,6 +195,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
       } catch {
       }
     }
+    enforceSinglePage(mountedEditor);
   }, [data.sceneJson]);
 
   const saveSketch = useCallback(async () => {
@@ -149,18 +236,29 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
   }, [data.projectId, editor, id, updateData]);
 
   const downloadPreview = useCallback(() => {
-    if (!previewSrc) return;
-    const link = document.createElement("a");
-    link.href = previewSrc;
-    link.download = data.fileName || "sketch.png";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  }, [data.fileName, previewSrc]);
+    if (!previewItem) return;
+    downloadMedia(previewItem);
+  }, [previewItem]);
 
   return (
     <>
       <div className="relative" style={{ width: CARD_WIDTH }}>
+        <AnimatePresence>
+          {selected && showNodeActions && (
+            <SelectedMediaToolbar
+              canDownload={Boolean(previewItem?.url)}
+              onDownload={downloadPreview}
+              onOpenPreview={() => setEditorOpen(true)}
+              uiScale={fixedUiScale}
+              style={{
+                left: CARD_WIDTH / 2,
+                top: -50 * fixedUiScale,
+                pointerEvents: "auto",
+              }}
+            />
+          )}
+        </AnimatePresence>
+
         <div
           className="mb-2 flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
           style={{
@@ -180,10 +278,10 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
           whileHover={{ y: -1 }}
           onDoubleClick={() => setEditorOpen(true)}
           className={cn(
-            "relative overflow-visible rounded-2xl border bg-background shadow-[0_8px_24px_rgba(28,28,28,0.08)] transition-colors",
+            "canvas-node-drag-handle group relative overflow-visible rounded-2xl border bg-background shadow-[0_8px_24px_rgba(28,28,28,0.08)] transition-colors",
             selected ? "border-charcoal ring-2 ring-charcoal/10" : "border-border-warm hover:border-charcoal/35"
           )}
-          style={{ width: CARD_WIDTH, height: CARD_HEIGHT }}
+          style={{ width: CARD_WIDTH, height: CARD_HEIGHT, pointerEvents: "auto" }}
         >
           <div className="size-full overflow-hidden rounded-2xl">
             {previewSrc ? (
@@ -203,26 +301,6 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
               </button>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={() => setEditorOpen(true)}
-            className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-full border border-border-warm bg-background/90 text-muted-gray shadow-sm backdrop-blur transition-colors hover:text-charcoal"
-            aria-label="放大编辑草图"
-          >
-            <Maximize2 className="size-4" />
-          </button>
-
-          {previewSrc && (
-            <button
-              type="button"
-              onClick={downloadPreview}
-              className="absolute bottom-3 right-3 flex size-8 items-center justify-center rounded-full border border-border-warm bg-background/90 text-muted-gray shadow-sm backdrop-blur transition-colors hover:text-charcoal"
-              aria-label="下载草图预览"
-            >
-              <Download className="size-4" />
-            </button>
-          )}
 
           <NodeCreateHandle nodeId={id} direction="incoming" selected={selected} showButton={showNodeActions} />
           <NodeCreateHandle nodeId={id} direction="outgoing" selected={selected} showButton={showNodeActions} />
@@ -257,7 +335,12 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
             </div>
           </div>
           <div className="min-h-0 flex-1">
-            <Tldraw key={id} onMount={handleMount} />
+            <Tldraw
+              key={id}
+              components={sketchTldrawComponents}
+              overrides={sketchTldrawOverrides}
+              onMount={handleMount}
+            />
           </div>
         </div>,
         document.body

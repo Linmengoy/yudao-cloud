@@ -191,10 +191,10 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
         className={cn(
-          "group relative rounded-xl border bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
+          "canvas-node-drag-handle group relative rounded-xl border bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
           selected ? "border-charcoal/60 ring-2 ring-charcoal/35" : "border-border-warm"
         )}
-        style={{ width: data.width, height: data.height }}
+        style={{ width: data.width, height: data.height, pointerEvents: "auto" }}
         onDoubleClick={(event) => {
           event.stopPropagation();
           setDraftContent(data.content);
@@ -286,6 +286,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
               marginLeft: (data.width - COMPOSER_WIDTH) / 2,
               marginTop: 12 * fixedUiScale,
               transformOrigin: "top center",
+              pointerEvents: "auto",
             }}
           >
           <textarea

@@ -246,4 +246,12 @@
   .auth-link {
     @apply rounded-sm text-charcoal underline decoration-[rgba(28,28,28,0.4)] underline-offset-2 transition-[box-shadow,decoration-color] hover:decoration-charcoal focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px] dark:decoration-[rgba(244,239,230,0.42)] dark:focus:shadow-[rgba(244,239,230,0.08)_0px_4px_14px];
   }
+
+  .react-flow__node.draggable:has(.canvas-node-drag-handle) .canvas-node-drag-handle {
+    cursor: grab;
+  }
+
+  .react-flow__node.draggable.dragging:has(.canvas-node-drag-handle) .canvas-node-drag-handle {
+    cursor: grabbing;
+  }
 }
