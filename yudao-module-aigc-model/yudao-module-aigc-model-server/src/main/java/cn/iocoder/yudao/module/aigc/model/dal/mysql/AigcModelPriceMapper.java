@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.model.dal.mysql;
 
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
+import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelPriceDO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -17,7 +18,7 @@ public interface AigcModelPriceMapper extends BaseMapperX<AigcModelPriceDO> {
                 .eq(AigcModelPriceDO::getModelId, modelId)
                 .eq(AigcModelPriceDO::getCapability, capability)
                 .in(AigcModelPriceDO::getTenantId, tenantId, 0L)
-                .eq(AigcModelPriceDO::getStatus, 1)
+                .eq(AigcModelPriceDO::getStatus, CommonStatusEnum.ENABLE.getStatus())
                 .and(wrapper -> wrapper.isNull(AigcModelPriceDO::getEffectiveStartTime)
                         .or().le(AigcModelPriceDO::getEffectiveStartTime, LocalDateTime.now()))
                 .and(wrapper -> wrapper.isNull(AigcModelPriceDO::getEffectiveEndTime)
@@ -55,7 +56,7 @@ public interface AigcModelPriceMapper extends BaseMapperX<AigcModelPriceDO> {
         return selectList(new LambdaQueryWrapperX<AigcModelPriceDO>()
                 .eq(AigcModelPriceDO::getModelId, modelId)
                 .eq(AigcModelPriceDO::getCapability, capability)
-                .eq(AigcModelPriceDO::getStatus, 1));
+                .eq(AigcModelPriceDO::getStatus, CommonStatusEnum.ENABLE.getStatus()));
     }
 
 }

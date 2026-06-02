@@ -2,9 +2,11 @@ package cn.iocoder.yudao.module.aigc.model.dal.mysql;
 
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
+import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelCapabilityDO;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -26,12 +28,12 @@ public interface AigcModelCapabilityMapper extends BaseMapperX<AigcModelCapabili
     }
 
     @Delete("DELETE FROM aigc_model_capability WHERE model_id = #{modelId}")
-    void deleteByModelId(Long modelId);
+    void deleteByModelId(@Param("modelId") Long modelId);
 
     default List<AigcModelCapabilityDO> selectListByCapability(String capability) {
         return selectList(new LambdaQueryWrapperX<AigcModelCapabilityDO>()
                 .eq(AigcModelCapabilityDO::getCapability, capability)
-                .eq(AigcModelCapabilityDO::getStatus, 1)
+                .eq(AigcModelCapabilityDO::getStatus, CommonStatusEnum.ENABLE.getStatus())
                 .orderByAsc(AigcModelCapabilityDO::getModelId));
     }
 
