@@ -35,6 +35,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.Base64;
+
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.*;
 
@@ -316,6 +318,10 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         if (StrUtil.isNotBlank(reqDTO.getFileUrl())) {
             return;
         }
+        if (StrUtil.startWithIgnoreCase(reqDTO.getOriginUrl(), "data:")) {
+            prepareDataUrlFile(reqDTO);
+            return;
+        }
         byte[] content = HttpUtil.downloadBytes(reqDTO.getOriginUrl());
         if (content == null || content.length == 0) {
             throw exception(ASSET_DOWNLOAD_FAILED);
@@ -324,6 +330,49 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         String fileUrl = fileApi.createFile(content, reqDTO.getTitle(), "aigc/asset", reqDTO.getMimeType());
         reqDTO.setFileUrl(fileUrl);
         reqDTO.setFileSize((long) content.length);
+    }
+
+    private void prepareDataUrlFile(AigcAssetCreateReqDTO reqDTO) {
+        String dataUrl = reqDTO.getOriginUrl();
+        int commaIndex = dataUrl.indexOf(',');
+        if (commaIndex <= 5 || !dataUrl.substring(0, commaIndex).contains(";base64")) {
+            throw exception(ASSET_DOWNLOAD_FAILED);
+        }
+        String mimeType = StrUtil.blankToDefault(reqDTO.getMimeType(), dataUrl.substring("data:".length(), dataUrl.indexOf(";base64")));
+        byte[] content;
+        try {
+            content = Base64.getDecoder().decode(dataUrl.substring(commaIndex + 1));
+        } catch (IllegalArgumentException ex) {
+            throw exception(ASSET_DOWNLOAD_FAILED);
+        }
+        if (content.length == 0) {
+            throw exception(ASSET_DOWNLOAD_FAILED);
+        }
+        validateFileSize(content.length);
+        String fileExt = StrUtil.blankToDefault(reqDTO.getFileExt(), fileExtFromMimeType(mimeType));
+        String fileName = StrUtil.blankToDefault(reqDTO.getTitle(), "aigc-asset") + "." + fileExt;
+        String fileUrl = fileApi.createFile(content, fileName, "aigc/asset", mimeType);
+        reqDTO.setFileUrl(fileUrl);
+        reqDTO.setFileSize((long) content.length);
+        reqDTO.setMimeType(mimeType);
+        reqDTO.setFileExt(fileExt);
+        reqDTO.setOriginUrl(null);
+    }
+
+    private String fileExtFromMimeType(String mimeType) {
+        if (StrUtil.equalsIgnoreCase(mimeType, "image/jpeg")) {
+            return "jpg";
+        }
+        if (StrUtil.startWithIgnoreCase(mimeType, "image/")) {
+            return StrUtil.subAfter(mimeType, "image/", true);
+        }
+        if (StrUtil.startWithIgnoreCase(mimeType, "video/")) {
+            return StrUtil.subAfter(mimeType, "video/", true);
+        }
+        if (StrUtil.startWithIgnoreCase(mimeType, "audio/")) {
+            return StrUtil.subAfter(mimeType, "audio/", true);
+        }
+        return "bin";
     }
 
     private void validateFileSize(long fileSize) {
