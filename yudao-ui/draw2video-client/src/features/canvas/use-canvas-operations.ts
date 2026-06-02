@@ -17,6 +17,11 @@ function createOperationId() {
   return `op_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function isNonRetryableOperationError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes("请求参数不正确") || error.message.includes("画布操作内容不合法");
+}
+
 export function useCanvasOperations(
   projectId: string | null,
   clientId: string,
@@ -26,41 +31,59 @@ export function useCanvasOperations(
   isRealtimeConnected = false
 ) {
   const pendingRef = useRef<Map<string, PendingCanvasOperation>>(new Map());
+  const flushPendingOperationsRef = useRef<() => void>(() => undefined);
   const [pendingOperationCount, setPendingOperationCount] = useState(0);
 
   const updatePendingOperationCount = useCallback(() => {
     setPendingOperationCount(pendingRef.current.size);
   }, []);
 
+  const scheduleFlushPendingOperations = useCallback(() => {
+    window.setTimeout(() => flushPendingOperationsRef.current(), 0);
+  }, []);
+
   const flushPendingOperations = useCallback(() => {
     if (!projectId) return;
     const now = Date.now();
-    for (const operation of pendingRef.current.values()) {
-      if (operation.sending || operation.retryAt > now) continue;
-      if (sendRealtimeOperation?.(operation.operationType, operation.payload, operation.opId, operation.baseVersion)) {
-        operation.sending = true;
-        operation.attempts += 1;
-        operation.retryAt = now + Math.min(20_000, 2_000 * 2 ** Math.min(operation.attempts, 4));
-        continue;
-      }
+    if ([...pendingRef.current.values()].some((operation) => operation.sending)) return;
+
+    const operation = [...pendingRef.current.values()].find((item) => item.retryAt <= now);
+    if (!operation) return;
+
+    if (sendRealtimeOperation?.(operation.operationType, operation.payload, operation.opId, operation.baseVersion)) {
       operation.sending = true;
       operation.attempts += 1;
       operation.retryAt = now + Math.min(20_000, 2_000 * 2 ** Math.min(operation.attempts, 4));
-      canvasApi.submitOperation(projectId, {
-        clientId,
-        opId: operation.opId,
-        baseVersion: operation.baseVersion,
-        operationType: operation.operationType,
-        operationJson: JSON.stringify({ type: operation.operationType, payload: operation.payload }),
-      }).then((record) => {
-        pendingRef.current.delete(operation.opId);
-        onVersionApplied(record.nextVersion);
-        updatePendingOperationCount();
-      }).catch(() => {
-        operation.sending = false;
-      });
+      return;
     }
-  }, [clientId, onVersionApplied, projectId, sendRealtimeOperation, updatePendingOperationCount]);
+    operation.sending = true;
+    operation.attempts += 1;
+    operation.retryAt = now + Math.min(20_000, 2_000 * 2 ** Math.min(operation.attempts, 4));
+    canvasApi.submitOperation(projectId, {
+      clientId,
+      opId: operation.opId,
+      baseVersion: operation.baseVersion,
+      operationType: operation.operationType,
+      operationJson: JSON.stringify({ type: operation.operationType, payload: operation.payload }),
+    }).then((record) => {
+      pendingRef.current.delete(operation.opId);
+      onVersionApplied(record.nextVersion);
+      updatePendingOperationCount();
+      scheduleFlushPendingOperations();
+    }).catch((error) => {
+      if (isNonRetryableOperationError(error)) {
+        pendingRef.current.delete(operation.opId);
+        updatePendingOperationCount();
+        scheduleFlushPendingOperations();
+        return;
+      }
+      operation.sending = false;
+    });
+  }, [clientId, onVersionApplied, projectId, scheduleFlushPendingOperations, sendRealtimeOperation, updatePendingOperationCount]);
+
+  useEffect(() => {
+    flushPendingOperationsRef.current = flushPendingOperations;
+  }, [flushPendingOperations]);
 
   const submitOperation = useCallback((operationType: string, payload: Record<string, unknown>) => {
     if (!projectId) return;
@@ -86,7 +109,8 @@ export function useCanvasOperations(
     if (!pendingRef.current.delete(opId)) return;
     onVersionApplied(version);
     updatePendingOperationCount();
-  }, [onVersionApplied, updatePendingOperationCount]);
+    scheduleFlushPendingOperations();
+  }, [onVersionApplied, scheduleFlushPendingOperations, updatePendingOperationCount]);
 
   const markOperationRejected = useCallback((opId: string) => {
     const operation = pendingRef.current.get(opId);
