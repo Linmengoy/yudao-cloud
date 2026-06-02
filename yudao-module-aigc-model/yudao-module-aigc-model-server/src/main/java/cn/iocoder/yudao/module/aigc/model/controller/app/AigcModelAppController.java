@@ -49,9 +49,12 @@ public class AigcModelAppController {
     @GetMapping("/list")
     @Operation(summary = "获取可用模型列表")
     @Parameter(name = "type", description = "模型类型")
-    public CommonResult<List<AigcModelRespDTO>> getModelList(@RequestParam(value = "type", required = false) Integer type) {
+    @Parameter(name = "capability", description = "模型能力")
+    public CommonResult<List<AigcModelRespDTO>> getModelList(@RequestParam(value = "type", required = false) Integer type,
+                                                             @RequestParam(value = "capability", required = false) String capability) {
         List<AigcModelDO> models = modelService.listTenantAvailableModels(type);
         return success(models.stream()
+                .filter(model -> capability == null || modelService.hasModelCapability(model.getId(), capability))
                 .map(model -> BeanUtils.toBean(model, AigcModelRespDTO.class))
                 .collect(Collectors.toList()));
     }

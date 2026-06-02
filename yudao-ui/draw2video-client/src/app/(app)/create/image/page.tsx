@@ -535,7 +535,7 @@ function CanvasFlow() {
   const routeProjectId = searchParams.get("projectId");
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const serverProjectId = isServerProjectId(activeProjectId) ? activeProjectId : null;
-  const [nodes, setNodes] = useNodesState<AppNode>(defaultNodes());
+  const [nodes, setNodes] = useNodesState<AppNode>([]);
   const [edges, setEdges] = useEdgesState<AppEdge>([]);
   const [saveError, setSaveError] = useState("");
   const [pasteToast, setPasteToast] = useState("");
@@ -1727,6 +1727,14 @@ function CanvasFlow() {
     return (
       <div className="flex h-full w-full items-center justify-center text-sm text-muted-gray">
         正在准备项目...
+      </div>
+    );
+  }
+
+  if (!isHydrated) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-sm text-muted-gray">
+        正在加载画布...
       </div>
     );
   }

@@ -4,6 +4,8 @@ import type { GenerateMode, GenerateStatus, GenerateType } from "@/features/gene
 import { isGenerationTerminal } from "@/features/generation/generation-status";
 
 export type CanvasNodeRunRequest = {
+  projectId?: string | number;
+  nodeId?: string;
   clientId: string;
   baseVersion: number;
   runId?: string;
@@ -25,6 +27,8 @@ export type CanvasNodeRunResponse = {
 };
 
 export type CanvasNodeRunSyncRequest = {
+  projectId?: string | number;
+  nodeId?: string;
   taskId: number;
   baseVersion: number;
   nodeType: string;
@@ -32,10 +36,18 @@ export type CanvasNodeRunSyncRequest = {
 
 export const canvasNodeRunApi = {
   runNode: (projectId: string | number, nodeId: string, input: CanvasNodeRunRequest) =>
-    api.post<CanvasNodeRunResponse>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/run`, input),
+    api.post<CanvasNodeRunResponse>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/run`, {
+      ...input,
+      projectId,
+      nodeId,
+    }),
 
   syncNodeRun: (projectId: string | number, nodeId: string, input: CanvasNodeRunSyncRequest) =>
-    api.post<CanvasNodeRunResponse>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/run/sync`, input),
+    api.post<CanvasNodeRunResponse>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/run/sync`, {
+      ...input,
+      projectId,
+      nodeId,
+    }),
 };
 
 export function isServerCanvasProjectId(projectId: string | number | null | undefined): projectId is string | number {
