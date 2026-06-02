@@ -100,19 +100,15 @@ mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-server -am package -Dski
 java -jar .\yudao-module-aigc-model\yudao-module-aigc-model-server\target\yudao-module-aigc-model-server.jar
 ```
 
-
-
 aigc-safety-server
 
 ```
 mvn -pl yudao-module-aigc-safety/yudao-module-aigc-safety-server -am package -DskipTests
 ```
 
-
 ```
 java -jar .\yudao-module-aigc-safety\yudao-module-aigc-safety-server\target\yudao-module-aigc-safety-server.jar
 ```
-
 
 aigc-gen-server
 
@@ -132,4 +128,20 @@ mvn -pl yudao-module-aigc-workflow/yudao-module-aigc-workflow-server -am package
 
 ```
 java -jar .\yudao-module-aigc-workflow\yudao-module-aigc-workflow-server\target\yudao-module-aigc-workflow-server.jar
+```
+
+
+
+前端
+
+```JSON
+./script/deploy-frontend-images.ps1 -Server manman
+```
+
+```JSON
+./script/deploy-frontend-images.ps1 -Server manman -Target admin
+```
+
+```JSON
+./script/deploy-frontend-images.ps1 -Server manman -Target client
 ```

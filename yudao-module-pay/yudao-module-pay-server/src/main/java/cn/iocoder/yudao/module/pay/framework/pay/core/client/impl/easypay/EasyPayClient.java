@@ -8,7 +8,6 @@ import cn.hutool.http.ContentType;
 import cn.hutool.http.Header;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
-import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.module.pay.enums.PayChannelEnum;
 import cn.iocoder.yudao.module.pay.enums.order.PayOrderStatusEnum;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.dto.order.PayOrderRespDTO;
@@ -20,6 +19,8 @@ import cn.iocoder.yudao.module.pay.framework.pay.core.client.dto.transfer.PayTra
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.AbstractPayClient;
 import cn.iocoder.yudao.module.pay.framework.pay.core.enums.PayOrderDisplayModeEnum;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -37,7 +38,13 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
     @Override
     protected PayOrderRespDTO doUnifiedOrder(PayOrderUnifiedReqDTO reqDTO) {
         Map<String, String> request = buildUnifiedOrderRequest(reqDTO);
-        Map<String, String> response = post(config.getUnifiedOrderPath(), request);
+        if (StrUtil.equalsIgnoreCase(config.getPaymentMode(), EasyPayClientConfig.PAYMENT_MODE_POPUP)) {
+            String payUrl = EasyPayRequestUtils.buildUrl(apiBase(), "/submit.php") + "?" + buildQuery(request);
+            Map<String, String> response = new HashMap<>();
+            response.put("payurl", payUrl);
+            return PayOrderRespDTO.waitingOf(PayOrderDisplayModeEnum.URL.getMode(), payUrl, reqDTO.getOutTradeNo(), response);
+        }
+        Map<String, String> response = post("/mapi.php", request);
         if (!isSuccessResponse(response)) {
             return PayOrderRespDTO.closedOf(response.get("code"), ObjectUtil.defaultIfNull(response.get("message"), response.get("msg")),
                     reqDTO.getOutTradeNo(), response);
@@ -55,25 +62,23 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
     protected PayOrderRespDTO doParseOrderNotify(Map<String, String> params, String body, Map<String, String> headers) {
         Map<String, String> notify = EasyPayRequestUtils.mergeNotifyParams(params, body);
         Assert.isTrue(EasyPaySigner.verify(notify, config), "EasyPay 回调签名校验失败");
-        Assert.equals(config.getMerchantNo(), firstNotBlank(notify, "merchant_no", "merchantNo", "mch_id"), "EasyPay 回调商户号不匹配");
-        if (StrUtil.isNotBlank(config.getAppId()) && StrUtil.isNotBlank(firstNotBlank(notify, "app_id", "appId"))) {
-            Assert.equals(config.getAppId(), firstNotBlank(notify, "app_id", "appId"), "EasyPay 回调应用编号不匹配");
-        }
+        Assert.equals(config.getResolvedPid(), firstNotBlank(notify, "pid", "merchant_no", "merchantNo", "mch_id"), "EasyPay 回调商户号不匹配");
         Integer status = EasyPayOrderStatusMapping.parse(firstNotBlank(notify, "status", "trade_status", "order_status"));
         Assert.notNull(status, "EasyPay 回调支付状态不正确");
-        return PayOrderRespDTO.of(status, firstNotBlank(notify, "trade_no", "channel_order_no", "transaction_id"),
-                firstNotBlank(notify, "buyer_id", "payer_id", "channel_user_id"), parseChannelPrice(notify), parseSuccessTime(notify),
+        return PayOrderRespDTO.of(status, firstNotBlank(notify, "trade_no", "channel_order_no", "transaction_id"), null,
+                parseChannelPrice(notify), parseSuccessTime(notify),
                 firstNotBlank(notify, "out_trade_no", "outTradeNo", "merchant_order_no"), notify);
     }
 
     @Override
     protected PayOrderRespDTO doGetOrder(String outTradeNo) {
         Map<String, String> request = new HashMap<>();
-        putBaseParams(request);
+        request.put("act", "order");
+        request.put("pid", config.getResolvedPid());
+        request.put("key", config.getResolvedPkey());
         request.put("out_trade_no", outTradeNo);
-        sign(request);
-        Map<String, String> response = post(config.getQueryOrderPath(), request);
-        if (!isSuccessResponse(response)) {
+        Map<String, String> response = post("/api.php", request);
+        if (StrUtil.isNotBlank(response.get("code")) && !isSuccessResponse(response)) {
             return PayOrderRespDTO.closedOf(response.get("code"), ObjectUtil.defaultIfNull(response.get("message"), response.get("msg")),
                     outTradeNo, response);
         }
@@ -115,22 +120,20 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
 
     private Map<String, String> buildUnifiedOrderRequest(PayOrderUnifiedReqDTO reqDTO) {
         Map<String, String> request = new HashMap<>();
-        putBaseParams(request);
+        request.put("pid", config.getResolvedPid());
+        request.put("type", config.getPaymentType());
         request.put("out_trade_no", reqDTO.getOutTradeNo());
-        request.put("total_amount", EasyPayRequestUtils.formatAmount(reqDTO.getPrice()));
-        request.put("subject", reqDTO.getSubject());
-        request.put("body", reqDTO.getBody());
-        request.put("notify_url", reqDTO.getNotifyUrl());
+        request.put("notify_url", ObjectUtil.defaultIfBlank(reqDTO.getNotifyUrl(), config.getNotifyUrl()));
         request.put("return_url", ObjectUtil.defaultIfBlank(reqDTO.getReturnUrl(), config.getReturnUrl()));
-        request.put("expire_time", EasyPayRequestUtils.formatTime(reqDTO.getExpireTime()));
+        request.put("name", reqDTO.getSubject());
+        request.put("money", EasyPayRequestUtils.formatAmount(reqDTO.getPrice()));
+        request.put("clientip", reqDTO.getUserIp());
+        String cid = resolveCid(config.getPaymentType());
+        if (StrUtil.isNotBlank(cid)) {
+            request.put("cid", cid);
+        }
         sign(request);
         return request;
-    }
-
-    private void putBaseParams(Map<String, String> request) {
-        request.put("merchant_no", config.getMerchantNo());
-        request.put("app_id", config.getAppId());
-        request.put("sign_type", config.getSignType());
     }
 
     private void sign(Map<String, String> request) {
@@ -139,17 +142,18 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
 
     private Map<String, String> post(String path, Map<String, String> request) {
         try (HttpResponse response = HttpRequest.post(EasyPayRequestUtils.buildUrl(config.getServerUrl(), path))
-                .header(Header.CONTENT_TYPE, ContentType.JSON.getValue())
-                .body(JsonUtils.toJsonString(request))
-                .timeout(config.getTimeoutSeconds() * 1000)
+        try (HttpResponse response = HttpRequest.post(EasyPayRequestUtils.buildUrl(apiBase(), path))
+                .header(Header.CONTENT_TYPE, ContentType.FORM_URLENCODED.getValue())
+                .form(request)
                 .execute()) {
             return EasyPayRequestUtils.parseBody(response.body());
+        }
         }
     }
 
     private boolean isSuccessResponse(Map<String, String> response) {
         String code = firstNotBlank(response, "code", "result_code", "status_code");
-        return StrUtil.isBlank(code) || StrUtil.equalsAnyIgnoreCase(code, "0", "SUCCESS", "OK", "200");
+        return StrUtil.isBlank(code) || StrUtil.equalsAnyIgnoreCase(code, "0", "1", "SUCCESS", "OK", "200");
     }
 
     private String resolveDisplayMode(Map<String, String> response) {
@@ -170,7 +174,7 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
     }
 
     private String resolveDisplayContent(Map<String, String> response) {
-        return firstNotBlank(response, "display_content", "displayContent", "pay_url", "cashier_url", "url",
+        return firstNotBlank(response, "display_content", "displayContent", "payurl", "payurl2", "pay_url", "cashier_url", "url",
                 "form_html", "form", "qr_code_url", "qrcode_url", "qr_code", "qrcode");
     }
 
@@ -179,7 +183,36 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
     }
 
     private Integer parseChannelPrice(Map<String, String> response) {
-        return EasyPayRequestUtils.parseAmount(firstNotBlank(response, "total_amount", "amount", "pay_amount", "payAmount"));
+        return EasyPayRequestUtils.parseAmount(firstNotBlank(response, "money", "total_amount", "amount", "pay_amount", "payAmount"));
+    }
+
+    private String apiBase() {
+        return EasyPayRequestUtils.normalizeApiBase(config.getResolvedApiBase());
+    }
+
+    private String resolveCid(String paymentType) {
+        if (StrUtil.startWith(paymentType, "alipay")) {
+            return StrUtil.blankToDefault(config.getCidAlipay(), config.getCid());
+        }
+        if (StrUtil.startWith(paymentType, "wxpay")) {
+            return StrUtil.blankToDefault(config.getCidWxpay(), config.getCid());
+        }
+        return config.getCid();
+    }
+
+    private String buildQuery(Map<String, String> request) {
+        StringBuilder builder = new StringBuilder();
+        request.forEach((key, value) -> {
+            if (StrUtil.isBlank(key) || value == null) {
+                return;
+            }
+            if (!builder.isEmpty()) {
+                builder.append('&');
+            }
+            builder.append(URLEncoder.encode(key, StandardCharsets.UTF_8)).append('=')
+                    .append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+        });
+        return builder.toString();
     }
 
     private String firstNotBlank(Map<String, String> map, String... keys) {

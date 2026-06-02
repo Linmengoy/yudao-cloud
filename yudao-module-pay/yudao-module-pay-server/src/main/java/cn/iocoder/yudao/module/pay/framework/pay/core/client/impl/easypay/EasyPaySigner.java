@@ -20,10 +20,10 @@ public class EasyPaySigner {
     public static String sign(Map<String, String> params, EasyPayClientConfig config) {
         String plainText = buildSignText(params);
         if (StrUtil.equalsIgnoreCase(config.getSignType(), EasyPayClientConfig.SIGN_TYPE_MD5)) {
-            return SecureUtil.md5(plainText + config.getSecretKey()).toUpperCase();
+            return SecureUtil.md5(plainText + config.getResolvedPkey());
         }
         if (StrUtil.equalsIgnoreCase(config.getSignType(), EasyPayClientConfig.SIGN_TYPE_HMAC_SHA256)) {
-            HMac hMac = new HMac(HmacAlgorithm.HmacSHA256, config.getSecretKey().getBytes(StandardCharsets.UTF_8));
+            HMac hMac = new HMac(HmacAlgorithm.HmacSHA256, config.getResolvedPkey().getBytes(StandardCharsets.UTF_8));
             return HexUtil.encodeHexStr(hMac.digest(plainText), false);
         }
         try {

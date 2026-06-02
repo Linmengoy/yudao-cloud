@@ -23,6 +23,17 @@ public class EasyPayRequestUtils {
         return StrUtil.removeSuffix(serverUrl, "/") + "/" + StrUtil.removePrefix(path, "/");
     }
 
+    public static String normalizeApiBase(String apiBase) {
+        String base = StrUtil.removeSuffix(StrUtil.trim(apiBase), "/");
+        String lower = StrUtil.lowerFirst(base.toLowerCase());
+        for (String endpoint : new String[]{"/submit.php", "/mapi.php", "/api.php"}) {
+            if (StrUtil.endWith(lower, endpoint)) {
+                return StrUtil.removeSuffix(base.substring(0, base.length() - endpoint.length()), "/");
+            }
+        }
+        return base;
+    }
+
     public static String formatAmount(Integer price) {
         return BigDecimal.valueOf(price).divide(BigDecimal.valueOf(100), 2, RoundingMode.UNNECESSARY).toPlainString();
     }
