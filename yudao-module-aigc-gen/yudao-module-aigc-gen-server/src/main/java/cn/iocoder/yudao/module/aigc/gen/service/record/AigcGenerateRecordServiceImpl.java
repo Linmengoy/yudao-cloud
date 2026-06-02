@@ -142,6 +142,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setProviderCode(resolveProviderCode(provider)).setFreezeId(freeze.getId())
                 .setPriceAmount(price.getSalePrice()).setCostAmount(price.getCostPrice()).setStatus(AigcGenerateStatusEnum.SUBMITTING.getCode()).setSubmitTime(LocalDateTime.now());
         generateRecordMapper.insert(record);
+        taskApi.markQueued(taskId).getCheckedData();
         taskApi.markRunning(taskId).getCheckedData();
         AigcProviderSubmitRespDTO providerResp = submitProvider(record, reqDTO, provider);
         if (!Boolean.TRUE.equals(providerResp.getSuccess())) {
