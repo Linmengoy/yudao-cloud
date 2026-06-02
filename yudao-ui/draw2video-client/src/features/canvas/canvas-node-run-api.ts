@@ -1,7 +1,7 @@
 import { api } from "@/lib/api-client";
 import type { CanvasOperationRecord } from "@/features/canvas/types";
 import type { GenerateMode, GenerateStatus, GenerateType } from "@/features/generation/generation-types";
-import { isGenerationTerminal } from "@/features/generation/generation-status";
+import { getGenerationStatusLabel, isGenerationTerminal } from "@/features/generation/generation-status";
 
 export type CanvasNodeRunRequest = {
   projectId?: string | number;
@@ -71,6 +71,24 @@ function getNodeRunPollDelay(elapsedMs: number) {
   return 10_000;
 }
 
+function getNodeRunFailureMessage(result: CanvasNodeRunResponse) {
+  const fallback = getGenerationStatusLabel(result.status) || "生成失败，请稍后重试。";
+  const operationJson = result.operation?.operationJson;
+  if (!operationJson) return fallback;
+  try {
+    const parsed = JSON.parse(operationJson) as { payload?: { patch?: { errorMessage?: unknown } } };
+    const message = parsed.payload?.patch?.errorMessage;
+    return typeof message === "string" && message.trim() ? message : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function assertSuccessfulNodeRun(result: CanvasNodeRunResponse) {
+  if (result.status === "SUCCESS") return;
+  throw new Error(getNodeRunFailureMessage(result));
+}
+
 export async function waitCanvasNodeRunResult(projectId: string | number, nodeId: string, input: CanvasNodeRunSyncRequest) {
   const pollKey = getNodeRunPollKey(projectId, nodeId, input);
   const existingPoll = nodeRunPolls.get(pollKey);
@@ -88,9 +106,11 @@ async function waitCanvasNodeRunResultOnce(projectId: string | number, nodeId: s
   let latest: CanvasNodeRunResponse | null = null;
   while (Date.now() - startedAt < NODE_RUN_POLL_TIMEOUT_MS) {
     latest = await canvasNodeRunApi.syncNodeRun(projectId, nodeId, input);
-    if (isGenerationTerminal(latest.status)) return latest;
+    if (isGenerationTerminal(latest.status)) {
+      assertSuccessfulNodeRun(latest);
+      return latest;
+    }
     await sleep(getNodeRunPollDelay(Date.now() - startedAt));
   }
-  if (latest) return latest;
   throw new Error("生成结果查询超时，请稍后到任务中心查看进度。");
 }
