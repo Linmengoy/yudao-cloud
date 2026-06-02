@@ -20,6 +20,26 @@ let refreshQueue: Array<{
   reject: (err: unknown) => void;
 }> = [];
 
+async function readApiResponse<T>(res: Response): Promise<ApiResponse<T>> {
+  const text = await res.text();
+  if (!text) {
+    return {
+      code: res.ok ? 0 : res.status,
+      data: undefined as T,
+      msg: res.ok ? "" : res.statusText || `HTTP ${res.status}`,
+    };
+  }
+  try {
+    return JSON.parse(text) as ApiResponse<T>;
+  } catch {
+    return {
+      code: res.ok ? 500 : res.status,
+      data: undefined as T,
+      msg: text || res.statusText || `HTTP ${res.status}`,
+    };
+  }
+}
+
 export function setTokens(access: string, refresh: string) {
   accessToken = access;
   refreshToken = refresh;
@@ -69,8 +89,7 @@ export async function refreshAccessToken(): Promise<string> {
       terminal: API_TERMINAL,
     },
   });
-  const body: ApiResponse<{ accessToken: string; refreshToken: string }> =
-    await res.json();
+  const body = await readApiResponse<{ accessToken: string; refreshToken: string }>(res);
   if (body.code !== 0) throw new Error(body.msg);
 
   setTokens(body.data.accessToken, body.data.refreshToken);
@@ -94,7 +113,7 @@ async function request<T>(
   }
 
   let res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  let body: ApiResponse<T> = await res.json();
+  let body = await readApiResponse<T>(res);
 
   if (body.code === 401) {
     if (isRefreshing) {
@@ -103,8 +122,8 @@ async function request<T>(
           resolve: (newToken: string) => {
             headers["Authorization"] = `Bearer ${newToken}`;
             fetch(`${API_BASE_URL}${path}`, { ...options, headers })
-              .then((r) => r.json())
-              .then((b: ApiResponse<T>) => {
+              .then((r) => readApiResponse<T>(r))
+              .then((b) => {
                 if (b.code === 0) resolve(b.data);
                 else reject(new Error(b.msg));
               })
@@ -124,7 +143,7 @@ async function request<T>(
 
       headers["Authorization"] = `Bearer ${newToken}`;
       res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-      body = await res.json();
+      body = await readApiResponse<T>(res);
     } catch (err) {
       isRefreshing = false;
       refreshQueue.forEach((q) => q.reject(err));

@@ -322,7 +322,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                     .record(() -> providerClientFactory.getClient(record.getProviderCode()).submit(providerReq));
         }
         providerLogMapper.insert(new AigcGenerateProviderLogDO().setRecordId(record.getId()).setTaskId(record.getTaskId()).setProviderCode(record.getProviderCode()).setModelCode(record.getModelCode())
-                .setApiAction("submit").setRequestId(record.getGenerateNo()).setRequestSummary(maskPrompt(record.getPrompt())).setResponseSummary(resp.getProviderStatus())
+                .setApiAction("submit").setRequestId(record.getGenerateNo()).setRequestSummary(buildRequestSummary(record)).setResponseSummary(buildResponseSummary(resp))
                 .setSuccess(Boolean.TRUE.equals(resp.getSuccess())).setErrorCode(resp.getErrorCode()).setErrorMessage(resp.getErrorMessage()).setDurationMs(System.currentTimeMillis() - start));
         return resp;
     }
@@ -403,6 +403,22 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return null;
         }
         return prompt.length() <= 16 ? prompt : prompt.substring(0, 16) + "***";
+    }
+
+    private String buildRequestSummary(AigcGenerateRecordDO record) {
+        return new JSONObject()
+                .set("generateMode", record.getGenerateMode())
+                .set("modelCode", record.getModelCode())
+                .set("prompt", maskPrompt(record.getPrompt()))
+                .toString();
+    }
+
+    private String buildResponseSummary(AigcProviderSubmitRespDTO resp) {
+        return new JSONObject()
+                .set("providerStatus", resp.getProviderStatus())
+                .set("errorCode", resp.getErrorCode())
+                .set("errorMessage", resp.getErrorMessage())
+                .toString();
     }
 
     private String firstUrl(String outputUrls) {
