@@ -109,24 +109,35 @@
 
 ### 5.1 EasyPay 配置对象
 
-新增 `EasyPayClientConfig`，实现现有 `PayClientConfig` 配置接口，建议字段如下：
+新增 `EasyPayClientConfig`，实现现有 `PayClientConfig` 配置接口。当前实现以“保证现有系统配置兼容，同时调通真实易支付接口”为原则：保留原有泛化字段，同时新增易支付协议字段；如果新老字段同时存在，优先使用易支付协议字段。
 
 | 字段 | 必填 | 说明 |
 | ---- | ---- | ---- |
-| `serverUrl` | 是 | EasyPay 网关地址，区分正式和沙箱环境 |
-| `merchantNo` | 是 | EasyPay 商户号 |
-| `appId` | 否 | EasyPay 应用 ID，如官方要求则必填 |
-| `signType` | 是 | 签名类型，如 `MD5`、`RSA2`、`HMAC_SHA256` |
+| `apiBase` | 推荐 | 易支付接口基础地址，真实请求会在其后拼接 `/mapi.php`、`/api.php` 或 `/submit.php` |
+| `pid` | 推荐 | 易支付商户号 |
+| `pkey` | 推荐 | 易支付商户密钥，用于 MD5 签名和查单 `key` 参数 |
+| `serverUrl` | 兼容 | 旧配置字段，未配置 `apiBase` 时作为易支付基础地址使用 |
+| `merchantNo` | 兼容 | 旧配置字段，未配置 `pid` 时作为易支付商户号使用 |
+| `secretKey` | 兼容 | 旧配置字段，未配置 `pkey` 时作为易支付商户密钥使用 |
+| `signType` | 否 | 默认 `MD5`；真实易支付当前按 MD5 接入，RSA2/HMAC 字段保留用于兼容旧配置模型 |
+| `notifyUrl` | 否 | 易支付异步通知地址；优先使用 Pay 模块提交支付时传入的 `notifyUrl` |
+| `returnUrl` | 否 | 支付完成后的前端跳转地址；优先使用提交支付时传入的 `returnUrl` |
+| `paymentType` | 否 | 易支付支付类型，默认 `alipay`；可按实际渠道配置为 `wxpay` 等 |
+| `paymentMode` | 否 | 支付模式；为空时请求 `/mapi.php` 获取 `payurl/qrcode`，为 `popup` 时生成 `/submit.php` 收银台跳转链接 |
+| `cid` | 否 | 易支付通道 ID，作为默认通道 |
+| `cidAlipay` | 否 | 支付宝通道 ID，`paymentType` 以 `alipay` 开头时优先使用 |
+| `cidWxpay` | 否 | 微信通道 ID，`paymentType` 以 `wxpay` 开头时优先使用 |
+| `appId` | 兼容 | 旧泛化 EasyPay 字段，当前易支付协议不依赖 |
 | `privateKey` | 条件必填 | 商户私钥，RSA 类签名时使用 |
 | `publicKey` | 条件必填 | EasyPay 平台公钥，RSA 类验签时使用 |
-| `secretKey` | 条件必填 | 对称签名密钥，MD5/HMAC 类签名时使用 |
-| `returnUrl` | 否 | 支付完成后的前端跳转地址，可由提交支付时覆盖 |
 | `notifyContentType` | 否 | 回调内容类型，如 `FORM`、`JSON` |
-| `sandbox` | 是 | 是否沙箱环境 |
+| `sandbox` | 否 | 是否沙箱环境，保留用于管理端展示和旧配置兼容 |
 | `timeoutSeconds` | 否 | 调用 EasyPay 接口超时时间 |
-| `unifiedOrderPath` | 否 | EasyPay 下单接口路径，默认 `/pay/unified-order`，以官方文档为准 |
-| `queryOrderPath` | 否 | EasyPay 查单接口路径，默认 `/pay/query-order`，以官方文档为准 |
+| `unifiedOrderPath` | 兼容 | 旧泛化接口路径字段，当前真实易支付下单固定走 `/mapi.php` 或 `/submit.php` |
+| `queryOrderPath` | 兼容 | 旧泛化接口路径字段，当前真实易支付查单固定走 `/api.php` |
 | `successResponse` | 否 | EasyPay 回调成功响应文本，默认 `success`，需按官方要求配置 |
+
+`apiBase` 会自动规范化：如果误填为 `https://example.com/submit.php`、`https://example.com/mapi.php` 或 `https://example.com/api.php`，系统会裁剪成 `https://example.com` 后再拼接具体接口路径。
 
 ### 5.2 配置存储
 
@@ -134,18 +145,31 @@ EasyPay 渠道配置存储在 `pay_channel.config` 字段中，与支付宝、�
 
 ```json
 {
-  "serverUrl": "https://gateway.easypay.example.com",
-  "merchantNo": "${EASYPAY_MERCHANT_NO}",
-  "appId": "${EASYPAY_APP_ID}",
-  "signType": "RSA2",
-  "privateKey": "${EASYPAY_PRIVATE_KEY}",
-  "publicKey": "${EASYPAY_PUBLIC_KEY}",
+  "apiBase": "https://gateway.easypay.example.com",
+  "pid": "${EASYPAY_PID}",
+  "pkey": "${EASYPAY_PKEY}",
+  "signType": "MD5",
+  "paymentType": "alipay",
+  "paymentMode": "",
+  "notifyUrl": "https://api.example.com/pay/notify/order/{channelId}",
   "returnUrl": "https://www.example.com/pay/result",
-  "notifyContentType": "JSON",
+  "notifyContentType": "FORM",
   "sandbox": false,
   "timeoutSeconds": 10,
-  "unifiedOrderPath": "/pay/unified-order",
-  "queryOrderPath": "/pay/query-order",
+  "successResponse": "success"
+}
+```
+
+如果历史环境已保存旧字段，也允许继续使用以下兼容结构，系统会自动映射为易支付协议字段：
+
+```json
+{
+  "serverUrl": "https://gateway.easypay.example.com",
+  "merchantNo": "${EASYPAY_PID}",
+  "secretKey": "${EASYPAY_PKEY}",
+  "signType": "MD5",
+  "returnUrl": "https://www.example.com/pay/result",
+  "timeoutSeconds": 10,
   "successResponse": "success"
 }
 ```
@@ -240,21 +264,28 @@ yudao-module-pay-server
 
 | 项目字段 | EasyPay 字段 | 说明 |
 | -------- | ------------ | ---- |
-| `PayOrderUnifiedReqDTO.outTradeNo` | 商户订单号 | 使用 `pay_order_extension.no`，不能使用业务订单号 |
-| `PayOrderUnifiedReqDTO.price` | 金额 | 项目内部金额通常为分，按 EasyPay 要求转换为元或分 |
-| `PayOrderUnifiedReqDTO.subject` | 商品标题 | 控制长度，避免超过 EasyPay 限制 |
-| `PayOrderUnifiedReqDTO.body` | 商品描述 | 可为空 |
-| `PayOrderUnifiedReqDTO.notifyUrl` | 异步通知地址 | Pay 模块生成的 `/pay/notify/order/{channelId}` |
-| `PayOrderUnifiedReqDTO.returnUrl` | 同步跳转地址 | 前端支付完成跳转地址 |
-| `PayOrderUnifiedReqDTO.expireTime` | 过期时间 | 按 EasyPay 格式转换 |
+| `EasyPayClientConfig.pid` / `merchantNo` | `pid` | 商户号，优先使用 `pid`，兼容 `merchantNo` |
+| `EasyPayClientConfig.paymentType` | `type` | 支付类型，默认 `alipay` |
+| `PayOrderUnifiedReqDTO.outTradeNo` | `out_trade_no` | 使用 `pay_order_extension.no`，不能使用业务订单号 |
+| `PayOrderUnifiedReqDTO.notifyUrl` / `notifyUrl` | `notify_url` | Pay 模块生成的异步通知地址优先 |
+| `PayOrderUnifiedReqDTO.returnUrl` / `returnUrl` | `return_url` | 前端支付完成跳转地址优先 |
+| `PayOrderUnifiedReqDTO.subject` | `name` | 商品标题，控制长度，避免超过 EasyPay 限制 |
+| `PayOrderUnifiedReqDTO.price` | `money` | 项目内部金额为分，转换为元，保留两位小数 |
+| `PayOrderUnifiedReqDTO.userIp` | `clientip` | 用户 IP，`/mapi.php` 模式传入 |
+| `cid` / `cidAlipay` / `cidWxpay` | `cid` | 可选通道 ID，按支付类型选择 |
+| 签名结果 | `sign`、`sign_type` | MD5 签名，`sign_type=MD5` |
+
+默认下单模式为 API 模式：请求 `apiBase + /mapi.php`，使用 `application/x-www-form-urlencoded` 提交参数，期望返回 `code`、`msg`、`trade_no`、`payurl`、`payurl2`、`qrcode` 等字段。
+
+如果 `paymentMode=popup`，不发起服务端下单请求，而是生成 `apiBase + /submit.php?...` 收银台跳转链接，并以 `displayMode=url`、`displayContent=payUrl` 返回前端。
 
 下单返回需要转换为 `PayOrderRespDTO`：
 
 | EasyPay 返回 | Pay 返回 |
 | ------------ | ------- |
-| 收银台跳转链接 | `displayMode=url`，`displayContent=payUrl` |
+| `payurl` 或 `payurl2` | `displayMode=url`，`displayContent=payUrl` |
 | HTML 表单 | `displayMode=form`，`displayContent=formHtml` |
-| 二维码链接 | `displayMode=qr_code_url`，`displayContent=qrCodeUrl` |
+| `qrcode` | `displayMode=qr_code`，`displayContent=qrcode` |
 | 已支付状态 | `status=SUCCESS`，携带 EasyPay 订单号、支付用户标识、支付金额 `channelPrice` |
 | 等待支付状态 | `status=WAITING`，并返回展示内容 |
 
@@ -264,16 +295,24 @@ yudao-module-pay-server
 
 `EasyPayClient.getOrder` 负责根据 `pay_order_extension.no` 查询 EasyPay 订单状态，并转换为 `PayOrderRespDTO`。
 
+当前查单实现请求 `apiBase + /api.php`，使用 `application/x-www-form-urlencoded` 提交以下参数：
+
+| 参数 | 说明 |
+| ---- | ---- |
+| `act=order` | 易支付查单动作 |
+| `pid` | 商户号，优先使用配置 `pid`，兼容 `merchantNo` |
+| `key` | 商户密钥，优先使用配置 `pkey`，兼容 `secretKey` |
+| `out_trade_no` | 支付拓展单号，即 `pay_order_extension.no` |
+
 查单响应如果返回支付成功，必须解析 EasyPay 返回的交易金额字段，并转换为内部分单位写入 `PayOrderRespDTO.channelPrice`。主动同步、定时补偿和异步回调走同一套 `notifyOrder` 成功更新逻辑，因此查单金额也必须与本地 `pay_order.price` 完全一致，否则拒绝把订单更新为成功。
 
 状态映射建议如下：
 
 | EasyPay 状态 | 内部状态 | 处理方式 |
 | ------------ | -------- | -------- |
-| `SUCCESS`、`PAID`、`TRADE_SUCCESS` | 支付成功 | 更新支付拓展单和支付主单 |
-| `WAITING`、`UNPAID`、`PROCESSING` | 支付中 | 保持待支付 |
-| `CLOSED`、`CANCELLED`、`EXPIRED` | 已关闭 | 关闭支付拓展单 |
-| `FAILED` | 支付失败 | 关闭支付拓展单或按失败状态处理 |
+| `1`、`SUCCESS`、`PAID`、`TRADE_SUCCESS` | 支付成功 | 更新支付拓展单和支付主单 |
+| `0`、`WAITING`、`UNPAID`、`PROCESSING` | 支付中 | 保持待支付 |
+| `2`、`CLOSED`、`CANCELLED`、`EXPIRED`、`FAILED` | 已关闭 | 关闭支付拓展单或按失败状态处理 |
 
 实际状态值以 EasyPay 官方文档为准，不能在实现中只依赖本方案示例值。
 
@@ -283,7 +322,7 @@ yudao-module-pay-server
 
 1. 读取 EasyPay 回调原始参数，兼容 `application/x-www-form-urlencoded` 和 `application/json`。
 2. 校验签名，签名失败直接拒绝，不更新订单状态。
-3. 校验商户号、应用 ID、订单号、金额、币种和支付状态。
+3. 校验商户号 `pid`、订单号、金额和支付状态。
 4. 使用 EasyPay 回调中的商户订单号匹配 `pay_order_extension.no`。
 5. 将 EasyPay 交易号、支付用户标识、支付成功时间、实际支付金额、手续费等字段写入 `PayOrderRespDTO`。
 6. 返回 EasyPay 要求的成功响应文本，避免 EasyPay 重复通知。
@@ -330,7 +369,7 @@ INSERT INTO pay_channel (
   creator, create_time, updater, update_time, deleted
 ) VALUES (
   'easypay_cashier', 0, 0, 'EasyPay 收银台支付', 1,
-  '{"serverUrl":"https://gateway.easypay.example.com","merchantNo":"${EASYPAY_MERCHANT_NO}","appId":"${EASYPAY_APP_ID}","signType":"RSA2","privateKey":"${EASYPAY_PRIVATE_KEY}","publicKey":"${EASYPAY_PUBLIC_KEY}","sandbox":true}',
+  '{"apiBase":"https://gateway.easypay.example.com","pid":"${EASYPAY_PID}","pkey":"${EASYPAY_PKEY}","signType":"MD5","paymentType":"alipay","paymentMode":"","sandbox":false}',
   'system', NOW(), 'system', NOW(), b'0'
 );
 ```
