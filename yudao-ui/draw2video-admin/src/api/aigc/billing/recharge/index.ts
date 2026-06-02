@@ -18,9 +18,37 @@ export interface AigcRechargeOrderVO {
   createTime?: Date
 }
 
+export interface AigcRechargeOrderDiagnosticVO {
+  rechargeOrder?: AigcRechargeOrderVO
+  payOrder?: {
+    id: number
+    channelCode?: string
+    merchantOrderId?: string
+    subject?: string
+    price?: number
+    status?: number
+    successTime?: Date
+    channelUserId?: string
+    channelOrderNo?: string
+  }
+  billingRecord?: any
+  payNotify?: {
+    task?: any
+    logs?: any[]
+  }
+  payOrderMatched?: boolean
+  amountMatched?: boolean
+  paySuccess?: boolean
+  billingRecordExists?: boolean
+  diagnosticMessage?: string
+}
+
 export const AigcBillingRechargeApi = {
   getRecharge: async (id: number) => {
     return await request.get({ url: '/aigc/billing/recharge/get', params: { id } })
+  },
+  getDiagnostic: async (id: number) => {
+    return await request.get({ url: '/aigc/billing/recharge/diagnostic', params: { id } })
   },
   getRechargePage: async (params: any) => {
     return await request.get({ url: '/aigc/billing/recharge/page', params })

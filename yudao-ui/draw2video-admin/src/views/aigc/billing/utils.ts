@@ -48,6 +48,10 @@ export const formatPoints = (value?: number | null) => {
   return `${Number(value || 0).toLocaleString('zh-CN')} 积分`
 }
 
+export const formatMoney = (value?: number | null) => {
+  return `￥${(Number(value || 0) / 100).toFixed(2)}`
+}
+
 export const formatPercent = (value?: number | null) => {
   return `${Number(value || 0).toFixed(2)}%`
 }
