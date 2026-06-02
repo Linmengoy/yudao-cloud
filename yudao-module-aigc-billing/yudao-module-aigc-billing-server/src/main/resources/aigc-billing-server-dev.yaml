@@ -71,3 +71,12 @@ xxl:
   job:
     admin:
       addresses: http://xxl-job-admin:8080/xxl-job-admin
+
+
+yudao:
+  aigc:
+    billing:
+      pay:
+        app-id: 7              # 支付应用编号
+        app-key: demo          # 支付应用标识（需在 pay_app 表中配置）
+        expire-minutes: 10     # 支付过期时间（分钟）
