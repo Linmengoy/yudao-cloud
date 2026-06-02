@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.aigc.asset.service.asset;
 import cn.hutool.core.lang.UUID;
 import cn.hutool.http.HttpUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
@@ -94,6 +95,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     @Transactional(rollbackFor = Exception.class)
     public AigcAssetCreateRespDTO createAsset(AigcAssetCreateReqDTO reqDTO) {
         prepareFile(reqDTO);
+        normalizeSnapshotFields(reqDTO);
         if (reqDTO.getTaskId() != null) {
             AigcAssetDO existedAsset = assetMapper.selectByTaskIdAndType(reqDTO.getTaskId(), reqDTO.getAssetType());
             if (existedAsset != null) {
@@ -114,6 +116,21 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         assetMapper.insert(asset);
         tryMarkTaskSuccess(asset);
         return buildCreateRespDTO(asset);
+    }
+
+    private void normalizeSnapshotFields(AigcAssetCreateReqDTO reqDTO) {
+        reqDTO.setPromptSnapshot(normalizeJsonSnapshot(reqDTO.getPromptSnapshot(), "prompt"));
+        reqDTO.setGenerateSnapshot(normalizeJsonSnapshot(reqDTO.getGenerateSnapshot(), "raw"));
+    }
+
+    private String normalizeJsonSnapshot(String snapshot, String rawKey) {
+        if (StrUtil.isBlank(snapshot)) {
+            return null;
+        }
+        if (JSONUtil.isTypeJSON(snapshot)) {
+            return snapshot;
+        }
+        return JSONUtil.createObj().set(rawKey, snapshot).toString();
     }
 
     @Override
