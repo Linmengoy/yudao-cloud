@@ -9,7 +9,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowUp,
   Check,
-  Clock,
+  Gem,
   ImageIcon,
   Loader2,
   Plus,
@@ -35,7 +35,7 @@ import { DEFAULT_MODEL_ID, getModelById, IMAGE_MODELS } from "@/features/image-g
 import type { ImageModeration, ImageOutputFormat, ImageQuality } from "@/features/image-generation/types";
 import { calculateImageSize, normalizeImageSize, type SizeTier } from "@/features/image-generation/size";
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
-import { PriceEstimate } from "@/features/generation/PriceEstimate";
+import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
@@ -57,7 +57,7 @@ const PREVIEW_SLOT_WIDTH = IMAGE_MAX_WIDTH;
 const PREVIEW_SLOT_HEIGHT = IMAGE_MAX_HEIGHT;
 const COMPOSER_WIDTH = 620;
 
-type SizeMode = "auto" | "ratio" | "resolution";
+type SizeMode = "auto" | "ratio";
 
 const TIERS: SizeTier[] = ["1K", "2K", "4K"];
 const RATIOS = ["1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "21:9"];
@@ -80,6 +80,15 @@ const MODERATION_OPTIONS = [
   { label: "Low", value: "low" as ImageModeration },
 ];
 
+const BUILT_IN_IMAGE_PARAM_KEYS = new Set([
+  "size",
+  "quality",
+  "output_format",
+  "output_compression",
+  "moderation",
+  "n",
+]);
+
 function formatSizeSummary(size: string) {
   if (size === "auto") return "1:1 · auto";
   const [w, h] = size.split("x").map(Number);
@@ -94,34 +103,28 @@ function dimensionsFromSize(size: string) {
   return { width: w, height: h };
 }
 
-function getSizeSelection(size: string): { mode: SizeMode; tier: SizeTier; ratio: string; customW: string; customH: string } {
+function getSizeSelection(size: string): { mode: SizeMode; tier: SizeTier; ratio: string } {
   const normalized = normalizeImageSize(size);
   if (!normalized || normalized === "auto") {
-    return { mode: "auto", tier: "1K", ratio: "1:1", customW: "1024", customH: "1024" };
+    return { mode: "auto", tier: "1K", ratio: "1:1" };
   }
 
   for (const tier of TIERS) {
     for (const ratio of RATIOS) {
       if (calculateImageSize(tier, ratio) === normalized) {
-        const dims = dimensionsFromSize(normalized);
         return {
           mode: "ratio",
           tier,
           ratio,
-          customW: String(dims?.width ?? 1024),
-          customH: String(dims?.height ?? 1024),
         };
       }
     }
   }
 
-  const dims = dimensionsFromSize(normalized);
   return {
-    mode: "resolution",
+    mode: "ratio",
     tier: "1K",
     ratio: "1:1",
-    customW: String(dims?.width ?? 1024),
-    customH: String(dims?.height ?? 1024),
   };
 }
 
@@ -130,6 +133,34 @@ function formatElapsed(ms: number | null | undefined) {
   const totalSeconds = Math.floor(ms / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
   return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
+}
+
+function formatCost(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function normalizeTemplateOption(option: string) {
+  return option.trim().replace(/^"+|"+$/g, "");
+}
+
+function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {
+  const sizeTemplate = templates.find((item) => item.paramKey === "size");
+  const maxEdge = Math.max(
+    0,
+    ...(sizeTemplate?.options ?? [])
+      .map(normalizeTemplateOption)
+      .map((option) => {
+        const match = option.match(/^(\d+)x(\d+)$/);
+        if (!match) return 0;
+        return Math.max(Number(match[1]), Number(match[2]));
+      })
+  );
+
+  if (maxEdge >= 3200) return "4K";
+  if (maxEdge >= 1500) return "2K";
+  if (maxEdge >= 1080) return "1080P";
+  return null;
 }
 
 function scaleToPreview(width: number, height: number) {
@@ -175,18 +206,11 @@ function ParamSegmented<T extends string>({
             type="button"
             onClick={() => onChange(option.value)}
             className={cn(
-              "relative overflow-hidden rounded-lg px-2 py-1.5 text-xs font-medium text-muted-gray transition-colors",
-              value === option.value && "text-charcoal"
+              "rounded-lg px-2 py-1.5 text-xs font-medium text-muted-gray transition-colors",
+              value === option.value && "bg-background text-charcoal shadow-sm"
             )}
           >
-            {value === option.value && (
-              <motion.span
-                layoutId={`image-param-${label}`}
-                className="absolute inset-0 rounded-lg bg-background shadow-sm"
-                transition={{ type: "spring", stiffness: 420, damping: 34 }}
-              />
-            )}
-            <span className="relative z-10">{option.label}</span>
+            {option.label}
           </button>
         ))}
       </div>
@@ -231,10 +255,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const aigcModels = useAigcModels({ type: 2, capability: "TEXT_TO_IMAGE", params });
   const activeModelName = aigcModels.selectedModel?.name ?? data.modelName ?? currentModel.name;
   const activeProviderModel = aigcModels.selectedModel?.model ?? data.providerModel ?? modelId;
+  const activeAigcModelId = selectedAigcModelId ?? aigcModels.selectedModel?.id;
+  const extraParamTemplates = useMemo(
+    () => aigcModels.templates.filter((item) => !BUILT_IN_IMAGE_PARAM_KEYS.has(item.paramKey)),
+    [aigcModels.templates]
+  );
+  const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
+  const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
   const imageSrc = data.previewUrl || data.dataUrl;
   const sizeSelection = useMemo(() => getSizeSelection(params.size), [params.size]);
-  const [customW, setCustomW] = useState(sizeSelection.customW);
-  const [customH, setCustomH] = useState(sizeSelection.customH);
 
   const connectedImages = edges
     .filter((edge) => edge.target === id)
@@ -406,21 +435,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       }
       if (mode === "ratio") {
         updateParams({ size: calculateImageSize(sizeSelection.tier, sizeSelection.ratio) ?? "auto" });
-        return;
       }
-      if (sizeSelection.mode !== "resolution") {
-        const currentDimensions = dimensionsFromSize(params.size);
-        if (currentDimensions) {
-          setCustomW(String(currentDimensions.width));
-          setCustomH(String(currentDimensions.height));
-          updateParams({ size: normalizeImageSize(`${currentDimensions.width}x${currentDimensions.height}`) ?? params.size });
-          return;
-        }
-      }
-      const normalized = normalizeImageSize(`${customW}x${customH}`);
-      if (normalized) updateParams({ size: normalized });
     },
-    [customH, customW, params.size, sizeSelection.mode, sizeSelection.ratio, sizeSelection.tier, updateParams]
+    [sizeSelection.ratio, sizeSelection.tier, updateParams]
   );
 
   const handleTierChange = useCallback(
@@ -436,11 +453,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     },
     [sizeSelection.tier, updateParams]
   );
-
-  const handleCustomSizeBlur = useCallback(() => {
-    const normalized = normalizeImageSize(`${customW}x${customH}`);
-    if (normalized) updateParams({ size: normalized });
-  }, [customH, customW, updateParams]);
 
   const handleModelSelect = useCallback(
     (nextModelId: string) => {
@@ -495,7 +507,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       params,
       modelId,
       providerModel: activeProviderModel,
-      aigcModelId: selectedAigcModelId,
+      aigcModelId: activeAigcModelId,
       modelName: activeModelName,
       mode,
       inputImages: snapshots,
@@ -511,7 +523,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       prompt: cleanPrompt,
       modelId,
       providerModel: activeProviderModel,
-      aigcModelId: selectedAigcModelId,
+      aigcModelId: activeAigcModelId,
       modelName: activeModelName,
       params,
       isGenerating: true,
@@ -528,7 +540,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
-    if (isServerCanvasProjectId(projectId) && selectedAigcModelId) {
+    if (isServerCanvasProjectId(projectId) && activeAigcModelId) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
         const run = await canvasNodeRunApi.runNode(projectId, id, {
@@ -538,7 +550,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           nodeType: "image",
           generateType: "IMAGE",
           generateMode: mode === "edit" ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE",
-          modelId: selectedAigcModelId,
+          modelId: activeAigcModelId,
           prompt: cleanPrompt,
           inputParams: JSON.stringify({ ...params, inputImageIds: ids, inputImages: snapshots }),
           sync: false,
@@ -594,7 +606,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeModelName, activeProviderModel, getEdges, getNodes, id, isGenerating, modelId, params, prompt, selectedAigcModelId, setNodes, updateData]);
+  }, [activeAigcModelId, activeModelName, activeProviderModel, getEdges, getNodes, id, isGenerating, modelId, params, prompt, setNodes, updateData]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen) return;
@@ -656,8 +668,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const displayLeft = (PREVIEW_SLOT_WIDTH - displaySize.width) / 2;
   const displayTop = 28 + PREVIEW_SLOT_HEIGHT - displaySize.height;
   const pickerActiveForThisNode = referencePickerPromptId === id;
-  const compressionDisabled = params.output_format === "png";
-
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
     const timeout = window.setTimeout(() => updateNodeInternals(id), 260);
@@ -933,46 +943,43 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 4, scale: 0.98 }}
                       transition={{ duration: 0.14, ease: "easeOut" }}
-                      className="absolute bottom-full left-0 z-[260] mb-2 w-[340px] rounded-xl border border-border-warm bg-background shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
+                      className="absolute bottom-full left-0 z-[260] mb-2 w-[280px] overflow-hidden rounded-xl border border-border-warm bg-background p-2 shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
                     >
-                      <div className="border-b border-border-warm px-4 py-3">
-                        <p className="text-sm font-medium text-charcoal">模型偏好</p>
-                        <p className="mt-0.5 text-[11px] text-muted-gray">仅展示当前租户可用模型</p>
-                      </div>
-                      <div className="max-h-[280px] overflow-y-auto py-1">
+                      <div className="max-h-[320px] overflow-y-auto">
                         {aigcModels.models.length > 0 ? aigcModels.models.map((model) => {
                           const isSelected = aigcModels.selectedModelId === model.id || selectedAigcModelId === model.id;
+                          const badge = isSelected ? selectedModelCapabilityBadge ?? "Image" : "Image";
                           return (
                             <button
                               key={model.id}
                               type="button"
                               onClick={() => handleAigcModelSelect(model.id)}
-                              className={cn("flex w-full items-start gap-3 px-4 py-3 text-left transition-colors", isSelected ? "bg-muted" : "hover:bg-muted/70")}
+                              className={cn("mb-1 flex w-full flex-col items-stretch gap-2 rounded-xl px-3 py-3 text-left transition-colors last:mb-0", isSelected ? "bg-muted" : "hover:bg-muted/70")}
                             >
-                              <Sparkles className="mt-0.5 size-4 shrink-0 text-muted-gray" />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-charcoal">{model.name}</span>
-                                  {model.defaultModel && <span className="rounded-full border border-border-warm px-1.5 py-0.5 text-[10px] text-muted-gray">默认</span>}
-                                </div>
-                                <p className="mt-0.5 text-[11px] text-muted-gray">{model.providerName ?? model.model}</p>
-                              </div>
-                              {isSelected && <Check className="mt-1 size-4 shrink-0 text-charcoal" />}
+                              <span className="flex min-w-0 items-center gap-2">
+                                <ImageIcon className="size-4 shrink-0 text-muted-gray" />
+                                <span className="truncate text-sm font-medium text-charcoal">{model.name}</span>
+                                {isSelected && <Check className="ml-auto size-4 shrink-0 text-charcoal" />}
+                              </span>
+                              <span className="ml-6 flex w-fit items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-gray">
+                                <Gem className="size-3" />
+                                {badge}
+                              </span>
                             </button>
                           );
                         }) : IMAGE_MODELS.filter((m) => m.enabled).map((model) => {
                           const isSelected = modelId === model.id;
                           return (
-                            <button key={model.id} type="button" onClick={() => handleModelSelect(model.id)} className={cn("flex w-full items-start gap-3 px-4 py-3 text-left transition-colors", isSelected ? "bg-muted" : "hover:bg-muted/70")}>
-                              <Sparkles className="mt-0.5 size-4 shrink-0 text-muted-gray" />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-charcoal">{model.name}</span>
-                                  {model.estimatedSeconds && <span className="flex items-center gap-0.5 rounded-full border border-border-warm px-1.5 py-0.5 text-[10px] text-muted-gray"><Clock className="size-2.5" />{model.estimatedSeconds}s</span>}
-                                </div>
-                                <p className="mt-0.5 text-[11px] text-muted-gray">{model.description}</p>
-                              </div>
-                              {isSelected && <Check className="mt-1 size-4 shrink-0 text-charcoal" />}
+                            <button key={model.id} type="button" onClick={() => handleModelSelect(model.id)} className={cn("mb-1 flex w-full flex-col items-stretch gap-2 rounded-xl px-3 py-3 text-left transition-colors last:mb-0", isSelected ? "bg-muted" : "hover:bg-muted/70")}>
+                              <span className="flex min-w-0 items-center gap-2">
+                                <ImageIcon className="size-4 shrink-0 text-muted-gray" />
+                                <span className="truncate text-sm font-medium text-charcoal">{model.name}</span>
+                                {isSelected && <Check className="ml-auto size-4 shrink-0 text-charcoal" />}
+                              </span>
+                              <span className="ml-6 flex w-fit items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-gray">
+                                <Gem className="size-3" />
+                                Image
+                              </span>
                             </button>
                           );
                         })}
@@ -1018,25 +1025,18 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
                       <section className="space-y-3">
                         <p className="text-xs font-medium text-muted-gray">Size</p>
-                        <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
-                          {(["auto", "ratio", "resolution"] as const).map((mode) => (
+                        <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+                          {(["auto", "ratio"] as const).map((mode) => (
                             <button
                               key={mode}
                               type="button"
                               onClick={() => handleSizeModeChange(mode)}
                               className={cn(
-                                "relative overflow-hidden rounded-lg px-3 py-2 text-xs font-medium text-muted-gray transition-colors",
-                                sizeSelection.mode === mode && "text-charcoal"
+                                "rounded-lg px-3 py-2 text-xs font-medium text-muted-gray transition-colors",
+                                sizeSelection.mode === mode && "bg-background text-charcoal shadow-sm"
                               )}
                             >
-                              {sizeSelection.mode === mode && (
-                                <motion.span
-                                  layoutId="image-size-mode-indicator"
-                                  className="absolute inset-0 rounded-lg bg-background shadow-sm"
-                                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                                />
-                              )}
-                              <span className="relative z-10">{mode === "auto" ? "Auto" : mode === "ratio" ? "Ratio" : "Custom"}</span>
+                              {mode === "auto" ? "Auto" : "Ratio"}
                             </button>
                           ))}
                         </div>
@@ -1050,18 +1050,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                   type="button"
                                   onClick={() => handleTierChange(tier)}
                                   className={cn(
-                                    "relative overflow-hidden rounded-lg border border-border-warm px-3 py-2 text-xs text-charcoal transition-colors hover:border-charcoal/40",
-                                    sizeSelection.tier === tier && "border-charcoal text-off-white"
+                                    "rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-gray transition-colors hover:text-charcoal",
+                                    sizeSelection.tier === tier && "bg-background text-charcoal shadow-sm"
                                   )}
                                 >
-                                  {sizeSelection.tier === tier && (
-                                    <motion.span
-                                      layoutId="image-size-tier-indicator"
-                                      className="absolute inset-0 rounded-lg bg-charcoal"
-                                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                                    />
-                                  )}
-                                  <span className="relative z-10">{tier}</span>
+                                  {tier}
                                 </button>
                               ))}
                             </div>
@@ -1072,79 +1065,20 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                   type="button"
                                   onClick={() => handleRatioChange(ratio)}
                                   className={cn(
-                                    "relative overflow-hidden rounded-lg border border-border-warm px-2 py-1.5 text-xs text-charcoal transition-colors hover:border-charcoal/40",
-                                    sizeSelection.ratio === ratio && "border-charcoal text-off-white"
+                                    "rounded-lg bg-muted px-2 py-1.5 text-xs font-medium text-muted-gray transition-colors hover:text-charcoal",
+                                    sizeSelection.ratio === ratio && "bg-background text-charcoal shadow-sm"
                                   )}
                                 >
-                                  {sizeSelection.ratio === ratio && (
-                                    <motion.span
-                                      layoutId="image-ratio-indicator"
-                                      className="absolute inset-0 rounded-lg bg-charcoal"
-                                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                                    />
-                                  )}
-                                  <span className="relative z-10">{ratio}</span>
+                                  {ratio}
                                 </button>
                               ))}
                             </div>
                           </div>
                         )}
-
-                        {sizeSelection.mode === "resolution" && (
-                          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
-                            <label className="text-xs text-muted-gray">
-                              Width
-                              <input
-                                type="number"
-                                min={1}
-                                value={customW}
-                                onChange={(e) => setCustomW(e.target.value)}
-                                onBlur={handleCustomSizeBlur}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") handleCustomSizeBlur();
-                                }}
-                                className="mt-1 w-full rounded-lg border border-border-warm bg-background px-3 py-2 text-charcoal focus:outline-none"
-                              />
-                            </label>
-                            <span className="pb-2 text-muted-gray">×</span>
-                            <label className="text-xs text-muted-gray">
-                              Height
-                              <input
-                                type="number"
-                                min={1}
-                                value={customH}
-                                onChange={(e) => setCustomH(e.target.value)}
-                                onBlur={handleCustomSizeBlur}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") handleCustomSizeBlur();
-                                }}
-                                className="mt-1 w-full rounded-lg border border-border-warm bg-background px-3 py-2 text-charcoal focus:outline-none"
-                              />
-                            </label>
-                          </div>
-                        )}
-
-                        <div className="rounded-lg border border-border-warm bg-background px-4 py-3">
-                          <div className="text-[10px] text-muted-gray">将使用</div>
-                          <div className="mt-0.5 font-mono text-sm font-semibold text-charcoal">{params.size}</div>
-                        </div>
                       </section>
 
                       <section className="mt-5 space-y-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs font-medium text-muted-gray">Output</p>
-                          <label className="flex items-center gap-2 text-xs text-muted-gray">
-                            数量
-                            <input
-                              type="number"
-                              min={1}
-                              max={1}
-                              value={params.n}
-                              onChange={() => updateParams({ n: 1 })}
-                              className="w-16 rounded-lg border border-border-warm bg-background px-2 py-1.5 text-charcoal focus:outline-none"
-                            />
-                          </label>
-                        </div>
+                        <p className="text-xs font-medium text-muted-gray">Output</p>
 
                         <div className="space-y-2">
                           <ParamSegmented label="质量" value={params.quality} options={QUALITY_OPTIONS} onChange={(value) => updateParams({ quality: value })} />
@@ -1152,54 +1086,55 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                           <ParamSegmented label="审核" value={params.moderation} options={MODERATION_OPTIONS} onChange={(value) => updateParams({ moderation: value })} />
                         </div>
 
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-medium text-muted-gray">压缩率</span>
-                          {compressionDisabled ? (
-                            <span className="min-w-24 rounded-lg bg-muted px-3 py-1.5 text-center text-xs text-muted-gray">—</span>
-                          ) : (
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={params.output_compression ?? 80}
-                              onChange={(e) => updateParams({ output_compression: Number(e.target.value) || null })}
-                              className="w-24 rounded-lg border border-border-warm bg-background px-3 py-1.5 text-sm text-charcoal focus:outline-none"
-                            />
+                      </section>
+
+                      {(aigcModels.templateLoading || extraParamTemplates.length > 0) && (
+                        <section className="mt-5 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs font-medium text-muted-gray">模型额外参数</p>
+                            {aigcModels.templateLoading && <span className="text-[11px] text-muted-gray">加载中...</span>}
+                          </div>
+                          {extraParamTemplates.length > 0 && (
+                            <DynamicParamForm templates={extraParamTemplates} values={params} disabled={isGenerating} onChange={updateParams} />
                           )}
-                        </div>
-                      </section>
-
-                      <section className="mt-5 space-y-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs font-medium text-muted-gray">模型参数</p>
-                          {aigcModels.templateLoading && <span className="text-[11px] text-muted-gray">加载中...</span>}
-                        </div>
-                        {aigcModels.templates.length > 0 ? (
-                          <DynamicParamForm templates={aigcModels.templates} values={params} disabled={isGenerating} onChange={updateParams} />
-                        ) : (
-                          <div className="rounded-lg border border-border-warm bg-background px-3 py-2 text-xs text-muted-gray">当前模型暂无额外参数</div>
-                        )}
-                      </section>
-
-                      <section className="mt-5">
-                        <PriceEstimate price={aigcModels.price} loading={aigcModels.priceLoading} />
-                      </section>
+                        </section>
+                      )}
                     </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="rounded-lg px-2 py-1 text-sm text-muted-gray">{params.n}x</span>
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={handleGenerate}
                   disabled={!prompt.trim() || isGenerating}
-                  className="flex size-10 items-center justify-center rounded-full bg-charcoal text-off-white shadow-sm transition-opacity active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-11 items-center gap-3 rounded-full bg-charcoal/90 py-1 pl-4 pr-1 text-off-white shadow-[0_4px_12px_rgba(0,0,0,0.18)] transition-opacity active:opacity-85 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-black/80"
                   aria-label={isGenerating ? "生成中" : "开始生成"}
                 >
-                  {isGenerating ? <Loader2 className="size-5 animate-spin" /> : <ArrowUp className="size-5" />}
+                  <span
+                    className={cn(
+                      "flex items-center gap-2 text-sm font-semibold tabular-nums text-off-white transition-colors duration-200 ease-in-out",
+                      aigcModels.priceLoading && "text-off-white/45"
+                    )}
+                  >
+                    <Sparkles className="size-4 text-current" />
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.span
+                        key={costLabel}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.18, ease: "easeInOut" }}
+                      >
+                        {costLabel}
+                      </motion.span>
+                    </AnimatePresence>
+                  </span>
+                  <span className="flex size-9 items-center justify-center rounded-full bg-off-white text-charcoal shadow-sm">
+                    {isGenerating ? <Loader2 className="size-5 animate-spin" /> : <ArrowUp className="size-5" />}
+                  </span>
                 </button>
               </div>
             </div>
