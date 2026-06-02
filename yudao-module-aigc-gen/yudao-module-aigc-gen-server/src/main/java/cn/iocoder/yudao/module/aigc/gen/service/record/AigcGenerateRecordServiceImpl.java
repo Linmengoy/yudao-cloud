@@ -386,7 +386,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         }
         AigcAssetCreateReqDTO reqDTO = new AigcAssetCreateReqDTO().setUserId(record.getUserId()).setAssetType(record.getGenerateType()).setSourceType("GENERATE").setBizType("TASK")
                 .setBizId(record.getGenerateNo()).setTaskId(record.getTaskId()).setModelId(record.getModelId()).setProviderId(record.getProviderId()).setTitle(record.getGenerateType() + "生成资产")
-                .setPromptSnapshot(record.getPrompt()).setGenerateSnapshot(record.getInputParams()).setVisibility("PRIVATE").setAuditStatus("PENDING");
+                .setPromptSnapshot(buildPromptSnapshot(record.getPrompt())).setGenerateSnapshot(record.getInputParams()).setVisibility("PRIVATE").setAuditStatus("PENDING");
         if (dataUrl) {
             fillDataUrlAssetFile(reqDTO, url);
         } else {
@@ -401,6 +401,13 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         };
         generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setAssetIds("[" + asset.getId() + "]"));
         return asset.getId();
+    }
+
+    private String buildPromptSnapshot(String prompt) {
+        if (StrUtil.isBlank(prompt)) {
+            return null;
+        }
+        return JsonUtils.toJsonString(Map.of("prompt", prompt));
     }
 
     private void fillDataUrlAssetFile(AigcAssetCreateReqDTO reqDTO, String dataUrl) {
