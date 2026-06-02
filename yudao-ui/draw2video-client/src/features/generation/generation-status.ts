@@ -1,6 +1,6 @@
 import type { GenerateStatus } from "./generation-types";
 
-const terminalStatuses = new Set(["SUCCESS", "FAILED", "CANCELED", "CANCELLED"]);
+const terminalStatuses = new Set(["SUCCESS", "FAILED", "CANCELED", "CANCELLED", "REFUNDED"]);
 
 export function shouldPollGeneration(status?: GenerateStatus | string) {
   return Boolean(status && !terminalStatuses.has(status));
@@ -35,6 +35,8 @@ export function getGenerationStatusLabel(status?: GenerateStatus | string) {
     case "CANCELED":
     case "CANCELLED":
       return "已取消";
+    case "REFUNDED":
+      return "已退款";
     default:
       return status || "未知";
   }
