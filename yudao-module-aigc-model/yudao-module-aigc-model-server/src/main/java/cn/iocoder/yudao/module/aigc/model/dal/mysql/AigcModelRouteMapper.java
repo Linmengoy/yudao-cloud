@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.aigc.model.dal.mysql;
 
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.route.vo.AigcModelRoutePageReqVO;
@@ -25,7 +26,7 @@ public interface AigcModelRouteMapper extends BaseMapperX<AigcModelRouteDO> {
         return selectList(new LambdaQueryWrapperX<AigcModelRouteDO>()
                 .eqIfPresent(AigcModelRouteDO::getTaskType, taskType)
                 .eqIfPresent(AigcModelRouteDO::getCapability, capability)
-                .eq(AigcModelRouteDO::getStatus, 1));
+                .eq(AigcModelRouteDO::getStatus, CommonStatusEnum.ENABLE.getStatus()));
     }
 
 }
