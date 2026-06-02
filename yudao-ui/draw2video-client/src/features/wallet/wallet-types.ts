@@ -115,4 +115,5 @@ export interface WalletPageParams {
   pageSize: number;
   recordType?: number | string;
   status?: number | string;
+  taskNo?: string;
 }

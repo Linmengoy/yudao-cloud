@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.aigc.billing.controller.admin.recharge.vo.AigcRechargeOrderDiagnosticRespVO;
+import cn.iocoder.yudao.module.aigc.billing.controller.admin.recharge.vo.AigcRechargeOrderPageReqVO;
 import cn.iocoder.yudao.module.aigc.billing.config.AigcBillingPayProperties;
 import cn.iocoder.yudao.module.aigc.billing.controller.app.recharge.vo.AppAigcRechargeOrderCreateRespVO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcBillingRecordDO;
@@ -428,7 +429,7 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
     }
 
     @Override
-    public PageResult<AigcRechargeOrderDO> getRechargeOrderPage(PageParam reqVO) {
+    public PageResult<AigcRechargeOrderDO> getRechargeOrderPage(AigcRechargeOrderPageReqVO reqVO) {
         return rechargeOrderMapper.selectPage(reqVO);
     }
 

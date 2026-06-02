@@ -7,6 +7,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.excel.core.util.ExcelUtils;
 import cn.iocoder.yudao.module.aigc.billing.controller.admin.recharge.vo.AigcRechargeOrderDiagnosticRespVO;
+import cn.iocoder.yudao.module.aigc.billing.controller.admin.recharge.vo.AigcRechargeOrderPageReqVO;
 import cn.iocoder.yudao.module.aigc.billing.controller.admin.recharge.vo.AigcRechargeOrderRespVO;
 import cn.iocoder.yudao.module.aigc.billing.controller.admin.wallet.vo.AigcWalletAmountReqVO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargeOrderDO;
@@ -63,7 +64,7 @@ public class AigcRechargeOrderController {
     @GetMapping("/page")
     @Operation(summary = "获取充值订单分页")
     @PreAuthorize("@ss.hasPermission('aigc:billing:recharge:query')")
-    public CommonResult<PageResult<AigcRechargeOrderDO>> getRechargeOrderPage(@Valid PageParam reqVO) {
+    public CommonResult<PageResult<AigcRechargeOrderDO>> getRechargeOrderPage(@Valid AigcRechargeOrderPageReqVO reqVO) {
         return success(rechargeOrderService.getRechargeOrderPage(reqVO));
     }
 
@@ -71,7 +72,7 @@ public class AigcRechargeOrderController {
     @Operation(summary = "导出充值订单")
     @PreAuthorize("@ss.hasPermission('aigc:billing:recharge:export')")
     @ApiAccessLog(operateType = EXPORT)
-    public void exportRechargeOrder(@Valid PageParam reqVO, HttpServletResponse response) throws IOException {
+    public void exportRechargeOrder(@Valid AigcRechargeOrderPageReqVO reqVO, HttpServletResponse response) throws IOException {
         reqVO.setPageSize(PageParam.PAGE_SIZE_NONE);
         List<AigcRechargeOrderDO> list = rechargeOrderService.getRechargeOrderPage(reqVO).getList();
         ExcelUtils.write(response, "AIGC充值订单.xls", "数据", AigcRechargeOrderRespVO.class,

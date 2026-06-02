@@ -1,8 +1,13 @@
 <template>
   <ContentWrap>
     <el-form ref="queryFormRef" :inline="true" :model="queryParams" class="-mb-15px" label-width="80px">
+      <el-form-item label="充值单号" prop="rechargeNo"><el-input v-model="queryParams.rechargeNo" class="!w-220px" clearable placeholder="请输入充值单号" @keyup.enter="handleQuery" /></el-form-item>
       <el-form-item label="用户编号" prop="userId"><el-input v-model="queryParams.userId" class="!w-220px" clearable placeholder="请输入用户编号" @keyup.enter="handleQuery" /></el-form-item>
+      <el-form-item label="Pay单号" prop="payOrderNo"><el-input v-model="queryParams.payOrderNo" class="!w-220px" clearable placeholder="请输入 Pay 订单号" @keyup.enter="handleQuery" /></el-form-item>
+      <el-form-item label="支付渠道" prop="payChannelCode"><el-input v-model="queryParams.payChannelCode" class="!w-180px" clearable placeholder="请输入支付渠道" @keyup.enter="handleQuery" /></el-form-item>
       <el-form-item label="订单状态" prop="status"><el-select v-model="queryParams.status" class="!w-180px" clearable placeholder="请选择订单状态"><el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+      <el-form-item label="创建时间" prop="createTime"><el-date-picker v-model="queryParams.createTime" :default-time="[new Date('1 00:00:00'), new Date('1 23:59:59')]" class="!w-240px" end-placeholder="结束日期" start-placeholder="开始日期" type="daterange" value-format="YYYY-MM-DD HH:mm:ss" /></el-form-item>
+      <el-form-item label="支付时间" prop="payTime"><el-date-picker v-model="queryParams.payTime" :default-time="[new Date('1 00:00:00'), new Date('1 23:59:59')]" class="!w-240px" end-placeholder="结束日期" start-placeholder="开始日期" type="daterange" value-format="YYYY-MM-DD HH:mm:ss" /></el-form-item>
       <el-form-item><el-button @click="handleQuery"><Icon class="mr-5px" icon="ep:search" />搜索</el-button><el-button @click="resetQuery"><Icon class="mr-5px" icon="ep:refresh" />重置</el-button><el-button v-hasPermi="['aigc:billing:recharge:export']" :loading="exportLoading" plain type="success" @click="handleExport"><Icon class="mr-5px" icon="ep:download" />导出</el-button></el-form-item>
     </el-form>
   </ContentWrap>
@@ -81,7 +86,7 @@ const diagnosticVisible = ref(false)
 const detailData = ref<AigcRechargeOrderVO>()
 const diagnosticData = ref<AigcRechargeOrderDiagnosticVO>()
 const queryFormRef = ref()
-const queryParams = reactive({ pageNo: 1, pageSize: 10, userId: undefined, status: undefined })
+const queryParams = reactive({ pageNo: 1, pageSize: 10, rechargeNo: undefined, userId: undefined, payOrderNo: undefined, payChannelCode: undefined, status: undefined, createTime: [], payTime: [] })
 const statusOptions = Object.entries(rechargeStatusMap).filter(([key]) => Number.isNaN(Number(key))).map(([value, label]) => ({ value, label }))
 const getList = async () => {
   loading.value = true

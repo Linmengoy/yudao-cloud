@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.aigc.billing.service.recharge;
 import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.aigc.billing.controller.admin.recharge.vo.AigcRechargeOrderDiagnosticRespVO;
+import cn.iocoder.yudao.module.aigc.billing.controller.admin.recharge.vo.AigcRechargeOrderPageReqVO;
 import cn.iocoder.yudao.module.aigc.billing.controller.app.recharge.vo.AppAigcRechargeOrderCreateRespVO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargeOrderDO;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcRechargeNotifyReqDTO;
@@ -23,6 +24,6 @@ public interface AigcRechargeOrderService {
     void closeRechargeOrder(Long id);
     int closeExpiredRechargeOrders(Integer limit);
     AigcRechargeOrderDiagnosticRespVO getRechargeOrderDiagnostic(Long id);
-    PageResult<AigcRechargeOrderDO> getRechargeOrderPage(PageParam reqVO);
+    PageResult<AigcRechargeOrderDO> getRechargeOrderPage(AigcRechargeOrderPageReqVO reqVO);
     PageResult<AigcRechargeOrderDO> getUserRechargeOrderPage(PageParam reqVO, Long userId);
 }

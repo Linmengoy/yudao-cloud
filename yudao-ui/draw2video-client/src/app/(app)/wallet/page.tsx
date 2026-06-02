@@ -21,6 +21,16 @@ const recordTypeOptions = [
   { label: "释放", value: "RELEASE" },
 ];
 
+const freezeStatusOptions = [
+  { label: "全部", value: "" },
+  { label: "冻结中", value: "FROZEN" },
+  { label: "已扣费", value: "CONFIRMED" },
+  { label: "已释放", value: "RELEASED" },
+];
+
+const recordPageSize = 12;
+const freezePageSize = 6;
+
 const recordTypeMap: Record<string, string> = {
   RECHARGE: "充值",
   GIFT: "赠送",
@@ -66,15 +76,28 @@ function isIncome(record: AigcWalletRecord) {
   );
 }
 
+function getPageCount(total: number, pageSize: number) {
+  return Math.max(1, Math.ceil(total / pageSize));
+}
+
 export default function WalletPage() {
   const searchParams = useSearchParams();
   const rechargeOrderId = searchParams.get("rechargeOrderId");
   const [wallet, setWallet] = useState<AigcWallet | null>(null);
   const [records, setRecords] = useState<AigcWalletRecord[]>([]);
   const [freezes, setFreezes] = useState<AigcWalletFreeze[]>([]);
+  const [recordTotal, setRecordTotal] = useState(0);
+  const [freezeTotal, setFreezeTotal] = useState(0);
   const [recordType, setRecordType] = useState("");
+  const [freezeStatus, setFreezeStatus] = useState("");
+  const [taskNo, setTaskNo] = useState("");
+  const [recordPageNo, setRecordPageNo] = useState(1);
+  const [freezePageNo, setFreezePageNo] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const recordPageCount = getPageCount(recordTotal, recordPageSize);
+  const freezePageCount = getPageCount(freezeTotal, freezePageSize);
 
   const summary = useMemo(
     () => [
@@ -86,24 +109,47 @@ export default function WalletPage() {
     [wallet]
   );
 
-  const loadWallet = useCallback(async (nextRecordType = recordType) => {
+  const loadWallet = useCallback(async (options?: {
+    nextRecordType?: string;
+    nextFreezeStatus?: string;
+    nextTaskNo?: string;
+    nextRecordPageNo?: number;
+    nextFreezePageNo?: number;
+  }) => {
+    const currentRecordType = options?.nextRecordType ?? recordType;
+    const currentFreezeStatus = options?.nextFreezeStatus ?? freezeStatus;
+    const currentTaskNo = options?.nextTaskNo ?? taskNo;
+    const currentRecordPageNo = options?.nextRecordPageNo ?? recordPageNo;
+    const currentFreezePageNo = options?.nextFreezePageNo ?? freezePageNo;
     setLoading(true);
     setError("");
     try {
       const [walletData, recordData, freezeData] = await Promise.all([
         getAigcWallet(),
-        getAigcWalletRecordPage({ pageNo: 1, pageSize: 12, recordType: nextRecordType || undefined }),
-        getAigcWalletFreezePage({ pageNo: 1, pageSize: 6 }),
+        getAigcWalletRecordPage({
+          pageNo: currentRecordPageNo,
+          pageSize: recordPageSize,
+          recordType: currentRecordType || undefined,
+          taskNo: currentTaskNo || undefined,
+        }),
+        getAigcWalletFreezePage({
+          pageNo: currentFreezePageNo,
+          pageSize: freezePageSize,
+          status: currentFreezeStatus || undefined,
+          taskNo: currentTaskNo || undefined,
+        }),
       ]);
       setWallet(walletData);
       setRecords(recordData.list ?? []);
       setFreezes(freezeData.list ?? []);
+      setRecordTotal(recordData.total ?? 0);
+      setFreezeTotal(freezeData.total ?? 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "钱包数据加载失败");
     } finally {
       setLoading(false);
     }
-  }, [recordType]);
+  }, [freezePageNo, freezeStatus, recordPageNo, recordType, taskNo]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadWallet(), 0);
@@ -112,7 +158,32 @@ export default function WalletPage() {
 
   function handleRecordTypeChange(value: string) {
     setRecordType(value);
-    loadWallet(value);
+    setRecordPageNo(1);
+    loadWallet({ nextRecordType: value, nextRecordPageNo: 1 });
+  }
+
+  function handleFreezeStatusChange(value: string) {
+    setFreezeStatus(value);
+    setFreezePageNo(1);
+    loadWallet({ nextFreezeStatus: value, nextFreezePageNo: 1 });
+  }
+
+  function handleTaskNoSearch() {
+    setRecordPageNo(1);
+    setFreezePageNo(1);
+    loadWallet({ nextRecordPageNo: 1, nextFreezePageNo: 1 });
+  }
+
+  function handleRecordPageChange(nextPageNo: number) {
+    const pageNo = Math.min(Math.max(nextPageNo, 1), recordPageCount);
+    setRecordPageNo(pageNo);
+    loadWallet({ nextRecordPageNo: pageNo });
+  }
+
+  function handleFreezePageChange(nextPageNo: number) {
+    const pageNo = Math.min(Math.max(nextPageNo, 1), freezePageCount);
+    setFreezePageNo(pageNo);
+    loadWallet({ nextFreezePageNo: pageNo });
   }
 
   return (
@@ -166,7 +237,7 @@ export default function WalletPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-medium text-charcoal">计费流水</h2>
-              <p className="mt-1 text-xs text-muted-gray">最近 12 条积分变动记录</p>
+              <p className="mt-1 text-xs text-muted-gray">共 {recordTotal.toLocaleString("zh-CN")} 条积分变动记录</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {recordTypeOptions.map((item) => (
@@ -184,6 +255,26 @@ export default function WalletPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <input
+              value={taskNo}
+              onChange={(event) => setTaskNo(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") handleTaskNoSearch();
+              }}
+              placeholder="按任务编号筛选"
+              className="h-9 w-full rounded-md border border-border-warm bg-background px-3 text-sm text-charcoal outline-none placeholder:text-muted-gray focus:border-[rgba(28,28,28,0.45)] sm:w-56"
+            />
+            <button
+              type="button"
+              onClick={handleTaskNoSearch}
+              disabled={loading}
+              className="inline-flex h-9 items-center rounded-md border border-[rgba(28,28,28,0.4)] px-3 text-sm text-charcoal active:opacity-80 disabled:opacity-50"
+            >
+              筛选
+            </button>
           </div>
 
           <div className="mt-4 overflow-hidden rounded-xl border border-border-warm">
@@ -219,12 +310,44 @@ export default function WalletPage() {
               );
             })}
           </div>
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-gray">
+            <span>第 {recordPageNo} / {recordPageCount} 页</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleRecordPageChange(recordPageNo - 1)}
+                disabled={loading || recordPageNo <= 1}
+                className="rounded-md border border-border-warm px-3 py-1.5 text-charcoal disabled:opacity-40"
+              >
+                上一页
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRecordPageChange(recordPageNo + 1)}
+                disabled={loading || recordPageNo >= recordPageCount}
+                className="rounded-md border border-border-warm px-3 py-1.5 text-charcoal disabled:opacity-40"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
         </div>
 
         <aside>
-          <div>
-            <h2 className="text-base font-medium text-charcoal">冻结记录</h2>
-            <p className="mt-1 text-xs text-muted-gray">生成中任务的临时占用</p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-medium text-charcoal">冻结记录</h2>
+              <p className="mt-1 text-xs text-muted-gray">共 {freezeTotal.toLocaleString("zh-CN")} 条临时占用记录</p>
+            </div>
+            <select
+              value={freezeStatus}
+              onChange={(event) => handleFreezeStatusChange(event.target.value)}
+              className="h-9 rounded-md border border-border-warm bg-background px-3 text-sm text-charcoal outline-none focus:border-[rgba(28,28,28,0.45)]"
+            >
+              {freezeStatusOptions.map((item) => (
+                <option key={item.label} value={item.value}>{item.label}</option>
+              ))}
+            </select>
           </div>
           <div className="mt-4 overflow-hidden rounded-xl border border-border-warm">
             {!loading && !freezes.length && (
@@ -248,6 +371,27 @@ export default function WalletPage() {
                 </div>
               </div>
             ))}
+          </div>
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-gray">
+            <span>第 {freezePageNo} / {freezePageCount} 页</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleFreezePageChange(freezePageNo - 1)}
+                disabled={loading || freezePageNo <= 1}
+                className="rounded-md border border-border-warm px-3 py-1.5 text-charcoal disabled:opacity-40"
+              >
+                上一页
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFreezePageChange(freezePageNo + 1)}
+                disabled={loading || freezePageNo >= freezePageCount}
+                className="rounded-md border border-border-warm px-3 py-1.5 text-charcoal disabled:opacity-40"
+              >
+                下一页
+              </button>
+            </div>
           </div>
         </aside>
       </section>

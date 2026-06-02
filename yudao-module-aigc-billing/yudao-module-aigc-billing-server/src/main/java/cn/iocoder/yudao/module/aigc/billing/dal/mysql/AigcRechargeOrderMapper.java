@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
+import cn.iocoder.yudao.module.aigc.billing.controller.admin.recharge.vo.AigcRechargeOrderPageReqVO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargeOrderDO;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRechargeStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -23,8 +24,16 @@ public interface AigcRechargeOrderMapper extends BaseMapperX<AigcRechargeOrderDO
         return selectOne(AigcRechargeOrderDO::getPayOrderId, payOrderId);
     }
 
-    default PageResult<AigcRechargeOrderDO> selectPage(PageParam reqVO) {
+    default PageResult<AigcRechargeOrderDO> selectPage(AigcRechargeOrderPageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcRechargeOrderDO>()
+                .likeIfPresent(AigcRechargeOrderDO::getRechargeNo, reqVO.getRechargeNo())
+                .eqIfPresent(AigcRechargeOrderDO::getUserId, reqVO.getUserId())
+                .eqIfPresent(AigcRechargeOrderDO::getPayOrderId, reqVO.getPayOrderId())
+                .likeIfPresent(AigcRechargeOrderDO::getPayOrderNo, reqVO.getPayOrderNo())
+                .eqIfPresent(AigcRechargeOrderDO::getPayChannelCode, reqVO.getPayChannelCode())
+                .eqIfPresent(AigcRechargeOrderDO::getStatus, reqVO.getStatus())
+                .betweenIfPresent(AigcRechargeOrderDO::getCreateTime, reqVO.getCreateTime())
+                .betweenIfPresent(AigcRechargeOrderDO::getPayTime, reqVO.getPayTime())
                 .orderByDesc(AigcRechargeOrderDO::getId));
     }
 
