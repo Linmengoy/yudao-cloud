@@ -141,9 +141,10 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
     }
 
     private Map<String, String> post(String path, Map<String, String> request) {
+        Map<String, Object> form = new HashMap<>(request);
         try (HttpResponse response = HttpRequest.post(EasyPayRequestUtils.buildUrl(apiBase(), path))
                 .header(Header.CONTENT_TYPE, ContentType.FORM_URLENCODED.getValue())
-                .form(request)
+                .form(form)
                 .timeout(config.getTimeoutSeconds() * 1000)
                 .execute()) {
             return EasyPayRequestUtils.parseBody(response.body());
