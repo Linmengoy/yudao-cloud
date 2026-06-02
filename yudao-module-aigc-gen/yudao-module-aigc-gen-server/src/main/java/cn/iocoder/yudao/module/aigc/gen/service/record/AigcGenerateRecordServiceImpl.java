@@ -47,6 +47,7 @@ import cn.iocoder.yudao.module.aigc.task.api.AigcTaskApi;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCallbackCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
+import cn.iocoder.yudao.module.infra.api.file.FileApi;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -59,6 +60,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -92,6 +94,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     private AigcTaskApi taskApi;
     @Resource
     private AigcAssetApi assetApi;
+    @Resource
+    private FileApi fileApi;
     @Resource
     private AigcSafetyApi safetyApi;
     @Resource
@@ -376,15 +380,18 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return null;
         }
         String url = firstUrl(record.getOutputUrls());
-        if (StrUtil.startWithIgnoreCase(url, "data:")) {
-            return null;
-        }
-        if (!AigcGenerateFileSecurityUtils.isSafeRemoteUrl(url)) {
+        boolean dataUrl = StrUtil.startWithIgnoreCase(url, "data:");
+        if (!dataUrl && !AigcGenerateFileSecurityUtils.isSafeRemoteUrl(url)) {
             throw exception(GENERATE_PROVIDER_RESULT_INVALID);
         }
         AigcAssetCreateReqDTO reqDTO = new AigcAssetCreateReqDTO().setUserId(record.getUserId()).setAssetType(record.getGenerateType()).setSourceType("GENERATE").setBizType("TASK")
                 .setBizId(record.getGenerateNo()).setTaskId(record.getTaskId()).setModelId(record.getModelId()).setProviderId(record.getProviderId()).setTitle(record.getGenerateType() + "生成资产")
-                .setOriginUrl(url).setPromptSnapshot(record.getPrompt()).setGenerateSnapshot(record.getInputParams()).setVisibility("PRIVATE").setAuditStatus("PENDING");
+                .setPromptSnapshot(record.getPrompt()).setGenerateSnapshot(record.getInputParams()).setVisibility("PRIVATE").setAuditStatus("PENDING");
+        if (dataUrl) {
+            fillDataUrlAssetFile(reqDTO, url);
+        } else {
+            reqDTO.setOriginUrl(url);
+        }
         AigcAssetCreateRespDTO asset = switch (record.getGenerateType()) {
             case "IMAGE" -> assetApi.createImageAsset(reqDTO).getCheckedData();
             case "VIDEO" -> assetApi.createVideoAsset(reqDTO).getCheckedData();
@@ -394,6 +401,46 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         };
         generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setAssetIds("[" + asset.getId() + "]"));
         return asset.getId();
+    }
+
+    private void fillDataUrlAssetFile(AigcAssetCreateReqDTO reqDTO, String dataUrl) {
+        int commaIndex = dataUrl.indexOf(',');
+        if (commaIndex <= 5 || !dataUrl.substring(0, commaIndex).contains(";base64")) {
+            throw exception(GENERATE_PROVIDER_RESULT_INVALID);
+        }
+        String mimeType = dataUrl.substring("data:".length(), dataUrl.indexOf(";base64"));
+        byte[] content;
+        try {
+            content = Base64.getDecoder().decode(dataUrl.substring(commaIndex + 1));
+        } catch (IllegalArgumentException ex) {
+            throw exception(GENERATE_PROVIDER_RESULT_INVALID);
+        }
+        if (content.length == 0) {
+            throw exception(GENERATE_PROVIDER_RESULT_INVALID);
+        }
+        String fileExt = fileExtFromMimeType(mimeType);
+        String fileUrl = fileApi.createFile(content, recordFileName(reqDTO.getTitle(), fileExt), "aigc/asset", mimeType);
+        reqDTO.setFileUrl(fileUrl).setMimeType(mimeType).setFileExt(fileExt).setFileSize((long) content.length);
+    }
+
+    private String recordFileName(String title, String fileExt) {
+        return StrUtil.blankToDefault(title, "aigc-asset") + "." + fileExt;
+    }
+
+    private String fileExtFromMimeType(String mimeType) {
+        if (StrUtil.equalsIgnoreCase(mimeType, "image/jpeg")) {
+            return "jpg";
+        }
+        if (StrUtil.startWithIgnoreCase(mimeType, "image/")) {
+            return StrUtil.subAfter(mimeType, "image/", true);
+        }
+        if (StrUtil.startWithIgnoreCase(mimeType, "video/")) {
+            return StrUtil.subAfter(mimeType, "video/", true);
+        }
+        if (StrUtil.startWithIgnoreCase(mimeType, "audio/")) {
+            return StrUtil.subAfter(mimeType, "audio/", true);
+        }
+        return "bin";
     }
 
     private void failRecord(AigcGenerateRecordDO record, String failCode, String failReason) {

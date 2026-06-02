@@ -58,13 +58,38 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+const nodeRunPolls = new Map<string, Promise<CanvasNodeRunResponse>>();
+const NODE_RUN_POLL_TIMEOUT_MS = 10 * 60_000;
+
+function getNodeRunPollKey(projectId: string | number, nodeId: string, input: CanvasNodeRunSyncRequest) {
+  return `${projectId}:${nodeId}:${input.taskId}`;
+}
+
+function getNodeRunPollDelay(elapsedMs: number) {
+  if (elapsedMs < 20_000) return 2_000;
+  if (elapsedMs < 120_000) return 5_000;
+  return 10_000;
+}
+
 export async function waitCanvasNodeRunResult(projectId: string | number, nodeId: string, input: CanvasNodeRunSyncRequest) {
+  const pollKey = getNodeRunPollKey(projectId, nodeId, input);
+  const existingPoll = nodeRunPolls.get(pollKey);
+  if (existingPoll) return existingPoll;
+
+  const poll = waitCanvasNodeRunResultOnce(projectId, nodeId, input).finally(() => {
+    nodeRunPolls.delete(pollKey);
+  });
+  nodeRunPolls.set(pollKey, poll);
+  return poll;
+}
+
+async function waitCanvasNodeRunResultOnce(projectId: string | number, nodeId: string, input: CanvasNodeRunSyncRequest) {
   const startedAt = Date.now();
   let latest: CanvasNodeRunResponse | null = null;
-  while (Date.now() - startedAt < 180_000) {
+  while (Date.now() - startedAt < NODE_RUN_POLL_TIMEOUT_MS) {
     latest = await canvasNodeRunApi.syncNodeRun(projectId, nodeId, input);
     if (isGenerationTerminal(latest.status)) return latest;
-    await sleep(1_600);
+    await sleep(getNodeRunPollDelay(Date.now() - startedAt));
   }
   if (latest) return latest;
   throw new Error("生成结果查询超时，请稍后到任务中心查看进度。");

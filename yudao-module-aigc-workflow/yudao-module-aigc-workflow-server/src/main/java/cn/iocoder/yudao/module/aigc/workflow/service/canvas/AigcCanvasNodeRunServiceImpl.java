@@ -112,7 +112,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
                 patch.set("content", result.getOutputText());
             }
             List<String> urls = parseStringList(result.getOutputUrls());
-            if (!urls.isEmpty()) {
+            if (!urls.isEmpty() && !StrUtil.startWithIgnoreCase(urls.get(0), "data:")) {
                 if ("video".equals(nodeType)) {
                     patch.set("videoUrl", urls.get(0));
                 } else {
