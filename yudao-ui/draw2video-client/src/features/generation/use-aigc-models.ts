@@ -24,11 +24,15 @@ export function useAigcModels({ type, capability, params }: UseAigcModelsOptions
     const timer = window.setTimeout(() => {
       setLoading(true);
       setError(null);
-      getAigcModelList(type)
+      getAigcModelList(type, capability)
         .then((data) => {
           if (ignore) return;
           setModels(data);
-          setSelectedModelId((current) => current ?? data.find((item) => item.defaultModel)?.id ?? data[0]?.id ?? null);
+          setSelectedModelId((current) =>
+            data.some((item) => item.id === current)
+              ? current
+              : data.find((item) => item.defaultModel)?.id ?? data[0]?.id ?? null
+          );
         })
         .catch((err) => {
           if (!ignore) setError(err instanceof Error ? err.message : "模型列表加载失败");
@@ -41,7 +45,7 @@ export function useAigcModels({ type, capability, params }: UseAigcModelsOptions
       ignore = true;
       window.clearTimeout(timer);
     };
-  }, [type]);
+  }, [capability, type]);
 
   useEffect(() => {
     if (!selectedModelId) {

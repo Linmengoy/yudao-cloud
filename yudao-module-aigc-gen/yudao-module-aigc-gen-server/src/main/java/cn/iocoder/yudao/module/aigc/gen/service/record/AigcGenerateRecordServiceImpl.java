@@ -1,7 +1,12 @@
 package cn.iocoder.yudao.module.aigc.gen.service.record;
 
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.asset.api.AigcAssetApi;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
@@ -42,6 +47,7 @@ import cn.iocoder.yudao.module.aigc.task.api.AigcTaskApi;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCallbackCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
+import cn.iocoder.yudao.module.infra.api.file.FileApi;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -49,13 +55,17 @@ import jakarta.annotation.Resource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.gen.enums.ErrorCodeConstants.GENERATE_PROMPT_NOT_PASS;
@@ -85,6 +95,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     @Resource
     private AigcAssetApi assetApi;
     @Resource
+    private FileApi fileApi;
+    @Resource
     private AigcSafetyApi safetyApi;
     @Resource
     private AigcProviderClientFactory providerClientFactory;
@@ -101,6 +113,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             }
         }
         AigcGenerateRecordDO record = BeanUtils.toBean(reqDTO, AigcGenerateRecordDO.class)
+                .setInputParams(sanitizeInputParamsSnapshot(reqDTO.getInputParams()))
                 .setGenerateNo(generateGenerateNo())
                 .setStatus(AigcGenerateStatusEnum.CREATED.getCode());
         generateRecordMapper.insert(record);
@@ -118,22 +131,34 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         recordMetric("aigc_gen_submit_total");
         AigcModelRespDTO model = modelApi.validateModel(reqDTO.getModelId(), reqDTO.getGenerateMode()).getCheckedData();
         AigcModelProviderRespDTO provider = model.getProviderId() == null ? null : modelApi.getProvider(model.getProviderId()).getCheckedData();
-        modelApi.validateParams(new AigcModelValidateReqDTO().setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setParams(Map.of())).getCheckedData();
+        Map<String, Object> inputParams = parseInputParams(reqDTO.getInputParams());
+        String inputParamsSnapshot = sanitizeInputParamsSnapshot(reqDTO.getInputParams());
+        modelApi.validateParams(new AigcModelValidateReqDTO().setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setParams(inputParams)).getCheckedData();
         AigcModelPriceCalculateRespDTO price = modelApi.calculatePrice(new AigcModelPriceCalculateReqDTO()
-                .setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setTaskType(reqDTO.getGenerateType()).setParams(Map.of())).getCheckedData();
+                .setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setTaskType(reqDTO.getGenerateType()).setParams(inputParams)).getCheckedData();
         AigcBillingFreezeRespDTO freeze = billingApi.freeze(new AigcBillingFreezeReqDTO()
                 .setUserId(reqDTO.getUserId()).setBizType("AIGC_GENERATE").setBizId(reqDTO.getClientRequestId() == null ? generateGenerateNo() : reqDTO.getClientRequestId())
-                .setAmount(price.getSalePrice()).setTitle(reqDTO.getGenerateType() + "生成冻结").setPriceSnapshot(price.toString())).getCheckedData();
+                .setAmount(price.getSalePrice()).setTitle(reqDTO.getGenerateType() + "生成冻结").setPriceSnapshot(JsonUtils.toJsonString(price))).getCheckedData();
         Long taskId = taskApi.createTask(new AigcTaskCreateReqDTO()
                 .setClientRequestId(reqDTO.getClientRequestId()).setUserId(reqDTO.getUserId()).setTaskType(reqDTO.getGenerateType())
-                .setCapability(reqDTO.getGenerateMode()).setModelId(reqDTO.getModelId()).setProviderId(model.getProviderId()).setRequestParams(reqDTO.getInputParams())
-                .setPriceSnapshot(price.toString()).setFreezeId(freeze.getId()).setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
+                .setCapability(reqDTO.getGenerateMode()).setModelId(reqDTO.getModelId()).setProviderId(model.getProviderId()).setRequestParams(inputParamsSnapshot)
+                .setPriceSnapshot(JsonUtils.toJsonString(price)).setFreezeId(freeze.getId()).setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
         AigcGenerateRecordDO record = BeanUtils.toBean(reqDTO, AigcGenerateRecordDO.class)
+                .setInputParams(inputParamsSnapshot)
                 .setGenerateNo(generateGenerateNo()).setTaskId(taskId).setModelCode(model.getCode()).setProviderId(model.getProviderId())
                 .setProviderCode(resolveProviderCode(provider)).setFreezeId(freeze.getId())
                 .setPriceAmount(price.getSalePrice()).setCostAmount(price.getCostPrice()).setStatus(AigcGenerateStatusEnum.SUBMITTING.getCode()).setSubmitTime(LocalDateTime.now());
         generateRecordMapper.insert(record);
+        taskApi.markQueued(taskId).getCheckedData();
         taskApi.markRunning(taskId).getCheckedData();
+        if (!Boolean.TRUE.equals(reqDTO.getSync())) {
+            submitProviderAfterCommit(record, reqDTO, provider);
+            return generateRecordMapper.selectById(record.getId());
+        }
+        return processProviderSubmit(record, reqDTO, provider);
+    }
+
+    private AigcGenerateRecordDO processProviderSubmit(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {
         AigcProviderSubmitRespDTO providerResp = submitProvider(record, reqDTO, provider);
         if (!Boolean.TRUE.equals(providerResp.getSuccess())) {
             recordMetric("aigc_gen_submit_failed_total");
@@ -149,9 +174,29 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         } else {
             updateObj.setStatus(AigcGenerateStatusEnum.CALLBACK_WAITING.getCode());
             generateRecordMapper.updateById(updateObj);
-            taskApi.markCallbackWaiting(new AigcTaskStatusUpdateReqDTO().setTaskId(taskId).setExternalTaskId(providerResp.getProviderTaskId()).setProgress(30)).getCheckedData();
+            taskApi.markCallbackWaiting(new AigcTaskStatusUpdateReqDTO().setTaskId(record.getTaskId()).setExternalTaskId(providerResp.getProviderTaskId()).setProgress(30)).getCheckedData();
         }
         return generateRecordMapper.selectById(record.getId());
+    }
+
+    private void submitProviderAfterCommit(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {
+        Runnable task = () -> CompletableFuture.runAsync(() -> {
+            try {
+                processProviderSubmit(record, reqDTO, provider);
+            } catch (Exception ex) {
+                failRecord(record, "SUBMIT_EXCEPTION", ex.getMessage());
+            }
+        });
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            task.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                task.run();
+            }
+        });
     }
 
     @Override
@@ -186,6 +231,34 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     @Override
     public PageResult<AigcGenerateProviderLogDO> getProviderLogPage(AigcGenerateProviderLogPageReqVO reqVO) {
         return providerLogMapper.selectPage(reqVO);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseInputParams(String inputParams) {
+        if (StrUtil.isBlank(inputParams) || !JsonUtils.isJsonObject(inputParams)) {
+            return Map.of();
+        }
+        Map<String, Object> params = JsonUtils.parseObject(inputParams, Map.class);
+        return params == null ? Map.of() : params;
+    }
+
+    private String sanitizeInputParamsSnapshot(String inputParams) {
+        if (StrUtil.isBlank(inputParams) || !JSONUtil.isTypeJSON(inputParams)) {
+            return inputParams;
+        }
+        JSONObject params = JSONUtil.parseObj(inputParams);
+        JSONArray inputImages = params.getJSONArray("inputImages");
+        if (inputImages == null || inputImages.isEmpty()) {
+            return params.toString();
+        }
+        JSONArray sanitizedImages = new JSONArray();
+        for (Object item : inputImages) {
+            JSONObject image = JSONUtil.parseObj(item);
+            image.remove("dataUrl");
+            sanitizedImages.add(image);
+        }
+        params.set("inputImages", sanitizedImages);
+        return params.toString();
     }
 
     @Override
@@ -271,7 +344,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setProviderBaseUrl(provider == null ? null : provider.getApiBaseUrl()).setProviderApiKey(provider == null ? null : provider.getApiKey())
                 .setProviderSecretKey(provider == null ? null : provider.getSecretKey()).setProviderExtraConfig(provider == null ? null : provider.getExtraConfig())
                 .setProviderTimeoutSeconds(provider == null ? null : provider.getTimeoutSeconds())
-                .setGenerateType(record.getGenerateType()).setGenerateMode(record.getGenerateMode()).setPrompt(record.getPrompt()).setInputParams(record.getInputParams()).setSync(reqDTO.getSync());
+                .setGenerateType(record.getGenerateType()).setGenerateMode(record.getGenerateMode()).setPrompt(record.getPrompt()).setInputParams(reqDTO.getInputParams()).setSync(reqDTO.getSync());
         long start = System.currentTimeMillis();
         AigcProviderSubmitRespDTO resp;
         MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
@@ -284,7 +357,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                     .record(() -> providerClientFactory.getClient(record.getProviderCode()).submit(providerReq));
         }
         providerLogMapper.insert(new AigcGenerateProviderLogDO().setRecordId(record.getId()).setTaskId(record.getTaskId()).setProviderCode(record.getProviderCode()).setModelCode(record.getModelCode())
-                .setApiAction("submit").setRequestId(record.getGenerateNo()).setRequestSummary(maskPrompt(record.getPrompt())).setResponseSummary(resp.getProviderStatus())
+                .setApiAction("submit").setRequestId(record.getGenerateNo()).setRequestSummary(buildRequestSummary(record)).setResponseSummary(buildResponseSummary(resp))
                 .setSuccess(Boolean.TRUE.equals(resp.getSuccess())).setErrorCode(resp.getErrorCode()).setErrorMessage(resp.getErrorMessage()).setDurationMs(System.currentTimeMillis() - start));
         return resp;
     }
@@ -307,12 +380,18 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return null;
         }
         String url = firstUrl(record.getOutputUrls());
-        if (!AigcGenerateFileSecurityUtils.isSafeRemoteUrl(url)) {
+        boolean dataUrl = StrUtil.startWithIgnoreCase(url, "data:");
+        if (!dataUrl && !AigcGenerateFileSecurityUtils.isSafeRemoteUrl(url)) {
             throw exception(GENERATE_PROVIDER_RESULT_INVALID);
         }
         AigcAssetCreateReqDTO reqDTO = new AigcAssetCreateReqDTO().setUserId(record.getUserId()).setAssetType(record.getGenerateType()).setSourceType("GENERATE").setBizType("TASK")
                 .setBizId(record.getGenerateNo()).setTaskId(record.getTaskId()).setModelId(record.getModelId()).setProviderId(record.getProviderId()).setTitle(record.getGenerateType() + "生成资产")
-                .setOriginUrl(url).setPromptSnapshot(record.getPrompt()).setGenerateSnapshot(record.getInputParams()).setVisibility("PRIVATE").setAuditStatus("PENDING");
+                .setPromptSnapshot(record.getPrompt()).setGenerateSnapshot(record.getInputParams()).setVisibility("PRIVATE").setAuditStatus("PENDING");
+        if (dataUrl) {
+            fillDataUrlAssetFile(reqDTO, url);
+        } else {
+            reqDTO.setOriginUrl(url);
+        }
         AigcAssetCreateRespDTO asset = switch (record.getGenerateType()) {
             case "IMAGE" -> assetApi.createImageAsset(reqDTO).getCheckedData();
             case "VIDEO" -> assetApi.createVideoAsset(reqDTO).getCheckedData();
@@ -322,6 +401,46 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         };
         generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setAssetIds("[" + asset.getId() + "]"));
         return asset.getId();
+    }
+
+    private void fillDataUrlAssetFile(AigcAssetCreateReqDTO reqDTO, String dataUrl) {
+        int commaIndex = dataUrl.indexOf(',');
+        if (commaIndex <= 5 || !dataUrl.substring(0, commaIndex).contains(";base64")) {
+            throw exception(GENERATE_PROVIDER_RESULT_INVALID);
+        }
+        String mimeType = dataUrl.substring("data:".length(), dataUrl.indexOf(";base64"));
+        byte[] content;
+        try {
+            content = Base64.getDecoder().decode(dataUrl.substring(commaIndex + 1));
+        } catch (IllegalArgumentException ex) {
+            throw exception(GENERATE_PROVIDER_RESULT_INVALID);
+        }
+        if (content.length == 0) {
+            throw exception(GENERATE_PROVIDER_RESULT_INVALID);
+        }
+        String fileExt = fileExtFromMimeType(mimeType);
+        String fileUrl = fileApi.createFile(content, recordFileName(reqDTO.getTitle(), fileExt), "aigc/asset", mimeType);
+        reqDTO.setFileUrl(fileUrl).setMimeType(mimeType).setFileExt(fileExt).setFileSize((long) content.length);
+    }
+
+    private String recordFileName(String title, String fileExt) {
+        return StrUtil.blankToDefault(title, "aigc-asset") + "." + fileExt;
+    }
+
+    private String fileExtFromMimeType(String mimeType) {
+        if (StrUtil.equalsIgnoreCase(mimeType, "image/jpeg")) {
+            return "jpg";
+        }
+        if (StrUtil.startWithIgnoreCase(mimeType, "image/")) {
+            return StrUtil.subAfter(mimeType, "image/", true);
+        }
+        if (StrUtil.startWithIgnoreCase(mimeType, "video/")) {
+            return StrUtil.subAfter(mimeType, "video/", true);
+        }
+        if (StrUtil.startWithIgnoreCase(mimeType, "audio/")) {
+            return StrUtil.subAfter(mimeType, "audio/", true);
+        }
+        return "bin";
     }
 
     private void failRecord(AigcGenerateRecordDO record, String failCode, String failReason) {
@@ -367,7 +486,26 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         return prompt.length() <= 16 ? prompt : prompt.substring(0, 16) + "***";
     }
 
+    private String buildRequestSummary(AigcGenerateRecordDO record) {
+        return new JSONObject()
+                .set("generateMode", record.getGenerateMode())
+                .set("modelCode", record.getModelCode())
+                .set("prompt", maskPrompt(record.getPrompt()))
+                .toString();
+    }
+
+    private String buildResponseSummary(AigcProviderSubmitRespDTO resp) {
+        return new JSONObject()
+                .set("providerStatus", resp.getProviderStatus())
+                .set("errorCode", resp.getErrorCode())
+                .set("errorMessage", resp.getErrorMessage())
+                .toString();
+    }
+
     private String firstUrl(String outputUrls) {
-        return outputUrls.replace("[", "").replace("]", "").replace("\"", "").split(",")[0].trim();
+        if (JSONUtil.isTypeJSONArray(outputUrls)) {
+            return JSONUtil.parseArray(outputUrls).getStr(0, "");
+        }
+        return outputUrls.replace("[", "").replace("]", "").replace("\"", "").trim();
     }
 }

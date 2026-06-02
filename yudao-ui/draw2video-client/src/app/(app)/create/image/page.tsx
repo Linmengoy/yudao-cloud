@@ -44,7 +44,7 @@ import { filterSyncableNodeDataPatch, sanitizeNodeForCanvasOperation } from "@/f
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
-import { clearImages, clearVideos } from "@/features/canvas/image-store";
+import { clearImages, clearVideos, saveImage, saveVideo } from "@/features/canvas/image-store";
 import { ToolbarIconButton } from "@/features/canvas/ToolbarIconButton";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
@@ -97,6 +97,10 @@ type PointerSnapshot = {
 };
 
 const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video"];
+const DEFAULT_CANVAS_VIEWPORT = { x: 110, y: 90, zoom: 0.78 };
+const NODE_DATA_PATCH_DEBOUNCE_MS = 600;
+const CANVAS_SAVE_DEBOUNCE_MS = 1500;
+const SNAPSHOT_ONLY_NODE_DATA_KEYS = new Set(["prompt", "content"]);
 
 function getPresenceColor(clientId: string) {
   const colors = ["#7c3aed", "#0891b2", "#ea580c", "#16a34a", "#dc2626", "#2563eb"];
@@ -531,7 +535,7 @@ function CanvasFlow() {
   const routeProjectId = searchParams.get("projectId");
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const serverProjectId = isServerProjectId(activeProjectId) ? activeProjectId : null;
-  const [nodes, setNodes] = useNodesState<AppNode>(defaultNodes());
+  const [nodes, setNodes] = useNodesState<AppNode>([]);
   const [edges, setEdges] = useEdgesState<AppEdge>([]);
   const [saveError, setSaveError] = useState("");
   const [pasteToast, setPasteToast] = useState("");
@@ -545,7 +549,7 @@ function CanvasFlow() {
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
-  const [canvasZoom, setCanvasZoom] = useState(1);
+  const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
   const [createMenu, setCreateMenu] = useState<{
     x: number;
     y: number;
@@ -839,7 +843,9 @@ function CanvasFlow() {
       const key = `${detail.nodeId}:${Object.keys(detail.patch).sort().join(",")}`;
       clearTimeout(nodeDataPatchTimersRef.current[key]);
       nodeDataPatchTimersRef.current[key] = setTimeout(() => {
-        const patch = filterSyncableNodeDataPatch(detail.patch);
+        const patch = Object.fromEntries(
+          Object.entries(filterSyncableNodeDataPatch(detail.patch)).filter(([patchKey]) => !SNAPSHOT_ONLY_NODE_DATA_KEYS.has(patchKey))
+        );
         if (Object.keys(patch).length === 0) {
           delete nodeDataPatchTimersRef.current[key];
           return;
@@ -849,7 +855,7 @@ function CanvasFlow() {
           patch,
         });
         delete nodeDataPatchTimersRef.current[key];
-      }, 160);
+      }, NODE_DATA_PATCH_DEBOUNCE_MS);
     }
     window.addEventListener("copse:node-data-patch", handleNodeDataPatch);
     return () => window.removeEventListener("copse:node-data-patch", handleNodeDataPatch);
@@ -1095,6 +1101,7 @@ function CanvasFlow() {
           if (!cancelled) {
             setNodes(defaultNodes());
             setEdges([]);
+            setViewport(DEFAULT_CANVAS_VIEWPORT);
             setIsHydrated(true);
           }
           if (currentVersion > snapshotVersion) syncFromVersion(snapshotVersion);
@@ -1119,7 +1126,7 @@ function CanvasFlow() {
         if (!cancelled) {
           setNodes(migratedNodes);
           setEdges(migratedEdges);
-          if (saved.viewport) setViewport(saved.viewport);
+          setViewport(saved.viewport ?? DEFAULT_CANVAS_VIEWPORT);
           setIsHydrated(true);
         }
 
@@ -1162,7 +1169,7 @@ function CanvasFlow() {
       } catch {
         setSaveError("服务端画布保存失败，请稍后重试");
       }
-    }, 500);
+    }, CANVAS_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(saveTimer.current);
   }, [activeProjectId, canvasOperations.pendingOperationCount, clientId, edges, getViewport, isHydrated, isReadOnly, markAppliedVersion, nodes, saveSnapshot, serverProjectId, syncFromVersion]);
 
@@ -1684,10 +1691,11 @@ function CanvasFlow() {
     canvasOperations.submitOperation("CANVAS_CLEAR", {});
     setNodes(defaultNodes());
     setEdges([]);
+    setViewport(DEFAULT_CANVAS_VIEWPORT, { duration: 180 });
     clearImages();
     clearVideos();
     setConfirmClear(false);
-  }, [canvasOperations, closeCreateMenu, closeReferencePicker, confirmClear, isReadOnly, setNodes, setEdges]);
+  }, [canvasOperations, closeCreateMenu, closeReferencePicker, confirmClear, isReadOnly, setNodes, setEdges, setViewport]);
 
   useEffect(() => {
     if (!confirmClear) return;
@@ -1719,6 +1727,14 @@ function CanvasFlow() {
     return (
       <div className="flex h-full w-full items-center justify-center text-sm text-muted-gray">
         正在准备项目...
+      </div>
+    );
+  }
+
+  if (!isHydrated) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-sm text-muted-gray">
+        正在加载画布...
       </div>
     );
   }
@@ -1781,6 +1797,7 @@ function CanvasFlow() {
         edgeTypes={CANVAS_EDGE_TYPES}
         minZoom={0.2}
         maxZoom={2}
+        defaultViewport={DEFAULT_CANVAS_VIEWPORT}
         zoomOnScroll
         zoomActivationKeyCode={["Meta", "Control"]}
         zoomOnPinch

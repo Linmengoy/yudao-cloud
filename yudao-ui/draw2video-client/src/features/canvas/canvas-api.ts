@@ -151,12 +151,16 @@ export const canvasApi = {
     api.delete<boolean>(`/canvas/projects/${projectId}/members/${memberId}`),
 
   updateProject: (projectId: string | number, input: UpdateCanvasProjectInput) =>
-    api.put<boolean>(`/canvas/projects/${projectId}`, input),
+    api.put<boolean>(`/canvas/projects/${projectId}`, {
+      ...input,
+      id: projectId,
+    }),
 
   getSnapshot: (projectId: string | number) => api.get<CanvasSnapshotRecord | null>(`/canvas/projects/${projectId}/snapshot`),
 
   saveSnapshot: (projectId: string | number, input: SaveCanvasSnapshotInput) =>
     api.post<CanvasSnapshotRecord>(`/canvas/projects/${projectId}/snapshot`, {
+      projectId,
       baseVersion: input.baseVersion,
       clientId: input.clientId,
       nodesJson: JSON.stringify(input.nodes),
@@ -173,10 +177,14 @@ export const canvasApi = {
     api.get<CanvasOperationSyncResult>(`/canvas/projects/${projectId}/operations/sync?afterVersion=${afterVersion}`),
 
   submitOperation: (projectId: string | number, input: SubmitCanvasOperationInput) =>
-    api.post<CanvasOperationRecord>(`/canvas/projects/${projectId}/operations`, input),
+    api.post<CanvasOperationRecord>(`/canvas/projects/${projectId}/operations`, {
+      ...input,
+      projectId,
+    }),
 
   submitOperationPayload: (projectId: string | number, input: SubmitCanvasOperationPayloadInput) =>
     api.post<CanvasOperationRecord>(`/canvas/projects/${projectId}/operations`, {
+      projectId,
       clientId: input.clientId,
       opId: `op_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       baseVersion: input.baseVersion,

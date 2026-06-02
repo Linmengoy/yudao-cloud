@@ -13,8 +13,7 @@ import java.math.BigDecimal;
 @Accessors(chain = true)
 public class AigcGenerateSubmitReqDTO {
 
-    @Schema(description = "用户编号", requiredMode = Schema.RequiredMode.REQUIRED, example = "1024")
-    @NotNull(message = "用户编号不能为空")
+    @Schema(description = "用户编号；用户端接口由登录态注入", example = "1024")
     private Long userId;
 
     @Schema(description = "客户端请求编号", example = "REQ202605260001")

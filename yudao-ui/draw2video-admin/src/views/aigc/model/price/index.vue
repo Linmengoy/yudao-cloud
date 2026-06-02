@@ -6,7 +6,7 @@
       <el-form-item>
         <el-button @click="handleQuery"><Icon icon="ep:search" class="mr-5px" /> 搜索</el-button>
         <el-button @click="resetQuery"><Icon icon="ep:refresh" class="mr-5px" /> 重置</el-button>
-        <el-button type="primary" plain @click="openForm('create')" v-hasPermi="['aigc:model-price:create']"><Icon icon="ep:plus" class="mr-5px" /> 新增</el-button>
+        <el-button type="primary" plain @click="openForm('create')" v-hasPermi="['aigc:model:price:create']"><Icon icon="ep:plus" class="mr-5px" /> 新增</el-button>
       </el-form-item>
     </el-form>
   </ContentWrap>
@@ -21,7 +21,7 @@
       <el-table-column label="生效开始" align="center" prop="effectiveStartTime" min-width="160" :formatter="dateFormatter" />
       <el-table-column label="生效结束" align="center" prop="effectiveEndTime" min-width="160" :formatter="dateFormatter" />
       <el-table-column label="状态" align="center" prop="status" min-width="90"><template #default="scope"><dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" /></template></el-table-column>
-      <el-table-column label="操作" align="center" width="160" fixed="right"><template #default="scope"><el-button link type="primary" @click="openForm('update', scope.row.id)" v-hasPermi="['aigc:model-price:update']">编辑</el-button><el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['aigc:model-price:delete']">删除</el-button></template></el-table-column>
+      <el-table-column label="操作" align="center" width="160" fixed="right"><template #default="scope"><el-button link type="primary" @click="openForm('update', scope.row.id)" v-hasPermi="['aigc:model:price:update']">编辑</el-button><el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['aigc:model:price:delete']">删除</el-button></template></el-table-column>
     </el-table>
   </ContentWrap>
   <PriceForm ref="formRef" @success="getList" />

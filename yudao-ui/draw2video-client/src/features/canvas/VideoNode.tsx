@@ -338,7 +338,16 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           nodeType: "video",
         });
         return;
-      } catch {
+      } catch (error) {
+        updateData({
+          status: "failed",
+          taskId: null,
+          errorMessage: error instanceof Error ? error.message : "视频任务提交失败",
+          upstreamStatus: "FAILED",
+          generationCompletedAt: new Date().toISOString(),
+          elapsedMs: Date.now() - new Date(startedAt).getTime(),
+        });
+        return;
       }
     }
 
