@@ -105,11 +105,5 @@ yudao:
     version: ${yudao.info.version}
   tenant:
     enable: true
-  aigc:
-    billing:
-      pay:
-        app-id: 1
-        app-key: aigc-billing
-        expire-minutes: 30
 
 debug: false
