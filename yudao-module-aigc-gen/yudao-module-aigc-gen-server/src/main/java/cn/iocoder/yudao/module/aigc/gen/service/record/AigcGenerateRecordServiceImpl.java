@@ -54,6 +54,8 @@ import jakarta.annotation.Resource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
@@ -61,6 +63,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.gen.enums.ErrorCodeConstants.GENERATE_PROMPT_NOT_PASS;
@@ -144,6 +147,14 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         generateRecordMapper.insert(record);
         taskApi.markQueued(taskId).getCheckedData();
         taskApi.markRunning(taskId).getCheckedData();
+        if (!Boolean.TRUE.equals(reqDTO.getSync())) {
+            submitProviderAfterCommit(record, reqDTO, provider);
+            return generateRecordMapper.selectById(record.getId());
+        }
+        return processProviderSubmit(record, reqDTO, provider);
+    }
+
+    private AigcGenerateRecordDO processProviderSubmit(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {
         AigcProviderSubmitRespDTO providerResp = submitProvider(record, reqDTO, provider);
         if (!Boolean.TRUE.equals(providerResp.getSuccess())) {
             recordMetric("aigc_gen_submit_failed_total");
@@ -162,6 +173,26 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             taskApi.markCallbackWaiting(new AigcTaskStatusUpdateReqDTO().setTaskId(taskId).setExternalTaskId(providerResp.getProviderTaskId()).setProgress(30)).getCheckedData();
         }
         return generateRecordMapper.selectById(record.getId());
+    }
+
+    private void submitProviderAfterCommit(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {
+        Runnable task = () -> CompletableFuture.runAsync(() -> {
+            try {
+                processProviderSubmit(record, reqDTO, provider);
+            } catch (Exception ex) {
+                failRecord(record, "SUBMIT_EXCEPTION", ex.getMessage());
+            }
+        });
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            task.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                task.run();
+            }
+        });
     }
 
     @Override
@@ -345,6 +376,9 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return null;
         }
         String url = firstUrl(record.getOutputUrls());
+        if (StrUtil.startWithIgnoreCase(url, "data:")) {
+            return null;
+        }
         if (!AigcGenerateFileSecurityUtils.isSafeRemoteUrl(url)) {
             throw exception(GENERATE_PROVIDER_RESULT_INVALID);
         }
@@ -422,6 +456,9 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     }
 
     private String firstUrl(String outputUrls) {
-        return outputUrls.replace("[", "").replace("]", "").replace("\"", "").split(",")[0].trim();
+        if (JSONUtil.isTypeJSONArray(outputUrls)) {
+            return JSONUtil.parseArray(outputUrls).getStr(0, "");
+        }
+        return outputUrls.replace("[", "").replace("]", "").replace("\"", "").trim();
     }
 }
