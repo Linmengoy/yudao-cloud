@@ -209,6 +209,85 @@ status
 | `MULTI_SELECT` | 多选项配置 | Checkbox Group |
 | `JSON` | JSON 编辑器 | 高级配置区域 |
 
+### 4.7.1 Gemini / Nano Banana 图片渠道配置
+
+后端已内置 Gemini 原生图片接口适配器，渠道商编码固定使用：
+
+```text
+gemini-image
+```
+
+该渠道不是 OpenAI-compatible 接口，调用方式为 Gemini 原生 `generateContent`：
+
+```text
+POST {apiBaseUrl}/models/{model}:generateContent?key={apiKey}
+```
+
+管理端添加渠道商时建议配置：
+
+| 字段 | 示例 | 说明 |
+| --- | --- | --- |
+| 渠道编码 `code` | `gemini-image` | 必须与后端适配器一致 |
+| API 地址 `apiBaseUrl` | `http://67.21.92.138:3010/v1beta` | 填到 `/v1beta` 即可；如果中转站要求，也可直接填完整 `.../models/gemini-2.5-flash-image:generateContent` |
+| 鉴权方式 `authType` | `API_KEY` | API Key 会拼到 query 参数 `key=` |
+| API Key `apiKey` | 中转站 Key | 禁止写入文档、URL 日志、错误提示 |
+| 超时时间 `timeoutSeconds` | `120` | 图片生成建议不低于 120 秒 |
+
+当前可配置的 Nano Banana 模型：
+
+| 中转站常见模型名 | Google 官方模型名 | 代号 | 建议定位 |
+| --- | --- | --- | --- |
+| `gemini-3.1-flash-image-preview` | `gemini-3.1-flash-image` | Nano Banana 2 | 默认推荐，速度和性价比较好 |
+| `gemini-2.5-flash-image` | `gemini-2.5-flash-image` | Nano Banana | 高速低延迟，1024px 固定分辨率 |
+| `gemini-3-pro-image-preview` | `gemini-3-pro-image` | Nano Banana Pro | 专业级，支持 Thinking，最高 4K |
+
+模型管理建议：
+
+- 如果中转站模型名可以直接调用，模型编码 `code` 直接填中转站模型名，例如 `gemini-2.5-flash-image`。
+- 如果希望内部模型编码和第三方模型名分离，可在渠道商 `extraConfig` 中配置映射：
+
+```json
+{
+  "modelMapping": {
+    "nano-banana-fast": "gemini-2.5-flash-image",
+    "nano-banana-2": "gemini-3.1-flash-image-preview",
+    "nano-banana-pro": "gemini-3-pro-image-preview"
+  }
+}
+```
+
+参数模板建议：
+
+| 参数 Key | 类型 | 默认值 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `ratio` | `SELECT` | `1:1` | `1:1`,`2:3`,`3:2`,`3:4`,`4:3`,`4:5`,`5:4`,`9:16`,`16:9`,`21:9` | 透传为 Gemini `generationConfig.imageConfig.aspectRatio` |
+| `imageSize` | `SELECT` | `1K` | `512`,`1K`,`2K`,`4K` | 仅 `gemini-3.1-flash-image` / `gemini-3-pro-image` 系列生效；`gemini-2.5-flash-image` 固定 1024px |
+
+请求体结构与 Gemini 官方文档保持一致：
+
+```json
+{
+  "contents": [
+    {
+      "parts": [
+        {
+          "text": "prompt"
+        }
+      ]
+    }
+  ],
+  "generationConfig": {
+    "responseModalities": ["TEXT", "IMAGE"],
+    "imageConfig": {
+      "aspectRatio": "1:1",
+      "imageSize": "1K"
+    }
+  }
+}
+```
+
+图生图场景会把 `inputImages` / `inputImageUrls` 转成 Gemini `inlineData`，返回结果从 `candidates[].content.parts[].inlineData` 解析为 `data:{mimeType};base64,...` 后进入现有素材入库流程。
+
 ### 4.8 价格规则管理
 
 核心字段：
