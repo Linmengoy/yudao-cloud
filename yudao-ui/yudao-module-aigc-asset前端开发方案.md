@@ -273,6 +273,8 @@
 - 画布节点中不新增复杂资产管理面板，只提供轻量入口，完整编辑和删除放在资产详情页。
 - 当前图片画布节点一次只承载一张生成图，因此前端将图片生成数量限制为 `1`，避免后端返回多张但只落第一张造成资产丢失。
 - `ImageNode` 调用生成接口异常时会写回失败状态，避免节点永久显示生成中。
+- 生成服务把 provider 返回的 `data:` URL 转存为文件资产时，文件名必须唯一，至少包含 `generateNo`、`taskId` 或雪花 ID。禁止所有生成图共用 `IMAGE生成资产.png` 这类固定文件名，否则不同 `assetId` 会拥有相同 `fileUrl` 并在文件服务中互相覆盖。
+- 同一 sketch 连接多个 ImageNode 且 prompt 不同时，应创建不同生成记录、不同资产 ID 和不同 `fileUrl`；前端展示结果以 `previewUrl/outputPreviewUrl` 为准，不应复用旧节点 URL。
 
 ### 5.6 用户端接口
 
@@ -503,6 +505,7 @@ src/features/canvas/use-canvas-storage.ts
 - 如果前端上传参考图，参考图可作为 P1 上传资产化能力，也可以第一阶段仅作为临时文件 URL 传给生成接口。
 - 图片生成节点当前一次只保留一张结果，参数面板将数量限制为 `1`；如后续支持批量生成，需要为每张结果创建独立资产或独立画布节点。
 - 图片生成接口异常必须回写节点失败状态，避免画布节点永久停留在 `pending`。
+- 资产排障时若多个生成结果画面完全相同，应同时检查 `gen_db.aigc_gen_record.prompt/client_request_id/provider_task_id/asset_ids` 和 `asset_db.aigc_asset.file_url`。若 prompt 与 task 均不同但 `file_url` 相同，优先判断为文件名覆盖问题，而不是 prompt 未生效。
 
 ### 8.3 与钱包计费联动
 

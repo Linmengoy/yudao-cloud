@@ -98,9 +98,10 @@ Current image generation behavior:
 - Selecting the image opens a composer below the image.
 - Reference images are connected to the selected image node and shown as thumbnails in the composer toolbar.
 - Generation updates the same image node in place instead of creating a separate result node.
+- Server-backed node runs apply the final `TASK_STATUS_PATCH` from `operation.operationJson.payload.patch` immediately after `run/sync` succeeds. Do not rely only on realtime/sync echo for the node that initiated the run.
 - Uploaded images are media-only nodes; selecting one does not open a prompt composer.
 - Empty draft images render inside a fixed preview slot, and the placeholder card changes aspect ratio when image size params change.
-- Real images display at their natural aspect ratio, scaled down to a bounded max size with the full image visible.
+- Real images and sketch previews display at their natural aspect ratio, scaled down to a bounded max size with the full image visible. They should not show an extra card border or black letterbox around the media.
 
 Current text behavior:
 
@@ -143,6 +144,7 @@ Canvas motion:
 - Node preview cards fade/scale in without touching React Flow's canvas transform.
 - Selected-node composers, model pickers, parameter popovers, context menus, create menus, drag overlays, and reference-picker banners animate in/out.
 - Image and video placeholder cards animate smoothly when aspect ratio params change.
+- Image generation loading uses an in-node horizontal highlight sweep with status and elapsed time centered over the media.
 - Parameter segmented controls use a sliding selected-state indicator for size, ratio, quality, format, moderation, video ratio, resolution, duration, and audio switches.
 
 ## Local Persistence
