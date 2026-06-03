@@ -19,6 +19,7 @@ import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServic
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomPojo;
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomString;
 import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Import(AigcModelParamServiceImpl.class)
 public class AigcModelParamServiceImplTest extends BaseDbUnitTest {
@@ -41,6 +42,19 @@ public class AigcModelParamServiceImplTest extends BaseDbUnitTest {
                 .setParamKey("ratio").setParamName("比例").setParamType(AigcModelParamTypeEnum.SELECT.getCode());
 
         assertServiceException(() -> paramService.createParamTemplate(reqVO), MODEL_PARAM_KEY_DUPLICATE);
+    }
+
+    @Test
+    public void testCreateParamTemplate_normalizeOptions() {
+        AigcModelDO model = createModel();
+        AigcModelParamTemplateSaveReqVO reqVO = new AigcModelParamTemplateSaveReqVO()
+                .setModelId(model.getId()).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())
+                .setParamKey("ratio").setParamName("比例").setParamType(AigcModelParamTypeEnum.SELECT.getCode())
+                .setOptions("[\"\\\"1:1\\\"\",\"\\\"2:3\\\"\"]");
+
+        Long id = paramService.createParamTemplate(reqVO);
+
+        assertEquals("[\"1:1\",\"2:3\"]", paramTemplateMapper.selectById(id).getOptions());
     }
 
     @Test

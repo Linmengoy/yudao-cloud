@@ -17,6 +17,7 @@ import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
 import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
 import cn.iocoder.yudao.module.aigc.model.service.provider.AigcModelProviderService;
 import cn.iocoder.yudao.module.aigc.model.service.usage.AigcModelUsageService;
+import cn.iocoder.yudao.module.aigc.model.util.AigcModelParamUtils;
 import jakarta.annotation.Resource;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
@@ -76,7 +77,7 @@ public class AigcModelApiImpl implements AigcModelApi {
     public CommonResult<List<AigcModelParamTemplateRespDTO>> getParamTemplates(Long modelId, String capability) {
         List<AigcModelParamTemplateDO> templates = paramService.getParamTemplateList(modelId, capability);
         return success(templates.stream()
-                .map(template -> BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class))
+                .map(this::convertParamTemplate)
                 .collect(Collectors.toList()));
     }
 
@@ -95,6 +96,11 @@ public class AigcModelApiImpl implements AigcModelApi {
     @Override
     public CommonResult<Long> recordUsage(AigcModelUsageRecordReqDTO reqDTO) {
         return success(usageService.recordUsage(reqDTO));
+    }
+
+    private AigcModelParamTemplateRespDTO convertParamTemplate(AigcModelParamTemplateDO template) {
+        return BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class,
+                resp -> resp.setOptions(AigcModelParamUtils.parseOptions(template.getOptions())));
     }
 
 }

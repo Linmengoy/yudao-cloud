@@ -59,7 +59,7 @@ const open = async (type: string, id?: number) => {
     formLoading.value = true
     try {
       formData.value = await AigcModelParamApi.getParam(id)
-      optionsText.value = Array.isArray(formData.value.options) ? JSON.stringify(formData.value.options) : formData.value.options || ''
+      optionsText.value = formatOptionsText(formData.value.options)
     } finally {
       formLoading.value = false
     }
@@ -72,7 +72,7 @@ const submitForm = async () => {
   await formRef.value.validate()
   formLoading.value = true
   try {
-    const data = { ...formData.value, options: optionsText.value || undefined }
+    const data = { ...formData.value, options: normalizeOptionsForSubmit(optionsText.value) }
     if (formType.value === 'create') {
       await AigcModelParamApi.createParam(data)
       message.success(t('common.createSuccess'))
@@ -91,5 +91,49 @@ const resetForm = () => {
   formData.value = { id: undefined, modelId: undefined, capability: undefined, paramKey: undefined, paramName: undefined, paramType: undefined, requiredStatus: false, defaultValue: undefined, options: undefined, minValue: undefined, maxValue: undefined, regexPattern: undefined, sort: 0, status: CommonStatusEnum.ENABLE }
   optionsText.value = ''
   formRef.value?.resetFields()
+}
+
+const formatOptionsText = (options?: string[] | string) => {
+  const optionList = parseOptions(options)
+  return optionList.length > 0 ? JSON.stringify(optionList) : ''
+}
+
+const normalizeOptionsForSubmit = (options: string) => {
+  const optionList = parseOptions(options)
+  return optionList.length > 0 ? JSON.stringify(optionList) : undefined
+}
+
+const parseOptions = (options?: string[] | string): string[] => {
+  if (!options) return []
+  const rawOptions = Array.isArray(options) ? options : parseOptionsText(options)
+  return rawOptions.map(decodeOptionValue).filter(Boolean)
+}
+
+const parseOptionsText = (options: string): string[] => {
+  const text = options.trim()
+  if (!text) return []
+  try {
+    const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item))
+    }
+  } catch {
+    // 非 JSON 输入按逗号分隔处理
+  }
+  return text.split(',').map((item) => item.trim())
+}
+
+const decodeOptionValue = (value: string): string => {
+  let result = String(value).trim()
+  for (let i = 0; i < 3; i++) {
+    try {
+      const parsed = JSON.parse(result)
+      if (typeof parsed !== 'string') break
+      result = parsed.trim()
+    } catch {
+      break
+    }
+  }
+  return result
 }
 </script>
