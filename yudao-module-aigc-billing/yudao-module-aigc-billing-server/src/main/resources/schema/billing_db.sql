@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS aigc_recharge_order (
     wallet_id bigint NOT NULL COMMENT '钱包编号',
     user_id bigint NOT NULL COMMENT '用户编号',
     recharge_type varchar(32) NOT NULL COMMENT '充值类型',
+    package_id bigint NULL COMMENT '充值套餐编号',
     pay_amount int NOT NULL DEFAULT 0 COMMENT '支付金额，单位：分',
     point_amount decimal(18,6) NOT NULL DEFAULT 0.000000 COMMENT '充值积分数量',
     gift_amount decimal(18,6) NOT NULL DEFAULT 0.000000 COMMENT '赠送积分数量',
@@ -150,6 +151,7 @@ CREATE TABLE IF NOT EXISTS aigc_recharge_order (
     UNIQUE KEY uk_recharge_no (recharge_no),
     UNIQUE KEY uk_pay_order_id (pay_order_id),
     KEY idx_wallet_time (wallet_id, create_time),
+    KEY idx_user_package_status_time (user_id, package_id, status, create_time),
     KEY idx_user_status (user_id, status),
     KEY idx_status_create_time (status, create_time)
 ) COMMENT='AIGC 充值订单';

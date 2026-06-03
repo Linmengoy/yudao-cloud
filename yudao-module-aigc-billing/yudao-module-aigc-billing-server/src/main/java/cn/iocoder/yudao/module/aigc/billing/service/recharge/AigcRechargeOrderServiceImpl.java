@@ -133,12 +133,18 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         if (rechargePackage.getPayAmount() == null || rechargePackage.getPayAmount() <= 0) {
             throw exception(RECHARGE_PAY_AMOUNT_INVALID);
         }
+        AigcRechargeOrderDO existingOrder = rechargeOrderMapper.selectLatestWaitPayByUserAndPackage(
+                userId, packageId, LocalDateTime.now().minusMinutes(getPayExpireMinutes()));
+        if (existingOrder != null) {
+            return buildCreateResp(existingOrder);
+        }
         var wallet = walletService.getOrCreateWallet(userId);
         AigcRechargeOrderDO order = new AigcRechargeOrderDO();
         order.setRechargeNo(billingNoGenerator.generateRechargeNo());
         order.setWalletId(wallet.getId());
         order.setUserId(userId);
         order.setRechargeType(AigcBillingRechargeTypeEnum.PACKAGE.getCode());
+        order.setPackageId(packageId);
         order.setPayAmount(rechargePackage.getPayAmount());
         order.setPointAmount(rechargePackage.getPointAmount());
         order.setGiftAmount(rechargePackage.getGiftAmount());

@@ -29,6 +29,8 @@ public class AigcRechargeOrderDO extends TenantBaseDO {
     private Long userId;
     /** 充值类型 */
     private String rechargeType;
+    /** 充值套餐ID */
+    private Long packageId;
     /** 充值金额 */
     private Integer payAmount;
     /** 充值积分 */

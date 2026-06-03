@@ -24,6 +24,16 @@ public interface AigcRechargeOrderMapper extends BaseMapperX<AigcRechargeOrderDO
         return selectOne(AigcRechargeOrderDO::getPayOrderId, payOrderId);
     }
 
+    default AigcRechargeOrderDO selectLatestWaitPayByUserAndPackage(Long userId, Long packageId, LocalDateTime expireTime) {
+        return selectOne(new LambdaQueryWrapperX<AigcRechargeOrderDO>()
+                .eq(AigcRechargeOrderDO::getUserId, userId)
+                .eq(AigcRechargeOrderDO::getPackageId, packageId)
+                .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.WAIT_PAY.getCode())
+                .gt(AigcRechargeOrderDO::getCreateTime, expireTime)
+                .orderByDesc(AigcRechargeOrderDO::getId)
+                .last("LIMIT 1"));
+    }
+
     default PageResult<AigcRechargeOrderDO> selectPage(AigcRechargeOrderPageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcRechargeOrderDO>()
                 .likeIfPresent(AigcRechargeOrderDO::getRechargeNo, reqVO.getRechargeNo())
