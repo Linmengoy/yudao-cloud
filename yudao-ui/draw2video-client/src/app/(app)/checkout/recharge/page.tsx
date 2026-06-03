@@ -61,6 +61,9 @@ function getOrderPayAppId(rechargeOrder: AigcRechargeOrder | null, payOrder: Pay
 function openPayContent(displayMode?: string, displayContent?: string) {
   if (!displayContent) return;
   const mode = normalizeDisplayMode(displayMode);
+  if (mode === "qr_code") {
+    return;
+  }
   if (["url", "iframe", "app"].includes(mode) || isHttpUrl(displayContent)) {
     window.open(displayContent, "_blank", "noopener,noreferrer");
     return;
