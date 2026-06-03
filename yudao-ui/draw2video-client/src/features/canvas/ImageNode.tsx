@@ -37,7 +37,7 @@ import { calculateImageSize, normalizeImageSize, type SizeTier } from "@/feature
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
-import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
@@ -576,11 +576,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           inputParams: buildServerInputParams(params, ids, snapshots),
           sync: false,
         });
-        await waitCanvasNodeRunResult(projectId, id, {
+        const result = await waitCanvasNodeRunResult(projectId, id, {
           taskId: run.taskId,
           baseVersion: 0,
           nodeType: "image",
         });
+        const patch = getCanvasNodeRunPatch(result, id);
+        if (patch) updateData(patch as Partial<ImageNodeData>);
         return;
       } catch (error) {
         updateData({

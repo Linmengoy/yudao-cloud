@@ -23,7 +23,7 @@ import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, Referen
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
-import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { downloadMedia, videoNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
@@ -332,11 +332,13 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           }),
           sync: false,
         });
-        await waitCanvasNodeRunResult(projectId, id, {
+        const result = await waitCanvasNodeRunResult(projectId, id, {
           taskId: run.taskId,
           baseVersion: 0,
           nodeType: "video",
         });
+        const patch = getCanvasNodeRunPatch(result, id);
+        if (patch) updateData(patch as Partial<VideoNodeData>);
         return;
       } catch (error) {
         updateData({
