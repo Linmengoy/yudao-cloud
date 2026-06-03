@@ -81,6 +81,6 @@ xxl:
 # 芋道配置项，设置当前项目所有自定义的配置
 yudao:
   pay:
-    order-notify-url: https://yutou.mynatapp.cc/admin-api/pay/notify/order # 支付渠道的【支付】回调地址
-    refund-notify-url: https://yutou.mynatapp.cc/admin-api/pay/notify/refund # 支付渠道的【退款】回调地址
-    transfer-notify-url: https://yutou.mynatapp.cc/admin-api/pay/notify/transfer # 支付渠道的【转账】回调地址
+    order-notify-url: http://111.228.39.103:48080/admin-api/pay/notify/order # 支付渠道的【支付】回调地址
+    refund-notify-url: http://111.228.39.103:48080/admin-api/pay/notify/refund # 支付渠道的【退款】回调地址
+    transfer-notify-url: http://111.228.39.103:48080/admin-api/pay/notify/transfer # 支付渠道的【转账】回调地址

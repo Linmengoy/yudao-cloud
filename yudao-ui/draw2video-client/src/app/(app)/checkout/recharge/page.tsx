@@ -61,7 +61,7 @@ function getOrderPayAppId(rechargeOrder: AigcRechargeOrder | null, payOrder: Pay
 function openPayContent(displayMode?: string, displayContent?: string) {
   if (!displayContent) return;
   const mode = normalizeDisplayMode(displayMode);
-  if (mode === "qr_code") {
+  if (["qr_code", "qr_code_url", "qrcode_url"].includes(mode)) {
     return;
   }
   if (["url", "iframe", "app"].includes(mode) || isHttpUrl(displayContent)) {
@@ -297,7 +297,7 @@ export default function RechargeCheckoutPage() {
                   <QrCode className="size-4" />
                   支付信息已生成
                 </div>
-                {normalizeDisplayMode(submitResult.displayMode) === "qr_code_url" ? (
+                {["qr_code_url", "qrcode_url"].includes(normalizeDisplayMode(submitResult.displayMode)) ? (
                   <div className="mt-3 rounded-lg bg-background p-3 text-center">
                     <img src={submitResult.displayContent} alt="支付二维码" className="mx-auto size-48 rounded-lg bg-white object-contain p-2" />
                     <p className="mt-2 break-all text-xs text-muted-gray">请使用对应支付 App 扫码完成支付</p>

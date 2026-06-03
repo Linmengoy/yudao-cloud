@@ -32,6 +32,13 @@ public class PayOrderApiImpl implements PayOrderApi {
     }
 
     @Override
+    public CommonResult<PayOrderRespDTO> syncOrder(Long id) {
+        payOrderService.syncOrderQuietly(id);
+        PayOrderDO order = payOrderService.getOrder(id);
+        return success(PayOrderConvert.INSTANCE.convert2(order));
+    }
+
+    @Override
     public CommonResult<Boolean> updatePayOrderPrice(Long id, Integer payPrice) {
         payOrderService.updatePayOrderPrice(id, payPrice);
         return success(true);

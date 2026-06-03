@@ -77,15 +77,15 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
         request.put("pid", config.getResolvedPid());
         request.put("key", config.getResolvedPkey());
         request.put("out_trade_no", outTradeNo);
-        Map<String, String> response = post("/api.php", request);
-        if (StrUtil.isNotBlank(response.get("code")) && !isSuccessResponse(response)) {
+        Map<String, String> response = get("/api.php", request);
+        if (StrUtil.isNotBlank(response.get("code")) && !StrUtil.equals(response.get("code"), "1")) {
             return PayOrderRespDTO.closedOf(response.get("code"), ObjectUtil.defaultIfNull(response.get("message"), response.get("msg")),
                     outTradeNo, response);
         }
         Integer status = EasyPayOrderStatusMapping.parse(firstNotBlank(response, "status", "trade_status", "order_status"));
         Assert.notNull(status, "EasyPay 查单支付状态不正确");
         return PayOrderRespDTO.of(status, firstNotBlank(response, "trade_no", "channel_order_no", "transaction_id"),
-                firstNotBlank(response, "buyer_id", "payer_id", "channel_user_id"), parseChannelPrice(response), parseSuccessTime(response), outTradeNo, response);
+                firstNotBlank(response, "buyer", "buyer_id", "payer_id", "channel_user_id"), parseChannelPrice(response), parseSuccessTime(response), outTradeNo, response);
     }
 
     @Override
@@ -152,9 +152,17 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
         }
     }
 
+    private Map<String, String> get(String path, Map<String, String> request) {
+        try (HttpResponse response = HttpRequest.get(EasyPayRequestUtils.buildUrl(apiBase(), path) + "?" + buildQuery(request))
+                .timeout(config.getTimeoutSeconds() * 1000)
+                .execute()) {
+            return EasyPayRequestUtils.parseBody(response.body());
+        }
+    }
+
     private boolean isSuccessResponse(Map<String, String> response) {
         String code = firstNotBlank(response, "code", "result_code", "status_code");
-        return StrUtil.isBlank(code) || StrUtil.equalsAnyIgnoreCase(code, "0", "1", "SUCCESS", "OK", "200");
+        return StrUtil.isBlank(code) || StrUtil.equalsAnyIgnoreCase(code,  "1", "0","SUCCESS", "OK", "200");
     }
 
     private String resolveDisplayMode(Map<String, String> response) {
@@ -175,12 +183,12 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
     }
 
     private String resolveDisplayContent(Map<String, String> response) {
-        return firstNotBlank(response, "img","qrcode","display_content", "displayContent", "payurl", "payurl2", "pay_url", "cashier_url", "url",
+        return firstNotBlank(response, "qrcode","display_content", "displayContent", "payurl", "payurl2", "pay_url", "cashier_url", "url",
                 "form_html", "form", "qr_code_url", "qrcode_url", "qr_code");
     }
 
     private LocalDateTime parseSuccessTime(Map<String, String> response) {
-        return EasyPayRequestUtils.parseTime(firstNotBlank(response, "success_time", "pay_time", "paid_time", "gmt_payment"));
+        return EasyPayRequestUtils.parseTime(firstNotBlank(response, "endtime", "success_time", "pay_time", "paid_time", "gmt_payment"));
     }
 
     private Integer parseChannelPrice(Map<String, String> response) {

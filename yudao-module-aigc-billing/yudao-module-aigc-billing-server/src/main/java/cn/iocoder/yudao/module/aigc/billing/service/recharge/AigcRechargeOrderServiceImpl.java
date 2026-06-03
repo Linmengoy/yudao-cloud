@@ -185,6 +185,7 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         if (!AigcBillingRechargeStatusEnum.WAIT_PAY.getCode().equals(order.getStatus())) {
             return false;
         }
+        payOrderApi.syncOrder(order.getPayOrderId()).getCheckedData();
         PayOrderRespDTO payOrder = validatePayOrder(order, order.getPayOrderId());
         if (PayOrderStatusEnum.isClosed(payOrder.getStatus()) || isRechargeOrderExpired(order)) {
             closeRechargeOrderIfNeeded(order);

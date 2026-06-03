@@ -30,6 +30,11 @@ public interface PayOrderApi {
     @PermitAll
     CommonResult<PayOrderRespDTO> getOrder(@RequestParam("id") Long id);
 
+    @PostMapping(PREFIX + "/sync")
+    @Operation(summary = "同步支付单")
+    @Parameter(name = "id", description = "支付单编号", example = "1", required = true)
+    CommonResult<PayOrderRespDTO> syncOrder(@RequestParam("id") Long id);
+
     @PutMapping(PREFIX + "/update-price")
     @Operation(summary = "更新支付订单价格")
     @Parameters({
