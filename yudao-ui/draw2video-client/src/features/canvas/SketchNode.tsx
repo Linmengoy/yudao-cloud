@@ -43,10 +43,21 @@ type SketchNodeProps = NodeProps<Node<SketchNodeData, "sketch">>;
 
 const CARD_WIDTH = 300;
 const CARD_HEIGHT = 220;
+const CARD_MAX_WIDTH = 320;
+const CARD_MAX_HEIGHT = 320;
 const SKETCH_BOARD_WIDTH = 1024;
 const SKETCH_BOARD_HEIGHT = 768;
 const SKETCH_BOARD_ID = createShapeId("copse-sketch-board");
 const SKETCH_BOARD_INSET = 72;
+
+function scaleSketchPreview(width?: number, height?: number) {
+  if (!width || !height) return { width: CARD_WIDTH, height: CARD_HEIGHT };
+  const scale = Math.min(1, CARD_MAX_WIDTH / width, CARD_MAX_HEIGHT / height);
+  return {
+    width: Math.max(140, Math.round(width * scale)),
+    height: Math.max(140, Math.round(height * scale)),
+  };
+}
 
 function SketchToolbar() {
   return (
@@ -198,6 +209,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
   const remoteLoadedRef = useRef(false);
 
   const previewSrc = data.previewUrl || data.dataUrl || "";
+  const previewSize = previewSrc ? scaleSketchPreview(data.width, data.height) : { width: CARD_WIDTH, height: CARD_HEIGHT };
   const sceneSnapshot = useMemo(() => parseSceneJson(data.sceneJson), [data.sceneJson]);
   const previewItem = useMemo(() => {
     if (!previewSrc) return null;
@@ -324,7 +336,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
 
   return (
     <>
-      <div className="relative" style={{ width: CARD_WIDTH }}>
+      <div className="relative" style={{ width: previewSize.width }}>
         <AnimatePresence>
           {selected && showNodeActions && (
             <SelectedMediaToolbar
@@ -333,7 +345,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
               onOpenPreview={() => setEditorOpen(true)}
               uiScale={fixedUiScale}
               style={{
-                left: CARD_WIDTH / 2,
+                left: previewSize.width / 2,
                 top: -50 * fixedUiScale,
                 pointerEvents: "auto",
               }}
@@ -346,7 +358,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
           style={{
             transform: `scale(${fixedUiScale})`,
             transformOrigin: "bottom left",
-            width: CARD_WIDTH / fixedUiScale,
+            width: previewSize.width / fixedUiScale,
           }}
         >
           <PenLine className="size-4" />
@@ -360,14 +372,31 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
           whileHover={{ y: -1 }}
           onDoubleClick={() => setEditorOpen(true)}
           className={cn(
-            "canvas-node-drag-handle group relative overflow-visible rounded-2xl border bg-background shadow-[0_8px_24px_rgba(28,28,28,0.08)] transition-colors",
-            selected ? "border-charcoal ring-2 ring-charcoal/10" : "border-border-warm hover:border-charcoal/35"
+            "canvas-node-drag-handle group relative overflow-hidden rounded-2xl transition-colors",
+            previewSrc ? "bg-transparent shadow-none" : "border border-border-warm bg-background shadow-[0_8px_24px_rgba(28,28,28,0.08)]",
+            selected && (previewSrc ? "ring-2 ring-off-white/80" : "border-charcoal ring-2 ring-charcoal/10"),
+            !selected && !previewSrc && "hover:border-charcoal/35"
           )}
-          style={{ width: CARD_WIDTH, height: CARD_HEIGHT, pointerEvents: "auto" }}
+          style={{ width: previewSize.width, height: previewSize.height, pointerEvents: "auto" }}
         >
-          <div className="size-full overflow-hidden rounded-2xl">
+          <div className="size-full overflow-hidden rounded-[inherit]">
             {previewSrc ? (
-              <img src={previewSrc} alt={data.fileName || "Sketch"} className="size-full object-contain" draggable={false} />
+              <img
+                src={previewSrc}
+                alt={data.fileName || "Sketch"}
+                className="size-full object-contain"
+                draggable={false}
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  if (
+                    image.naturalWidth > 0 &&
+                    image.naturalHeight > 0 &&
+                    (data.width !== image.naturalWidth || data.height !== image.naturalHeight)
+                  ) {
+                    updateData({ width: image.naturalWidth, height: image.naturalHeight });
+                  }
+                }}
+              />
             ) : sceneSnapshot ? (
               <div className="flex size-full items-center justify-center bg-muted text-muted-gray">
                 <ImageIcon className="size-12 opacity-50" />

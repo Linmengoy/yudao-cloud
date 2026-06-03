@@ -192,8 +192,9 @@ function scaleToPreview(width: number, height: number) {
 function getDisplaySize(data: ImageNodeData, measuredSize: { width: number; height: number } | null, sizeParam: string) {
   const width = measuredSize?.width ?? data.width;
   const height = measuredSize?.height ?? data.height;
+  const hasImage = Boolean(data.previewUrl || data.dataUrl);
 
-  if (!data.dataUrl) {
+  if (!hasImage) {
     const targetSize = dimensionsFromSize(sizeParam);
     if (targetSize) return scaleToPreview(targetSize.width, targetSize.height);
     return { width: PLACEHOLDER_WIDTH, height: PLACEHOLDER_HEIGHT };
@@ -806,9 +807,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 height: { type: "spring", stiffness: 360, damping: 34 },
               }}
               className={cn(
-                "canvas-node-drag-handle group relative rounded-xl border bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
-                selected ? "border-charcoal/60 ring-2 ring-charcoal/35" : "border-border-warm",
-                isReferencedByActivePrompt && "border-charcoal ring-2 ring-charcoal/30"
+                "canvas-node-drag-handle group relative overflow-hidden rounded-xl",
+                imageSrc ? "bg-transparent shadow-none" : "border border-border-warm bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
+                selected && (imageSrc ? "ring-2 ring-off-white/80" : "border-charcoal/60 ring-2 ring-charcoal/35"),
+                isReferencedByActivePrompt && (imageSrc ? "ring-2 ring-off-white" : "border-charcoal ring-2 ring-charcoal/30")
               )}
               style={{ width: displaySize.width, height: displaySize.height, pointerEvents: "auto" }}
             >
