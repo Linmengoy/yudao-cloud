@@ -84,6 +84,10 @@ public class TokenAuthenticationFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         // 移除 login-user 的请求头，避免伪造模拟
         exchange = SecurityFrameworkUtils.removeLoginUser(exchange);
+        String clientIp = WebFrameworkUtils.getClientIP(exchange);
+        if (StrUtil.isNotEmpty(clientIp)) {
+            exchange = exchange.mutate().request(builder -> builder.headers(headers -> headers.set("X-Real-IP", clientIp))).build();
+        }
 
         // 情况一，如果没有 Token 令牌，则直接继续 filter
         String token = SecurityFrameworkUtils.obtainAuthorization(exchange);
