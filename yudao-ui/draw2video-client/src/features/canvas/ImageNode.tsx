@@ -35,6 +35,7 @@ import { DEFAULT_MODEL_ID, getModelById, IMAGE_MODELS } from "@/features/image-g
 import type { ImageModeration, ImageOutputFormat, ImageQuality } from "@/features/image-generation/types";
 import { calculateImageSize, normalizeImageSize, type SizeTier } from "@/features/image-generation/size";
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
+import { getGenerationStatusLabel } from "@/features/generation/generation-status";
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
@@ -294,6 +295,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
   const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
   const imageSrc = data.previewUrl || data.dataUrl;
+  const generatingStatusLabel = getGenerationStatusLabel(data.taskStatus || data.upstreamStatus || "RUNNING");
   const sizeSelection = useMemo(() => getSizeSelection(params.size), [params.size]);
 
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
@@ -846,15 +848,18 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.18 }}
-                      className="absolute inset-0 flex flex-col items-center justify-center bg-charcoal/45 text-off-white"
+                      className="absolute inset-0 flex items-center justify-center overflow-hidden bg-charcoal/35 text-off-white"
                     >
                       <motion.div
-                        animate={{ opacity: [0.55, 1, 0.55] }}
-                        transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-                      >
-                        <Loader2 className="mb-2 size-7 animate-spin" />
-                      </motion.div>
-                      <span className="text-xs">生成中 {formatElapsed(elapsedMs)}</span>
+                        className="absolute inset-y-0 w-1/2 -skew-x-12 bg-gradient-to-r from-transparent via-white/55 to-transparent blur-[1px]"
+                        initial={{ x: "-140%" }}
+                        animate={{ x: ["-140%", "260%"] }}
+                        transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                      />
+                      <div className="relative z-10 flex flex-col items-center gap-1 rounded-full bg-charcoal/45 px-4 py-2 text-center shadow-[0_8px_28px_rgba(0,0,0,0.18)] backdrop-blur-md">
+                        <span className="text-xs font-medium">{generatingStatusLabel}</span>
+                        <span className="font-mono text-[11px] tabular-nums text-off-white/80">{formatElapsed(elapsedMs)}</span>
+                      </div>
                     </motion.div>
                   )}
                   {data.status === "failed" && !isGenerating && (

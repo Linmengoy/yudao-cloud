@@ -429,12 +429,14 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             throw exception(GENERATE_PROVIDER_RESULT_INVALID);
         }
         String fileExt = fileExtFromMimeType(mimeType);
-        String fileUrl = fileApi.createFile(content, recordFileName(reqDTO.getTitle(), fileExt), "aigc/asset", mimeType);
+        String fileUrl = fileApi.createFile(content, recordFileName(reqDTO, fileExt), "aigc/asset", mimeType);
         reqDTO.setFileUrl(fileUrl).setMimeType(mimeType).setFileExt(fileExt).setFileSize((long) content.length);
     }
 
-    private String recordFileName(String title, String fileExt) {
-        return StrUtil.blankToDefault(title, "aigc-asset") + "." + fileExt;
+    private String recordFileName(AigcAssetCreateReqDTO reqDTO, String fileExt) {
+        String title = StrUtil.blankToDefault(reqDTO.getTitle(), "aigc-asset").replaceAll("[\\\\/:*?\"<>|\\s]+", "-");
+        String bizId = StrUtil.blankToDefault(reqDTO.getBizId(), "task-" + reqDTO.getTaskId());
+        return title + "-" + bizId + "-" + IdUtil.getSnowflakeNextIdStr() + "." + fileExt;
     }
 
     private String fileExtFromMimeType(String mimeType) {
