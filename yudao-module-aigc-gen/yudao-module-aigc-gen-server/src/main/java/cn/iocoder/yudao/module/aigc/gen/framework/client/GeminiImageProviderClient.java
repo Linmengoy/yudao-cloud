@@ -101,7 +101,7 @@ public class GeminiImageProviderClient implements AigcProviderClient {
 
     private String resolveModelCode(AigcProviderSubmitReqDTO reqDTO) {
         String mapped = resolveMappedModelCode(reqDTO);
-        return StrUtil.blankToDefault(mapped, reqDTO.getModelCode());
+        return firstNonBlank(mapped, reqDTO.getProviderModel(), reqDTO.getModelCode());
     }
 
     private String resolveMappedModelCode(AigcProviderSubmitReqDTO reqDTO) {

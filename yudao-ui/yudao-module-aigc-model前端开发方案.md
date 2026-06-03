@@ -243,8 +243,10 @@ POST {apiBaseUrl}/models/{model}:generateContent?key={apiKey}
 
 模型管理建议：
 
-- 如果中转站模型名可以直接调用，模型编码 `code` 直接填中转站模型名，例如 `gemini-2.5-flash-image`。
-- 如果希望内部模型编码和第三方模型名分离，可在渠道商 `extraConfig` 中配置映射：
+- 用户端展示读取模型名称 `name`，因此对外建议填写产品化名称，例如 `Nano Banana`、`Nano Banana 2`、`Nano Banana Pro`。
+- 模型编码 `code` 用于平台内部识别和生成记录，建议使用稳定、可读的内部编码，例如 `nano-banana`、`nano-banana-2`、`nano-banana-pro`。
+- 模型标识 `model` 用于实际调用第三方接口，填写中转站可调用的模型名，例如 `gemini-2.5-flash-image`。
+- 如果历史数据里已经用内部编码，或者同一个内部编码在不同渠道要映射到不同中转站模型，可在渠道商 `extraConfig` 中配置映射：
 
 ```json
 {

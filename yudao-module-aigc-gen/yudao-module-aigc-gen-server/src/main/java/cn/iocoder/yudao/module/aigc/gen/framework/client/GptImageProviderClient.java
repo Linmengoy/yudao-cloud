@@ -62,7 +62,7 @@ public class GptImageProviderClient implements AigcProviderClient {
 
     private JSONObject buildRequestBody(AigcProviderSubmitReqDTO reqDTO) {
         Map<String, Object> body = new HashMap<>();
-        body.put("model", reqDTO.getModelCode());
+        body.put("model", StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode()));
         body.put("prompt", reqDTO.getPrompt());
         if (StrUtil.isNotBlank(reqDTO.getInputParams()) && JSONUtil.isTypeJSON(reqDTO.getInputParams())) {
             JSONObject params = JSONUtil.parseObj(reqDTO.getInputParams());

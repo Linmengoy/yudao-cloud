@@ -342,8 +342,10 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     }
 
     private AigcProviderSubmitRespDTO submitProvider(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {
+        AigcModelRespDTO model = modelApi.getModel(record.getModelId()).getCheckedData();
         AigcProviderSubmitReqDTO providerReq = new AigcProviderSubmitReqDTO().setRecordId(record.getId()).setTaskId(record.getTaskId()).setUserId(record.getUserId())
-                .setModelId(record.getModelId()).setModelCode(record.getModelCode()).setProviderId(record.getProviderId()).setProviderCode(record.getProviderCode())
+                .setModelId(record.getModelId()).setModelCode(record.getModelCode()).setProviderModel(model == null ? null : model.getModel())
+                .setProviderId(record.getProviderId()).setProviderCode(record.getProviderCode())
                 .setProviderBaseUrl(provider == null ? null : provider.getApiBaseUrl()).setProviderApiKey(provider == null ? null : provider.getApiKey())
                 .setProviderSecretKey(provider == null ? null : provider.getSecretKey()).setProviderExtraConfig(provider == null ? null : provider.getExtraConfig())
                 .setProviderTimeoutSeconds(provider == null ? null : provider.getTimeoutSeconds())
