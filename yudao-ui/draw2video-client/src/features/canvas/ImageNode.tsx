@@ -216,7 +216,8 @@ function formatModelSizeSummary(params: Record<string, unknown>, templates: Aigc
 }
 
 function modelParamKeys(templates: AigcModelParamTemplate[]) {
-  return new Set([...BASE_IMAGE_PARAM_KEYS, ...templates.map((template) => template.paramKey)]);
+  if (templates.length === 0) return BASE_IMAGE_PARAM_KEYS;
+  return new Set(templates.map((template) => template.paramKey));
 }
 
 function filterModelParams(params: ImageTaskParams, templates: AigcModelParamTemplate[]): ImageTaskParams {
@@ -421,6 +422,12 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const sizeSelection = useMemo(() => getModelSizeSelection(params, aigcModels.templates), [aigcModels.templates, params]);
   const usesDiscreteSizeParams = Boolean(ratioTemplate || imageSizeTemplate);
   const effectiveParams = useMemo(() => filterModelParams(params, aigcModels.templates), [aigcModels.templates, params]);
+  const hasModelTemplates = aigcModels.templates.length > 0;
+  const showQualityControl = !hasModelTemplates || Boolean(qualityTemplate);
+  const showFormatControl = !hasModelTemplates || Boolean(formatTemplate);
+  const showModerationControl = !hasModelTemplates || Boolean(moderationTemplate);
+  const showOutputSection = showQualityControl || showFormatControl || showModerationControl;
+  const canGenerate = Boolean(prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && (aigcModels.models.length === 0 || Boolean(activeAigcModelId));
 
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
@@ -591,6 +598,19 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     if (Object.keys(patch).length > 0) updateParams(patch);
   }, [aigcModels.templateLoading, aigcModels.templates, params, updateParams]);
 
+  useEffect(() => {
+    if (aigcModels.loading || aigcModels.models.length === 0) return;
+    if (selectedAigcModelId && aigcModels.models.some((model) => model.id === selectedAigcModelId)) return;
+    const nextModel = aigcModels.selectedModel ?? aigcModels.models[0];
+    if (!nextModel) return;
+    updateData({
+      modelId: String(nextModel.id),
+      providerModel: nextModel.model,
+      modelName: nextModel.name,
+      aigcModelId: nextModel.id,
+    });
+  }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, selectedAigcModelId, updateData]);
+
   const handleNodeClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
       if (!referencePickerPromptId || referencePickerPromptId === id) return;
@@ -711,20 +731,26 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
   const handleGenerate = useCallback(async () => {
     const cleanPrompt = prompt.trim();
-    if (!cleanPrompt || isGenerating) return;
+    if (!cleanPrompt || isGenerating || aigcModels.loading || aigcModels.templateLoading) return;
 
     const startedAt = new Date().toISOString();
     const ctx = { nodes: getNodes() as AppNode[], edges: getEdges() as AppEdge[] };
     const { snapshots, ids, mode } = resolveInputImages(id, ctx);
+    const runModel = activeAigcModel && aigcModels.models.some((model) => model.id === activeAigcModel.id)
+      ? activeAigcModel
+      : aigcModels.selectedModel;
+    const runAigcModelId = runModel?.id;
+    const runModelName = runModel?.name ?? activeModelName;
+    const runProviderModel = runModel?.model ?? activeProviderModel;
     const resultDraft: ResultNodeData = {
       taskId: null,
       promptNodeId: id,
       prompt: cleanPrompt,
       params: effectiveParams,
       modelId,
-      providerModel: activeProviderModel,
-      aigcModelId: activeAigcModelId,
-      modelName: activeModelName,
+      providerModel: runProviderModel,
+      aigcModelId: runAigcModelId,
+      modelName: runModelName,
       mode,
       inputImages: snapshots,
       inputImageIds: ids,
@@ -738,9 +764,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     const promptData: PromptNodeData = {
       prompt: cleanPrompt,
       modelId,
-      providerModel: activeProviderModel,
-      aigcModelId: activeAigcModelId,
-      modelName: activeModelName,
+      providerModel: runProviderModel,
+      aigcModelId: runAigcModelId,
+      modelName: runModelName,
       params: effectiveParams,
       isGenerating: true,
     };
@@ -756,7 +782,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
-    if (isServerCanvasProjectId(projectId) && activeAigcModelId) {
+    if (isServerCanvasProjectId(projectId) && runAigcModelId) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
         const run = await canvasNodeRunApi.runNode(projectId, id, {
@@ -766,7 +792,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           nodeType: "image",
           generateType: "IMAGE",
           generateMode: mode === "edit" ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE",
-          modelId: activeAigcModelId,
+          modelId: runAigcModelId,
           prompt: cleanPrompt,
           inputParams: buildServerInputParams(effectiveParams, ids, snapshots),
           sync: false,
@@ -832,7 +858,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModelId, activeModelName, activeProviderModel, effectiveParams, getEdges, getNodes, id, isGenerating, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, effectiveParams, getEdges, getNodes, id, isGenerating, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen) return;
@@ -1311,16 +1337,23 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                         )}
                       </section>
 
-                      <section className="mt-5 space-y-3">
-                        <p className="text-xs font-medium text-muted-gray">Output</p>
+                      {showOutputSection && (
+                        <section className="mt-5 space-y-3">
+                          <p className="text-xs font-medium text-muted-gray">Output</p>
 
-                        <div className="space-y-2">
-                          <ParamSegmented label="质量" value={params.quality} options={qualityOptions} onChange={(value) => updateParams({ quality: value })} />
-                          <ParamSegmented label="格式" value={params.output_format} options={formatOptions} onChange={handleFormatChange} />
-                          <ParamSegmented label="审核" value={params.moderation} options={moderationOptions} onChange={(value) => updateParams({ moderation: value })} />
-                        </div>
-
-                      </section>
+                          <div className="space-y-2">
+                            {showQualityControl && (
+                              <ParamSegmented label="质量" value={params.quality} options={qualityOptions} onChange={(value) => updateParams({ quality: value })} />
+                            )}
+                            {showFormatControl && (
+                              <ParamSegmented label="格式" value={params.output_format} options={formatOptions} onChange={handleFormatChange} />
+                            )}
+                            {showModerationControl && (
+                              <ParamSegmented label="审核" value={params.moderation} options={moderationOptions} onChange={(value) => updateParams({ moderation: value })} />
+                            )}
+                          </div>
+                        </section>
+                      )}
                       {aigcModels.templateLoading && (
                         <p className="mt-4 text-[11px] text-muted-gray">参数加载中...</p>
                       )}
@@ -1334,7 +1367,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 <button
                   type="button"
                   onClick={handleGenerate}
-                  disabled={!prompt.trim() || isGenerating}
+                  disabled={!canGenerate}
                   className="flex h-11 items-center gap-3 rounded-full bg-charcoal/90 py-1 pl-4 pr-1 text-off-white shadow-[0_4px_12px_rgba(0,0,0,0.18)] transition-opacity active:opacity-85 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-black/80"
                   aria-label={isGenerating ? "生成中" : "开始生成"}
                 >
