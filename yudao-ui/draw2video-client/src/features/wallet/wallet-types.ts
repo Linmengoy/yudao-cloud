@@ -94,6 +94,8 @@ export interface PayOrderSubmitResult {
   status: number;
   displayMode: string;
   displayContent: string;
+  expireTime?: string;
+  displayExpireTime?: string;
 }
 
 export interface AigcRechargePackage {

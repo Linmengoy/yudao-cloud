@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import QRCode from "qrcode";
-import { AlertCircle, CheckCircle2, Loader2, QrCode, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Loader2, QrCode, RefreshCw } from "lucide-react";
 import {
   formatDateTime,
   formatPoints,
@@ -20,6 +20,7 @@ import { getPayStatusName, isPayClosed, isPayRefund, isPaySuccess } from "@/feat
 const PAY_POLL_INTERVAL_MS = 3000;
 const PAY_POLL_MAX_DURATION_MS = 5 * 60 * 1000;
 const PAY_POLL_ERROR_NOTICE_THRESHOLD = 3;
+const PAY_DEFAULT_COUNTDOWN_MS = 5 * 60 * 1000;
 const QR_CODE_SIZE = 192;
 const QR_CODE_LOGO_SIZE = 44;
 const QR_CODE_LOGO_BACKGROUND_SIZE = 56;
@@ -37,7 +38,7 @@ function channelLabel(code: string) {
     wx_pub: "微信支付",
     wx_lite: "微信小程序",
     wallet: "余额支付",
-    easypay_cashier: "EasyPay 二维码支付",
+    easypay_cashier: "支付宝支付",
   };
   return labels[code] ?? code;
 }
@@ -57,6 +58,24 @@ function isValidId(value: number) {
 function parseNumberParam(value: string | null) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? number : 0;
+}
+
+function parseTime(value?: string | number | null) {
+  if (!value) return 0;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return 0;
+    return value < 1_000_000_000_000 ? value * 1000 : value;
+  }
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  const timestamp = new Date(normalized).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function formatCountdown(totalSeconds: number) {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function getOrderPayAppId(rechargeOrder: AigcRechargeOrder | null, payOrder: PayOrder | null, fallbackPayAppId: number) {
@@ -88,7 +107,9 @@ function drawRoundRect(context: CanvasRenderingContext2D, x: number, y: number, 
 
 async function createQrCodeDataUrl(content: string, channelCode?: string) {
   const qrCodeDataUrl = await QRCode.toDataURL(content, { width: QR_CODE_SIZE, margin: 1, errorCorrectionLevel: "H" });
-  if (!isAlipayChannel(channelCode)) return qrCodeDataUrl;
+  if (!isAlipayChannel(channelCode) && channelCode !== "easypay_cashier") {
+    return qrCodeDataUrl;
+  }
 
   const canvas = document.createElement("canvas");
   canvas.width = QR_CODE_SIZE;
@@ -154,8 +175,15 @@ export default function RechargeCheckoutPage() {
   const [error, setError] = useState("");
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
   const [pollingMessage, setPollingMessage] = useState("");
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
+  const [fallbackPayExpireTimestamp, setFallbackPayExpireTimestamp] = useState(0);
   const pollingStartedAtRef = useRef(0);
   const pollingErrorCountRef = useRef(0);
+  const countdownRedirectedRef = useRef(false);
+
+  const payExpireTime = submitResult?.displayExpireTime ?? submitResult?.expireTime ?? payOrder?.expireTime;
+  const payExpireTimestamp = parseTime(payExpireTime) || fallbackPayExpireTimestamp;
+  const payRemainingSeconds = payExpireTimestamp ? Math.max(0, Math.ceil((payExpireTimestamp - countdownNow) / 1000)) : null;
 
   const returnUrl = useMemo(() => {
     if (typeof window === "undefined") return undefined;
@@ -177,6 +205,17 @@ export default function RechargeCheckoutPage() {
       return false;
     } finally {
       if (showLoading) setSyncing(false);
+    }
+  }, [rechargeOrderId, refreshWallet, router]);
+
+  const handleCountdownExpired = useCallback(async () => {
+    if (countdownRedirectedRef.current) return;
+    countdownRedirectedRef.current = true;
+    try {
+      const paid = await syncRechargePayStatus(rechargeOrderId);
+      if (paid) await refreshWallet();
+    } finally {
+      router.push(`/wallet?rechargeOrderId=${rechargeOrderId}`);
     }
   }, [rechargeOrderId, refreshWallet, router]);
 
@@ -224,6 +263,17 @@ export default function RechargeCheckoutPage() {
   }, [loadCheckout]);
 
   useEffect(() => {
+    if (!submitResult || !payExpireTimestamp || isPaySuccess(payOrder?.status) || isPayClosed(payOrder?.status) || isPayRefund(payOrder?.status)) return;
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [payExpireTimestamp, payOrder?.status, submitResult]);
+
+  useEffect(() => {
+    if (!submitResult || payRemainingSeconds !== 0 || isPaySuccess(payOrder?.status)) return;
+    handleCountdownExpired();
+  }, [handleCountdownExpired, payOrder?.status, payRemainingSeconds, submitResult]);
+
+  useEffect(() => {
     if (!submitResult || isPaySuccess(payOrder?.status)) return;
     pollingStartedAtRef.current = Date.now();
     pollingErrorCountRef.current = 0;
@@ -269,7 +319,7 @@ export default function RechargeCheckoutPage() {
     const mode = normalizeDisplayMode(submitResult?.displayMode);
     const content = submitResult?.displayContent;
     let cancelled = false;
-    if (mode !== "qr_code" || !content || isHttpUrl(content)) {
+    if (mode !== "qr_code" || !content) {
       Promise.resolve().then(() => {
         if (!cancelled) setQrCodeDataUrl("");
       });
@@ -298,6 +348,9 @@ export default function RechargeCheckoutPage() {
     setError("");
     try {
       const result = await submitPayOrder({ id: payOrderId, channelCode: selectedChannel, returnUrl });
+      countdownRedirectedRef.current = false;
+      setCountdownNow(Date.now());
+      setFallbackPayExpireTimestamp(Date.now() + PAY_DEFAULT_COUNTDOWN_MS);
       setSubmitResult(result);
       setPollingMessage("正在等待支付结果，请完成扫码支付后保持页面打开");
       openPayContent(result.displayMode, result.displayContent);
@@ -351,6 +404,13 @@ export default function RechargeCheckoutPage() {
                   <QrCode className="size-4" />
                   支付信息已生成
                 </div>
+                {payRemainingSeconds !== null && (
+                  <div className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-background px-3 py-2 text-sm text-charcoal">
+                    <Clock className="size-4" />
+                    <span>支付倒计时</span>
+                    <span className="font-semibold tabular-nums">{formatCountdown(payRemainingSeconds)}</span>
+                  </div>
+                )}
                 {["qr_code_url", "qrcode_url"].includes(normalizeDisplayMode(submitResult.displayMode)) ? (
                   <div className="mt-3 rounded-lg bg-background p-3 text-center">
                     <img src={submitResult.displayContent} alt="支付二维码" className="mx-auto size-48 rounded-lg bg-white object-contain p-2" />
@@ -358,13 +418,9 @@ export default function RechargeCheckoutPage() {
                   </div>
                 ) : normalizeDisplayMode(submitResult.displayMode) === "qr_code" ? (
                   <div className="mt-3 rounded-lg bg-background p-3 text-center text-xs text-muted-gray">
-                    {isHttpUrl(submitResult.displayContent) ? (
-                      <img src={submitResult.displayContent} alt="支付二维码" className="mx-auto size-48 rounded-lg bg-white object-contain p-2" />
-                    ) : qrCodeDataUrl ? (
+                    { (
                       <img src={qrCodeDataUrl} alt="支付二维码" className="mx-auto size-48 rounded-lg bg-white object-contain p-2" />
-                    ) : (
-                      <div className="break-all text-left">{submitResult.displayContent}</div>
-                    )}
+                    ) }
                     <p className="mt-2 break-all text-xs text-muted-gray">请使用对应支付 App 扫码完成支付</p>
                   </div>
                 ) : normalizeDisplayMode(submitResult.displayMode) === "form" ? (
@@ -382,15 +438,17 @@ export default function RechargeCheckoutPage() {
             )}
 
             <div className="mt-5 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleSubmitPay}
-                disabled={submitting || !selectedChannel || !channels.length}
-                className="inline-flex items-center justify-center rounded-md bg-charcoal px-4 py-2.5 text-sm text-off-white active:opacity-80 disabled:opacity-50"
-              >
-                {submitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                提交支付
-              </button>
+              {!submitResult && (
+                <button
+                  type="button"
+                  onClick={handleSubmitPay}
+                  disabled={submitting || !selectedChannel || !channels.length}
+                  className="inline-flex items-center justify-center rounded-md bg-charcoal px-4 py-2.5 text-sm text-off-white active:opacity-80 disabled:opacity-50"
+                >
+                  {submitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                  提交支付
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleSyncPaid()}
