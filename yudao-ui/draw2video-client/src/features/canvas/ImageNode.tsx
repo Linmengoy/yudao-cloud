@@ -35,9 +35,10 @@ import { DEFAULT_MODEL_ID, getModelById, IMAGE_MODELS } from "@/features/image-g
 import type { ImageModeration, ImageOutputFormat, ImageQuality } from "@/features/image-generation/types";
 import { calculateImageSize, normalizeImageSize, type SizeTier } from "@/features/image-generation/size";
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
+import { getGenerationStatusLabel } from "@/features/generation/generation-status";
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
-import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
@@ -192,8 +193,9 @@ function scaleToPreview(width: number, height: number) {
 function getDisplaySize(data: ImageNodeData, measuredSize: { width: number; height: number } | null, sizeParam: string) {
   const width = measuredSize?.width ?? data.width;
   const height = measuredSize?.height ?? data.height;
+  const hasImage = Boolean(data.previewUrl || data.dataUrl);
 
-  if (!data.dataUrl) {
+  if (!hasImage) {
     const targetSize = dimensionsFromSize(sizeParam);
     if (targetSize) return scaleToPreview(targetSize.width, targetSize.height);
     return { width: PLACEHOLDER_WIDTH, height: PLACEHOLDER_HEIGHT };
@@ -293,6 +295,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
   const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
   const imageSrc = data.previewUrl || data.dataUrl;
+  const generatingStatusLabel = getGenerationStatusLabel(data.taskStatus || data.upstreamStatus || "RUNNING");
   const sizeSelection = useMemo(() => getSizeSelection(params.size), [params.size]);
 
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
@@ -576,11 +579,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           inputParams: buildServerInputParams(params, ids, snapshots),
           sync: false,
         });
-        await waitCanvasNodeRunResult(projectId, id, {
+        const result = await waitCanvasNodeRunResult(projectId, id, {
           taskId: run.taskId,
           baseVersion: 0,
           nodeType: "image",
         });
+        const patch = getCanvasNodeRunPatch(result, id);
+        if (patch) updateData(patch as Partial<ImageNodeData>);
         return;
       } catch (error) {
         updateData({
@@ -804,9 +809,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 height: { type: "spring", stiffness: 360, damping: 34 },
               }}
               className={cn(
-                "canvas-node-drag-handle group relative rounded-xl border bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
-                selected ? "border-charcoal/60 ring-2 ring-charcoal/35" : "border-border-warm",
-                isReferencedByActivePrompt && "border-charcoal ring-2 ring-charcoal/30"
+                "canvas-node-drag-handle group relative overflow-visible rounded-xl",
+                imageSrc ? "bg-transparent shadow-none" : "border border-border-warm bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
+                selected && (imageSrc ? "ring-2 ring-off-white/80" : "border-charcoal/60 ring-2 ring-charcoal/35"),
+                isReferencedByActivePrompt && (imageSrc ? "ring-2 ring-off-white" : "border-charcoal ring-2 ring-charcoal/30")
               )}
               style={{ width: displaySize.width, height: displaySize.height, pointerEvents: "auto" }}
             >
@@ -842,15 +848,18 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.18 }}
-                      className="absolute inset-0 flex flex-col items-center justify-center bg-charcoal/45 text-off-white"
+                      className="absolute inset-0 flex items-center justify-center overflow-hidden bg-charcoal/35 text-off-white"
                     >
                       <motion.div
-                        animate={{ opacity: [0.55, 1, 0.55] }}
-                        transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-                      >
-                        <Loader2 className="mb-2 size-7 animate-spin" />
-                      </motion.div>
-                      <span className="text-xs">生成中 {formatElapsed(elapsedMs)}</span>
+                        className="absolute inset-y-0 w-1/2 -skew-x-12 bg-gradient-to-r from-transparent via-white/55 to-transparent blur-[1px]"
+                        initial={{ x: "-140%" }}
+                        animate={{ x: ["-140%", "260%"] }}
+                        transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                      />
+                      <div className="relative z-10 flex flex-col items-center gap-1 rounded-full bg-charcoal/45 px-4 py-2 text-center shadow-[0_8px_28px_rgba(0,0,0,0.18)] backdrop-blur-md">
+                        <span className="text-xs font-medium">{generatingStatusLabel}</span>
+                        <span className="font-mono text-[11px] tabular-nums text-off-white/80">{formatElapsed(elapsedMs)}</span>
+                      </div>
                     </motion.div>
                   )}
                   {data.status === "failed" && !isGenerating && (

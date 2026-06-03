@@ -9,7 +9,7 @@ import type { NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, TextNode
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
-import { canvasNodeRunApi, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { cn } from "@/lib/utils";
 
 type TextNodeProps = NodeProps<Node<TextNodeData, "text">>;
@@ -93,11 +93,13 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
           inputParams: JSON.stringify({ previousContent: data.content }),
           sync: false,
         }).then(async (run) => {
-          await waitCanvasNodeRunResult(projectId, id, {
+          const result = await waitCanvasNodeRunResult(projectId, id, {
             taskId: run.taskId,
             baseVersion: 0,
             nodeType: "text",
           });
+          const patch = getCanvasNodeRunPatch(result, id);
+          if (patch) updateData(patch as Partial<TextNodeData>);
         });
         return;
       } catch (error) {
