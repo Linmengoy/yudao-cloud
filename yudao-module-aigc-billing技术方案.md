@@ -491,6 +491,58 @@ idx_status_sort = status + sort
 - 用户端展示时将“分”转换成“元”
 - `total_point_amount = point_amount + gift_amount`，由后端保存时计算
 
+### 5.8 充值支付同步与入账一致性
+
+充值支付链路按“Pay 管支付状态，Billing 管积分入账”的职责边界收敛。`yudao-module-pay` 是第三方支付状态的权威来源，负责 EasyPay 等渠道下单、回调验签、主动查单和 `pay_order` 状态落库；`yudao-module-aigc-billing` 是积分账务的唯一入账方，负责充值单状态、钱包余额和 `aigc_billing_record` 流水。
+
+自动到账链路：
+
+```text
+EasyPay 支付成功回调
+-> pay /pay/notify/order/{channelId}
+-> pay 验签并更新 pay_order 为 SUCCESS
+-> pay 创建业务通知任务
+-> billing /aigc/billing/recharge/pay-notify
+-> billing 校验通知任务、Pay 单号、商户订单号和金额
+-> billing notifyRechargePaid
+-> aigc_recharge_order = PAID
+-> aigc_billing_record 创建 WALLET_RECHARGE 流水
+-> aigc_wallet 增加积分余额
+```
+
+用户主动确认链路：
+
+```text
+用户点击“我已完成支付”
+-> billing /aigc/billing/recharge/sync-pay-status
+-> billing 调用 pay-api syncOrder
+-> pay 主动查 EasyPay 并更新 pay_order
+-> pay 返回最新 Pay 单，不创建业务通知任务
+-> billing 校验 Pay 单号、商户订单号和金额
+-> billing notifyRechargePaid
+-> 充值单、流水、钱包余额在 Billing 内完成幂等入账
+```
+
+一致性原则：
+
+- 用户主动确认链路不再依赖 Pay 异步通知作为主路径，避免“Pay 同步成功后又异步通知 Billing”导致链路过长和重复时序。
+- 第三方回调链路仍保留 Pay 业务通知任务，保证无人点击时也能自动到账。
+- 所有充值入账最终都必须进入 `notifyRechargePaid`，禁止绕过 Billing 直接改钱包余额。
+- 积分流水使用 `bizType = WALLET_RECHARGE`、`bizId = rechargeNo` 幂等，重复回调、重复点击和补偿任务不会重复加积分。
+- `aigc_recharge_order` 从 `WAIT_PAY` 更新为 `PAID` 使用状态条件更新，并发下只有一个请求能完成状态翻转。
+
+补偿任务：
+
+```text
+aigcRechargeOrderCompensateJob
+-> 扫描 WAIT_PAY 且已绑定 pay_order_id 的充值单
+-> 反查 pay_order，若 Pay 已 SUCCESS，则调用 notifyRechargePaid 补入账
+-> 扫描 PAID 但缺少 WALLET_RECHARGE + rechargeNo 流水的充值单
+-> 调用 rechargeWalletIfRecordCreated 补流水和钱包余额
+```
+
+补偿任务只相信 Pay 模块已经落库的成功状态，不直接调用第三方支付渠道；第三方查单由 Pay 侧定时同步、第三方回调或用户主动确认链路完成。
+
 ## 6. 枚举设计
 
 ### 6.1 AigcBillingBizTypeEnum

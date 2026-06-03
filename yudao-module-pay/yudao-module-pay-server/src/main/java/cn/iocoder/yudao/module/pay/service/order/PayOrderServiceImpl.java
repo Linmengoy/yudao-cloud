@@ -279,9 +279,14 @@ public class PayOrderServiceImpl implements PayOrderService {
     @Transactional(rollbackFor = Exception.class)
     // 注意，如果是方法内调用该方法，需要通过 getSelf().notifyPayOrder(channel, notify) 调用，否则事务不生效
     public void notifyOrder(PayChannelDO channel, PayOrderRespDTO notify) {
+        notifyOrder(channel, notify, true);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void notifyOrder(PayChannelDO channel, PayOrderRespDTO notify, boolean createNotifyTask) {
         // 情况一：支付成功的回调
         if (PayOrderStatusEnum.isSuccess(notify.getStatus())) {
-            notifyOrderSuccess(channel, notify);
+            notifyOrderSuccess(channel, notify, createNotifyTask);
             return;
         }
         // 情况二：支付失败的回调
@@ -292,12 +297,12 @@ public class PayOrderServiceImpl implements PayOrderService {
         // 情况四：REFUND：通过退款回调处理
     }
 
-    private void notifyOrderSuccess(PayChannelDO channel, PayOrderRespDTO notify) {
+    private void notifyOrderSuccess(PayChannelDO channel, PayOrderRespDTO notify, boolean createNotifyTask) {
         // 1. 更新 PayOrderExtensionDO 支付成功
         PayOrderExtensionDO orderExtension = updateOrderSuccess(notify);
         // 2. 更新 PayOrderDO 支付成功
         Boolean paid = updateOrderSuccess(channel, orderExtension, notify);
-        if (paid) { // 如果之前已经成功回调，则直接返回，不用重复记录支付通知记录；例如说：支付平台重复回调
+        if (paid || !createNotifyTask) { // 如果之前已经成功回调，则直接返回，不用重复记录支付通知记录；例如说：支付平台重复回调
             return;
         }
 
@@ -484,7 +489,7 @@ public class PayOrderServiceImpl implements PayOrderService {
         }
         SyncOrderSummary summary = new SyncOrderSummary();
         for (PayOrderExtensionDO orderExtension : orderExtensions) {
-            summary.record(syncOrderStatus(orderExtension));
+            summary.record(syncOrderStatus(orderExtension, true));
         }
         log.info("[syncOrder][支付订单同步完成，总数({}) 成功({}) 等待({}) 关闭({}) 客户端缺失({}) 异常({})]",
                 summary.total, summary.success, summary.waiting, summary.closed, summary.clientMissing, summary.failed);
@@ -499,7 +504,16 @@ public class PayOrderServiceImpl implements PayOrderService {
 
         // 2. 遍历执行
         for (PayOrderExtensionDO orderExtension : orderExtensions) {
-            syncOrder(orderExtension);
+            syncOrderStatus(orderExtension, true);
+        }
+    }
+
+    @Override
+    public void syncOrderQuietlyWithoutNotify(Long id) {
+        List<PayOrderExtensionDO> orderExtensions = orderExtensionMapper.selectListByOrderIdAndStatus(id,
+                PayOrderStatusEnum.WAITING.getStatus());
+        for (PayOrderExtensionDO orderExtension : orderExtensions) {
+            syncOrderStatus(orderExtension, false);
         }
     }
 
@@ -510,10 +524,10 @@ public class PayOrderServiceImpl implements PayOrderService {
      * @return 是否已支付
      */
     private boolean syncOrder(PayOrderExtensionDO orderExtension) {
-        return PayOrderStatusEnum.isSuccess(syncOrderStatus(orderExtension));
+        return PayOrderStatusEnum.isSuccess(syncOrderStatus(orderExtension, true));
     }
 
-    private Integer syncOrderStatus(PayOrderExtensionDO orderExtension) {
+    private Integer syncOrderStatus(PayOrderExtensionDO orderExtension, boolean createNotifyTask) {
         try {
             PayClient<?> payClient = channelService.getPayClient(orderExtension.getChannelId());
             if (payClient == null) {
@@ -529,7 +543,8 @@ public class PayOrderServiceImpl implements PayOrderService {
             if (PayOrderStatusEnum.isClosed(respDTO.getStatus())) {
                 return PayOrderStatusEnum.CLOSED.getStatus();
             }
-            notifyOrder(orderExtension.getChannelId(), respDTO);
+            PayChannelDO channel = channelService.validPayChannel(orderExtension.getChannelId());
+            TenantUtils.execute(channel.getTenantId(), () -> getSelf().notifyOrder(channel, respDTO, createNotifyTask));
 
             return respDTO.getStatus();
         } catch (Throwable e) {

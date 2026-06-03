@@ -6,11 +6,11 @@ import { ArrowDownLeft, ArrowUpRight, Coins, Loader2, RefreshCw, Snowflake } fro
 import {
   formatDateTime,
   formatPoints,
-  getAigcWallet,
   getAigcWalletFreezePage,
   getAigcWalletRecordPage,
 } from "@/features/wallet/wallet-api";
 import type { AigcWallet, AigcWalletFreeze, AigcWalletRecord } from "@/features/wallet/wallet-types";
+import { useAuth } from "@/features/auth/auth-store";
 
 const recordTypeOptions = [
   { label: "全部", value: "" },
@@ -82,6 +82,7 @@ function getPageCount(total: number, pageSize: number) {
 
 export default function WalletPage() {
   const searchParams = useSearchParams();
+  const { refreshWallet } = useAuth();
   const rechargeOrderId = searchParams.get("rechargeOrderId");
   const [wallet, setWallet] = useState<AigcWallet | null>(null);
   const [records, setRecords] = useState<AigcWalletRecord[]>([]);
@@ -125,7 +126,7 @@ export default function WalletPage() {
     setError("");
     try {
       const [walletData, recordData, freezeData] = await Promise.all([
-        getAigcWallet(),
+        refreshWallet(),
         getAigcWalletRecordPage({
           pageNo: currentRecordPageNo,
           pageSize: recordPageSize,
@@ -149,7 +150,7 @@ export default function WalletPage() {
     } finally {
       setLoading(false);
     }
-  }, [freezePageNo, freezeStatus, recordPageNo, recordType, taskNo]);
+  }, [freezePageNo, freezeStatus, recordPageNo, recordType, refreshWallet, taskNo]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadWallet(), 0);

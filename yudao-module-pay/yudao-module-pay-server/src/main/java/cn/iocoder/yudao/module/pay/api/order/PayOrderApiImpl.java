@@ -33,7 +33,7 @@ public class PayOrderApiImpl implements PayOrderApi {
 
     @Override
     public CommonResult<PayOrderRespDTO> syncOrder(Long id) {
-        payOrderService.syncOrderQuietly(id);
+        payOrderService.syncOrderQuietlyWithoutNotify(id);
         PayOrderDO order = payOrderService.getOrder(id);
         return success(PayOrderConvert.INSTANCE.convert2(order));
     }

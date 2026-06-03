@@ -23,6 +23,7 @@ public interface AigcRechargeOrderService {
     void notifyRechargePaid(AigcRechargeNotifyReqDTO reqDTO);
     void closeRechargeOrder(Long id);
     int closeExpiredRechargeOrders(Integer limit);
+    int compensateRechargeOrders(Integer limit);
     AigcRechargeOrderDiagnosticRespVO getRechargeOrderDiagnostic(Long id);
     PageResult<AigcRechargeOrderDO> getRechargeOrderPage(AigcRechargeOrderPageReqVO reqVO);
     PageResult<AigcRechargeOrderDO> getUserRechargeOrderPage(PageParam reqVO, Long userId);

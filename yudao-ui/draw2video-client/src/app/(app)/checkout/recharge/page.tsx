@@ -20,6 +20,11 @@ import { getPayStatusName, isPayClosed, isPayRefund, isPaySuccess } from "@/feat
 const PAY_POLL_INTERVAL_MS = 3000;
 const PAY_POLL_MAX_DURATION_MS = 5 * 60 * 1000;
 const PAY_POLL_ERROR_NOTICE_THRESHOLD = 3;
+const QR_CODE_SIZE = 192;
+const QR_CODE_LOGO_SIZE = 44;
+const QR_CODE_LOGO_BACKGROUND_SIZE = 56;
+const ALIPAY_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="224" fill="#1677ff"/><path fill="#fff" d="M773.6 625.7c-57.8-18.9-135.6-46.9-214.4-73.7 27.1-48.3 49.6-101.8 65.3-159.6H406.2v-55.1h267.5v-31.8H514.9v-76.1h-76.2v76.1H280.1v31.8h267.7v55.1H329.4v31.8h198.4c-12.5 40.5-29.4 78.1-50.2 112.3-127.9-40.2-236.6-63.8-266.2-21.5-19.2 27.5-3.8 73.8 41.6 111.8 79.9 66.8 185.7 50.2 266.5-24.5 58.4 27.9 141.2 69.3 253.9 124.5 19.8 9.7 35.7-91.5.2-101.1ZM290.8 597.4c-29.3-23-45.9-51.8-35.6-67.3 17.7-26.5 93.1-10.9 191.3 29.8-51.3 55.1-109.3 73.8-155.7 37.5Z"/></svg>`;
+const ALIPAY_LOGO_DATA_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(ALIPAY_LOGO_SVG)}`;
 
 function formatMoney(value?: number | null) {
   return `¥${(Number(value ?? 0) / 100).toFixed(2)}`;
@@ -56,6 +61,55 @@ function parseNumberParam(value: string | null) {
 
 function getOrderPayAppId(rechargeOrder: AigcRechargeOrder | null, payOrder: PayOrder | null, fallbackPayAppId: number) {
   return Number(rechargeOrder?.payAppId || payOrder?.appId || fallbackPayAppId || 0);
+}
+
+function isAlipayChannel(channelCode?: string) {
+  return normalizeDisplayMode(channelCode).startsWith("alipay");
+}
+
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+}
+
+function drawRoundRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.arcTo(x + width, y, x + width, y + height, radius);
+  context.arcTo(x + width, y + height, x, y + height, radius);
+  context.arcTo(x, y + height, x, y, radius);
+  context.arcTo(x, y, x + width, y, radius);
+  context.closePath();
+}
+
+async function createQrCodeDataUrl(content: string, channelCode?: string) {
+  const qrCodeDataUrl = await QRCode.toDataURL(content, { width: QR_CODE_SIZE, margin: 1, errorCorrectionLevel: "H" });
+  if (!isAlipayChannel(channelCode)) return qrCodeDataUrl;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = QR_CODE_SIZE;
+  canvas.height = QR_CODE_SIZE;
+  const context = canvas.getContext("2d");
+  if (!context) return qrCodeDataUrl;
+
+  const [qrCodeImage, alipayLogoImage] = await Promise.all([loadImage(qrCodeDataUrl), loadImage(ALIPAY_LOGO_DATA_URL)]);
+  context.drawImage(qrCodeImage, 0, 0, QR_CODE_SIZE, QR_CODE_SIZE);
+
+  const backgroundX = (QR_CODE_SIZE - QR_CODE_LOGO_BACKGROUND_SIZE) / 2;
+  const backgroundY = (QR_CODE_SIZE - QR_CODE_LOGO_BACKGROUND_SIZE) / 2;
+  drawRoundRect(context, backgroundX, backgroundY, QR_CODE_LOGO_BACKGROUND_SIZE, QR_CODE_LOGO_BACKGROUND_SIZE, 12);
+  context.fillStyle = "#fff";
+  context.fill();
+
+  const logoX = (QR_CODE_SIZE - QR_CODE_LOGO_SIZE) / 2;
+  const logoY = (QR_CODE_SIZE - QR_CODE_LOGO_SIZE) / 2;
+  context.drawImage(alipayLogoImage, logoX, logoY, QR_CODE_LOGO_SIZE, QR_CODE_LOGO_SIZE);
+
+  return canvas.toDataURL("image/png");
 }
 
 function openPayContent(displayMode?: string, displayContent?: string) {
@@ -223,7 +277,7 @@ export default function RechargeCheckoutPage() {
         cancelled = true;
       };
     }
-    QRCode.toDataURL(content, { width: 192, margin: 1, errorCorrectionLevel: "M" })
+    createQrCodeDataUrl(content, selectedChannel)
       .then((dataUrl) => {
         if (!cancelled) setQrCodeDataUrl(dataUrl);
       })
@@ -233,7 +287,7 @@ export default function RechargeCheckoutPage() {
     return () => {
       cancelled = true;
     };
-  }, [submitResult?.displayContent, submitResult?.displayMode]);
+  }, [selectedChannel, submitResult?.displayContent, submitResult?.displayMode]);
 
   async function handleSubmitPay() {
     if (!selectedChannel) {

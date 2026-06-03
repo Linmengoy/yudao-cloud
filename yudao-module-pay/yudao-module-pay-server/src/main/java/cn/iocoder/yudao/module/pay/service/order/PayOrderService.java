@@ -166,6 +166,8 @@ public interface PayOrderService {
      */
     void syncOrderQuietly(Long id);
 
+    void syncOrderQuietlyWithoutNotify(Long id);
+
     /**
      * 将已过期的订单，状态修改为已关闭
      *

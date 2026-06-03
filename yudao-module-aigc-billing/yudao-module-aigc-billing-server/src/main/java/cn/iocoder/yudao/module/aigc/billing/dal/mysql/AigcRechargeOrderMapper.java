@@ -9,6 +9,8 @@ import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargeOrderDO;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRechargeStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -87,5 +89,32 @@ public interface AigcRechargeOrderMapper extends BaseMapperX<AigcRechargeOrderDO
                 .orderByAsc(AigcRechargeOrderDO::getId)
                 .last("LIMIT " + limit));
     }
+
+    default List<AigcRechargeOrderDO> selectWaitPayWithPayOrderList(Integer limit) {
+        return selectList(new LambdaQueryWrapperX<AigcRechargeOrderDO>()
+                .eq(AigcRechargeOrderDO::getStatus, AigcBillingRechargeStatusEnum.WAIT_PAY.getCode())
+                .isNotNull(AigcRechargeOrderDO::getPayOrderId)
+                .orderByAsc(AigcRechargeOrderDO::getId)
+                .last("LIMIT " + limit));
+    }
+
+    @Select("""
+            SELECT ro.*
+            FROM aigc_recharge_order ro
+            WHERE ro.status = #{status}
+              AND ro.deleted = 0
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM aigc_billing_record br
+                  WHERE br.biz_type = #{bizType}
+                    AND br.biz_id = ro.recharge_no
+                    AND br.deleted = 0
+              )
+            ORDER BY ro.id ASC
+            LIMIT #{limit}
+            """)
+    List<AigcRechargeOrderDO> selectPaidWithoutRecordList(@Param("status") String status,
+                                                          @Param("bizType") String bizType,
+                                                          @Param("limit") Integer limit);
 
 }

@@ -33,6 +33,7 @@ import cn.iocoder.yudao.module.pay.api.order.dto.PayOrderRespDTO;
 import cn.iocoder.yudao.module.pay.enums.notify.PayNotifyTypeEnum;
 import cn.iocoder.yudao.module.pay.enums.order.PayOrderStatusEnum;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +50,7 @@ import static cn.iocoder.yudao.module.aigc.billing.enums.ErrorCodeConstants.*;
 
 @Service
 @Validated
+@Slf4j
 public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
 
     @Resource
@@ -316,13 +318,13 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         return respVO;
     }
     
-    private void compensateRechargeIfNeeded(AigcRechargeOrderDO order) {
-        rechargeWalletIfRecordCreated(order, "AIGC 钱包充值-补偿入账");
+    private boolean compensateRechargeIfNeeded(AigcRechargeOrderDO order) {
+        return rechargeWalletIfRecordCreated(order, "AIGC 钱包充值-补偿入账");
     }
 
-    private void rechargeWalletIfRecordCreated(AigcRechargeOrderDO order, String title) {
+    private boolean rechargeWalletIfRecordCreated(AigcRechargeOrderDO order, String title) {
         if (billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo()) != null) {
-            return;
+            return false;
         }
         AigcWalletDO wallet = walletService.getWallet(order.getUserId());
         if (wallet == null) {
@@ -344,11 +346,12 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
             billingRecordMapper.insert(record);
         } catch (DuplicateKeyException ex) {
             if (billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo()) != null) {
-                return;
+                return false;
             }
             throw ex;
         }
         walletService.recharge(order.getWalletId(), order.getTotalPointAmount());
+        return true;
     }
 
     @Override
@@ -369,6 +372,34 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
             count += closeRechargeOrderIfNeeded(order) ? 1 : 0;
         }
         return count;
+    }
+
+    @Override
+    public int compensateRechargeOrders(Integer limit) {
+        int fixed = 0;
+        int actualLimit = limit == null ? 100 : limit;
+        for (AigcRechargeOrderDO order : rechargeOrderMapper.selectWaitPayWithPayOrderList(actualLimit)) {
+            fixed += compensateWaitPayOrderIfNeeded(order) ? 1 : 0;
+        }
+        for (AigcRechargeOrderDO order : rechargeOrderMapper.selectPaidWithoutRecordList(
+                AigcBillingRechargeStatusEnum.PAID.getCode(), WALLET_RECHARGE.getCode(), actualLimit)) {
+            fixed += compensateRechargeIfNeeded(order) ? 1 : 0;
+        }
+        return fixed;
+    }
+
+    private boolean compensateWaitPayOrderIfNeeded(AigcRechargeOrderDO order) {
+        try {
+            PayOrderRespDTO payOrder = validatePayOrder(order, order.getPayOrderId());
+            if (!PayOrderStatusEnum.isSuccess(payOrder.getStatus())) {
+                return false;
+            }
+            notifyRechargePaid(buildNotifyReq(order, payOrder));
+            return true;
+        } catch (Exception e) {
+            log.warn("[compensateWaitPayOrderIfNeeded][rechargeOrder({}) 补偿失败]", order.getId(), e);
+            return false;
+        }
     }
 
     private boolean closeRechargeOrderIfNeeded(AigcRechargeOrderDO order) {
