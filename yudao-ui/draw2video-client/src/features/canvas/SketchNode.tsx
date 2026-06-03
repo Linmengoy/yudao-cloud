@@ -372,7 +372,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
           whileHover={{ y: -1 }}
           onDoubleClick={() => setEditorOpen(true)}
           className={cn(
-            "canvas-node-drag-handle group relative overflow-hidden rounded-2xl transition-colors",
+            "canvas-node-drag-handle group relative overflow-visible rounded-2xl transition-colors",
             previewSrc ? "bg-transparent shadow-none" : "border border-border-warm bg-background shadow-[0_8px_24px_rgba(28,28,28,0.08)]",
             selected && (previewSrc ? "ring-2 ring-off-white/80" : "border-charcoal ring-2 ring-charcoal/10"),
             !selected && !previewSrc && "hover:border-charcoal/35"

@@ -807,7 +807,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 height: { type: "spring", stiffness: 360, damping: 34 },
               }}
               className={cn(
-                "canvas-node-drag-handle group relative overflow-hidden rounded-xl",
+                "canvas-node-drag-handle group relative overflow-visible rounded-xl",
                 imageSrc ? "bg-transparent shadow-none" : "border border-border-warm bg-background shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
                 selected && (imageSrc ? "ring-2 ring-off-white/80" : "border-charcoal/60 ring-2 ring-charcoal/35"),
                 isReferencedByActivePrompt && (imageSrc ? "ring-2 ring-off-white" : "border-charcoal ring-2 ring-charcoal/30")
