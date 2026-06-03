@@ -9,6 +9,7 @@ export type ImageTaskParams = {
   output_compression: number | null;
   moderation: ImageModeration;
   n: number;
+  [key: string]: unknown;
 };
 
 export const DEFAULT_IMAGE_PARAMS: ImageTaskParams = {

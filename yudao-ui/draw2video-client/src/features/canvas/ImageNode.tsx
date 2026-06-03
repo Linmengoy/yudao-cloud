@@ -31,10 +31,7 @@ import { deleteImage, saveImage } from "./image-store";
 import { DEFAULT_PROMPT_DATA } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { createGenerationTask, resolveInputImages } from "./use-generation";
-import { DEFAULT_MODEL_ID, getModelById, IMAGE_MODELS } from "@/features/image-generation/models";
-import type { ImageModeration, ImageOutputFormat, ImageQuality } from "@/features/image-generation/types";
-import { calculateImageSize, normalizeImageSize, type SizeTier } from "@/features/image-generation/size";
-import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
+import type { ImageModeration, ImageOutputFormat, ImageQuality, ImageTaskParams } from "@/features/image-generation/types";
 import { getGenerationStatusLabel } from "@/features/generation/generation-status";
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
@@ -58,9 +55,9 @@ const PREVIEW_SLOT_WIDTH = IMAGE_MAX_WIDTH;
 const PREVIEW_SLOT_HEIGHT = IMAGE_MAX_HEIGHT;
 const COMPOSER_WIDTH = 620;
 
-type SizeMode = "auto" | "ratio";
+type SizeSelection = { tier: string; ratio: string };
 
-const TIERS: SizeTier[] = ["1K", "2K", "4K"];
+const TIERS = ["1K", "2K", "4K"];
 const RATIOS = ["1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "21:9"];
 
 const QUALITY_OPTIONS = [
@@ -88,45 +85,17 @@ const BUILT_IN_IMAGE_PARAM_KEYS = new Set([
   "output_compression",
   "moderation",
   "n",
+  "ratio",
+  "aspectRatio",
+  "imageSize",
+  "resolution",
 ]);
-
-function formatSizeSummary(size: string) {
-  if (size === "auto") return "1:1 · auto";
-  const [w, h] = size.split("x").map(Number);
-  if (!w || !h) return size;
-  return `${w === h ? "1:1" : `${w}:${h}`} · ${Math.max(w, h) >= 2048 ? "2K" : "1K"}`;
-}
 
 function dimensionsFromSize(size: string) {
   if (!size || size === "auto") return null;
   const [w, h] = size.split("x").map(Number);
   if (!w || !h) return null;
   return { width: w, height: h };
-}
-
-function getSizeSelection(size: string): { mode: SizeMode; tier: SizeTier; ratio: string } {
-  const normalized = normalizeImageSize(size);
-  if (!normalized || normalized === "auto") {
-    return { mode: "auto", tier: "1K", ratio: "1:1" };
-  }
-
-  for (const tier of TIERS) {
-    for (const ratio of RATIOS) {
-      if (calculateImageSize(tier, ratio) === normalized) {
-        return {
-          mode: "ratio",
-          tier,
-          ratio,
-        };
-      }
-    }
-  }
-
-  return {
-    mode: "ratio",
-    tier: "1K",
-    ratio: "1:1",
-  };
 }
 
 function formatElapsed(ms: number | null | undefined) {
@@ -145,8 +114,79 @@ function normalizeTemplateOption(option: string) {
   return option.trim().replace(/^"+|"+$/g, "");
 }
 
+function findTemplate(templates: AigcModelParamTemplate[], keys: string[]) {
+  return templates.find((item) => keys.includes(item.paramKey));
+}
+
+function templateOptions(template: AigcModelParamTemplate | undefined, fallback: string[]) {
+  const options = (template?.options ?? []).map(normalizeTemplateOption).filter(Boolean);
+  return options.length > 0 ? options : fallback;
+}
+
+function templateDefault(template: AigcModelParamTemplate | undefined, fallback: string) {
+  const normalized = template?.defaultValue ? normalizeTemplateOption(template.defaultValue) : "";
+  return normalized || templateOptions(template, [fallback])[0] || fallback;
+}
+
+function segmentedOptions<T extends string>(template: AigcModelParamTemplate | undefined, fallback: { label: string; value: T }[]) {
+  const fallbackByValue = new Map(fallback.map((option) => [option.value, option.label]));
+  const options = templateOptions(template, fallback.map((option) => option.value));
+  return options.map((value) => ({
+    label: fallbackByValue.get(value as T) ?? value,
+    value: value as T,
+  }));
+}
+
+function hasParamValue(params: Record<string, unknown>, key: string | undefined) {
+  if (!key) return false;
+  const value = params[key];
+  return value !== undefined && value !== null && String(value) !== "";
+}
+
+function getModelSizeSelection(params: Record<string, unknown>, templates: AigcModelParamTemplate[]): SizeSelection {
+  const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio"]);
+  const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
+  return {
+    tier: String(params[imageSizeTemplate?.paramKey ?? "imageSize"] ?? templateDefault(imageSizeTemplate, "")),
+    ratio: String(params[ratioTemplate?.paramKey ?? "ratio"] ?? templateDefault(ratioTemplate, "")),
+  };
+}
+
+function formatModelSizeSummary(params: Record<string, unknown>, templates: AigcModelParamTemplate[]) {
+  const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio"]);
+  const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
+  if (ratioTemplate || imageSizeTemplate) {
+    const ratio = String(params[ratioTemplate?.paramKey ?? "ratio"] ?? templateDefault(ratioTemplate, "1:1"));
+    const imageSize = String(params[imageSizeTemplate?.paramKey ?? "imageSize"] ?? templateDefault(imageSizeTemplate, "1K"));
+    return `${ratio} · ${imageSize}`;
+  }
+  const sizeTemplate = findTemplate(templates, ["size"]);
+  if (sizeTemplate) {
+    return String(params.size ?? templateDefault(sizeTemplate, ""));
+  }
+  return "参数";
+}
+
+function modelParamKeys(templates: AigcModelParamTemplate[]) {
+  return new Set(templates.map((template) => template.paramKey));
+}
+
+function filterModelParams(params: ImageTaskParams, templates: AigcModelParamTemplate[]): ImageTaskParams {
+  const keys = modelParamKeys(templates);
+  return Object.fromEntries(
+    Object.entries(params).filter(([key, value]) => value !== undefined && value !== null && value !== "" && keys.has(key))
+  ) as ImageTaskParams;
+}
+
 function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {
-  const sizeTemplate = templates.find((item) => item.paramKey === "size");
+  const sizeTemplate = findTemplate(templates, ["size"]);
+  const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
+  if (imageSizeTemplate) {
+    const options = templateOptions(imageSizeTemplate, ["1K"]);
+    if (options.includes("4K")) return "4K";
+    if (options.includes("2K")) return "2K";
+    return options[0] ?? "Image";
+  }
   const maxEdge = Math.max(
     0,
     ...(sizeTemplate?.options ?? [])
@@ -295,11 +335,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const isGenerating = status === "pending";
   const kind = data.kind ?? "draft";
   const canCompose = kind !== "uploaded";
-  const modelId = data.modelId ?? DEFAULT_MODEL_ID;
+  const modelId = data.modelId ?? "";
   const selectedAigcModelId = data.aigcModelId;
   const params = data.params ?? DEFAULT_PROMPT_DATA.params;
   const prompt = data.prompt ?? "";
-  const currentModel = getModelById(modelId) ?? getModelById(DEFAULT_MODEL_ID)!;
   const connectedImages = edges
     .filter((edge) => edge.target === id)
     .map((edge) => {
@@ -313,18 +352,33 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const aigcModels = useAigcModels({ type: 2, capability: generationCapability, params });
   const storedAigcModel = aigcModels.models.find((item) => item.id === selectedAigcModelId);
   const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
-  const activeModelName = activeAigcModel?.name ?? data.modelName ?? currentModel.name;
+  const activeModelName = activeAigcModel?.name ?? data.modelName ?? "选择模型";
   const activeProviderModel = activeAigcModel?.model ?? data.providerModel ?? modelId;
   const activeAigcModelId = activeAigcModel?.id;
-  const extraParamTemplates = useMemo(
-    () => aigcModels.templates.filter((item) => !BUILT_IN_IMAGE_PARAM_KEYS.has(item.paramKey)),
-    [aigcModels.templates]
-  );
+  const ratioTemplate = useMemo(() => findTemplate(aigcModels.templates, ["ratio", "aspectRatio"]), [aigcModels.templates]);
+  const imageSizeTemplate = useMemo(() => findTemplate(aigcModels.templates, ["imageSize", "resolution"]), [aigcModels.templates]);
+  const sizeTemplate = useMemo(() => findTemplate(aigcModels.templates, ["size"]), [aigcModels.templates]);
+  const qualityTemplate = useMemo(() => findTemplate(aigcModels.templates, ["quality"]), [aigcModels.templates]);
+  const formatTemplate = useMemo(() => findTemplate(aigcModels.templates, ["output_format"]), [aigcModels.templates]);
+  const moderationTemplate = useMemo(() => findTemplate(aigcModels.templates, ["moderation"]), [aigcModels.templates]);
+  const ratioOptions = useMemo(() => templateOptions(ratioTemplate, RATIOS), [ratioTemplate]);
+  const tierOptions = useMemo(() => templateOptions(imageSizeTemplate, TIERS), [imageSizeTemplate]);
+  const qualityOptions = useMemo(() => segmentedOptions(qualityTemplate, QUALITY_OPTIONS), [qualityTemplate]);
+  const formatOptions = useMemo(() => segmentedOptions(formatTemplate, FORMAT_OPTIONS), [formatTemplate]);
+  const moderationOptions = useMemo(() => segmentedOptions(moderationTemplate, MODERATION_OPTIONS), [moderationTemplate]);
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
   const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
   const imageSrc = data.previewUrl || data.dataUrl;
   const generatingStatusLabel = getGenerationStatusLabel(data.taskStatus || data.upstreamStatus || "RUNNING");
-  const sizeSelection = useMemo(() => getSizeSelection(params.size), [params.size]);
+  const sizeSelection = useMemo(() => getModelSizeSelection(params, aigcModels.templates), [aigcModels.templates, params]);
+  const effectiveParams = useMemo(() => filterModelParams(params, aigcModels.templates), [aigcModels.templates, params]);
+  const sizeOptions = useMemo(() => templateOptions(sizeTemplate, []), [sizeTemplate]);
+  const showSizeSection = Boolean(sizeTemplate || ratioTemplate || imageSizeTemplate);
+  const showQualityControl = Boolean(qualityTemplate);
+  const showFormatControl = Boolean(formatTemplate);
+  const showModerationControl = Boolean(moderationTemplate);
+  const showOutputSection = showQualityControl || showFormatControl || showModerationControl;
+  const canGenerate = Boolean(prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && Boolean(activeAigcModelId);
 
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
@@ -481,6 +535,33 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     [data.params, id, setNodes]
   );
 
+  useEffect(() => {
+    if (aigcModels.templateLoading || aigcModels.templates.length === 0) return;
+    const patch: Record<string, unknown> = {};
+    for (const template of aigcModels.templates) {
+      if (!BUILT_IN_IMAGE_PARAM_KEYS.has(template.paramKey)) continue;
+      if (hasParamValue(params, template.paramKey)) continue;
+      const defaultValue = template.defaultValue ? normalizeTemplateOption(template.defaultValue) : "";
+      const options = templateOptions(template, []);
+      const nextValue = defaultValue || options[0];
+      if (nextValue) patch[template.paramKey] = nextValue;
+    }
+    if (Object.keys(patch).length > 0) updateParams(patch);
+  }, [aigcModels.templateLoading, aigcModels.templates, params, updateParams]);
+
+  useEffect(() => {
+    if (aigcModels.loading || aigcModels.models.length === 0) return;
+    if (selectedAigcModelId && aigcModels.models.some((model) => model.id === selectedAigcModelId)) return;
+    const nextModel = aigcModels.selectedModel ?? aigcModels.models[0];
+    if (!nextModel) return;
+    updateData({
+      modelId: String(nextModel.id),
+      providerModel: nextModel.model,
+      modelName: nextModel.name,
+      aigcModelId: nextModel.id,
+    });
+  }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, selectedAigcModelId, updateData]);
+
   const handleNodeClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
       if (!referencePickerPromptId || referencePickerPromptId === id) return;
@@ -517,47 +598,29 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     [params.output_compression, updateParams]
   );
 
-  const handleSizeModeChange = useCallback(
-    (mode: SizeMode) => {
-      if (mode === "auto") {
-        updateParams({ size: "auto" });
-        return;
-      }
-      if (mode === "ratio") {
-        updateParams({ size: calculateImageSize(sizeSelection.tier, sizeSelection.ratio) ?? "auto" });
-      }
-    },
-    [sizeSelection.ratio, sizeSelection.tier, updateParams]
-  );
-
   const handleTierChange = useCallback(
-    (tier: SizeTier) => {
-      updateParams({ size: calculateImageSize(tier, sizeSelection.ratio) ?? "auto" });
+    (tier: string) => {
+      if (imageSizeTemplate) {
+        updateParams({ [imageSizeTemplate?.paramKey ?? "imageSize"]: tier });
+      }
     },
-    [sizeSelection.ratio, updateParams]
+    [imageSizeTemplate, updateParams]
   );
 
   const handleRatioChange = useCallback(
     (ratio: string) => {
-      updateParams({ size: calculateImageSize(sizeSelection.tier, ratio) ?? "auto" });
+      if (ratioTemplate) {
+        updateParams({ [ratioTemplate?.paramKey ?? "ratio"]: ratio });
+      }
     },
-    [sizeSelection.tier, updateParams]
+    [ratioTemplate, updateParams]
   );
 
-  const handleModelSelect = useCallback(
-    (nextModelId: string) => {
-      const model = getModelById(nextModelId);
-      aigcModels.setSelectedModelId(null);
-      updateData({
-        modelId: nextModelId,
-        providerModel: nextModelId,
-        modelName: model?.name,
-        aigcModelId: undefined,
-        params: model?.quality ? { ...params, quality: model.quality } : params,
-      });
-      setModelPopoverOpen(false);
+  const handleSizeChange = useCallback(
+    (size: string) => {
+      if (sizeTemplate) updateParams({ [sizeTemplate.paramKey]: size });
     },
-    [aigcModels, params, updateData]
+    [sizeTemplate, updateParams]
   );
 
   const handleAigcModelSelect = useCallback(
@@ -585,20 +648,26 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
   const handleGenerate = useCallback(async () => {
     const cleanPrompt = prompt.trim();
-    if (!cleanPrompt || isGenerating) return;
+    if (!cleanPrompt || isGenerating || aigcModels.loading || aigcModels.templateLoading) return;
 
     const startedAt = new Date().toISOString();
     const ctx = { nodes: getNodes() as AppNode[], edges: getEdges() as AppEdge[] };
     const { snapshots, ids, mode } = resolveInputImages(id, ctx);
+    const runModel = activeAigcModel && aigcModels.models.some((model) => model.id === activeAigcModel.id)
+      ? activeAigcModel
+      : aigcModels.selectedModel;
+    const runAigcModelId = runModel?.id;
+    const runModelName = runModel?.name ?? activeModelName;
+    const runProviderModel = runModel?.model ?? activeProviderModel;
     const resultDraft: ResultNodeData = {
       taskId: null,
       promptNodeId: id,
       prompt: cleanPrompt,
-      params,
+      params: effectiveParams,
       modelId,
-      providerModel: activeProviderModel,
-      aigcModelId: activeAigcModelId,
-      modelName: activeModelName,
+      providerModel: runProviderModel,
+      aigcModelId: runAigcModelId,
+      modelName: runModelName,
       mode,
       inputImages: snapshots,
       inputImageIds: ids,
@@ -612,10 +681,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     const promptData: PromptNodeData = {
       prompt: cleanPrompt,
       modelId,
-      providerModel: activeProviderModel,
-      aigcModelId: activeAigcModelId,
-      modelName: activeModelName,
-      params,
+      providerModel: runProviderModel,
+      aigcModelId: runAigcModelId,
+      modelName: runModelName,
+      params: effectiveParams,
       isGenerating: true,
     };
 
@@ -630,7 +699,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
-    if (isServerCanvasProjectId(projectId) && activeAigcModelId) {
+    if (isServerCanvasProjectId(projectId) && runAigcModelId) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
         const run = await canvasNodeRunApi.runNode(projectId, id, {
@@ -640,9 +709,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           nodeType: "image",
           generateType: "IMAGE",
           generateMode: mode === "edit" ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE",
-          modelId: activeAigcModelId,
+          modelId: runAigcModelId,
           prompt: cleanPrompt,
-          inputParams: buildServerInputParams(params, ids, snapshots),
+          inputParams: buildServerInputParams(effectiveParams, ids, snapshots),
           sync: false,
         });
         updateData({
@@ -695,7 +764,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       nextData.kind = "generated";
       nextData.dataUrl = updates.imageUrls[0];
       nextData.fileName = "generated-image.png";
-      nextData.mimeType = params.output_format === "jpeg" ? "image/jpeg" : `image/${params.output_format}`;
+      nextData.mimeType = effectiveParams.output_format === "jpeg" ? "image/jpeg" : `image/${effectiveParams.output_format}`;
     }
 
     setNodes((nds) =>
@@ -706,7 +775,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModelId, activeModelName, activeProviderModel, getEdges, getNodes, id, isGenerating, modelId, params, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, effectiveParams, getEdges, getNodes, id, isGenerating, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen) return;
@@ -1075,22 +1144,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                               </span>
                             </button>
                           );
-                        }) : IMAGE_MODELS.filter((m) => m.enabled).map((model) => {
-                          const isSelected = modelId === model.id;
-                          return (
-                            <button key={model.id} type="button" onClick={() => handleModelSelect(model.id)} className={cn("mb-1 flex w-full flex-col items-stretch gap-2 rounded-xl px-3 py-3 text-left transition-colors last:mb-0", isSelected ? "bg-muted" : "hover:bg-muted/70")}>
-                              <span className="flex min-w-0 items-center gap-2">
-                                <ImageIcon className="size-4 shrink-0 text-muted-gray" />
-                                <span className="truncate text-sm font-medium text-charcoal">{model.name}</span>
-                                {isSelected && <Check className="ml-auto size-4 shrink-0 text-charcoal" />}
-                              </span>
-                              <span className="ml-6 flex w-fit items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-gray">
-                                <Gem className="size-3" />
-                                Image
-                              </span>
-                            </button>
-                          );
-                        })}
+                        }) : (
+                          <div className="px-3 py-4 text-sm text-muted-gray">暂无可用模型</div>
+                        )}
                       </div>
                     </motion.div>
                     )}
@@ -1109,7 +1165,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     className="flex items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-sm text-muted-gray transition-colors hover:border-charcoal/40 hover:bg-background hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <SlidersHorizontal className="size-4" />
-                    <span>{formatSizeSummary(params.size)}</span>
+                    <span>{formatModelSizeSummary(params, aigcModels.templates)}</span>
                   </button>
                   <AnimatePresence>
                     {paramsPopoverOpen && (
@@ -1124,35 +1180,36 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                       <div className="mb-4 flex items-center justify-between">
                         <div>
                           <p className="text-sm font-medium text-charcoal">生成参数</p>
-                          <p className="mt-0.5 text-[11px] text-muted-gray">当前：{params.size}</p>
+                          <p className="mt-0.5 text-[11px] text-muted-gray">当前：{formatModelSizeSummary(params, aigcModels.templates)}</p>
                         </div>
                         <button type="button" onClick={() => setParamsPopoverOpen(false)} className="flex size-7 items-center justify-center rounded-full text-muted-gray transition-colors hover:bg-muted hover:text-charcoal" aria-label="关闭参数">
                           <X className="size-4" />
                         </button>
                       </div>
 
-                      <section className="space-y-3">
-                        <p className="text-xs font-medium text-muted-gray">Size</p>
-                        <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                          {(["auto", "ratio"] as const).map((mode) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => handleSizeModeChange(mode)}
-                              className={cn(
-                                "rounded-lg px-3 py-2 text-xs font-medium text-muted-gray transition-colors",
-                                sizeSelection.mode === mode && "bg-background text-charcoal shadow-sm"
-                              )}
-                            >
-                              {mode === "auto" ? "Auto" : "Ratio"}
-                            </button>
-                          ))}
-                        </div>
-
-                        {sizeSelection.mode === "ratio" && (
-                          <div className="space-y-3">
+                      {showSizeSection && (
+                        <section className="space-y-3">
+                          <p className="text-xs font-medium text-muted-gray">Size</p>
+                          {sizeTemplate && sizeOptions.length > 0 && (
                             <div className="grid grid-cols-3 gap-2">
-                              {TIERS.map((tier) => (
+                              {sizeOptions.map((size) => (
+                                <button
+                                  key={size}
+                                  type="button"
+                                  onClick={() => handleSizeChange(size)}
+                                  className={cn(
+                                    "rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-gray transition-colors hover:text-charcoal",
+                                    String(params[sizeTemplate.paramKey] ?? templateDefault(sizeTemplate, "")) === size && "bg-background text-charcoal shadow-sm"
+                                  )}
+                                >
+                                  {size}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {imageSizeTemplate && tierOptions.length > 0 && (
+                            <div className="grid grid-cols-3 gap-2">
+                              {tierOptions.map((tier) => (
                                 <button
                                   key={tier}
                                   type="button"
@@ -1166,8 +1223,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                 </button>
                               ))}
                             </div>
+                          )}
+                          {ratioTemplate && ratioOptions.length > 0 && (
                             <div className="grid grid-cols-4 gap-1.5">
-                              {RATIOS.map((ratio) => (
+                              {ratioOptions.map((ratio) => (
                                 <button
                                   key={ratio}
                                   type="button"
@@ -1181,31 +1240,29 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                 </button>
                               ))}
                             </div>
-                          </div>
-                        )}
-                      </section>
-
-                      <section className="mt-5 space-y-3">
-                        <p className="text-xs font-medium text-muted-gray">Output</p>
-
-                        <div className="space-y-2">
-                          <ParamSegmented label="质量" value={params.quality} options={QUALITY_OPTIONS} onChange={(value) => updateParams({ quality: value })} />
-                          <ParamSegmented label="格式" value={params.output_format} options={FORMAT_OPTIONS} onChange={handleFormatChange} />
-                          <ParamSegmented label="审核" value={params.moderation} options={MODERATION_OPTIONS} onChange={(value) => updateParams({ moderation: value })} />
-                        </div>
-
-                      </section>
-
-                      {(aigcModels.templateLoading || extraParamTemplates.length > 0) && (
-                        <section className="mt-5 space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs font-medium text-muted-gray">模型额外参数</p>
-                            {aigcModels.templateLoading && <span className="text-[11px] text-muted-gray">加载中...</span>}
-                          </div>
-                          {extraParamTemplates.length > 0 && (
-                            <DynamicParamForm templates={extraParamTemplates} values={params} disabled={isGenerating} onChange={updateParams} />
                           )}
                         </section>
+                      )}
+
+                      {showOutputSection && (
+                        <section className="mt-5 space-y-3">
+                          <p className="text-xs font-medium text-muted-gray">Output</p>
+
+                          <div className="space-y-2">
+                            {showQualityControl && (
+                              <ParamSegmented label="质量" value={params.quality} options={qualityOptions} onChange={(value) => updateParams({ quality: value })} />
+                            )}
+                            {showFormatControl && (
+                              <ParamSegmented label="格式" value={params.output_format} options={formatOptions} onChange={handleFormatChange} />
+                            )}
+                            {showModerationControl && (
+                              <ParamSegmented label="审核" value={params.moderation} options={moderationOptions} onChange={(value) => updateParams({ moderation: value })} />
+                            )}
+                          </div>
+                        </section>
+                      )}
+                      {aigcModels.templateLoading && (
+                        <p className="mt-4 text-[11px] text-muted-gray">参数加载中...</p>
                       )}
                     </motion.div>
                     )}
@@ -1217,7 +1274,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 <button
                   type="button"
                   onClick={handleGenerate}
-                  disabled={!prompt.trim() || isGenerating}
+                  disabled={!canGenerate}
                   className="flex h-11 items-center gap-3 rounded-full bg-charcoal/90 py-1 pl-4 pr-1 text-off-white shadow-[0_4px_12px_rgba(0,0,0,0.18)] transition-opacity active:opacity-85 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-black/80"
                   aria-label={isGenerating ? "生成中" : "开始生成"}
                 >

@@ -1,8 +1,10 @@
 package cn.iocoder.yudao.module.aigc.model.service.param;
 
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.NumberUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.ReUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
@@ -11,11 +13,13 @@ import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelParamTemplateD
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelMapper;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelParamTemplateMapper;
 import cn.iocoder.yudao.module.aigc.model.enums.AigcModelParamTypeEnum;
+import cn.iocoder.yudao.module.aigc.model.util.AigcModelParamUtils;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -38,6 +42,7 @@ public class AigcModelParamServiceImpl implements AigcModelParamService {
         validateParamKeyUnique(null, reqVO.getModelId(), reqVO.getCapability(), reqVO.getParamKey());
 
         AigcModelParamTemplateDO template = BeanUtils.toBean(reqVO, AigcModelParamTemplateDO.class);
+        template.setOptions(normalizeOptions(reqVO.getOptions()));
         paramTemplateMapper.insert(template);
         return template.getId();
     }
@@ -49,6 +54,7 @@ public class AigcModelParamServiceImpl implements AigcModelParamService {
         validateParamKeyUnique(reqVO.getId(), existing.getModelId(), existing.getCapability(), reqVO.getParamKey());
 
         AigcModelParamTemplateDO updateObj = BeanUtils.toBean(reqVO, AigcModelParamTemplateDO.class);
+        updateObj.setOptions(normalizeOptions(reqVO.getOptions()));
         paramTemplateMapper.updateById(updateObj);
     }
 
@@ -126,6 +132,26 @@ public class AigcModelParamServiceImpl implements AigcModelParamService {
                 }
                 break;
         }
+    }
+
+    private String normalizeOptions(String options) {
+        if (StrUtil.isBlank(options)) {
+            return null;
+        }
+        List<String> optionList;
+        if (JSONUtil.isTypeJSONArray(options)) {
+            optionList = JSONUtil.toList(options, String.class);
+        } else {
+            optionList = Arrays.stream(options.split(","))
+                    .map(StrUtil::trim)
+                    .filter(StrUtil::isNotBlank)
+                    .toList();
+        }
+        optionList = optionList.stream()
+                .map(AigcModelParamUtils::decodeOptionValue)
+                .filter(StrUtil::isNotBlank)
+                .toList();
+        return CollUtil.isEmpty(optionList) ? null : JSONUtil.toJsonStr(optionList);
     }
 
     private void validateModelExists(Long modelId) {

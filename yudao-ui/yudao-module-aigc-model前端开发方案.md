@@ -265,6 +265,8 @@ POST {apiBaseUrl}/models/{model}:generateContent?key={apiKey}
 | `ratio` | `SELECT` | `1:1` | `1:1`,`2:3`,`3:2`,`3:4`,`4:3`,`4:5`,`5:4`,`9:16`,`16:9`,`21:9` | 透传为 Gemini `generationConfig.imageConfig.aspectRatio` |
 | `imageSize` | `SELECT` | `1K` | `512`,`1K`,`2K`,`4K` | 仅 `gemini-3.1-flash-image` / `gemini-3-pro-image` 系列生效；`gemini-2.5-flash-image` 固定 1024px |
 
+用户端图片节点会复用已有“生成参数”卡片，不再额外渲染一块“模型额外参数”。管理端参数模板中的 `ratio` / `aspectRatio` 会映射到 Size 卡片的比例选项，`imageSize` / `resolution` 会映射到 Size 卡片的尺寸档位；切换模型后，卡片选项和默认值会随当前模型模板自动变化。
+
 请求体结构与 Gemini 官方文档保持一致：
 
 ```json

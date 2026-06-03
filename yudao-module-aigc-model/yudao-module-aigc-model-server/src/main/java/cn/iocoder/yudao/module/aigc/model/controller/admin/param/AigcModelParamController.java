@@ -6,6 +6,7 @@ import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelPar
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelParamTemplateDO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelParamTemplateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
+import cn.iocoder.yudao.module.aigc.model.util.AigcModelParamUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -60,7 +61,7 @@ public class AigcModelParamController {
     @PreAuthorize("@ss.hasPermission('aigc:model:param:query')")
     public CommonResult<AigcModelParamTemplateRespDTO> getParamTemplate(@RequestParam("id") Long id) {
         AigcModelParamTemplateDO template = paramService.getParamTemplate(id);
-        return success(BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class));
+        return success(convertParamTemplate(template));
     }
 
     @GetMapping("/list")
@@ -73,8 +74,13 @@ public class AigcModelParamController {
             @RequestParam("capability") String capability) {
         List<AigcModelParamTemplateDO> templates = paramService.getParamTemplateList(modelId, capability);
         return success(templates.stream()
-                .map(template -> BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class))
+                .map(this::convertParamTemplate)
                 .collect(Collectors.toList()));
+    }
+
+    private AigcModelParamTemplateRespDTO convertParamTemplate(AigcModelParamTemplateDO template) {
+        return BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class,
+                resp -> resp.setOptions(AigcModelParamUtils.parseOptions(template.getOptions())));
     }
 
 }
