@@ -205,6 +205,32 @@ function getDisplaySize(data: ImageNodeData, measuredSize: { width: number; heig
   return scaleToPreview(width, height);
 }
 
+function getVisibleImageLeftInset(image: HTMLImageElement) {
+  if (!image.naturalWidth || !image.naturalHeight) return 0;
+  const sampleScale = Math.min(1, 240 / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * sampleScale));
+  const height = Math.max(1, Math.round(image.naturalHeight * sampleScale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return 0;
+  try {
+    ctx.drawImage(image, 0, 0, width, height);
+    const data = ctx.getImageData(0, 0, width, height).data;
+    for (let x = 0; x < width; x += 1) {
+      for (let y = 0; y < height; y += 1) {
+        if (data[(y * width + x) * 4 + 3] > 8) {
+          return x / sampleScale;
+        }
+      }
+    }
+  } catch {
+    return 0;
+  }
+  return 0;
+}
+
 function ParamSegmented<T extends string>({
   label,
   value,
@@ -252,7 +278,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const modelPopoverRef = useRef<HTMLDivElement>(null);
   const paramsPopoverRef = useRef<HTMLDivElement>(null);
   const nodeMenuRef = useRef<HTMLDivElement>(null);
+  const activeRunPollRef = useRef<string | null>(null);
   const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number } | null>(null);
+  const [visibleImageInset, setVisibleImageInset] = useState<{ left: number } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; visible: boolean }>({
     x: 0,
@@ -334,16 +362,54 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   }, [id, referencePickerPromptId, selected]);
 
   const updateData = useCallback(
-    (patch: Partial<ImageNodeData>) => {
+    (patch: Partial<ImageNodeData>, options?: { flush?: boolean }) => {
       setNodes((nds) =>
         nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
       );
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
-        detail: { nodeId: id, patch },
+        detail: { nodeId: id, patch, flush: options?.flush },
       }));
     },
     [id, setNodes]
   );
+
+  const waitAndApplyServerRun = useCallback(async (projectId: string | number, taskId: number, startedAt: string) => {
+    const pollKey = `${projectId}:${id}:${taskId}`;
+    if (activeRunPollRef.current === pollKey) return;
+    activeRunPollRef.current = pollKey;
+    try {
+      const result = await waitCanvasNodeRunResult(projectId, id, {
+        taskId,
+        baseVersion: 0,
+        nodeType: "image",
+      });
+      const patch = getCanvasNodeRunPatch(result, id);
+      if (patch) updateData(patch as Partial<ImageNodeData>, { flush: true });
+    } catch (error) {
+      updateData({
+        status: "failed",
+        taskId: String(taskId),
+        errorMessage: error instanceof Error ? error.message : "图片任务同步失败",
+        safetyStatus: null,
+        safetyReason: null,
+        generationCompletedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - new Date(startedAt).getTime(),
+      }, { flush: true });
+    } finally {
+      if (activeRunPollRef.current === pollKey) {
+        activeRunPollRef.current = null;
+      }
+    }
+  }, [id, updateData]);
+
+  useEffect(() => {
+    if (status !== "pending" || !data.taskId) return;
+    const projectId = new URLSearchParams(window.location.search).get("projectId");
+    if (!isServerCanvasProjectId(projectId)) return;
+    const taskId = Number(data.taskId);
+    if (!Number.isFinite(taskId)) return;
+    void waitAndApplyServerRun(projectId, taskId, data.generationStartedAt ?? data.createdAt);
+  }, [data.createdAt, data.generationStartedAt, data.taskId, status, waitAndApplyServerRun]);
 
   const deleteNode = useCallback(() => {
     setNodeMenu((prev) => ({ ...prev, visible: false }));
@@ -579,13 +645,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           inputParams: buildServerInputParams(params, ids, snapshots),
           sync: false,
         });
-        const result = await waitCanvasNodeRunResult(projectId, id, {
-          taskId: run.taskId,
-          baseVersion: 0,
-          nodeType: "image",
-        });
-        const patch = getCanvasNodeRunPatch(result, id);
-        if (patch) updateData(patch as Partial<ImageNodeData>);
+        updateData({
+          taskId: String(run.taskId),
+          upstreamStatus: run.status,
+        }, { flush: true });
+        await waitAndApplyServerRun(projectId, run.taskId, startedAt);
         return;
       } catch (error) {
         updateData({
@@ -642,7 +706,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModelId, activeModelName, activeProviderModel, getEdges, getNodes, id, isGenerating, modelId, params, prompt, setNodes, updateData]);
+  }, [activeAigcModelId, activeModelName, activeProviderModel, getEdges, getNodes, id, isGenerating, modelId, params, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen) return;
@@ -703,6 +767,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const displaySize = getDisplaySize(data, measuredSize, params.size);
   const displayLeft = (PREVIEW_SLOT_WIDTH - displaySize.width) / 2;
   const displayTop = 28 + PREVIEW_SLOT_HEIGHT - displaySize.height;
+  const displayScale = (measuredSize?.width ?? data.width)
+    ? displaySize.width / (measuredSize?.width ?? data.width ?? displaySize.width)
+    : 1;
+  const titleLeft = displayLeft + Math.round((visibleImageInset?.left ?? 0) * displayScale);
+  const titleWidth = Math.max(80, displaySize.width - Math.round((visibleImageInset?.left ?? 0) * displayScale));
   const pickerActiveForThisNode = referencePickerPromptId === id;
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
@@ -766,13 +835,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             className="absolute flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
             initial={false}
             animate={{
-              left: displayLeft,
-              top: Math.max(0, displayTop - 28 * fixedUiScale),
-              width: displaySize.width,
-              scale: fixedUiScale,
+              left: titleLeft,
+              top: Math.max(0, displayTop - 28),
+              width: titleWidth,
             }}
             transition={{ type: "spring", stiffness: 360, damping: 34 }}
-            style={{ transformOrigin: "bottom left" }}
           >
             <ImageIcon className="size-4" />
             <span className="line-clamp-1" title={data.fileName}>
@@ -827,6 +894,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                       const image = event.currentTarget;
                       if (image.naturalWidth > 0 && image.naturalHeight > 0) {
                         setMeasuredSize({ width: image.naturalWidth, height: image.naturalHeight });
+                        setVisibleImageInset({ left: getVisibleImageLeftInset(image) });
                       }
                       if (
                         image.naturalWidth > 0 &&

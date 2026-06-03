@@ -150,6 +150,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const paramsBtnRef = useRef<HTMLButtonElement>(null);
   const modelRef = useRef<HTMLDivElement>(null);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
+  const activeRunPollRef = useRef<string | null>(null);
 
   const isGenerating = data.status === "pending";
   const kind = data.kind ?? "draft";
@@ -182,18 +183,55 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   }, [displayLeft, displayTop, displaySize.width, displaySize.height, id, updateNodeInternals]);
 
   const updateData = useCallback(
-    (patch: Partial<VideoNodeData>) => {
+    (patch: Partial<VideoNodeData>, options?: { flush?: boolean }) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === id ? { ...node, data: { ...node.data, ...patch } } : node
         )
       );
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
-        detail: { nodeId: id, patch },
+        detail: { nodeId: id, patch, flush: options?.flush },
       }));
     },
     [id, setNodes]
   );
+
+  const waitAndApplyServerRun = useCallback(async (projectId: string | number, taskId: number, startedAt: string) => {
+    const pollKey = `${projectId}:${id}:${taskId}`;
+    if (activeRunPollRef.current === pollKey) return;
+    activeRunPollRef.current = pollKey;
+    try {
+      const result = await waitCanvasNodeRunResult(projectId, id, {
+        taskId,
+        baseVersion: 0,
+        nodeType: "video",
+      });
+      const patch = getCanvasNodeRunPatch(result, id);
+      if (patch) updateData(patch as Partial<VideoNodeData>, { flush: true });
+    } catch (error) {
+      updateData({
+        status: "failed",
+        taskId: String(taskId),
+        errorMessage: error instanceof Error ? error.message : "视频任务同步失败",
+        upstreamStatus: "FAILED",
+        generationCompletedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - new Date(startedAt).getTime(),
+      }, { flush: true });
+    } finally {
+      if (activeRunPollRef.current === pollKey) {
+        activeRunPollRef.current = null;
+      }
+    }
+  }, [id, updateData]);
+
+  useEffect(() => {
+    if (data.status !== "pending" || !data.taskId) return;
+    const projectId = new URLSearchParams(window.location.search).get("projectId");
+    if (!isServerCanvasProjectId(projectId)) return;
+    const taskId = Number(data.taskId);
+    if (!Number.isFinite(taskId)) return;
+    void waitAndApplyServerRun(projectId, taskId, data.generationStartedAt ?? data.createdAt);
+  }, [data.createdAt, data.generationStartedAt, data.status, data.taskId, waitAndApplyServerRun]);
 
   const referenceImages = edges
     .filter((edge) => edge.target === id)
@@ -332,13 +370,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           }),
           sync: false,
         });
-        const result = await waitCanvasNodeRunResult(projectId, id, {
-          taskId: run.taskId,
-          baseVersion: 0,
-          nodeType: "video",
-        });
-        const patch = getCanvasNodeRunPatch(result, id);
-        if (patch) updateData(patch as Partial<VideoNodeData>);
+        updateData({
+          taskId: String(run.taskId),
+          upstreamStatus: run.status,
+        }, { flush: true });
+        await waitAndApplyServerRun(projectId, run.taskId, startedAt);
         return;
       } catch (error) {
         updateData({
@@ -413,7 +449,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [data.aigcModelId, data.duration, data.generateAudio, data.modelId, data.prompt, data.providerModel, data.ratio, data.resolution, data.size, data.watermark, id, isGenerating, referenceImages, updateData]);
+  }, [data.aigcModelId, data.duration, data.generateAudio, data.modelId, data.prompt, data.providerModel, data.ratio, data.resolution, data.size, data.watermark, id, isGenerating, referenceImages, updateData, waitAndApplyServerRun]);
 
   return (
     <>
@@ -439,12 +475,10 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           initial={false}
           animate={{
             left: displayLeft,
-            top: Math.max(0, displayTop - 28 * fixedUiScale),
+            top: Math.max(0, displayTop - 28),
             width: displaySize.width,
-            scale: fixedUiScale,
           }}
           transition={{ type: "spring", stiffness: 360, damping: 34 }}
-          style={{ transformOrigin: "bottom left" }}
         >
           <Video className="size-4" />
           <span className="line-clamp-1" title={data.fileName}>

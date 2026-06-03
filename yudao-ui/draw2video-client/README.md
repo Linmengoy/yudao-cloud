@@ -102,6 +102,8 @@ Current image generation behavior:
 - Uploaded images are media-only nodes; selecting one does not open a prompt composer.
 - Empty draft images render inside a fixed preview slot, and the placeholder card changes aspect ratio when image size params change.
 - Real images and sketch previews display at their natural aspect ratio, scaled down to a bounded max size with the full image visible. They should not show an extra card border or black letterbox around the media.
+- Image card titles are part of the zoomed canvas content. The selected media toolbar, selected-node composer, and side create handles keep a stable screen size while zoom changes.
+- Server-backed image nodes persist the returned `taskId` immediately after task creation. If the page is refreshed while the node is pending, the node resumes polling from the stored `taskId`.
 
 Current text behavior:
 
@@ -109,7 +111,18 @@ Current text behavior:
 - Create `Text`, `Image`, or `Video` nodes.
 - Text cards can be double-clicked for direct editing.
 - Text cards can be resized from the bottom-right handle.
+- Text card titles are part of the zoomed canvas content; the selected text composer keeps a stable screen size while zoom changes.
+- Server-backed text nodes persist the returned `taskId` immediately after task creation and resume pending polling after refresh.
 - Text generation is currently mocked and writes the result back into the same text node.
+
+Current sketch behavior:
+
+- Sketch nodes use a freeform tldraw canvas instead of a fixed frame.
+- Saving a sketch exports the natural bounds of visible sketch content. Empty sketches save a blank preview.
+- Existing sketches that still contain the legacy locked frame remove that frame on editor mount.
+- The sketch editor supports PNG, JPG, WEBP, and GIF uploads into the tldraw scene.
+- While the sketch editor is open, React Flow keyboard shortcuts are disabled so sketch deletion, undo, redo, and context-menu interactions stay inside tldraw.
+- Sketch card titles are part of the zoomed canvas content; selected-node toolbar and side create handles keep stable screen size while zoom changes.
 
 Current video behavior:
 
@@ -122,6 +135,8 @@ Current video behavior:
 - `Seedance 2.0` uses the Ark async task API.
 - `Wan 2.2` uses the custom Wan server proxy and supports no-reference text-to-video plus single-reference image-to-video.
 - Successful video task creation keeps the node in a loading state and polls until a video URL is available. Queued video jobs show `排队中` and do not start elapsed timing until the upstream job becomes `running`.
+- Server-backed video nodes persist the returned `taskId` immediately after task creation and resume pending polling after refresh.
+- Video card titles are part of the zoomed canvas content; selected media toolbar, selected-node composer, and side create handles keep stable screen size while zoom changes.
 
 Canvas history:
 
@@ -137,6 +152,7 @@ Canvas navigation:
 - The canvas uses a low-contrast dotted positioning background in both light and dark themes.
 - Node preview cards use opaque background surfaces so the positioning dots do not show through cards.
 - Selected node toolbars, selected-node composers, and side create handles keep a stable screen size while the React Flow canvas zoom changes. This keeps prompt entry usable even when the canvas is zoomed out.
+- Node titles stay in canvas coordinates, so they scale visually with the canvas zoom and remain aligned to their preview content.
 
 Canvas motion:
 
