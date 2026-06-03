@@ -30,6 +30,7 @@ export type NodeCreateMenuEventDetail = {
 export type NodeDataPatchEventDetail = {
   nodeId: string;
   patch: Record<string, unknown>;
+  flush?: boolean;
 };
 
 export type NodeEditingPresenceEventDetail = {
@@ -100,6 +101,7 @@ export interface ImageNodeData {
   taskId?: string | null;
   errorMessage?: string | null;
   taskStatus?: string | null;
+  upstreamStatus?: string | null;
   progress?: number | null;
   outputAssetId?: number | null;
   outputPreviewUrl?: string | null;

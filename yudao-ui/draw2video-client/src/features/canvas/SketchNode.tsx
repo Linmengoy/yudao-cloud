@@ -6,9 +6,10 @@ import { createPortal } from "react-dom";
 import type { Node, NodeProps } from "@xyflow/react";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { AnimatePresence, motion } from "motion/react";
-import { ImageIcon, Loader2, PenLine, Save, X } from "lucide-react";
+import { ImageIcon, Loader2, PenLine, Save, Upload, X } from "lucide-react";
 import {
   ArrowToolbarItem,
+  AssetRecordType,
   DefaultToolbar,
   DiamondToolbarItem,
   DrawToolbarItem,
@@ -23,17 +24,22 @@ import {
   TextToolbarItem,
   Tldraw,
   TriangleToolbarItem,
+  createShapesForAssets,
+  getAssetInfo,
+  getHashForBuffer,
   getSnapshot,
   loadSnapshot,
   createShapeId,
   type Editor,
+  type TLAsset,
   type TLComponents,
   type TLEditorSnapshot,
   type TLShapeId,
   type TLUiOverrides,
 } from "tldraw";
 import { NodeCreateHandle } from "./NodeCreateHandle";
-import type { NodeDataPatchEventDetail, SketchNodeData } from "./types";
+import type { NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, SketchNodeData } from "./types";
+import { isAcceptedImageType } from "./image-upload";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { compactInfo, downloadMedia } from "@/features/media-preview/media-preview-utils";
@@ -45,10 +51,11 @@ const CARD_WIDTH = 300;
 const CARD_HEIGHT = 220;
 const CARD_MAX_WIDTH = 320;
 const CARD_MAX_HEIGHT = 320;
-const SKETCH_BOARD_WIDTH = 1024;
-const SKETCH_BOARD_HEIGHT = 768;
 const SKETCH_BOARD_ID = createShapeId("copse-sketch-board");
-const SKETCH_BOARD_INSET = 72;
+const BLANK_PREVIEW_WIDTH = 1024;
+const BLANK_PREVIEW_HEIGHT = 768;
+const UPLOADED_IMAGE_MAX_WIDTH = 960;
+const UPLOADED_IMAGE_MAX_HEIGHT = 720;
 
 function scaleSketchPreview(width?: number, height?: number) {
   if (!width || !height) return { width: CARD_WIDTH, height: CARD_HEIGHT };
@@ -107,8 +114,8 @@ function parseSceneJson(value: unknown): Partial<TLEditorSnapshot> | null {
 
 function createBlankPreview(): { url: string; width: number; height: number } {
   const canvas = document.createElement("canvas");
-  canvas.width = SKETCH_BOARD_WIDTH;
-  canvas.height = SKETCH_BOARD_HEIGHT;
+  canvas.width = BLANK_PREVIEW_WIDTH;
+  canvas.height = BLANK_PREVIEW_HEIGHT;
   const ctx = canvas.getContext("2d");
   if (ctx) {
     ctx.fillStyle = "#f7f4ed";
@@ -125,65 +132,47 @@ function createBlankPreview(): { url: string; width: number; height: number } {
   return { url: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
 }
 
-function getSketchBoardViewportBounds() {
-  return {
-    x: -SKETCH_BOARD_INSET,
-    y: -SKETCH_BOARD_INSET,
-    w: SKETCH_BOARD_WIDTH + SKETCH_BOARD_INSET * 2,
-    h: SKETCH_BOARD_HEIGHT + SKETCH_BOARD_INSET * 2,
-  };
+function removeLegacyFixedSketchBoard(editor: Editor) {
+  const existingBoard = editor.getShape(SKETCH_BOARD_ID);
+  if (!existingBoard) return;
+  editor.updateShape({
+    id: existingBoard.id,
+    type: existingBoard.type,
+    isLocked: false,
+  });
+  editor.deleteShape(existingBoard.id);
 }
 
-function ensureFixedSketchBoard(editor: Editor): TLShapeId {
-  const existingBoard = editor.getShape(SKETCH_BOARD_ID);
-  if (!existingBoard) {
-    editor.createShape({
-      id: SKETCH_BOARD_ID,
-      type: "frame",
-      x: 0,
-      y: 0,
-      isLocked: true,
-      props: {
-        w: SKETCH_BOARD_WIDTH,
-        h: SKETCH_BOARD_HEIGHT,
-        name: "Reference Canvas",
-        color: "black",
-      },
-      meta: { copseSketchBoard: true },
-    });
-  } else if (
-    existingBoard.type !== "frame" ||
-    existingBoard.x !== 0 ||
-    existingBoard.y !== 0 ||
-    existingBoard.isLocked !== true ||
-    ("w" in existingBoard.props && existingBoard.props.w !== SKETCH_BOARD_WIDTH) ||
-    ("h" in existingBoard.props && existingBoard.props.h !== SKETCH_BOARD_HEIGHT)
-  ) {
-    editor.updateShape({
-      id: SKETCH_BOARD_ID,
-      type: "frame",
-      x: 0,
-      y: 0,
-      isLocked: true,
-      props: {
-        w: SKETCH_BOARD_WIDTH,
-        h: SKETCH_BOARD_HEIGHT,
-        name: "Reference Canvas",
-        color: "black",
-      },
-      meta: { copseSketchBoard: true },
-    });
-  }
-  editor.sendToBack([SKETCH_BOARD_ID]);
-  return SKETCH_BOARD_ID;
+function getViewportCenter(editor: Editor) {
+  const bounds = editor.getViewportPageBounds();
+  return { x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 };
+}
+
+function fitUploadedImageNearViewport(editor: Editor, shapeId: TLShapeId) {
+  const shape = editor.getShape(shapeId);
+  if (!shape || shape.type !== "image" || !("w" in shape.props) || !("h" in shape.props)) return;
+  const width = Number(shape.props.w);
+  const height = Number(shape.props.h);
+  if (!width || !height) return;
+  const scale = Math.min(1, UPLOADED_IMAGE_MAX_WIDTH / width, UPLOADED_IMAGE_MAX_HEIGHT / height);
+  const nextWidth = Math.round(width * scale);
+  const nextHeight = Math.round(height * scale);
+  const center = getViewportCenter(editor);
+  editor.updateShape({
+    id: shape.id,
+    type: "image",
+    x: Math.round(center.x - nextWidth / 2),
+    y: Math.round(center.y - nextHeight / 2),
+    props: {
+      ...shape.props,
+      w: nextWidth,
+      h: nextHeight,
+    },
+  });
 }
 
 function getExportShapeIds(editor: Editor): TLShapeId[] {
   return Array.from(editor.getCurrentPageShapeIds()).filter((shapeId) => shapeId !== SKETCH_BOARD_ID);
-}
-
-function getSketchBoardPageBounds(editor: Editor) {
-  return editor.getShapePageBounds(SKETCH_BOARD_ID);
 }
 
 function enforceSinglePage(editor: Editor) {
@@ -202,9 +191,12 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
   const selectedNodeCount = useStore((s) => s.nodes.filter((node) => node.selected).length);
   const showNodeActions = selectedNodeCount <= 1;
   const fixedUiScale = 1 / zoom;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [loadingRemote, setLoadingRemote] = useState(false);
   const remoteLoadedRef = useRef(false);
 
@@ -242,6 +234,18 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
     [id, setNodes]
   );
 
+  const sendEditingPresence = useCallback((nodeId: string | null) => {
+    window.dispatchEvent(new CustomEvent<NodeEditingPresenceEventDetail>("copse:node-editing-presence", {
+      detail: { nodeId },
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!editorOpen) return;
+    sendEditingPresence(id);
+    return () => sendEditingPresence(null);
+  }, [editorOpen, id, sendEditingPresence]);
+
   useEffect(() => {
     if (remoteLoadedRef.current || !data.projectId) return;
     remoteLoadedRef.current = true;
@@ -274,12 +278,13 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
       }
     }
     enforceSinglePage(mountedEditor);
-    ensureFixedSketchBoard(mountedEditor);
+    removeLegacyFixedSketchBoard(mountedEditor);
     mountedEditor.selectNone();
     window.setTimeout(() => {
-      mountedEditor.zoomToBounds(getSketchBoardViewportBounds(), {
-        animation: { duration: 0 },
-      });
+      const shapeIds = getExportShapeIds(mountedEditor);
+      if (shapeIds.length > 0) {
+        mountedEditor.zoomToFit({ animation: { duration: 0 } });
+      }
     }, 0);
   }, [data.sceneJson]);
 
@@ -287,17 +292,15 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
     if (!editor) return;
     setSaving(true);
     try {
-      ensureFixedSketchBoard(editor);
+      removeLegacyFixedSketchBoard(editor);
       const snapshot = getSnapshot(editor.store);
-      const boardBounds = getSketchBoardPageBounds(editor);
       const shapeIds = getExportShapeIds(editor);
-      const exportResult = shapeIds.length > 0 && boardBounds
+      const exportResult = shapeIds.length > 0
         ? await editor.toImageDataUrl(shapeIds, {
           format: "png",
           background: true,
-          bounds: boardBounds,
           darkMode: false,
-          padding: 0,
+          padding: "auto",
           scale: 1,
         })
         : createBlankPreview();
@@ -334,6 +337,48 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
     downloadMedia(previewItem);
   }, [previewItem]);
 
+  const addImageToSketch = useCallback(async (file: File) => {
+    if (!editor) return;
+    if (!isAcceptedImageType(file.type)) {
+      setUploadError("仅支持 PNG、JPG、WEBP 或 GIF 图片");
+      return;
+    }
+    setUploadingImage(true);
+    setUploadError(null);
+    try {
+      const assetId = AssetRecordType.createId(getHashForBuffer(await file.arrayBuffer()));
+      const assetInfo = await getAssetInfo(editor, file, assetId);
+      if (!assetInfo || assetInfo.type !== "image") {
+        setUploadError("无法读取这张图片");
+        return;
+      }
+      editor.createTemporaryAssetPreview(assetInfo.id, file);
+      const uploadedAsset = await editor.getAssetForExternalContent({
+        type: "file",
+        file,
+        assetId,
+      });
+      const asset = ({ ...(uploadedAsset ?? assetInfo), id: assetId } as TLAsset);
+      const [shapeId] = await createShapesForAssets(editor, [asset], getViewportCenter(editor));
+      if (shapeId) {
+        fitUploadedImageNearViewport(editor, shapeId);
+        editor.select(shapeId);
+      }
+    } catch {
+      setUploadError("图片上传失败，请换一张再试");
+    } finally {
+      setUploadingImage(false);
+    }
+  }, [editor]);
+
+  const handleImageInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (file) {
+      void addImageToSketch(file);
+    }
+  }, [addImageToSketch]);
+
   return (
     <>
       <div className="relative" style={{ width: previewSize.width }}>
@@ -356,9 +401,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
         <div
           className="mb-2 flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
           style={{
-            transform: `scale(${fixedUiScale})`,
-            transformOrigin: "bottom left",
-            width: previewSize.width / fixedUiScale,
+            width: previewSize.width,
           }}
         >
           <PenLine className="size-4" />
@@ -424,8 +467,25 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
             <div className="flex items-center gap-2 text-sm font-medium text-charcoal">
               <PenLine className="size-4 text-muted-gray" />
               <span>{data.fileName || "Sketch"}</span>
+              {uploadError && <span className="text-xs font-normal text-red-500">{uploadError}</span>}
             </div>
             <div className="flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={handleImageInputChange}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!editor || uploadingImage}
+                className="flex items-center gap-2 rounded-lg border border-border-warm bg-background px-3 py-2 text-sm font-medium text-charcoal transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {uploadingImage ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                上传图片
+              </button>
               <button
                 type="button"
                 onClick={saveSketch}

@@ -550,6 +550,7 @@ function CanvasFlow() {
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
+  const [keyboardEditingNodeId, setKeyboardEditingNodeId] = useState<string | null>(null);
   const [createMenu, setCreateMenu] = useState<{
     x: number;
     y: number;
@@ -842,20 +843,23 @@ function CanvasFlow() {
       if (!detail?.nodeId || !detail.patch) return;
       const key = `${detail.nodeId}:${Object.keys(detail.patch).sort().join(",")}`;
       clearTimeout(nodeDataPatchTimersRef.current[key]);
-      nodeDataPatchTimersRef.current[key] = setTimeout(() => {
+      const submitPatch = () => {
         const patch = Object.fromEntries(
           Object.entries(filterSyncableNodeDataPatch(detail.patch)).filter(([patchKey]) => !SNAPSHOT_ONLY_NODE_DATA_KEYS.has(patchKey))
         );
-        if (Object.keys(patch).length === 0) {
-          delete nodeDataPatchTimersRef.current[key];
-          return;
+        if (Object.keys(patch).length > 0) {
+          canvasOperations.submitOperation("NODE_UPDATE_DATA", {
+            nodeId: detail.nodeId,
+            patch,
+          });
         }
-        canvasOperations.submitOperation("NODE_UPDATE_DATA", {
-          nodeId: detail.nodeId,
-          patch,
-        });
         delete nodeDataPatchTimersRef.current[key];
-      }, NODE_DATA_PATCH_DEBOUNCE_MS);
+      };
+      if (detail.flush) {
+        submitPatch();
+      } else {
+        nodeDataPatchTimersRef.current[key] = setTimeout(submitPatch, NODE_DATA_PATCH_DEBOUNCE_MS);
+      }
     }
     window.addEventListener("copse:node-data-patch", handleNodeDataPatch);
     return () => window.removeEventListener("copse:node-data-patch", handleNodeDataPatch);
@@ -865,6 +869,7 @@ function CanvasFlow() {
     function handleNodeEditingPresence(event: Event) {
       const detail = (event as CustomEvent<NodeEditingPresenceEventDetail>).detail;
       editingNodeIdRef.current = detail?.nodeId ?? null;
+      setKeyboardEditingNodeId(editingNodeIdRef.current);
       canvasRealtime.sendPresence({
         editingNodeId: editingNodeIdRef.current,
         selectedNodeIds: nodes.filter((node) => node.selected).map((node) => node.id),
@@ -1799,7 +1804,7 @@ function CanvasFlow() {
         maxZoom={2}
         defaultViewport={DEFAULT_CANVAS_VIEWPORT}
         zoomOnScroll
-        zoomActivationKeyCode={["Meta", "Control"]}
+        zoomActivationKeyCode={keyboardEditingNodeId ? null : ["Meta", "Control"]}
         zoomOnPinch
         panOnScroll
         panOnScrollMode={PanOnScrollMode.Free}
@@ -1810,7 +1815,11 @@ function CanvasFlow() {
         selectionMode={SelectionMode.Partial}
         onSelectionEnd={handleSelectionEnd}
         zoomOnDoubleClick={false}
-        deleteKeyCode={isReadOnly ? null : "Backspace"}
+        deleteKeyCode={isReadOnly || keyboardEditingNodeId ? null : "Backspace"}
+        selectionKeyCode={keyboardEditingNodeId ? null : "Shift"}
+        multiSelectionKeyCode={keyboardEditingNodeId ? null : undefined}
+        panActivationKeyCode={keyboardEditingNodeId ? null : "Space"}
+        disableKeyboardA11y={Boolean(keyboardEditingNodeId)}
         fitView
         defaultEdgeOptions={{
           type: "signal",

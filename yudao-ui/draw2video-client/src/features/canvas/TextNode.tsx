@@ -32,6 +32,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
     width: number;
     height: number;
   } | null>(null);
+  const activeRunPollRef = useRef<string | null>(null);
 
   const isGenerating = data.status === "pending";
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
@@ -45,18 +46,54 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
   }, []);
 
   const updateData = useCallback(
-    (patch: Partial<TextNodeData>) => {
+    (patch: Partial<TextNodeData>, options?: { flush?: boolean }) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === id ? { ...node, data: { ...node.data, ...patch } } : node
         )
       );
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
-        detail: { nodeId: id, patch },
+        detail: { nodeId: id, patch, flush: options?.flush },
       }));
     },
     [id, setNodes]
   );
+
+  const waitAndApplyServerRun = useCallback(async (projectId: string | number, taskId: number, startedAt: string) => {
+    const pollKey = `${projectId}:${id}:${taskId}`;
+    if (activeRunPollRef.current === pollKey) return;
+    activeRunPollRef.current = pollKey;
+    try {
+      const result = await waitCanvasNodeRunResult(projectId, id, {
+        taskId,
+        baseVersion: 0,
+        nodeType: "text",
+      });
+      const patch = getCanvasNodeRunPatch(result, id);
+      if (patch) updateData(patch as Partial<TextNodeData>, { flush: true });
+    } catch (error) {
+      updateData({
+        status: "failed",
+        taskId: String(taskId),
+        errorMessage: error instanceof Error ? error.message : "文本任务同步失败",
+        generationCompletedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - new Date(startedAt).getTime(),
+      }, { flush: true });
+    } finally {
+      if (activeRunPollRef.current === pollKey) {
+        activeRunPollRef.current = null;
+      }
+    }
+  }, [id, updateData]);
+
+  useEffect(() => {
+    if (data.status !== "pending" || !data.taskId) return;
+    const projectId = new URLSearchParams(window.location.search).get("projectId");
+    if (!isServerCanvasProjectId(projectId)) return;
+    const taskId = Number(data.taskId);
+    if (!Number.isFinite(taskId)) return;
+    void waitAndApplyServerRun(projectId, taskId, data.generationStartedAt ?? data.createdAt);
+  }, [data.createdAt, data.generationStartedAt, data.status, data.taskId, waitAndApplyServerRun]);
 
   const commitContent = useCallback(() => {
     setEditing(false);
@@ -81,7 +118,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
     const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     if (isServerCanvasProjectId(projectId)) {
       try {
-        await canvasNodeRunApi.runNode(projectId, id, {
+        const run = await canvasNodeRunApi.runNode(projectId, id, {
           clientId,
           baseVersion: 0,
           runId: clientId,
@@ -92,15 +129,9 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
           prompt,
           inputParams: JSON.stringify({ previousContent: data.content }),
           sync: false,
-        }).then(async (run) => {
-          const result = await waitCanvasNodeRunResult(projectId, id, {
-            taskId: run.taskId,
-            baseVersion: 0,
-            nodeType: "text",
-          });
-          const patch = getCanvasNodeRunPatch(result, id);
-          if (patch) updateData(patch as Partial<TextNodeData>);
         });
+        updateData({ taskId: String(run.taskId), taskStatus: run.status }, { flush: true });
+        await waitAndApplyServerRun(projectId, run.taskId, startedAt);
         return;
       } catch (error) {
         updateData({
@@ -153,7 +184,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [data.aigcModelId, data.content, data.prompt, id, isGenerating, updateData]);
+  }, [data.aigcModelId, data.content, data.prompt, id, isGenerating, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!resizing) return;
@@ -185,9 +216,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
       <div
         className="flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
         style={{
-          marginBottom: 8 * fixedUiScale,
-          transform: `scale(${fixedUiScale})`,
-          transformOrigin: "bottom left",
+          marginBottom: 8,
         }}
       >
         <Text className="size-4" />
