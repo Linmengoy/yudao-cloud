@@ -175,8 +175,8 @@ public class EasyPayClient extends AbstractPayClient<EasyPayClientConfig> {
     }
 
     private String resolveDisplayContent(Map<String, String> response) {
-        return firstNotBlank(response, "display_content", "displayContent", "payurl", "payurl2", "pay_url", "cashier_url", "url",
-                "form_html", "form", "qr_code_url", "qrcode_url", "qr_code", "qrcode");
+        return firstNotBlank(response, "qrcode","display_content", "displayContent", "payurl", "payurl2", "pay_url", "cashier_url", "url",
+                "form_html", "form", "qr_code_url", "qrcode_url", "qr_code");
     }
 
     private LocalDateTime parseSuccessTime(Map<String, String> response) {
