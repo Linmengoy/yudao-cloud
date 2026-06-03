@@ -315,14 +315,23 @@ export const generationApi = {
   ↓
 节点进入 generating 状态
   ↓
-通过 task 模块轮询任务进度
+通过画布 run/sync 或 task 模块轮询任务进度
   ↓
-成功后调用 /app-api/aigc/gen/result?taskId=
+成功后读取 TASK_STATUS_PATCH / 生成结果
   ↓
 解析 outputUrls / assetIds
   ↓
 写回当前 ImageNode
 ```
+
+当前服务端画布生成路径使用：
+
+```text
+POST /app-api/canvas/projects/{projectId}/nodes/{nodeId}/run
+POST /app-api/canvas/projects/{projectId}/nodes/{nodeId}/run/sync
+```
+
+`run/sync` 返回 `operation.operationJson`，其中 `payload.patch` 是画布节点的最终写回数据。前端发起生成的当前节点必须在接口返回 `SUCCESS` 后主动解析并本地合并该 patch，不能只依赖 websocket 或增量 sync 回流，否则同一个客户端可能因为过滤自身 clientId、网络延迟或版本同步节奏，导致节点仍停留在 `pending`。
 
 视频生成流程：
 
@@ -394,8 +403,9 @@ VideoNode 显示队列中、运行中、成功、失败
 - 卡片边框使用 `1px solid #eceae4`，不要使用重阴影。
 - 主按钮使用深色 `#1c1c1c`、`#fcfbf8` 文本和 inset shadow。
 - 控件保持紧凑，符合“创作工具”而不是“营销卡片”。
-- 图像、视频预览容器保留 12px 圆角和暖色边框。
-- 生成中状态尽量内嵌在节点内部，不弹出大面积遮挡层。
+- 真实图片和 sketch 预览应以媒体本身作为节点主体，按真实宽高比缩放，不额外包固定比例黑边或暖色外框；空 draft 占位才使用边框卡片。
+- 图像、视频预览保留圆角，连接加号必须能显示在节点外侧，因此外层节点不能裁剪 overflow；只允许内部媒体层裁剪圆角。
+- 生成中状态内嵌在节点内部，不弹出大面积遮挡层。图片节点使用从左到右循环扫过的高光渐变，并在中心展示当前后端状态文案和耗时。
 
 ## 6. 管理端开发方案
 
@@ -800,6 +810,7 @@ POST /app-api/aigc/gen/image/text-to-image
 - 图片生成成功后写回 `ImageNode`。
 - 视频生成成功后写回 `VideoNode`。
 - 生成中状态不阻塞整个画布，只影响当前节点。
+- 发起生成的当前节点在 `run/sync` 返回 `SUCCESS` 时必须立即应用 `operation.operationJson.payload.patch`，无需等待 websocket 回流。
 - 失败时展示用户可理解的 `failMessage`。
 - 提交后可以通过任务列表和任务详情查看进度。
 - 生成结果轮询覆盖所有非终态：`CREATED`、`SUBMITTING`、`SUBMITTED`、`RUNNING`、`CALLBACK_WAITING`、`SYNCING`、`DOWNLOADING`、`ASSET_CREATING` 均不会提前停止刷新。
@@ -865,5 +876,6 @@ draw2video-client/src/lib/api-client.ts
 - 后端 `aigc-gen` 当前用户端接口主要覆盖文本生成、文生图、文生视频；图生图、图生视频需要确认是否通过通用 `/submit` 放开。
 - 生成结果 `outputUrls`、`assetIds` 是 JSON 字符串，前端需要约定解析结构，建议后端后续提供结构化 VO。
 - 任务进度事实源在 `aigc-task`，不能只依赖 `aigc-gen/result` 做轮询。
+- 生成资产转存文件名不能使用固定标题，例如 `IMAGE生成资产.png`，否则同一天同路径会覆盖，多个不同 assetId 会指向同一 `file_url`。data URL 落文件时必须包含 `generateNo`、`taskId` 或唯一 ID。
 - 管理端回调与渠道日志目前只有分页接口，没有详情接口，可先用行数据打开抽屉展示；如果分页返回字段被裁剪，需要补详情接口。
 - 用户端画布节点保存 taskId、recordId、assetIds 时，要遵守现有 canvas persistence 规则，避免把大媒体内容写入 localStorage。
