@@ -101,6 +101,20 @@ export async function waitCanvasNodeRunResult(projectId: string | number, nodeId
   return poll;
 }
 
+export function getCanvasNodeRunPatch(result: CanvasNodeRunResponse, nodeId: string) {
+  const operationJson = result.operation?.operationJson;
+  if (!operationJson) return null;
+  try {
+    const parsed = JSON.parse(operationJson) as { payload?: { nodeId?: unknown; patch?: unknown } };
+    if (parsed.payload?.nodeId !== nodeId || !parsed.payload.patch || typeof parsed.payload.patch !== "object") {
+      return null;
+    }
+    return parsed.payload.patch as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 async function waitCanvasNodeRunResultOnce(projectId: string | number, nodeId: string, input: CanvasNodeRunSyncRequest) {
   const startedAt = Date.now();
   let latest: CanvasNodeRunResponse | null = null;

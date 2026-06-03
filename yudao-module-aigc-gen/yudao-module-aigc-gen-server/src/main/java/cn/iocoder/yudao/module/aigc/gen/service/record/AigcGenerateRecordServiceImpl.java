@@ -168,9 +168,10 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         recordMetric("aigc_gen_submit_success_total");
         AigcGenerateRecordDO updateObj = new AigcGenerateRecordDO().setId(record.getId()).setProviderTaskId(providerResp.getProviderTaskId()).setProviderStatus(providerResp.getProviderStatus());
         if (Boolean.TRUE.equals(providerResp.getFinished())) {
-            updateObj.setStatus(AigcGenerateStatusEnum.SUCCESS.getCode()).setOutputText(providerResp.getOutputText()).setOutputData(providerResp.getOutputData()).setOutputUrls(providerResp.getOutputUrls()).setFinishTime(LocalDateTime.now());
+            updateObj.setStatus(AigcGenerateStatusEnum.ASSET_CREATING.getCode()).setOutputText(providerResp.getOutputText()).setOutputData(providerResp.getOutputData()).setOutputUrls(providerResp.getOutputUrls());
             generateRecordMapper.updateById(updateObj);
             finishSuccess(generateRecordMapper.selectById(record.getId()), providerResp);
+            generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setStatus(AigcGenerateStatusEnum.SUCCESS.getCode()).setFinishTime(LocalDateTime.now()));
         } else {
             updateObj.setStatus(AigcGenerateStatusEnum.CALLBACK_WAITING.getCode());
             generateRecordMapper.updateById(updateObj);
@@ -288,9 +289,10 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         if (AigcGenerateStatusEnum.SUCCESS.getCode().equals(reqDTO.getResultStatus())) {
             AigcProviderSubmitRespDTO resp = new AigcProviderSubmitRespDTO().setProviderTaskId(reqDTO.getProviderTaskId()).setProviderStatus(reqDTO.getResultStatus())
                     .setOutputText(reqDTO.getOutputText()).setOutputData(reqDTO.getOutputData()).setOutputUrls(reqDTO.getOutputUrls()).setSuccess(true).setFinished(true);
-            generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setStatus(AigcGenerateStatusEnum.SUCCESS.getCode()).setOutputText(reqDTO.getOutputText())
-                    .setOutputData(reqDTO.getOutputData()).setOutputUrls(reqDTO.getOutputUrls()).setCallbackTime(LocalDateTime.now()).setFinishTime(LocalDateTime.now()));
+            generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setStatus(AigcGenerateStatusEnum.ASSET_CREATING.getCode()).setOutputText(reqDTO.getOutputText())
+                    .setOutputData(reqDTO.getOutputData()).setOutputUrls(reqDTO.getOutputUrls()).setCallbackTime(LocalDateTime.now()));
             finishSuccess(generateRecordMapper.selectById(record.getId()), resp);
+            generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setStatus(AigcGenerateStatusEnum.SUCCESS.getCode()).setFinishTime(LocalDateTime.now()));
         } else if (AigcGenerateStatusEnum.FAILED.getCode().equals(reqDTO.getResultStatus())) {
             failRecord(record, "PROVIDER_FAILED", reqDTO.getFailReason());
         }
@@ -309,9 +311,10 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return;
         }
         if (Boolean.TRUE.equals(resp.getFinished())) {
-            generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setStatus(AigcGenerateStatusEnum.SUCCESS.getCode())
-                    .setProviderStatus(resp.getProviderStatus()).setOutputText(resp.getOutputText()).setOutputData(resp.getOutputData()).setOutputUrls(resp.getOutputUrls()).setFinishTime(LocalDateTime.now()));
+            generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setStatus(AigcGenerateStatusEnum.ASSET_CREATING.getCode())
+                    .setProviderStatus(resp.getProviderStatus()).setOutputText(resp.getOutputText()).setOutputData(resp.getOutputData()).setOutputUrls(resp.getOutputUrls()));
             finishSuccess(generateRecordMapper.selectById(record.getId()), resp);
+            generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setStatus(AigcGenerateStatusEnum.SUCCESS.getCode()).setFinishTime(LocalDateTime.now()));
         } else {
             generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setStatus(AigcGenerateStatusEnum.CALLBACK_WAITING.getCode()).setProviderStatus(resp.getProviderStatus()));
         }
@@ -426,12 +429,14 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             throw exception(GENERATE_PROVIDER_RESULT_INVALID);
         }
         String fileExt = fileExtFromMimeType(mimeType);
-        String fileUrl = fileApi.createFile(content, recordFileName(reqDTO.getTitle(), fileExt), "aigc/asset", mimeType);
+        String fileUrl = fileApi.createFile(content, recordFileName(reqDTO, fileExt), "aigc/asset", mimeType);
         reqDTO.setFileUrl(fileUrl).setMimeType(mimeType).setFileExt(fileExt).setFileSize((long) content.length);
     }
 
-    private String recordFileName(String title, String fileExt) {
-        return StrUtil.blankToDefault(title, "aigc-asset") + "." + fileExt;
+    private String recordFileName(AigcAssetCreateReqDTO reqDTO, String fileExt) {
+        String title = StrUtil.blankToDefault(reqDTO.getTitle(), "aigc-asset").replaceAll("[\\\\/:*?\"<>|\\s]+", "-");
+        String bizId = StrUtil.blankToDefault(reqDTO.getBizId(), "task-" + reqDTO.getTaskId());
+        return title + "-" + bizId + "-" + IdUtil.getSnowflakeNextIdStr() + "." + fileExt;
     }
 
     private String fileExtFromMimeType(String mimeType) {

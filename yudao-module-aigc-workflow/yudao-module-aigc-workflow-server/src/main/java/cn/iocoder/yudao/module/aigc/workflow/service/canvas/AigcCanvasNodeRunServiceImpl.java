@@ -72,7 +72,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     @Transactional(rollbackFor = Exception.class)
     public AigcCanvasNodeRunRespVO syncNodeRun(AigcCanvasNodeRunSyncReqVO reqVO, Long userId) {
         projectService.validateEditableProject(reqVO.getProjectId(), userId);
-        AigcGenerateResultRespDTO result = generateApi.getResult(reqVO.getTaskId()).getCheckedData();
+        AigcGenerateResultRespDTO result = getResultReadyForCanvas(reqVO.getTaskId());
         AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(), reqVO.getBaseVersion(), userId,
                 "task_result_" + reqVO.getNodeId() + "_" + reqVO.getTaskId() + "_" + result.getStatus(), buildResultPatch(reqVO.getNodeType(), result));
         roomService.broadcast(operation.getProjectId(), "canvas-op-applied", buildAppliedMessage(operation), null);
@@ -82,6 +82,37 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
                 .setGenerateNo(result.getGenerateNo())
                 .setStatus(result.getStatus())
                 .setOperation(BeanUtils.toBean(operation, AigcCanvasOperationRespVO.class));
+    }
+
+    private AigcGenerateResultRespDTO getResultReadyForCanvas(Long taskId) {
+        AigcGenerateResultRespDTO result = generateApi.getResult(taskId).getCheckedData();
+        if (!isSuccessWithPendingDataUrlAsset(result)) {
+            return result;
+        }
+        for (int i = 0; i < 6; i++) {
+            sleepQuietly(500);
+            result = generateApi.getResult(taskId).getCheckedData();
+            if (!isSuccessWithPendingDataUrlAsset(result)) {
+                return result;
+            }
+        }
+        return result.setStatus("ASSET_CREATING");
+    }
+
+    private boolean isSuccessWithPendingDataUrlAsset(AigcGenerateResultRespDTO result) {
+        if (result == null || !"SUCCESS".equals(result.getStatus()) || StrUtil.isNotBlank(result.getAssetIds())) {
+            return false;
+        }
+        List<String> urls = parseStringList(result.getOutputUrls());
+        return !urls.isEmpty() && StrUtil.startWithIgnoreCase(urls.get(0), "data:");
+    }
+
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private JSONObject buildSubmitPatch(AigcGenerateSubmitRespDTO submit) {
