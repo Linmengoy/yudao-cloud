@@ -9,6 +9,13 @@ type UseAigcModelsOptions = {
   params?: Record<string, unknown>;
 };
 
+function filterTemplateParams(params: Record<string, unknown>, templates: AigcModelParamTemplate[]) {
+  const keys = new Set(templates.map((template) => template.paramKey));
+  return Object.fromEntries(
+    Object.entries(params).filter(([key, value]) => keys.has(key) && value !== undefined && value !== null && value !== "")
+  );
+}
+
 export function useAigcModels({ type, capability, params }: UseAigcModelsOptions) {
   const [models, setModels] = useState<AigcModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
@@ -72,10 +79,10 @@ export function useAigcModels({ type, capability, params }: UseAigcModelsOptions
     };
   }, [capability, selectedModelId]);
 
-  const priceParams = useMemo(() => JSON.stringify(params ?? {}), [params]);
+  const priceParams = useMemo(() => JSON.stringify(filterTemplateParams(params ?? {}, templates)), [params, templates]);
 
   useEffect(() => {
-    if (!selectedModelId) {
+    if (!selectedModelId || templateLoading) {
       const timer = window.setTimeout(() => setPrice(null), 0);
       return () => window.clearTimeout(timer);
     }
@@ -88,7 +95,7 @@ export function useAigcModels({ type, capability, params }: UseAigcModelsOptions
         .finally(() => setPriceLoading(false));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [capability, priceParams, selectedModelId]);
+  }, [capability, priceParams, selectedModelId, templateLoading]);
 
   const selectedModel = models.find((item) => item.id === selectedModelId) ?? null;
 
