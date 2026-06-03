@@ -32,9 +32,8 @@ import { DEFAULT_PROMPT_DATA } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { createGenerationTask, resolveInputImages } from "./use-generation";
 import { DEFAULT_MODEL_ID, getModelById, IMAGE_MODELS } from "@/features/image-generation/models";
-import type { ImageModeration, ImageOutputFormat, ImageQuality } from "@/features/image-generation/types";
+import type { ImageModeration, ImageOutputFormat, ImageQuality, ImageTaskParams } from "@/features/image-generation/types";
 import { calculateImageSize, normalizeImageSize, type SizeTier } from "@/features/image-generation/size";
-import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import { getGenerationStatusLabel } from "@/features/generation/generation-status";
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
@@ -59,6 +58,7 @@ const PREVIEW_SLOT_HEIGHT = IMAGE_MAX_HEIGHT;
 const COMPOSER_WIDTH = 620;
 
 type SizeMode = "auto" | "ratio";
+type SizeSelection = { mode: SizeMode; tier: string; ratio: string };
 
 const TIERS: SizeTier[] = ["1K", "2K", "4K"];
 const RATIOS = ["1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "21:9"];
@@ -81,6 +81,15 @@ const MODERATION_OPTIONS = [
   { label: "Low", value: "low" as ImageModeration },
 ];
 
+const BASE_IMAGE_PARAM_KEYS = new Set([
+  "size",
+  "quality",
+  "output_format",
+  "output_compression",
+  "moderation",
+  "n",
+]);
+
 const BUILT_IN_IMAGE_PARAM_KEYS = new Set([
   "size",
   "quality",
@@ -88,6 +97,10 @@ const BUILT_IN_IMAGE_PARAM_KEYS = new Set([
   "output_compression",
   "moderation",
   "n",
+  "ratio",
+  "aspectRatio",
+  "imageSize",
+  "resolution",
 ]);
 
 function formatSizeSummary(size: string) {
@@ -104,7 +117,7 @@ function dimensionsFromSize(size: string) {
   return { width: w, height: h };
 }
 
-function getSizeSelection(size: string): { mode: SizeMode; tier: SizeTier; ratio: string } {
+function getSizeSelection(size: string): SizeSelection {
   const normalized = normalizeImageSize(size);
   if (!normalized || normalized === "auto") {
     return { mode: "auto", tier: "1K", ratio: "1:1" };
@@ -145,8 +158,83 @@ function normalizeTemplateOption(option: string) {
   return option.trim().replace(/^"+|"+$/g, "");
 }
 
+function findTemplate(templates: AigcModelParamTemplate[], keys: string[]) {
+  return templates.find((item) => keys.includes(item.paramKey));
+}
+
+function templateOptions(template: AigcModelParamTemplate | undefined, fallback: string[]) {
+  const options = (template?.options ?? []).map(normalizeTemplateOption).filter(Boolean);
+  return options.length > 0 ? options : fallback;
+}
+
+function templateDefault(template: AigcModelParamTemplate | undefined, fallback: string) {
+  const normalized = template?.defaultValue ? normalizeTemplateOption(template.defaultValue) : "";
+  return normalized || templateOptions(template, [fallback])[0] || fallback;
+}
+
+function segmentedOptions<T extends string>(template: AigcModelParamTemplate | undefined, fallback: { label: string; value: T }[]) {
+  const fallbackByValue = new Map(fallback.map((option) => [option.value, option.label]));
+  const options = templateOptions(template, fallback.map((option) => option.value));
+  return options.map((value) => ({
+    label: fallbackByValue.get(value as T) ?? value,
+    value: value as T,
+  }));
+}
+
+function hasParamValue(params: Record<string, unknown>, key: string | undefined) {
+  if (!key) return false;
+  const value = params[key];
+  return value !== undefined && value !== null && String(value) !== "";
+}
+
+function isSizeTier(value: string): value is SizeTier {
+  return TIERS.includes(value as SizeTier);
+}
+
+function getModelSizeSelection(params: Record<string, unknown>, templates: AigcModelParamTemplate[]): SizeSelection {
+  const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio"]);
+  const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
+  if (ratioTemplate || imageSizeTemplate) {
+    return {
+      mode: "ratio",
+      tier: String(params[imageSizeTemplate?.paramKey ?? "imageSize"] ?? templateDefault(imageSizeTemplate, "1K")),
+      ratio: String(params[ratioTemplate?.paramKey ?? "ratio"] ?? templateDefault(ratioTemplate, "1:1")),
+    };
+  }
+  return getSizeSelection(String(params.size ?? "auto"));
+}
+
+function formatModelSizeSummary(params: Record<string, unknown>, templates: AigcModelParamTemplate[]) {
+  const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio"]);
+  const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
+  if (ratioTemplate || imageSizeTemplate) {
+    const ratio = String(params[ratioTemplate?.paramKey ?? "ratio"] ?? templateDefault(ratioTemplate, "1:1"));
+    const imageSize = String(params[imageSizeTemplate?.paramKey ?? "imageSize"] ?? templateDefault(imageSizeTemplate, "1K"));
+    return `${ratio} · ${imageSize}`;
+  }
+  return formatSizeSummary(String(params.size ?? "auto"));
+}
+
+function modelParamKeys(templates: AigcModelParamTemplate[]) {
+  return new Set([...BASE_IMAGE_PARAM_KEYS, ...templates.map((template) => template.paramKey)]);
+}
+
+function filterModelParams(params: ImageTaskParams, templates: AigcModelParamTemplate[]): ImageTaskParams {
+  const keys = modelParamKeys(templates);
+  return Object.fromEntries(
+    Object.entries(params).filter(([key, value]) => value !== undefined && value !== null && value !== "" && keys.has(key))
+  ) as ImageTaskParams;
+}
+
 function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {
-  const sizeTemplate = templates.find((item) => item.paramKey === "size");
+  const sizeTemplate = findTemplate(templates, ["size"]);
+  const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
+  if (imageSizeTemplate) {
+    const options = templateOptions(imageSizeTemplate, ["1K"]);
+    if (options.includes("4K")) return "4K";
+    if (options.includes("2K")) return "2K";
+    return options[0] ?? "Image";
+  }
   const maxEdge = Math.max(
     0,
     ...(sizeTemplate?.options ?? [])
@@ -316,15 +404,23 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const activeModelName = activeAigcModel?.name ?? data.modelName ?? currentModel.name;
   const activeProviderModel = activeAigcModel?.model ?? data.providerModel ?? modelId;
   const activeAigcModelId = activeAigcModel?.id;
-  const extraParamTemplates = useMemo(
-    () => aigcModels.templates.filter((item) => !BUILT_IN_IMAGE_PARAM_KEYS.has(item.paramKey)),
-    [aigcModels.templates]
-  );
+  const ratioTemplate = useMemo(() => findTemplate(aigcModels.templates, ["ratio", "aspectRatio"]), [aigcModels.templates]);
+  const imageSizeTemplate = useMemo(() => findTemplate(aigcModels.templates, ["imageSize", "resolution"]), [aigcModels.templates]);
+  const qualityTemplate = useMemo(() => findTemplate(aigcModels.templates, ["quality"]), [aigcModels.templates]);
+  const formatTemplate = useMemo(() => findTemplate(aigcModels.templates, ["output_format"]), [aigcModels.templates]);
+  const moderationTemplate = useMemo(() => findTemplate(aigcModels.templates, ["moderation"]), [aigcModels.templates]);
+  const ratioOptions = useMemo(() => templateOptions(ratioTemplate, RATIOS), [ratioTemplate]);
+  const tierOptions = useMemo(() => templateOptions(imageSizeTemplate, TIERS), [imageSizeTemplate]);
+  const qualityOptions = useMemo(() => segmentedOptions(qualityTemplate, QUALITY_OPTIONS), [qualityTemplate]);
+  const formatOptions = useMemo(() => segmentedOptions(formatTemplate, FORMAT_OPTIONS), [formatTemplate]);
+  const moderationOptions = useMemo(() => segmentedOptions(moderationTemplate, MODERATION_OPTIONS), [moderationTemplate]);
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
   const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
   const imageSrc = data.previewUrl || data.dataUrl;
   const generatingStatusLabel = getGenerationStatusLabel(data.taskStatus || data.upstreamStatus || "RUNNING");
-  const sizeSelection = useMemo(() => getSizeSelection(params.size), [params.size]);
+  const sizeSelection = useMemo(() => getModelSizeSelection(params, aigcModels.templates), [aigcModels.templates, params]);
+  const usesDiscreteSizeParams = Boolean(ratioTemplate || imageSizeTemplate);
+  const effectiveParams = useMemo(() => filterModelParams(params, aigcModels.templates), [aigcModels.templates, params]);
 
   const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
@@ -481,6 +577,20 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     [data.params, id, setNodes]
   );
 
+  useEffect(() => {
+    if (aigcModels.templateLoading || aigcModels.templates.length === 0) return;
+    const patch: Record<string, unknown> = {};
+    for (const template of aigcModels.templates) {
+      if (!BUILT_IN_IMAGE_PARAM_KEYS.has(template.paramKey)) continue;
+      if (hasParamValue(params, template.paramKey)) continue;
+      const defaultValue = template.defaultValue ? normalizeTemplateOption(template.defaultValue) : "";
+      const options = templateOptions(template, []);
+      const nextValue = defaultValue || options[0];
+      if (nextValue) patch[template.paramKey] = nextValue;
+    }
+    if (Object.keys(patch).length > 0) updateParams(patch);
+  }, [aigcModels.templateLoading, aigcModels.templates, params, updateParams]);
+
   const handleNodeClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
       if (!referencePickerPromptId || referencePickerPromptId === id) return;
@@ -519,29 +629,45 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
   const handleSizeModeChange = useCallback(
     (mode: SizeMode) => {
+      if (usesDiscreteSizeParams) {
+        if (mode === "auto") return;
+        const patch: Record<string, unknown> = {};
+        if (ratioTemplate && !hasParamValue(params, ratioTemplate.paramKey)) patch[ratioTemplate.paramKey] = templateDefault(ratioTemplate, "1:1");
+        if (imageSizeTemplate && !hasParamValue(params, imageSizeTemplate.paramKey)) patch[imageSizeTemplate.paramKey] = templateDefault(imageSizeTemplate, "1K");
+        if (Object.keys(patch).length > 0) updateParams(patch);
+        return;
+      }
       if (mode === "auto") {
         updateParams({ size: "auto" });
         return;
       }
       if (mode === "ratio") {
-        updateParams({ size: calculateImageSize(sizeSelection.tier, sizeSelection.ratio) ?? "auto" });
+        updateParams({ size: isSizeTier(sizeSelection.tier) ? calculateImageSize(sizeSelection.tier, sizeSelection.ratio) ?? "auto" : "auto" });
       }
     },
-    [sizeSelection.ratio, sizeSelection.tier, updateParams]
+    [imageSizeTemplate, params, ratioTemplate, sizeSelection.ratio, sizeSelection.tier, updateParams, usesDiscreteSizeParams]
   );
 
   const handleTierChange = useCallback(
-    (tier: SizeTier) => {
-      updateParams({ size: calculateImageSize(tier, sizeSelection.ratio) ?? "auto" });
+    (tier: string) => {
+      if (usesDiscreteSizeParams) {
+        updateParams({ [imageSizeTemplate?.paramKey ?? "imageSize"]: tier });
+        return;
+      }
+      updateParams({ size: isSizeTier(tier) ? calculateImageSize(tier, sizeSelection.ratio) ?? "auto" : String(tier) });
     },
-    [sizeSelection.ratio, updateParams]
+    [imageSizeTemplate, sizeSelection.ratio, updateParams, usesDiscreteSizeParams]
   );
 
   const handleRatioChange = useCallback(
     (ratio: string) => {
-      updateParams({ size: calculateImageSize(sizeSelection.tier, ratio) ?? "auto" });
+      if (usesDiscreteSizeParams) {
+        updateParams({ [ratioTemplate?.paramKey ?? "ratio"]: ratio });
+        return;
+      }
+      updateParams({ size: isSizeTier(sizeSelection.tier) ? calculateImageSize(sizeSelection.tier, ratio) ?? "auto" : "auto" });
     },
-    [sizeSelection.tier, updateParams]
+    [ratioTemplate, sizeSelection.tier, updateParams, usesDiscreteSizeParams]
   );
 
   const handleModelSelect = useCallback(
@@ -594,7 +720,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       taskId: null,
       promptNodeId: id,
       prompt: cleanPrompt,
-      params,
+      params: effectiveParams,
       modelId,
       providerModel: activeProviderModel,
       aigcModelId: activeAigcModelId,
@@ -615,7 +741,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       providerModel: activeProviderModel,
       aigcModelId: activeAigcModelId,
       modelName: activeModelName,
-      params,
+      params: effectiveParams,
       isGenerating: true,
     };
 
@@ -642,7 +768,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           generateMode: mode === "edit" ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE",
           modelId: activeAigcModelId,
           prompt: cleanPrompt,
-          inputParams: buildServerInputParams(params, ids, snapshots),
+          inputParams: buildServerInputParams(effectiveParams, ids, snapshots),
           sync: false,
         });
         updateData({
@@ -695,7 +821,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       nextData.kind = "generated";
       nextData.dataUrl = updates.imageUrls[0];
       nextData.fileName = "generated-image.png";
-      nextData.mimeType = params.output_format === "jpeg" ? "image/jpeg" : `image/${params.output_format}`;
+      nextData.mimeType = effectiveParams.output_format === "jpeg" ? "image/jpeg" : `image/${effectiveParams.output_format}`;
     }
 
     setNodes((nds) =>
@@ -706,7 +832,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModelId, activeModelName, activeProviderModel, getEdges, getNodes, id, isGenerating, modelId, params, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModelId, activeModelName, activeProviderModel, effectiveParams, getEdges, getNodes, id, isGenerating, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen) return;
@@ -1109,7 +1235,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     className="flex items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-sm text-muted-gray transition-colors hover:border-charcoal/40 hover:bg-background hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <SlidersHorizontal className="size-4" />
-                    <span>{formatSizeSummary(params.size)}</span>
+                    <span>{formatModelSizeSummary(params, aigcModels.templates)}</span>
                   </button>
                   <AnimatePresence>
                     {paramsPopoverOpen && (
@@ -1152,7 +1278,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                         {sizeSelection.mode === "ratio" && (
                           <div className="space-y-3">
                             <div className="grid grid-cols-3 gap-2">
-                              {TIERS.map((tier) => (
+                              {tierOptions.map((tier) => (
                                 <button
                                   key={tier}
                                   type="button"
@@ -1167,7 +1293,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                               ))}
                             </div>
                             <div className="grid grid-cols-4 gap-1.5">
-                              {RATIOS.map((ratio) => (
+                              {ratioOptions.map((ratio) => (
                                 <button
                                   key={ratio}
                                   type="button"
@@ -1189,23 +1315,14 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                         <p className="text-xs font-medium text-muted-gray">Output</p>
 
                         <div className="space-y-2">
-                          <ParamSegmented label="质量" value={params.quality} options={QUALITY_OPTIONS} onChange={(value) => updateParams({ quality: value })} />
-                          <ParamSegmented label="格式" value={params.output_format} options={FORMAT_OPTIONS} onChange={handleFormatChange} />
-                          <ParamSegmented label="审核" value={params.moderation} options={MODERATION_OPTIONS} onChange={(value) => updateParams({ moderation: value })} />
+                          <ParamSegmented label="质量" value={params.quality} options={qualityOptions} onChange={(value) => updateParams({ quality: value })} />
+                          <ParamSegmented label="格式" value={params.output_format} options={formatOptions} onChange={handleFormatChange} />
+                          <ParamSegmented label="审核" value={params.moderation} options={moderationOptions} onChange={(value) => updateParams({ moderation: value })} />
                         </div>
 
                       </section>
-
-                      {(aigcModels.templateLoading || extraParamTemplates.length > 0) && (
-                        <section className="mt-5 space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs font-medium text-muted-gray">模型额外参数</p>
-                            {aigcModels.templateLoading && <span className="text-[11px] text-muted-gray">加载中...</span>}
-                          </div>
-                          {extraParamTemplates.length > 0 && (
-                            <DynamicParamForm templates={extraParamTemplates} values={params} disabled={isGenerating} onChange={updateParams} />
-                          )}
-                        </section>
+                      {aigcModels.templateLoading && (
+                        <p className="mt-4 text-[11px] text-muted-gray">参数加载中...</p>
                       )}
                     </motion.div>
                     )}
