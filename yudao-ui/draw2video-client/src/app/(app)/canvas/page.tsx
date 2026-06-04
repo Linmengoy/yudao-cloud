@@ -29,7 +29,7 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, GroupNodeData, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
@@ -977,6 +977,32 @@ function CanvasFlow() {
     window.addEventListener("copse:node-data-patch", handleNodeDataPatch);
     return () => window.removeEventListener("copse:node-data-patch", handleNodeDataPatch);
   }, [canvasOperations, isReadOnly]);
+
+  useEffect(() => {
+    function handleGroupUngroup(event: Event) {
+      if (isReadOnly) return;
+      const detail = (event as CustomEvent<GroupUngroupEventDetail>).detail;
+      if (!detail?.groupId) return;
+
+      const groupNode = (getNodes() as AppNode[]).find((node) => node.id === detail.groupId && node.type === "canvasGroup");
+      if (!groupNode || groupNode.type !== "canvasGroup") return;
+
+      const childNodeIds = new Set((groupNode.data as GroupNodeData).childNodeIds);
+      setNodes((nds) => nds
+        .filter((node) => node.id !== detail.groupId)
+        .map((node) => ({ ...node, selected: childNodeIds.has(node.id) }))
+      );
+      setEdges((eds) => eds.filter((edge) => edge.source !== detail.groupId && edge.target !== detail.groupId));
+      setMultiSelectionBounds(null);
+      setCanGroupSelection(false);
+      canvasOperations.submitOperation("NODE_DELETE", {
+        nodeId: detail.groupId,
+      });
+    }
+
+    window.addEventListener("copse:group-ungroup", handleGroupUngroup);
+    return () => window.removeEventListener("copse:group-ungroup", handleGroupUngroup);
+  }, [canvasOperations, getNodes, isReadOnly, setEdges, setNodes]);
 
   useEffect(() => {
     function handleNodeEditingPresence(event: Event) {

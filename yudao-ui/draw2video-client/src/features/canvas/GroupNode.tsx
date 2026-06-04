@@ -3,8 +3,8 @@
 import { useCallback } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { useReactFlow } from "@xyflow/react";
-import { Boxes } from "lucide-react";
-import type { GroupNodeData, NodeDataPatchEventDetail } from "./types";
+import { Boxes, Ungroup } from "lucide-react";
+import type { GroupNodeData, GroupUngroupEventDetail, NodeDataPatchEventDetail } from "./types";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
 
@@ -27,9 +27,15 @@ export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
     [id, setNodes]
   );
 
+  const ungroup = useCallback(() => {
+    window.dispatchEvent(new CustomEvent<GroupUngroupEventDetail>("copse:group-ungroup", {
+      detail: { groupId: id },
+    }));
+  }, [id]);
+
   return (
     <div
-      className="canvas-node-drag-handle pointer-events-auto relative rounded-2xl border border-dashed border-charcoal/25 bg-charcoal/[0.025] transition-colors data-[selected=true]:border-charcoal/55 data-[selected=true]:bg-charcoal/[0.035] dark:border-white/25 dark:bg-white/[0.025] dark:data-[selected=true]:border-white/55"
+      className="canvas-node-drag-handle pointer-events-auto relative rounded-2xl border border-dashed border-charcoal/25 bg-charcoal/[0.025] transition-[background-color,border-color,box-shadow] data-[selected=true]:border-blue-500/70 data-[selected=true]:bg-blue-500/[0.035] data-[selected=true]:shadow-[0_0_0_1px_rgba(59,130,246,0.18),0_12px_32px_rgba(59,130,246,0.08)] dark:border-white/25 dark:bg-white/[0.025] dark:data-[selected=true]:border-blue-300/75 dark:data-[selected=true]:bg-blue-300/[0.055]"
       data-node-preview-card
       data-node-id={id}
       data-selected={selected ? "true" : "false"}
@@ -38,6 +44,26 @@ export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
         height: data.height,
       }}
     >
+      {selected ? (
+        <div
+          className="nodrag nowheel pointer-events-auto absolute left-1/2 z-40 -translate-x-1/2 rounded-full border border-border-warm bg-background/95 p-1 shadow-[rgba(0,0,0,0.12)_0px_6px_18px] backdrop-blur-sm"
+          style={{ top: -62 }}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              ungroup();
+            }}
+            className="flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-gray transition-colors hover:bg-muted hover:text-charcoal focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
+          >
+            <Ungroup className="size-3.5" />
+            Ungroup
+          </button>
+        </div>
+      ) : null}
       <CanvasNodeTitle left={8} maxWidth={data.width}>
         <Boxes className="size-4" />
         <EditableNodeTitle
