@@ -269,6 +269,16 @@
     box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12);
   }
 
+  .react-flow__nodesselection {
+    z-index: 70 !important;
+  }
+
+  .react-flow__nodesselection-rect,
+  .react-flow__nodesselection-rect.dragging {
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
   .react-flow__node.selectable.selected,
   .react-flow__node-image.selectable.selected,
   .react-flow__node-video.selectable.selected,
