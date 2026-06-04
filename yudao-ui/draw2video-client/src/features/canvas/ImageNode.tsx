@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { clampToViewport } from "./floating-position";
 
 type ImageNodeProps = NodeProps<Node<ImageNodeData, "image">>;
+type ConnectedImage = { edgeId: string; data: Pick<ImageNodeData | SketchNodeData, "previewUrl" | "dataUrl" | "fileName"> };
 
 const PLACEHOLDER_WIDTH = 360;
 const PLACEHOLDER_HEIGHT = 260;
@@ -232,6 +233,44 @@ function buildServerInputParams(params: Record<string, unknown>, ids: string[], 
   });
 }
 
+function getConnectedImagesSignature(nodeId: string, nodes: AppNode[], edges: AppEdge[]) {
+  return edges
+    .filter((edge) => edge.target === nodeId)
+    .map((edge) => {
+      const node = nodes.find((n) => n.id === edge.source);
+      if (node?.type !== "image" && node?.type !== "sketch") return null;
+      const nodeData = node.data as ImageNodeData | SketchNodeData;
+      return [
+        edge.id,
+        edge.source,
+        nodeData.previewUrl ?? "",
+        nodeData.dataUrl ? nodeData.dataUrl.length : 0,
+        nodeData.fileName,
+      ].join(":");
+    })
+    .filter(Boolean)
+    .join("|");
+}
+
+function getConnectedImages(nodeId: string, nodes: AppNode[], edges: AppEdge[]): ConnectedImage[] {
+  const connectedImages: ConnectedImage[] = [];
+  for (const edge of edges) {
+    if (edge.target !== nodeId) continue;
+    const node = nodes.find((n) => n.id === edge.source);
+    if (node?.type !== "image" && node?.type !== "sketch") continue;
+    const nodeData = node.data as ImageNodeData | SketchNodeData;
+    connectedImages.push({
+      edgeId: edge.id,
+      data: {
+        previewUrl: nodeData.previewUrl ?? null,
+        dataUrl: nodeData.dataUrl ?? "",
+        fileName: nodeData.fileName,
+      },
+    });
+  }
+  return connectedImages;
+}
+
 function scaleToPreview(width: number, height: number) {
   const scale = Math.min(1, IMAGE_MAX_WIDTH / width, IMAGE_MAX_HEIGHT / height);
   return {
@@ -317,10 +356,15 @@ function ParamSegmented<T extends string>({
 export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodeProps) {
   const { setNodes, setEdges, getNode, getNodes, getEdges } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
-  const edges = useStore((s) => s.edges) as AppEdge[];
-  const nodes = useStore((s) => s.nodes) as AppNode[];
-  const zoom = useStore((s) => s.transform[2] || 1);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
+  const zoom = useStore((s) => s.transform[2] || 1);
+  const selectedNodeCount = useStore((s) => s.nodes.reduce((count, node) => count + (node.selected ? 1 : 0), 0));
+  const connectedImagesSignature = useStore((s) => getConnectedImagesSignature(id, s.nodes as AppNode[], s.edges as AppEdge[]));
+  const isReferencedByActivePrompt = useStore((s) => Boolean(
+    referencePickerPromptId &&
+      referencePickerPromptId !== id &&
+      (s.edges as AppEdge[]).some((edge) => edge.source === id && edge.target === referencePickerPromptId)
+  ));
   const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
   const [paramsPopoverOpen, setParamsPopoverOpen] = useState(false);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
@@ -349,15 +393,12 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const selectedAigcModelId = data.aigcModelId;
   const params = data.params ?? DEFAULT_PROMPT_DATA.params;
   const prompt = data.prompt ?? "";
-  const connectedImages = edges
-    .filter((edge) => edge.target === id)
-    .map((edge) => {
-      const node = nodes.find((n) => n.id === edge.source);
-      return node?.type === "image" || node?.type === "sketch"
-        ? { edgeId: edge.id, data: node.data as ImageNodeData | SketchNodeData }
-        : null;
-    })
-    .filter((item): item is { edgeId: string; data: ImageNodeData | SketchNodeData } => item !== null);
+  const connectedImages = useMemo(() => {
+    void connectedImagesSignature;
+    const currentNodes = getNodes() as AppNode[];
+    const currentEdges = getEdges() as AppEdge[];
+    return getConnectedImages(id, currentNodes, currentEdges);
+  }, [connectedImagesSignature, getEdges, getNodes, id]);
   const generationCapability = connectedImages.length > 0 ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
   const aigcModels = useAigcModels({ type: 2, capability: generationCapability, preferredModelId: selectedAigcModelId, params });
   const storedAigcModel = aigcModels.models.find((item) => item.id === selectedAigcModelId);
@@ -390,16 +431,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const showOutputSection = showQualityControl || showFormatControl || showModerationControl;
   const canGenerate = Boolean(prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && Boolean(activeAigcModelId);
 
-  const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
   const fixedUiScale = 1 / zoom;
-
-  const isReferencedByActivePrompt = Boolean(
-    referencePickerPromptId &&
-      referencePickerPromptId !== id &&
-      edges.some((edge) => edge.source === id && edge.target === referencePickerPromptId)
-  );
 
   useEffect(() => {
     function handleReferencePicker(e: Event) {
@@ -929,13 +963,12 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           <motion.div
             className="absolute"
             initial={false}
-            animate={{
+            style={{
               left: displayLeft,
               top: displayTop,
               width: displaySize.width,
               height: displaySize.height,
             }}
-            transition={{ type: "spring", stiffness: 360, damping: 34 }}
           >
             {isReferencedByActivePrompt && (
               <div className="pointer-events-none absolute -right-2 -top-2 z-10 flex size-6 items-center justify-center rounded-full bg-charcoal text-off-white shadow">
@@ -947,12 +980,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
               data-node-preview-card
               data-node-id={id}
               initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1, width: displaySize.width, height: displaySize.height }}
+              animate={{ opacity: 1, scale: 1 }}
               transition={{
                 opacity: { duration: 0.18, ease: "easeOut" },
                 scale: { duration: 0.18, ease: "easeOut" },
-                width: { type: "spring", stiffness: 360, damping: 34 },
-                height: { type: "spring", stiffness: 360, damping: 34 },
               }}
               className={cn(
                 "canvas-node-drag-handle group relative overflow-visible rounded-xl",
@@ -972,8 +1003,12 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     onLoad={(event) => {
                       const image = event.currentTarget;
                       if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-                        setMeasuredSize({ width: image.naturalWidth, height: image.naturalHeight });
-                        setVisibleImageInset({ left: getVisibleImageLeftInset(image) });
+                        setMeasuredSize((current) => (
+                          current?.width === image.naturalWidth && current.height === image.naturalHeight
+                            ? current
+                            : { width: image.naturalWidth, height: image.naturalHeight }
+                        ));
+                        setVisibleImageInset((current) => current ?? { left: getVisibleImageLeftInset(image) });
                       }
                       if (
                         image.naturalWidth > 0 &&

@@ -545,6 +545,7 @@ function CanvasFlow() {
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
+  const [nodeDragCommitVersion, setNodeDragCommitVersion] = useState(0);
   const [keyboardEditingNodeId, setKeyboardEditingNodeId] = useState<string | null>(null);
   const [createMenu, setCreateMenu] = useState<{
     x: number;
@@ -558,6 +559,7 @@ function CanvasFlow() {
   const [pendingConnectionPreview, setPendingConnectionPreview] = useState<PendingConnectionPreview | null>(null);
   const selectionStartRef = useRef<PointerSnapshot | null>(null);
   const selectionRectRef = useRef<SelectionRectSnapshot | null>(null);
+  const selectionRafRef = useRef<number | null>(null);
   const storeApi = useStoreApi();
 
   const {
@@ -619,6 +621,7 @@ function CanvasFlow() {
   const historyFutureRef = useRef<CanvasSnapshot[]>([]);
   const lastHistorySignatureRef = useRef<string | null>(null);
   const restoringHistoryRef = useRef(false);
+  const nodeDragActiveRef = useRef(false);
   const projectCreationRef = useRef(false);
   const ignoreNextPaneClickRef = useRef(false);
   const [clientId] = useState(() => `canvas_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
@@ -626,6 +629,7 @@ function CanvasFlow() {
   const canvasRealtime = useCanvasRealtime(serverProjectId, clientId, lastAppliedVersion);
   const canvasOperations = useCanvasOperations(serverProjectId, clientId, latestKnownVersion, setLatestKnownVersion, canvasRealtime.sendOperation, canvasRealtime.isConnected);
   const processedRealtimeMessageCountRef = useRef(0);
+  const canvasZoomRef = useRef(DEFAULT_CANVAS_VIEWPORT.zoom);
   const [remotePresences, setRemotePresences] = useState<Record<string, RemoteCanvasPresence>>({});
   const lastPresenceSentAtRef = useRef(0);
   const editingNodeIdRef = useRef<string | null>(null);
@@ -917,6 +921,7 @@ function CanvasFlow() {
 
   useEffect(() => {
     if (!isHydrated) return;
+    if (nodeDragActiveRef.current) return;
     const snapshot = cloneSnapshot(nodes, edges);
     const signature = snapshotSignature(snapshot);
 
@@ -943,7 +948,7 @@ function CanvasFlow() {
     } catch {
       lastHistorySignatureRef.current = signature;
     }
-  }, [edges, isHydrated, nodes]);
+  }, [edges, isHydrated, nodeDragCommitVersion, nodes]);
 
   const restoreSnapshot = useCallback(
     (snapshot: CanvasSnapshot) => {
@@ -1148,6 +1153,7 @@ function CanvasFlow() {
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     if (!isHydrated || !activeProjectId) return;
+    if (nodeDragActiveRef.current) return;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       try {
@@ -1171,7 +1177,7 @@ function CanvasFlow() {
       }
     }, CANVAS_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(saveTimer.current);
-  }, [activeProjectId, canvasOperations.pendingOperationCount, clientId, edges, getViewport, isHydrated, isReadOnly, markAppliedVersion, nodes, saveSnapshot, serverProjectId, syncFromVersion]);
+  }, [activeProjectId, canvasOperations.pendingOperationCount, clientId, edges, getViewport, isHydrated, isReadOnly, markAppliedVersion, nodeDragCommitVersion, nodes, saveSnapshot, serverProjectId, syncFromVersion]);
 
   // --- Add nodes ---
   const addImageDraftNode = useCallback((position?: { x: number; y: number }) => {
@@ -1768,12 +1774,20 @@ function CanvasFlow() {
           height: Math.abs(event.clientY - start.y),
         };
         selectionRectRef.current = selectionRect;
-        window.requestAnimationFrame(() => {
-          setNodes((current) => applyPreviewCardSelection(current, selectionRect));
+        if (selectionRafRef.current !== null) return;
+        selectionRafRef.current = window.requestAnimationFrame(() => {
+          selectionRafRef.current = null;
+          const latestSelectionRect = selectionRectRef.current;
+          if (!latestSelectionRect) return;
+          setNodes((current) => applyPreviewCardSelection(current, latestSelectionRect));
         });
       }}
       onPointerUpCapture={() => {
         selectionStartRef.current = null;
+        if (selectionRafRef.current !== null) {
+          window.cancelAnimationFrame(selectionRafRef.current);
+          selectionRafRef.current = null;
+        }
       }}
       onDoubleClick={(event) => {
         const target = event.target as HTMLElement;
@@ -1816,12 +1830,15 @@ function CanvasFlow() {
         panActivationKeyCode={keyboardEditingNodeId ? null : "Space"}
         disableKeyboardA11y={Boolean(keyboardEditingNodeId)}
         fitView
+        onlyRenderVisibleElements
         defaultEdgeOptions={{
           type: "signal",
         }}
         connectionLineComponent={CanvasConnectionLine}
         proOptions={{ hideAttribution: true }}
         onMove={(_, viewport) => {
+          if (Math.abs(viewport.zoom - canvasZoomRef.current) < 0.005) return;
+          canvasZoomRef.current = viewport.zoom;
           setCanvasZoom(viewport.zoom);
         }}
         onDragOver={handleDragOver}
@@ -1842,7 +1859,15 @@ function CanvasFlow() {
         nodesDraggable={!isReadOnly}
         nodesConnectable={!isReadOnly}
         elementsSelectable
-        onNodeDragStart={() => { if (!isReadOnly) window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
+        onNodeDragStart={() => {
+          if (isReadOnly) return;
+          nodeDragActiveRef.current = true;
+          window.dispatchEvent(new CustomEvent("copse:canvas-interaction"));
+        }}
+        onNodeDragStop={() => {
+          nodeDragActiveRef.current = false;
+          setNodeDragCommitVersion((version) => version + 1);
+        }}
         onConnectStart={() => { if (isReadOnly) return; setPendingConnectionPreview(null); window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
         onConnectEnd={handleConnectEnd}
         isValidConnection={(connection) => !isReadOnly && isValidCanvasConnection(connection, nodes)}
