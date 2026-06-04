@@ -44,6 +44,7 @@ import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaTool
 import { downloadMedia, imageNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
 import { clampToViewport } from "./floating-position";
+import { EditableNodeTitle } from "./EditableNodeTitle";
 
 type ImageNodeProps = NodeProps<Node<ImageNodeData, "image">>;
 type ConnectedImage = { edgeId: string; data: Pick<ImageNodeData | SketchNodeData, "previewUrl" | "dataUrl" | "fileName"> };
@@ -955,9 +956,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             transition={{ type: "spring", stiffness: 360, damping: 34 }}
           >
             <ImageIcon className="size-4" />
-            <span className="line-clamp-1" title={data.fileName}>
-              Image
-            </span>
+            <EditableNodeTitle
+              value={data.fileName}
+              fallback="Image"
+              onCommit={(fileName) => updateData({ fileName }, { flush: true })}
+            />
           </motion.div>
 
           <motion.div

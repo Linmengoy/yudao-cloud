@@ -139,6 +139,7 @@ export type SketchNode = Node<SketchNodeData, "sketch">;
 
 export interface TextNodeData {
   [key: string]: unknown;
+  fileName?: string;
   content: string;
   prompt: string;
   modelId: string;

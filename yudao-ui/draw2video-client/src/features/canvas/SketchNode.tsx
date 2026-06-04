@@ -44,6 +44,7 @@ import { canvasApi } from "@/features/canvas/canvas-api";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { compactInfo, downloadMedia } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
+import { EditableNodeTitle } from "./EditableNodeTitle";
 
 type SketchNodeProps = NodeProps<Node<SketchNodeData, "sketch">>;
 
@@ -405,7 +406,12 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
           }}
         >
           <PenLine className="size-4" />
-          <span className="truncate">{data.fileName || "Sketch"}</span>
+          <EditableNodeTitle
+            value={data.fileName}
+            fallback="Sketch"
+            onCommit={(fileName) => updateData({ fileName })}
+            className="min-w-0 truncate"
+          />
           {loadingRemote && <Loader2 className="size-3.5 animate-spin" />}
         </div>
 

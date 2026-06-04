@@ -31,6 +31,7 @@ import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog"
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { downloadMedia, videoNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
+import { EditableNodeTitle } from "./EditableNodeTitle";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
 
@@ -625,9 +626,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           transition={{ type: "spring", stiffness: 360, damping: 34 }}
         >
           <Video className="size-4" />
-          <span className="line-clamp-1" title={data.fileName}>
-            Video
-          </span>
+          <EditableNodeTitle
+            value={data.fileName}
+            fallback="Video"
+            onCommit={(fileName) => updateData({ fileName }, { flush: true })}
+          />
         </motion.div>
 
         <motion.div

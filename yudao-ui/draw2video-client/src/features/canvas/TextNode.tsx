@@ -11,6 +11,7 @@ import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { cn } from "@/lib/utils";
+import { EditableNodeTitle } from "./EditableNodeTitle";
 
 type TextNodeProps = NodeProps<Node<TextNodeData, "text">>;
 
@@ -220,7 +221,11 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
         }}
       >
         <Text className="size-4" />
-        <span>Text</span>
+        <EditableNodeTitle
+          value={data.fileName}
+          fallback="Text"
+          onCommit={(fileName) => updateData({ fileName, updatedAt: new Date().toISOString() }, { flush: true })}
+        />
       </div>
 
       <motion.div

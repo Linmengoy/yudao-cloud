@@ -403,6 +403,7 @@ function migrateNode(n: AppNode): AppNode {
       ...n,
       data: {
         content: typeof d.content === "string" ? d.content : "",
+        fileName: typeof d.fileName === "string" ? d.fileName : "Text",
         prompt: typeof d.prompt === "string" ? d.prompt : "",
         modelId: typeof d.modelId === "string" ? d.modelId : "Gemini 3.1 Flash Lite",
         status: d.status === "pending" || d.status === "failed" ? d.status : "idle",
@@ -1261,6 +1262,7 @@ function CanvasFlow() {
     });
     const id = `text_${Date.now()}`;
     const textData: TextNodeData = {
+      fileName: "Text",
       content: "",
       prompt: "",
       modelId: "Gemini 3.1 Flash Lite",
