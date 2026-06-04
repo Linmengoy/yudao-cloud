@@ -283,12 +283,14 @@ export default function WorkspacePage() {
             <Link
               key={project.id}
               href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
-              className="group mb-4 inline-block w-full break-inside-avoid overflow-hidden rounded-xl border border-border-warm bg-background align-top transition-colors hover:border-[rgba(28,28,28,0.4)]"
+              className="group relative mb-4 inline-block w-full break-inside-avoid overflow-hidden rounded-xl border border-border-warm bg-background align-top transition-colors hover:border-[rgba(28,28,28,0.4)]"
             >
               <ProjectCover project={project} />
-              <div className="p-3">
-                <p className="truncate text-xs font-medium text-charcoal">{project.name}</p>
-                <p className="mt-1 text-[11px] text-muted-gray">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>
+              <div className="pointer-events-none absolute inset-x-0 top-0 p-6">
+                <p className="truncate text-1xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.65)]">{project.name}</p>
+              </div>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pt-10 pb-3 text-center">
+                <p className="text-[11px] font-medium text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>
               </div>
             </Link>
           ))}
