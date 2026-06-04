@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 
 type EditableNodeTitleProps = {
   value?: string | null;
@@ -44,15 +45,19 @@ export function EditableNodeTitle({ value, fallback, onCommit, className }: Edit
             setEditing(false);
           }
         }}
-        className="nodrag nowheel min-w-0 flex-1 rounded bg-background/90 px-1 py-0 text-sm font-medium text-charcoal outline-none ring-1 ring-charcoal/25"
+        className="nodrag nowheel pointer-events-auto min-w-0 flex-1 rounded bg-background/90 px-1 py-0 text-sm font-medium text-charcoal outline-none ring-1 ring-charcoal/25"
       />
     );
   }
 
   return (
     <span
-      className={className ?? "line-clamp-1 min-w-0"}
+      className={cn(
+        "nodrag nowheel pointer-events-auto min-w-0 cursor-text rounded px-1 transition-colors hover:bg-muted hover:text-charcoal",
+        className ?? "line-clamp-1"
+      )}
       title={title}
+      onPointerDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => {
         event.preventDefault();
         event.stopPropagation();

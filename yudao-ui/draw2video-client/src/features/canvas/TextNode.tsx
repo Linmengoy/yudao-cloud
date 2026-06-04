@@ -215,7 +215,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
   return (
     <div className="relative" style={{ width: data.width }}>
       <div
-        className="flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
+        className="nodrag nowheel pointer-events-auto flex items-center gap-1.5 rounded-md bg-transparent px-1 text-sm font-medium text-muted-gray transition-colors hover:bg-muted hover:text-charcoal"
         style={{
           marginBottom: 8,
         }}
