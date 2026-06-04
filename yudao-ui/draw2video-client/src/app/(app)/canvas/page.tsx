@@ -76,8 +76,8 @@ const CANVAS_EDGE_TYPES = {
 
 const CANVAS_NODE_DRAG_HANDLE = ".canvas-node-drag-handle";
 const TRANSPARENT_NODE_WRAPPER_STYLE = { pointerEvents: "none" as const };
-const GROUP_LAYOUT_PADDING = 18;
-const GROUP_LAYOUT_GAP = 32;
+const GROUP_LAYOUT_PADDING = 32;
+const GROUP_LAYOUT_GAP = 48;
 
 type CreateNodeKind = "text" | "image" | "sketch" | "video";
 type LinkedCreateDirection = "incoming" | "outgoing";
@@ -1081,7 +1081,7 @@ function CanvasFlow() {
     return () => window.removeEventListener("copse:group-ungroup", handleGroupUngroup);
   }, [canvasOperations, getNodes, isReadOnly, setEdges, setNodes]);
 
-  const arrangeGroupNodes = useCallback((groupId: string) => {
+  const arrangeGroupNodes = useCallback((groupId: string, mode: GroupArrangeEventDetail["mode"]) => {
     if (isReadOnly) return;
     const currentNodes = getNodes() as AppNode[];
     const groupNode = currentNodes.find((node) => node.id === groupId && node.type === "canvasGroup");
@@ -1098,7 +1098,9 @@ function CanvasFlow() {
       .filter((item): item is { node: AppNode; rect: SelectionRectSnapshot } => Boolean(item.rect));
     if (childRects.length === 0) return;
 
-    const maxContentWidth = Math.max(220, groupData.width - GROUP_LAYOUT_PADDING * 2);
+    const maxContentWidth = mode === "grid"
+      ? Math.max(220, groupData.width - GROUP_LAYOUT_PADDING * 2)
+      : Number.POSITIVE_INFINITY;
     let cursorX = 0;
     let cursorY = 0;
     let rowHeight = 0;
@@ -1106,7 +1108,7 @@ function CanvasFlow() {
     const layout = new Map<string, { x: number; y: number; width: number; height: number }>();
 
     for (const { node, rect } of childRects) {
-      if (cursorX > 0 && cursorX + rect.width > maxContentWidth) {
+      if (mode === "grid" && cursorX > 0 && cursorX + rect.width > maxContentWidth) {
         cursorX = 0;
         cursorY += rowHeight + GROUP_LAYOUT_GAP;
         rowHeight = 0;
@@ -1176,8 +1178,8 @@ function CanvasFlow() {
   useEffect(() => {
     function handleGroupArrange(event: Event) {
       const detail = (event as CustomEvent<GroupArrangeEventDetail>).detail;
-      if (!detail?.groupId) return;
-      arrangeGroupNodes(detail.groupId);
+      if (!detail?.groupId || !detail.mode) return;
+      arrangeGroupNodes(detail.groupId, detail.mode);
     }
 
     window.addEventListener("copse:group-arrange", handleGroupArrange);

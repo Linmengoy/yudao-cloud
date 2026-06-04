@@ -43,6 +43,7 @@ export type GroupUngroupEventDetail = {
 
 export type GroupArrangeEventDetail = {
   groupId: string;
+  mode: "horizontal" | "grid";
 };
 
 export type PromptNode = Node<PromptNodeData, "prompt">;
