@@ -168,11 +168,11 @@ export default function ProjectsPage() {
     setIsCreating(true);
     try {
       const projectId = await canvasApi.createProject({ name: "未命名项目", kind: "image" });
-      router.push(`/create/image?projectId=${encodeURIComponent(String(projectId))}`);
+      router.push(`/canvas?projectId=${encodeURIComponent(String(projectId))}`);
     } catch {
       const project = createProject({ name: "未命名项目", kind: "image" });
       setStatusMessage("项目服务暂不可用，已创建本机草稿。");
-      router.push(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+      router.push(`/canvas?projectId=${encodeURIComponent(project.id)}`);
     } finally {
       setIsCreating(false);
     }
@@ -272,7 +272,7 @@ export default function ProjectsPage() {
               key={project.id}
               className="group relative overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
             >
-              <Link href={`/create/image?projectId=${encodeURIComponent(project.id)}`} className="block">
+              <Link href={`/canvas?projectId=${encodeURIComponent(project.id)}`} className="block">
                 <ProjectCover project={project} />
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-3">

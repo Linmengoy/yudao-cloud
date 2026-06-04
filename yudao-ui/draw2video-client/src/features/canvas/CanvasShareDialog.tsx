@@ -37,8 +37,8 @@ export function CanvasShareDialog({
 
   const canManageMembers = projectRole === "owner";
   const shareUrl = useMemo(() => {
-    if (typeof window === "undefined") return `/create/image?projectId=${projectId}`;
-    return `${window.location.origin}/create/image?projectId=${projectId}`;
+    if (typeof window === "undefined") return `/canvas?projectId=${projectId}`;
+    return `${window.location.origin}/canvas?projectId=${projectId}`;
   }, [projectId]);
 
   const refreshMembers = useCallback(async () => {

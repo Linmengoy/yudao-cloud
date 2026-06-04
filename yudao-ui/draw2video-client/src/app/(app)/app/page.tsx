@@ -85,10 +85,10 @@ export default function WorkspacePage() {
     const projectName = name?.trim() || "未命名项目";
     try {
       const projectId = await canvasApi.createProject({ name: projectName, kind: "image" });
-      router.push(`/create/image?projectId=${encodeURIComponent(String(projectId))}`);
+      router.push(`/canvas?projectId=${encodeURIComponent(String(projectId))}`);
     } catch {
       const project = createProject({ name: projectName, kind: "image" });
-      router.push(`/create/image?projectId=${encodeURIComponent(project.id)}`);
+      router.push(`/canvas?projectId=${encodeURIComponent(project.id)}`);
     }
   }
 
@@ -197,7 +197,7 @@ export default function WorkspacePage() {
           {recentProjects.map((project) => (
             <Link
               key={project.id}
-              href={`/create/image?projectId=${encodeURIComponent(project.id)}`}
+              href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
               className="group overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
             >
               <div className="flex aspect-square items-center justify-center bg-muted text-muted-gray">

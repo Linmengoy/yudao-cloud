@@ -40,7 +40,7 @@ function localToAsset(asset: GeneratedAsset): AigcAsset {
 
 function getAssetHref(asset: AigcAsset) {
   if (Number.isFinite(asset.id)) return `/assets/${asset.id}`;
-  if (asset.localProjectId) return `/create/image?projectId=${encodeURIComponent(asset.localProjectId)}`;
+  if (asset.localProjectId) return `/canvas?projectId=${encodeURIComponent(asset.localProjectId)}`;
   return "/projects";
 }
 
