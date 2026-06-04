@@ -254,4 +254,39 @@
   .react-flow__node.draggable.dragging:has(.canvas-node-drag-handle) .canvas-node-drag-handle {
     cursor: grabbing;
   }
+
+  .react-flow__selection {
+    border: 1px solid rgba(59, 130, 246, 0.72) !important;
+    border-radius: 12px;
+    background: rgba(59, 130, 246, 0.08) !important;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.14);
+  }
+
+  .react-flow__nodesselection-rect {
+    border: 1px solid rgba(59, 130, 246, 0.72) !important;
+    border-radius: 12px;
+    background: rgba(59, 130, 246, 0.04) !important;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12);
+  }
+
+  .react-flow__nodesselection {
+    z-index: 70 !important;
+  }
+
+  .react-flow__nodesselection-rect,
+  .react-flow__nodesselection-rect.dragging {
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  .react-flow__node.selectable.selected,
+  .react-flow__node-image.selectable.selected,
+  .react-flow__node-video.selectable.selected,
+  .react-flow__node-sketch.selectable.selected,
+  .react-flow__node-text.selectable.selected,
+  .react-flow__node-canvasGroup.selectable.selected {
+    box-shadow: none !important;
+    border: none !important;
+    outline: none !important;
+  }
 }
