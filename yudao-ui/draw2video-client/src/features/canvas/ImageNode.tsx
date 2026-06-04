@@ -111,7 +111,17 @@ function formatCost(value: number | null | undefined) {
 }
 
 function normalizeTemplateOption(option: string) {
-  return option.trim().replace(/^"+|"+$/g, "");
+  let value = String(option).trim();
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const parsed = JSON.parse(value);
+      if (typeof parsed !== "string") break;
+      value = parsed.trim();
+    } catch {
+      break;
+    }
+  }
+  return value.replace(/\\/g, "").replace(/^"+|"+$/g, "").trim();
 }
 
 function findTemplate(templates: AigcModelParamTemplate[], keys: string[]) {
@@ -147,8 +157,8 @@ function getModelSizeSelection(params: Record<string, unknown>, templates: AigcM
   const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio"]);
   const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
   return {
-    tier: String(params[imageSizeTemplate?.paramKey ?? "imageSize"] ?? templateDefault(imageSizeTemplate, "")),
-    ratio: String(params[ratioTemplate?.paramKey ?? "ratio"] ?? templateDefault(ratioTemplate, "")),
+    tier: normalizeTemplateOption(String(params[imageSizeTemplate?.paramKey ?? "imageSize"] ?? templateDefault(imageSizeTemplate, ""))),
+    ratio: normalizeTemplateOption(String(params[ratioTemplate?.paramKey ?? "ratio"] ?? templateDefault(ratioTemplate, ""))),
   };
 }
 
@@ -156,13 +166,13 @@ function formatModelSizeSummary(params: Record<string, unknown>, templates: Aigc
   const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio"]);
   const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
   if (ratioTemplate || imageSizeTemplate) {
-    const ratio = String(params[ratioTemplate?.paramKey ?? "ratio"] ?? templateDefault(ratioTemplate, "1:1"));
-    const imageSize = String(params[imageSizeTemplate?.paramKey ?? "imageSize"] ?? templateDefault(imageSizeTemplate, "1K"));
+    const ratio = normalizeTemplateOption(String(params[ratioTemplate?.paramKey ?? "ratio"] ?? templateDefault(ratioTemplate, "1:1")));
+    const imageSize = normalizeTemplateOption(String(params[imageSizeTemplate?.paramKey ?? "imageSize"] ?? templateDefault(imageSizeTemplate, "1K")));
     return `${ratio} · ${imageSize}`;
   }
   const sizeTemplate = findTemplate(templates, ["size"]);
   if (sizeTemplate) {
-    return String(params.size ?? templateDefault(sizeTemplate, ""));
+    return normalizeTemplateOption(String(params.size ?? templateDefault(sizeTemplate, "")));
   }
   return "参数";
 }
@@ -1199,7 +1209,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                   onClick={() => handleSizeChange(size)}
                                   className={cn(
                                     "rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-gray transition-colors hover:text-charcoal",
-                                    String(params[sizeTemplate.paramKey] ?? templateDefault(sizeTemplate, "")) === size && "bg-background text-charcoal shadow-sm"
+                                    normalizeTemplateOption(String(params[sizeTemplate.paramKey] ?? templateDefault(sizeTemplate, ""))) === size && "bg-background text-charcoal shadow-sm"
                                   )}
                                 >
                                   {size}
