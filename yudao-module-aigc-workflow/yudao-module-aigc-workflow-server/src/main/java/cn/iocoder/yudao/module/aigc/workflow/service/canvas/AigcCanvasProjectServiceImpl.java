@@ -181,7 +181,8 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
 
     @Override
     public PageResult<AigcCanvasProjectRespVO> getProjectPage(AigcCanvasProjectPageReqVO reqVO, Long userId) {
-        Set<Long> sharedProjectIds = memberMapper.selectListByUserId(userId).stream()
+        List<AigcCanvasMemberDO> members = memberMapper.selectListByUserId(userId);
+        Set<Long> sharedProjectIds = members.stream()
                 .map(AigcCanvasMemberDO::getProjectId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
@@ -191,8 +192,9 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         }
 
         List<AigcCanvasProjectDO> projects = pageResult.getList();
-        List<Long> projectIds = projects.stream().map(AigcCanvasProjectDO::getId).toList();
-        Map<Long, AigcCanvasMemberDO> memberMap = memberMapper.selectListByProjectIdsAndUserId(projectIds, userId).stream()
+        Set<Long> projectIds = projects.stream().map(AigcCanvasProjectDO::getId).collect(Collectors.toSet());
+        Map<Long, AigcCanvasMemberDO> memberMap = members.stream()
+                .filter(member -> projectIds.contains(member.getProjectId()))
                 .collect(Collectors.toMap(AigcCanvasMemberDO::getProjectId, Function.identity(), (first, second) -> first));
         Map<Long, AigcAssetRespDTO> assetMap = getAssetMap(projects);
 

@@ -85,6 +85,7 @@ public class YudaoTenantAutoConfiguration {
     @Bean
     public TenantLineInnerInterceptor tenantLineInnerInterceptor(TenantProperties properties,
                                                                  MybatisPlusInterceptor interceptor) {
+                                                                    
         TenantLineInnerInterceptor inner = new TenantLineInnerInterceptor(new TenantDatabaseInterceptor(properties));
         // 添加到 interceptor 中
         // 需要加在首个，主要是为了在分页插件前面。这个是 MyBatis Plus 的规定
