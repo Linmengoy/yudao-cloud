@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FolderPlus, ImageIcon, Paperclip, Plus, Send } from "lucide-react";
@@ -8,6 +8,8 @@ import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { getAigcModelList, type AigcModel } from "@/features/generation/model-api";
 import { createProject, listProjects, type ProjectMeta } from "@/features/projects/project-store";
+
+import type Muuri from "muuri";
 
 const MODEL_TYPE_LABELS: Record<number, string> = {
   1: "文本",
@@ -70,15 +72,29 @@ function ProjectIcon() {
   return <ImageIcon className="size-5" />;
 }
 
-function ProjectCover({ project }: { project: ProjectListItem }) {
+function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
+  useEffect(() => {
+    if (!project.coverUrl || !onLoad) return;
+    const image = new window.Image();
+    image.onload = onLoad;
+    image.onerror = onLoad;
+    image.src = project.coverUrl;
+    return () => {
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [onLoad, project.coverUrl]);
+
   if (project.coverUrl) {
     return (
       <div className="bg-muted">
         <img
           src={project.coverUrl}
           alt={`${project.name} 封面`}
+          onLoad={onLoad}
+          onError={onLoad}
           draggable={false}
-          className="block h-auto max-w-full"
+          className="block h-auto w-full"
         />
       </div>
     );
@@ -100,6 +116,8 @@ export default function WorkspacePage() {
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const gridElementRef = useRef<HTMLDivElement | null>(null);
+  const muuriRef = useRef<Muuri | null>(null);
   const recentProjects = useMemo(() => projects.slice(0, 7), [projects]);
   const modelGroups = useMemo(() => {
     const groups = new Map<number, AigcModel[]>();
@@ -132,6 +150,34 @@ export default function WorkspacePage() {
   useEffect(() => {
     const timer = window.setTimeout(refreshProjects, 0);
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (recentProjects.length === 0 || !gridElementRef.current) return;
+    let disposed = false;
+    const element = gridElementRef.current;
+    import("muuri").then(({ default: MuuriGrid }) => {
+      if (disposed || !element) return;
+      muuriRef.current?.destroy(true);
+      muuriRef.current = new MuuriGrid(element, {
+        items: ".project-grid-item",
+        layoutDuration: 180,
+        layoutEasing: "ease",
+      });
+      requestAnimationFrame(() => muuriRef.current?.refreshItems().layout());
+    });
+    const onResize = () => muuriRef.current?.refreshItems().layout();
+    window.addEventListener("resize", onResize);
+    return () => {
+      disposed = true;
+      window.removeEventListener("resize", onResize);
+      muuriRef.current?.destroy(true);
+      muuriRef.current = null;
+    };
+  }, [recentProjects]);
+
+  const refreshProjectWallLayout = useCallback(() => {
+    muuriRef.current?.refreshItems().layout();
   }, []);
 
   useEffect(() => {
@@ -276,23 +322,25 @@ export default function WorkspacePage() {
           </Link>
         </div>
 
-        <div className="mt-4 columns-2 gap-4 sm:columns-3 lg:columns-4">
-
-
+        <div ref={gridElementRef} className="relative mt-4 -m-2">
           {recentProjects.map((project) => (
-            <Link
+            <div
               key={project.id}
-              href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
-              className="group relative mb-4 inline-block w-full break-inside-avoid overflow-hidden rounded-xl border border-border-warm bg-background align-top transition-colors hover:border-[rgba(28,28,28,0.4)]"
+              className="project-grid-item absolute w-1/2 p-2 sm:w-1/3 lg:w-1/4"
             >
-              <ProjectCover project={project} />
-              <div className="pointer-events-none absolute inset-x-0 top-0 p-6">
-                <p className="truncate text-1xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.65)]">{project.name}</p>
-              </div>
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pt-10 pb-3 text-center">
-                <p className="text-[11px] font-medium text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>
-              </div>
-            </Link>
+              <Link
+                href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
+                className="group relative block overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
+              >
+                <ProjectCover project={project} onLoad={refreshProjectWallLayout} />
+                {/* <div className="pointer-events-none absolute inset-x-0 top-0 p-6">
+                  <p className="truncate text-1xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.65)]">{project.name}</p>
+                </div> */}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pt-10 pb-3 text-center">
+                  <p className="text-[11px] font-medium text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>
+                </div>
+              </Link>
+            </div>
           ))}
         </div>
       </div>
