@@ -53,8 +53,6 @@ const PLACEHOLDER_WIDTH = 360;
 const PLACEHOLDER_HEIGHT = 260;
 const IMAGE_MAX_WIDTH = 420;
 const IMAGE_MAX_HEIGHT = 420;
-const PREVIEW_SLOT_WIDTH = IMAGE_MAX_WIDTH;
-const PREVIEW_SLOT_HEIGHT = IMAGE_MAX_HEIGHT;
 const COMPOSER_WIDTH = 620;
 
 type SizeSelection = { tier: string; ratio: string };
@@ -879,14 +877,12 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const safety = getSafetyCopy(safetyStatus, "generation");
   const previewItem = useMemo(() => imageNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
   const displaySize = getDisplaySize(data, measuredSize, params.size);
-  const displayLeft = (PREVIEW_SLOT_WIDTH - displaySize.width) / 2;
-  const displayTop = 28 + PREVIEW_SLOT_HEIGHT - displaySize.height;
   const displayScale = (measuredSize?.width ?? data.width)
     ? displaySize.width / (measuredSize?.width ?? data.width ?? displaySize.width)
     : 1;
-  const titleLeft = displayLeft + Math.round((visibleImageInset?.left ?? 0) * displayScale);
+  const titleLeft = Math.round((visibleImageInset?.left ?? 0) * displayScale);
   const titleWidth = Math.max(80, displaySize.width - Math.round((visibleImageInset?.left ?? 0) * displayScale));
-  const titleTop = Math.max(0, displayTop - 28);
+  const titleTop = -28 * fixedUiScale;
   const pickerActiveForThisNode = referencePickerPromptId === id;
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
@@ -896,7 +892,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [displayLeft, displayTop, displaySize.width, displaySize.height, id, updateNodeInternals]);
+  }, [displaySize.width, displaySize.height, id, updateNodeInternals]);
 
   const handlePreviewDownload = useCallback(() => {
     if (!previewItem) return;
@@ -928,9 +924,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           "relative",
           referencePickerPromptId && referencePickerPromptId !== id ? "cursor-pointer" : ""
         )}
-        style={{ width: PREVIEW_SLOT_WIDTH }}
+        style={{ width: displaySize.width, height: displaySize.height }}
       >
-        <div className="relative" style={{ width: PREVIEW_SLOT_WIDTH, height: PREVIEW_SLOT_HEIGHT + 28 }}>
+        <div className="relative overflow-visible" style={{ width: displaySize.width, height: displaySize.height }}>
           <AnimatePresence>
             {isOnlySelectedNode && !dragging && previewItem && (
               <SelectedMediaToolbar
@@ -939,7 +935,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 onOpenPreview={() => setPreviewOpen(true)}
                 uiScale={fixedUiScale}
                 style={{
-                  left: displayLeft + displaySize.width / 2,
+                  left: displaySize.width / 2,
                   top: titleTop - 36 * fixedUiScale,
                   pointerEvents: "auto",
                 }}
@@ -968,8 +964,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             className="absolute"
             initial={false}
             style={{
-              left: displayLeft,
-              top: displayTop,
+              left: 0,
+              top: 0,
               width: displaySize.width,
               height: displaySize.height,
             }}
@@ -1075,11 +1071,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
               animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
               exit={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
               transition={{ duration: 0.18, ease: "easeOut" }}
-              className="nodrag nowheel rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
+              className="nodrag nowheel absolute rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
               style={{
                 width: COMPOSER_WIDTH,
-                marginLeft: (PREVIEW_SLOT_WIDTH - COMPOSER_WIDTH) / 2,
-                marginTop: 12 * fixedUiScale,
+                left: (displaySize.width - COMPOSER_WIDTH) / 2,
+                top: displaySize.height + 12 * fixedUiScale,
                 transformOrigin: "top center",
                 pointerEvents: "auto",
               }}

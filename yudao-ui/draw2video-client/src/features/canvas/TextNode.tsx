@@ -213,11 +213,11 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
   }, [resizing, updateData, zoom]);
 
   return (
-    <div className="relative" style={{ width: data.width }}>
+    <div className="relative" style={{ width: data.width, height: data.height }}>
       <div
-        className="nodrag nowheel pointer-events-auto flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
+        className="nodrag nowheel pointer-events-auto absolute left-0 flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
         style={{
-          marginBottom: 8,
+          top: -28 * fixedUiScale,
           maxWidth: data.width,
           width: "fit-content",
         }}
@@ -326,11 +326,11 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
             animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
             exit={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="nodrag nowheel rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
+            className="nodrag nowheel absolute rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
             style={{
               width: COMPOSER_WIDTH,
-              marginLeft: (data.width - COMPOSER_WIDTH) / 2,
-              marginTop: 12 * fixedUiScale,
+              left: (data.width - COMPOSER_WIDTH) / 2,
+              top: data.height + 12 * fixedUiScale,
               transformOrigin: "top center",
               pointerEvents: "auto",
             }}
@@ -371,7 +371,8 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.14 }}
-            className="mt-2 flex items-center gap-1 text-xs text-destructive"
+            className="absolute left-0 flex items-center gap-1 text-xs text-destructive"
+            style={{ top: data.height + 8 }}
           >
             <X className="size-3" />
             {data.errorMessage ?? "生成失败"}

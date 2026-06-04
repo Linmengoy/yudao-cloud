@@ -382,7 +382,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
 
   return (
     <>
-      <div className="relative" style={{ width: previewSize.width }}>
+      <div className="relative" style={{ width: previewSize.width, height: previewSize.height }}>
         <AnimatePresence>
           {selected && showNodeActions && (
             <SelectedMediaToolbar
@@ -400,8 +400,9 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
         </AnimatePresence>
 
         <div
-          className="nodrag nowheel pointer-events-auto mb-2 flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
+          className="nodrag nowheel pointer-events-auto absolute left-0 flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
           style={{
+            top: -28 * fixedUiScale,
             maxWidth: previewSize.width,
             width: "fit-content",
           }}

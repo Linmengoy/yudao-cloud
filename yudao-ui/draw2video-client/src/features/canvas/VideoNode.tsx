@@ -239,13 +239,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const progressLabel = isQueued ? "排队中" : isRunning ? `生成中 ${formatElapsed(elapsedMs)}` : "提交中";
   const previewItem = useMemo(() => videoNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
   const displaySize = getDisplaySize(data);
-  const displayLeft = (PREVIEW_SLOT_WIDTH - displaySize.width) / 2;
-  const displayTop = 28 + PREVIEW_SLOT_HEIGHT - displaySize.height;
-  const titleTop = Math.max(0, displayTop - 28);
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
   const videoSrc = data.videoUrl || data.previewUrl;
   const fixedUiScale = 1 / zoom;
+  const titleTop = -28 * fixedUiScale;
   const referenceImages = useMemo(() => {
     void referenceImagesSignature;
     const currentNodes = getNodes() as AppNode[];
@@ -289,7 +287,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [displayLeft, displayTop, displaySize.width, displaySize.height, id, updateNodeInternals]);
+  }, [displaySize.width, displaySize.height, id, updateNodeInternals]);
 
   const updateData = useCallback(
     (patch: Partial<VideoNodeData>, options?: { flush?: boolean }) => {
@@ -599,8 +597,8 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
 
   return (
     <>
-    <div className="relative" style={{ width: CARD_WIDTH }}>
-      <div className="relative" style={{ width: PREVIEW_SLOT_WIDTH, height: PREVIEW_SLOT_HEIGHT + 28 }}>
+    <div className="relative" style={{ width: displaySize.width, height: displaySize.height }}>
+      <div className="relative overflow-visible" style={{ width: displaySize.width, height: displaySize.height }}>
         <AnimatePresence>
           {isOnlySelectedNode && !dragging && previewItem && (
             <SelectedMediaToolbar
@@ -609,7 +607,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               onOpenPreview={() => setPreviewOpen(true)}
               uiScale={fixedUiScale}
               style={{
-                left: displayLeft + displaySize.width / 2,
+                left: displaySize.width / 2,
                 top: titleTop - 36 * fixedUiScale,
                 pointerEvents: "auto",
               }}
@@ -620,7 +618,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           className="nodrag nowheel pointer-events-auto absolute flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
           initial={false}
           animate={{
-            left: displayLeft,
+            left: 0,
             top: titleTop,
           }}
           style={{ maxWidth: displaySize.width }}
@@ -638,8 +636,8 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           className="absolute"
           initial={false}
           animate={{
-            left: displayLeft,
-            top: displayTop,
+            left: 0,
+            top: 0,
             width: displaySize.width,
             height: displaySize.height,
           }}
@@ -717,11 +715,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
             exit={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="nodrag nowheel rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
+            className="nodrag nowheel absolute rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
             style={{
               width: COMPOSER_WIDTH,
-              marginLeft: (PREVIEW_SLOT_WIDTH - COMPOSER_WIDTH) / 2,
-              marginTop: 12 * fixedUiScale,
+              left: (displaySize.width - COMPOSER_WIDTH) / 2,
+              top: displaySize.height + 12 * fixedUiScale,
               transformOrigin: "top center",
               pointerEvents: "auto",
             }}
