@@ -158,7 +158,7 @@ export default function WorkspacePage() {
     const element = gridElementRef.current;
     import("muuri").then(({ default: MuuriGrid }) => {
       if (disposed || !element) return;
-      muuriRef.current?.destroy(true);
+      muuriRef.current?.destroy(false);
       muuriRef.current = new MuuriGrid(element, {
         items: ".project-grid-item",
         layoutDuration: 180,
@@ -171,7 +171,7 @@ export default function WorkspacePage() {
     return () => {
       disposed = true;
       window.removeEventListener("resize", onResize);
-      muuriRef.current?.destroy(true);
+      muuriRef.current?.destroy(false);
       muuriRef.current = null;
     };
   }, [recentProjects]);

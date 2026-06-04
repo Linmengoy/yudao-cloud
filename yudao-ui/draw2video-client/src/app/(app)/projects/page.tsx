@@ -78,6 +78,10 @@ function projectRoleLabel(project: ProjectListItem) {
   return "可编辑";
 }
 
+function canRenameProject(project: ProjectListItem) {
+  return project.source === "local" || project.role === "owner" || project.role === "editor";
+}
+
 function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
   useEffect(() => {
     if (!project.coverUrl || !onLoad) return;
@@ -117,16 +121,22 @@ export default function ProjectsPage() {
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [pageNo, setPageNo] = useState(1);
   const [total, setTotal] = useState(0);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editingProjectName, setEditingProjectName] = useState("");
+  const [savingRenameId, setSavingRenameId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const muuriRef = useRef<Muuri | null>(null);
+  const skipRenameSaveRef = useRef(false);
+  const projectLayoutKey = useMemo(() => projects.map((project) => project.id).join("|"), [projects]);
 
-  const refreshProjects = useCallback(async (search = query, nextPageNo = pageNo) => {
+  const refreshProjects = useCallback(async (search = debouncedQuery, nextPageNo = pageNo) => {
     setIsLoading(true);
     try {
       const page = await canvasApi.listProjects({
@@ -158,12 +168,17 @@ export default function ProjectsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [pageNo, query]);
+  }, [debouncedQuery, pageNo]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => refreshProjects(query, pageNo), 0);
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 350);
     return () => window.clearTimeout(timer);
-  }, [pageNo, query, refreshProjects]);
+  }, [query]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => refreshProjects(debouncedQuery, pageNo), 0);
+    return () => window.clearTimeout(timer);
+  }, [debouncedQuery, pageNo, refreshProjects]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -179,12 +194,12 @@ export default function ProjectsPage() {
   }, [openMenuId]);
 
   useEffect(() => {
-    if (isLoading || projects.length === 0 || !gridElementRef.current) return;
+    if (isLoading || !projectLayoutKey || !gridElementRef.current) return;
     let disposed = false;
     const element = gridElementRef.current;
     import("muuri").then(({ default: MuuriGrid }) => {
       if (disposed || !element) return;
-      muuriRef.current?.destroy(true);
+      muuriRef.current?.destroy(false);
       muuriRef.current = new MuuriGrid(element, {
         items: ".project-grid-item",
         layoutDuration: 180,
@@ -197,10 +212,10 @@ export default function ProjectsPage() {
     return () => {
       disposed = true;
       window.removeEventListener("resize", onResize);
-      muuriRef.current?.destroy(true);
+      muuriRef.current?.destroy(false);
       muuriRef.current = null;
     };
-  }, [isLoading, projects]);
+  }, [isLoading, projectLayoutKey]);
 
   const refreshProjectWallLayout = useCallback(() => {
     muuriRef.current?.refreshItems().layout();
@@ -223,19 +238,47 @@ export default function ProjectsPage() {
     }
   }
 
-  async function handleRename(project: ProjectListItem) {
-    const nextName = window.prompt("项目名称", project.name);
-    if (!nextName) return;
+  function startRename(project: ProjectListItem) {
+    if (!canRenameProject(project)) return;
+    skipRenameSaveRef.current = false;
+    setOpenMenuId(null);
+    setEditingProjectId(project.id);
+    setEditingProjectName(project.name);
+  }
+
+  function cancelRename(skipSave = false) {
+    skipRenameSaveRef.current = skipSave;
+    setEditingProjectId(null);
+    setEditingProjectName("");
+  }
+
+  async function saveRename(project: ProjectListItem) {
+    if (skipRenameSaveRef.current) {
+      skipRenameSaveRef.current = false;
+      return;
+    }
+    const nextName = editingProjectName.trim();
+    if (!nextName || nextName === project.name) {
+      cancelRename();
+      return;
+    }
+    setSavingRenameId(project.id);
     if (project.source === "local") {
       renameProject(project.id, nextName);
-      refreshProjects();
+      setProjects((items) => items.map((item) => item.id === project.id ? { ...item, name: nextName } : item));
+      setSavingRenameId(null);
+      cancelRename();
       return;
     }
     try {
-      await canvasApi.updateProject(project.id, { name: nextName.trim() });
-      refreshProjects();
+      await canvasApi.updateProject(project.id, { name: nextName });
+      setProjects((items) => items.map((item) => item.id === project.id ? { ...item, name: nextName } : item));
+      setStatusMessage("");
+      cancelRename();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "重命名失败，请稍后再试。");
+    } finally {
+      setSavingRenameId(null);
     }
   }
 
@@ -320,23 +363,50 @@ export default function ProjectsPage() {
               <div className="group relative overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]">
                 <Link href={`/canvas?projectId=${encodeURIComponent(project.id)}`} className="block">
                   <ProjectCover project={project} onLoad={refreshProjectWallLayout} />
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
+                </Link>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      {editingProjectId === project.id ? (
+                        <input
+                          value={editingProjectName}
+                          autoFocus
+                          disabled={savingRenameId === project.id}
+                          onChange={(event) => setEditingProjectName(event.target.value)}
+                          onBlur={() => saveRename(project)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") event.currentTarget.blur();
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              cancelRename(true);
+                            }
+                          }}
+                          className="w-full rounded-md border border-border-warm bg-background px-2 py-1 text-sm font-medium text-charcoal outline-none focus:border-[rgba(28,28,28,0.55)]"
+                        />
+                      ) : canRenameProject(project) ? (
+                        <button
+                          type="button"
+                          onClick={() => startRename(project)}
+                          className="block max-w-full truncate text-left text-sm font-medium text-charcoal underline-offset-4 hover:underline"
+                          title="点击修改项目名称"
+                        >
+                          {project.name}
+                        </button>
+                      ) : (
                         <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
+                      )}
                         <p className="mt-1 text-xs text-muted-gray">
                           {projectRoleLabel(project)}
                           {project.source === "local" ? " · 本机草稿" : ""}
                         </p>
-                      </div>
-                      <div className="shrink-0 text-right text-xs text-muted-gray">
-                        <p>{project.nodeCount} 节点</p>
-                        <p className="mt-1">{project.assetCount} 素材</p>
-                      </div>
                     </div>
-                    <p className="mt-4 text-xs text-muted-gray">最近打开 {formatDate(project.lastOpenedAt)}</p>
+                    <div className="shrink-0 text-right text-xs text-muted-gray">
+                      <p>{project.nodeCount} 节点</p>
+                      <p className="mt-1">{project.assetCount} 素材</p>
+                    </div>
                   </div>
-                </Link>
+                  <p className="mt-4 text-xs text-muted-gray">最近打开 {formatDate(project.lastOpenedAt)}</p>
+                </div>
 
                 <div className="absolute right-4 top-4">
                   <button
@@ -361,8 +431,9 @@ export default function ProjectsPage() {
                         type="button"
                         onClick={() => {
                           setOpenMenuId(null);
-                          handleRename(project);
+                          startRename(project);
                         }}
+                        disabled={!canRenameProject(project)}
                         className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-charcoal hover:bg-muted"
                       >
                         <Pencil className="size-4 text-muted-gray" />
