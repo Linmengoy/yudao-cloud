@@ -6,6 +6,7 @@ import { calculateAigcModelPrice, getAigcModelList, getAigcModelParamList, type 
 type UseAigcModelsOptions = {
   type: number;
   capability: string;
+  preferredModelId?: number | null;
   params?: Record<string, unknown>;
 };
 
@@ -16,9 +17,9 @@ function filterTemplateParams(params: Record<string, unknown>, templates: AigcMo
   );
 }
 
-export function useAigcModels({ type, capability, params }: UseAigcModelsOptions) {
+export function useAigcModels({ type, capability, preferredModelId, params }: UseAigcModelsOptions) {
   const [models, setModels] = useState<AigcModel[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(preferredModelId ?? null);
   const [templates, setTemplates] = useState<AigcModelParamTemplate[]>([]);
   const [price, setPrice] = useState<AigcModelPrice | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,11 +36,15 @@ export function useAigcModels({ type, capability, params }: UseAigcModelsOptions
         .then((data) => {
           if (ignore) return;
           setModels(data);
-          setSelectedModelId((current) =>
-            data.some((item) => item.id === current)
+          setSelectedModelId((current) => {
+            const savedModelId = preferredModelId && data.some((item) => item.id === preferredModelId)
+              ? preferredModelId
+              : null;
+            if (savedModelId) return savedModelId;
+            return data.some((item) => item.id === current)
               ? current
-              : data.find((item) => item.defaultModel)?.id ?? data[0]?.id ?? null
-          );
+              : data.find((item) => item.defaultModel)?.id ?? data[0]?.id ?? null;
+          });
         })
         .catch((err) => {
           if (!ignore) setError(err instanceof Error ? err.message : "模型列表加载失败");
@@ -52,7 +57,7 @@ export function useAigcModels({ type, capability, params }: UseAigcModelsOptions
       ignore = true;
       window.clearTimeout(timer);
     };
-  }, [capability, type]);
+  }, [capability, preferredModelId, type]);
 
   useEffect(() => {
     if (!selectedModelId) {

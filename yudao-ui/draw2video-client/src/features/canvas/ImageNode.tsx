@@ -349,7 +349,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     })
     .filter((item): item is { edgeId: string; data: ImageNodeData | SketchNodeData } => item !== null);
   const generationCapability = connectedImages.length > 0 ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
-  const aigcModels = useAigcModels({ type: 2, capability: generationCapability, params });
+  const aigcModels = useAigcModels({ type: 2, capability: generationCapability, preferredModelId: selectedAigcModelId, params });
   const storedAigcModel = aigcModels.models.find((item) => item.id === selectedAigcModelId);
   const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
   const activeModelName = activeAigcModel?.name ?? data.modelName ?? "选择模型";
@@ -1124,7 +1124,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     >
                       <div className="max-h-[320px] overflow-y-auto">
                         {aigcModels.models.length > 0 ? aigcModels.models.map((model) => {
-                          const isSelected = aigcModels.selectedModelId === model.id || selectedAigcModelId === model.id;
+                          const isSelected = aigcModels.selectedModelId === model.id;
                           const badge = isSelected ? selectedModelCapabilityBadge ?? "Image" : "Image";
                           return (
                             <button
