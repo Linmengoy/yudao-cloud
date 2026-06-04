@@ -392,7 +392,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
               uiScale={fixedUiScale}
               style={{
                 left: previewSize.width / 2,
-                top: -78 * fixedUiScale,
+                top: -58 * fixedUiScale,
                 pointerEvents: "auto",
               }}
             />

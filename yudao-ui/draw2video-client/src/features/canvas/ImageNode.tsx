@@ -940,7 +940,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 uiScale={fixedUiScale}
                 style={{
                   left: displayLeft + displaySize.width / 2,
-                  top: titleTop - 48 * fixedUiScale,
+                  top: titleTop - 36 * fixedUiScale,
                   pointerEvents: "auto",
                 }}
               />

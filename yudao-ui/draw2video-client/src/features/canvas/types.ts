@@ -216,15 +216,30 @@ export interface VideoNodeData {
 
 export type VideoNode = Node<VideoNodeData, "video">;
 
+// --- Group Node ---
+
+export interface GroupNodeData {
+  [key: string]: unknown;
+  fileName: string;
+  childNodeIds: string[];
+  width: number;
+  height: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type GroupNode = Node<GroupNodeData, "group">;
+
 // --- Union ---
 
-export type AppNode = PromptNode | ResultNode | ImageNode | SketchNode | TextNode | VideoNode;
+export type AppNode = PromptNode | ResultNode | ImageNode | SketchNode | TextNode | VideoNode | GroupNode;
 export type AppEdge = Edge;
 
 export const SYNCABLE_NODE_DATA_KEYS = [
   "imageId",
   "sketchId",
   "videoId",
+  "childNodeIds",
   "projectId",
   "assetId",
   "assetVersionId",

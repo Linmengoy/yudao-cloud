@@ -254,4 +254,13 @@
   .react-flow__node.draggable.dragging:has(.canvas-node-drag-handle) .canvas-node-drag-handle {
     cursor: grabbing;
   }
+
+  .react-flow__selection {
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+
+  .react-flow__node.selectable.selected {
+    box-shadow: none !important;
+  }
 }

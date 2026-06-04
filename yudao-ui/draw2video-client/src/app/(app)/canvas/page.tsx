@@ -29,7 +29,7 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, GroupNodeData, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
@@ -39,6 +39,7 @@ import { ImageNodeComponent } from "@/features/canvas/ImageNode";
 import { SketchNodeComponent } from "@/features/canvas/SketchNode";
 import { TextNodeComponent } from "@/features/canvas/TextNode";
 import { VideoNodeComponent } from "@/features/canvas/VideoNode";
+import { GroupNodeComponent } from "@/features/canvas/GroupNode";
 import { CanvasSignalEdge } from "@/features/canvas/CanvasSignalEdge";
 import { filterSyncableNodeDataPatch, sanitizeNodeForCanvasOperation } from "@/features/canvas/canvas-syncable-data";
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
@@ -56,7 +57,7 @@ import {
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, ImagePlus, Share2, Type, Video, Map as MapIcon, Grid3X3, Scan, PenLine } from "lucide-react";
+import { Boxes, Plus, Trash2, ImagePlus, Share2, Type, Video, Map as MapIcon, Grid3X3, Scan, PenLine } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -66,6 +67,7 @@ const CANVAS_NODE_TYPES = {
   sketch: SketchNodeComponent,
   text: TextNodeComponent,
   video: VideoNodeComponent,
+  group: GroupNodeComponent,
 } satisfies NodeTypes;
 
 const CANVAS_EDGE_TYPES = {
@@ -135,6 +137,15 @@ function rectsIntersect(a: SelectionRectSnapshot, b: SelectionRectSnapshot) {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
+function unionSelectionRects(rects: SelectionRectSnapshot[]): SelectionRectSnapshot | null {
+  if (rects.length === 0) return null;
+  const left = Math.min(...rects.map((rect) => rect.x));
+  const top = Math.min(...rects.map((rect) => rect.y));
+  const right = Math.max(...rects.map((rect) => rect.x + rect.width));
+  const bottom = Math.max(...rects.map((rect) => rect.y + rect.height));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
 function getPreviewCardViewportRect(nodeId: string): SelectionRectSnapshot | null {
   const escapedId = CSS.escape(nodeId);
   const card =
@@ -143,6 +154,23 @@ function getPreviewCardViewportRect(nodeId: string): SelectionRectSnapshot | nul
   if (!card) return null;
   const rect = card.getBoundingClientRect();
   return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+}
+
+function getPreviewCardRects(nodes: AppNode[]) {
+  return nodes
+    .map((node) => {
+      const rect = getPreviewCardViewportRect(node.id);
+      return rect ? { node, rect } : null;
+    })
+    .filter((item): item is { node: AppNode; rect: SelectionRectSnapshot } => Boolean(item));
+}
+
+function getSelectedPreviewCardBounds(nodes: AppNode[]): SelectionRectSnapshot | null {
+  return unionSelectionRects(
+    getPreviewCardRects(nodes)
+      .filter(({ node }) => node.selected)
+      .map(({ rect }) => rect)
+  );
 }
 
 function applyPreviewCardSelection(nodes: AppNode[], selectionRect: SelectionRectSnapshot): AppNode[] {
@@ -290,6 +318,35 @@ function CanvasViewToolbar({
   );
 }
 
+type MultiSelectionToolbarProps = {
+  bounds: SelectionRectSnapshot;
+  onGroup: () => void;
+};
+
+function MultiSelectionToolbar({ bounds, onGroup }: MultiSelectionToolbarProps) {
+  return (
+    <div
+      className="pointer-events-auto fixed z-[85] -translate-x-1/2 rounded-full border border-border-warm bg-background/95 p-1 shadow-[rgba(0,0,0,0.1)_0px_4px_12px] backdrop-blur-sm"
+      style={{
+        left: bounds.x + bounds.width / 2,
+        top: Math.max(12, bounds.y - 46),
+      }}
+    >
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onGroup();
+        }}
+        className="flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-gray transition-colors hover:bg-muted hover:text-charcoal focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
+      >
+        <Boxes className="size-3.5" />
+        分组
+      </button>
+    </div>
+  );
+}
+
 type CanvasSnapshot = {
   nodes: AppNode[];
   edges: AppEdge[];
@@ -309,7 +366,7 @@ function snapshotSignature(snapshot: CanvasSnapshot) {
 }
 
 function usesCardNodeInteraction(node: AppNode) {
-  return node.type === "image" || node.type === "video" || node.type === "sketch" || node.type === "text";
+  return node.type === "image" || node.type === "video" || node.type === "sketch" || node.type === "text" || node.type === "group";
 }
 
 function withCardNodeInteraction(node: AppNode): AppNode {
@@ -474,6 +531,20 @@ function migrateNode(n: AppNode): AppNode {
       },
     } as AppNode);
   }
+  if (n.type === "group") {
+    const d = n.data as Record<string, unknown>;
+    return withCardNodeInteraction({
+      ...n,
+      data: {
+        fileName: typeof d.fileName === "string" ? d.fileName : "Group",
+        childNodeIds: Array.isArray(d.childNodeIds) ? d.childNodeIds.filter((item): item is string => typeof item === "string") : [],
+        width: typeof d.width === "number" ? d.width : 320,
+        height: typeof d.height === "number" ? d.height : 240,
+        createdAt: typeof d.createdAt === "string" ? d.createdAt : new Date().toISOString(),
+        updatedAt: typeof d.updatedAt === "string" ? d.updatedAt : undefined,
+      },
+    } as AppNode);
+  }
   return withCardNodeInteraction(n);
 }
 
@@ -548,6 +619,8 @@ function CanvasFlow() {
   const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
   const [nodeDragCommitVersion, setNodeDragCommitVersion] = useState(0);
   const [keyboardEditingNodeId, setKeyboardEditingNodeId] = useState<string | null>(null);
+  const [selectionOverlayRect, setSelectionOverlayRect] = useState<SelectionRectSnapshot | null>(null);
+  const [multiSelectionBounds, setMultiSelectionBounds] = useState<SelectionRectSnapshot | null>(null);
   const [createMenu, setCreateMenu] = useState<{
     x: number;
     y: number;
@@ -561,6 +634,7 @@ function CanvasFlow() {
   const selectionStartRef = useRef<PointerSnapshot | null>(null);
   const selectionRectRef = useRef<SelectionRectSnapshot | null>(null);
   const selectionRafRef = useRef<number | null>(null);
+  const groupDragStartRef = useRef<Record<string, { x: number; y: number }> | null>(null);
   const storeApi = useStoreApi();
 
   const {
@@ -574,9 +648,19 @@ function CanvasFlow() {
     fitView,
   } = useReactFlow();
 
+  const refreshMultiSelectionBounds = useCallback((sourceNodes?: AppNode[]) => {
+    const selectedNodes = (sourceNodes ?? getNodes() as AppNode[]).filter((node) => node.selected);
+    if (selectedNodes.length <= 1) {
+      setMultiSelectionBounds(null);
+      return;
+    }
+    setMultiSelectionBounds(getSelectedPreviewCardBounds(selectedNodes));
+  }, [getNodes]);
+
   const handleSelectionEnd = useCallback(() => {
     const selectionRect = selectionRectRef.current;
     selectionRectRef.current = null;
+    setSelectionOverlayRect(null);
 
     window.requestAnimationFrame(() => {
       let selectedNodes = getNodes().filter((node) => node.selected);
@@ -591,16 +675,19 @@ function CanvasFlow() {
             .map((node) => node.id)
         );
 
-        setNodes((nds) =>
-          nds.map((node) => ({
+        const nextNodes: AppNode[] = (getNodes() as AppNode[]).map((node) => ({
             ...node,
             selected: selectedIds.has(node.id),
-          }))
-        );
+        }));
+        setNodes(nextNodes);
+        refreshMultiSelectionBounds(nextNodes);
         selectedNodes = selectedNodes.filter((node) => selectedIds.has(node.id));
       }
 
-      if (selectedNodes.length !== 1) return;
+      if (selectedNodes.length !== 1) {
+        if (!selectionRect) refreshMultiSelectionBounds(getNodes() as AppNode[]);
+        return;
+      }
 
       const selectedId = selectedNodes[0].id;
       storeApi.setState({ nodesSelectionActive: false });
@@ -610,8 +697,9 @@ function CanvasFlow() {
           selected: node.id === selectedId,
         }))
       );
+      setMultiSelectionBounds(null);
     });
-  }, [getNodes, setNodes, storeApi]);
+  }, [getNodes, refreshMultiSelectionBounds, setNodes, storeApi]);
 
   // Track last mouse position for paste placement
   const lastMouseRef = useRef<{ x: number; y: number }>({
@@ -906,7 +994,7 @@ function CanvasFlow() {
 
       if (projectCreationRef.current) return;
       projectCreationRef.current = true;
-      createServerProject("未命名项目", "image")
+      createServerProject("未命名项目")
         .then((projectId) => {
           const id = String(projectId);
           router.replace(`/canvas?projectId=${encodeURIComponent(id)}`);
@@ -985,24 +1073,75 @@ function CanvasFlow() {
           setNodes((nds) => {
             const selectionRect = selectionRectRef.current;
             const nextNodes = applyNodeChanges(selectionChanges, nds);
-            if (!selectionRect) return nextNodes;
-            return applyPreviewCardSelection(nextNodes, selectionRect);
+            const selectedNodes = selectionRect ? applyPreviewCardSelection(nextNodes, selectionRect) : nextNodes;
+            queueMicrotask(() => refreshMultiSelectionBounds(selectedNodes as AppNode[]));
+            return selectedNodes;
           });
         }
         return;
       }
       setNodes((nds) => {
         const selectionRect = selectionRectRef.current;
-        const nextNodes = applyNodeChanges(changes, nds);
-        if (!selectionRect || !changes.some((change) => change.type === "select")) return nextNodes;
-        return applyPreviewCardSelection(nextNodes, selectionRect);
+        let nextNodes = applyNodeChanges(changes, nds) as AppNode[];
+
+        for (const change of changes) {
+          if (change.type !== "position" || !change.position) continue;
+          const groupNode = nds.find((node) => node.id === change.id && node.type === "group");
+          if (groupNode?.type !== "group") continue;
+          const previousPositions = groupDragStartRef.current;
+          if (!previousPositions) continue;
+          const previousGroupPosition = previousPositions[groupNode.id] ?? groupNode.position;
+          const delta = {
+            x: change.position.x - previousGroupPosition.x,
+            y: change.position.y - previousGroupPosition.y,
+          };
+          if (delta.x === 0 && delta.y === 0) continue;
+          const childIds = new Set((groupNode.data as GroupNodeData).childNodeIds);
+          nextNodes = nextNodes.map((node) => {
+            if (!childIds.has(node.id)) return node;
+            const previousChildPosition = previousPositions[node.id] ?? node.position;
+            return {
+              ...node,
+              position: {
+                x: previousChildPosition.x + delta.x,
+                y: previousChildPosition.y + delta.y,
+              },
+            };
+          });
+        }
+
+        if (selectionRect && changes.some((change) => change.type === "select")) {
+          nextNodes = applyPreviewCardSelection(nextNodes, selectionRect) as AppNode[];
+        }
+        queueMicrotask(() => refreshMultiSelectionBounds(nextNodes));
+        return nextNodes;
       });
       for (const change of changes) {
         if (change.type === "position" && change.dragging === false && change.position) {
+          const movedNode = getNodes().find((node) => node.id === change.id);
           canvasOperations.submitOperation("NODE_MOVE", {
             nodeId: change.id,
             position: change.position,
           });
+          if (movedNode?.type === "group") {
+            const childIds = new Set((movedNode.data as GroupNodeData).childNodeIds);
+            const previousPositions = groupDragStartRef.current;
+            const previousGroupPosition = previousPositions?.[movedNode.id] ?? movedNode.position;
+            const delta = {
+              x: change.position.x - previousGroupPosition.x,
+              y: change.position.y - previousGroupPosition.y,
+            };
+            for (const childNode of getNodes().filter((node) => childIds.has(node.id))) {
+              const previousChildPosition = previousPositions?.[childNode.id] ?? childNode.position;
+              canvasOperations.submitOperation("NODE_MOVE", {
+                nodeId: childNode.id,
+                position: {
+                  x: previousChildPosition.x + delta.x,
+                  y: previousChildPosition.y + delta.y,
+                },
+              });
+            }
+          }
         }
         if (change.type === "dimensions" && change.dimensions) {
           canvasOperations.submitOperation("NODE_RESIZE", {
@@ -1017,7 +1156,7 @@ function CanvasFlow() {
         }
       }
     },
-    [canvasOperations, isReadOnly, setNodes]
+    [canvasOperations, getNodes, isReadOnly, refreshMultiSelectionBounds, setNodes]
   );
 
   const onEdgesChange = useCallback(
@@ -1331,6 +1470,53 @@ function CanvasFlow() {
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+
+  const groupSelectedNodes = useCallback(() => {
+    if (isReadOnly) return;
+    const currentNodes = getNodes() as AppNode[];
+    const selectedNodes = currentNodes.filter((node) => node.selected && node.type !== "group");
+    if (selectedNodes.length < 2) return;
+    const selectedIds = new Set(selectedNodes.map((node) => node.id));
+    const bounds = getSelectedPreviewCardBounds(selectedNodes);
+    if (!bounds) return;
+
+    const padding = 18;
+    const topLeft = screenToFlowPosition({ x: bounds.x - padding, y: bounds.y - padding });
+    const bottomRight = screenToFlowPosition({ x: bounds.x + bounds.width + padding, y: bounds.y + bounds.height + padding });
+    const id = `group_${Date.now()}`;
+    const now = new Date().toISOString();
+    const groupData: GroupNodeData = {
+      fileName: "Group",
+      childNodeIds: selectedNodes.map((node) => node.id),
+      width: Math.max(120, bottomRight.x - topLeft.x),
+      height: Math.max(96, bottomRight.y - topLeft.y),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const groupNode: AppNode = withCardNodeInteraction({
+      id,
+      type: "group",
+      position: topLeft,
+      data: groupData,
+      selected: true,
+      zIndex: Math.min(-1, ...selectedNodes.map((node) => node.zIndex ?? 0)) - 1,
+    });
+
+    const firstSelectedIndex = currentNodes.findIndex((node) => selectedIds.has(node.id));
+    const unselectedNodes: AppNode[] = currentNodes.map((node) => ({
+      ...node,
+      selected: false,
+    }));
+    const insertIndex = firstSelectedIndex >= 0 ? firstSelectedIndex : 0;
+    setNodes([
+      ...unselectedNodes.slice(0, insertIndex),
+      groupNode,
+      ...unselectedNodes.slice(insertIndex),
+    ]);
+    setMultiSelectionBounds(null);
+    setSelectionOverlayRect(null);
+    canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(groupNode) });
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
   const closeReferencePicker = useCallback(() => {
@@ -1761,10 +1947,13 @@ function CanvasFlow() {
         if (!target.classList.contains("react-flow__pane")) {
           selectionStartRef.current = null;
           selectionRectRef.current = null;
+          setSelectionOverlayRect(null);
           return;
         }
         selectionStartRef.current = { x: event.clientX, y: event.clientY };
         selectionRectRef.current = { x: event.clientX, y: event.clientY, width: 0, height: 0 };
+        setSelectionOverlayRect(null);
+        setMultiSelectionBounds(null);
       }}
       onPointerMoveCapture={(event) => {
         const start = selectionStartRef.current;
@@ -1781,6 +1970,7 @@ function CanvasFlow() {
           selectionRafRef.current = null;
           const latestSelectionRect = selectionRectRef.current;
           if (!latestSelectionRect) return;
+          setSelectionOverlayRect(latestSelectionRect);
           setNodes((current) => applyPreviewCardSelection(current, latestSelectionRect));
         });
       }}
@@ -1864,10 +2054,16 @@ function CanvasFlow() {
         onNodeDragStart={() => {
           if (isReadOnly) return;
           nodeDragActiveRef.current = true;
+          groupDragStartRef.current = Object.fromEntries(
+            (getNodes() as AppNode[]).map((node) => [node.id, { ...node.position }])
+          );
+          setMultiSelectionBounds(null);
           window.dispatchEvent(new CustomEvent("copse:canvas-interaction"));
         }}
         onNodeDragStop={() => {
           nodeDragActiveRef.current = false;
+          groupDragStartRef.current = null;
+          refreshMultiSelectionBounds();
           setNodeDragCommitVersion((version) => version + 1);
         }}
         onConnectStart={() => { if (isReadOnly) return; setPendingConnectionPreview(null); window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
@@ -1885,6 +2081,36 @@ function CanvasFlow() {
           />
         )}
       </ReactFlow>
+
+      {selectionOverlayRect && (
+        <div
+          className="pointer-events-none fixed z-[70] rounded-lg border border-blue-500/70 bg-blue-500/[0.08] shadow-[0_0_0_1px_rgba(59,130,246,0.14)]"
+          style={{
+            left: selectionOverlayRect.x,
+            top: selectionOverlayRect.y,
+            width: selectionOverlayRect.width,
+            height: selectionOverlayRect.height,
+          }}
+        />
+      )}
+
+      {multiSelectionBounds && !selectionOverlayRect && (
+        <>
+          <div
+            className="pointer-events-none fixed z-[70] rounded-lg border border-blue-500/70 bg-blue-500/[0.04] shadow-[0_0_0_1px_rgba(59,130,246,0.12)]"
+            style={{
+              left: multiSelectionBounds.x,
+              top: multiSelectionBounds.y,
+              width: multiSelectionBounds.width,
+              height: multiSelectionBounds.height,
+            }}
+          />
+          <MultiSelectionToolbar
+            bounds={multiSelectionBounds}
+            onGroup={groupSelectedNodes}
+          />
+        </>
+      )}
 
       <CanvasViewToolbar
         showMiniMap={showMiniMap}
