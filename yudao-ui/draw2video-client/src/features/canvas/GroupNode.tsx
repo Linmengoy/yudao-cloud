@@ -39,6 +39,14 @@ export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
       data-node-preview-card
       data-node-id={id}
       data-selected={selected ? "true" : "false"}
+      onContextMenuCapture={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       style={{
         width: data.width,
         height: data.height,
