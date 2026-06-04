@@ -11,10 +11,10 @@ export default function HomePage() {
 
   function handleStartCreate() {
     if (loggedIn) {
-      router.push("/create/image");
+      router.push("/canvas");
       return;
     }
-    openModal("email", "/create/image", "required");
+    openModal("email", "/canvas", "required");
   }
 
   return (

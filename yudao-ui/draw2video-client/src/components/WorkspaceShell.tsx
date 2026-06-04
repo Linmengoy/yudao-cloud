@@ -17,7 +17,7 @@ import { formatPoints } from "@/features/wallet/wallet-api";
 
 const sidebarLinks = [
   { href: "/app", icon: Home, label: "首页" },
-  { href: "/create/image", icon: PlusCircle, label: "创建" },
+  { href: "/canvas", icon: PlusCircle, label: "创建" },
   { href: "/tasks", icon: Folder, label: "作品" },
   { href: "/create/video", icon: Image, label: "视频" },
   { href: "/profile", icon: User, label: "设置" },

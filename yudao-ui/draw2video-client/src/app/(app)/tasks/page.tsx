@@ -62,7 +62,7 @@ export default function TasksPage() {
       {!loading && tasks.length === 0 ? (
         <div className="mt-16 flex flex-col items-center text-center">
           <p className="text-muted-gray">还没有任务</p>
-          <Link href="/create/image" className="mt-4 inline-flex items-center rounded-md bg-charcoal px-5 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80">
+          <Link href="/canvas" className="mt-4 inline-flex items-center rounded-md bg-charcoal px-5 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80">
             去创作
           </Link>
         </div>
