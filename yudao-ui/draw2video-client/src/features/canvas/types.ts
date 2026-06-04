@@ -187,6 +187,7 @@ export interface VideoNodeData {
   providerModel?: string;
   aigcModelId?: number;
   modelName: string;
+  params?: Record<string, unknown>;
   status: "idle" | "pending" | "complete" | "failed";
   taskId?: string | null;
   videoUrl?: string | null;
