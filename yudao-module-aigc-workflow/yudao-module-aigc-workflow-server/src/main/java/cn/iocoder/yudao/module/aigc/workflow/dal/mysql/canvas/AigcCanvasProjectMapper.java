@@ -14,7 +14,6 @@ public interface AigcCanvasProjectMapper extends BaseMapperX<AigcCanvasProjectDO
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcCanvasProjectDO>()
                 .eq(AigcCanvasProjectDO::getOwnerUserId, userId)
                 .likeIfPresent(AigcCanvasProjectDO::getName, reqVO.getName())
-                .eqIfPresent(AigcCanvasProjectDO::getKind, reqVO.getKind())
                 .eqIfPresent(AigcCanvasProjectDO::getStatus, reqVO.getStatus())
                 .orderByDesc(AigcCanvasProjectDO::getUpdateTime));
     }

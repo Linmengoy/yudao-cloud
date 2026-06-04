@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderPlus, ImageIcon, MoreHorizontal, Pencil, Search, Trash2, Video } from "lucide-react";
+import { FolderPlus, ImageIcon, MoreHorizontal, Pencil, Search, Trash2 } from "lucide-react";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { clearCanvas } from "@/features/canvas/use-canvas-storage";
@@ -20,7 +20,6 @@ const PAGE_SIZE = 12;
 type ProjectListItem = {
   id: string;
   name: string;
-  kind: "image" | "video" | "mixed";
   nodeCount: number;
   assetCount: number;
   lastOpenedAt: string;
@@ -45,7 +44,6 @@ function toProjectListItem(project: CanvasProject): ProjectListItem {
   return {
     id: String(project.id),
     name: project.name,
-    kind: project.kind,
     nodeCount: project.nodeCount ?? 0,
     assetCount: project.assetCount ?? 0,
     lastOpenedAt: project.updateTime ?? project.createTime ?? "",
@@ -60,7 +58,6 @@ function localProjectToListItem(project: ProjectMeta): ProjectListItem {
   return {
     id: project.id,
     name: project.name,
-    kind: project.kind,
     nodeCount: project.nodeCount,
     assetCount: project.assetCount,
     lastOpenedAt: project.lastOpenedAt,
@@ -69,14 +66,7 @@ function localProjectToListItem(project: ProjectMeta): ProjectListItem {
   };
 }
 
-function projectKindLabel(project: ProjectListItem) {
-  if (project.kind === "video") return "视频项目";
-  if (project.kind === "mixed") return "混合项目";
-  return "图片项目";
-}
-
-function ProjectIcon({ project }: { project: ProjectListItem }) {
-  if (project.kind === "video") return <Video className="size-5" />;
+function ProjectIcon() {
   return <ImageIcon className="size-5" />;
 }
 
@@ -92,7 +82,7 @@ function ProjectCover({ project }: { project: ProjectListItem }) {
   }
   return (
     <div className="flex aspect-[4/3] flex-col items-center justify-center bg-muted text-muted-gray">
-      <ProjectIcon project={project} />
+      <ProjectIcon />
       <span className="mt-2 text-xs">空白项目</span>
     </div>
   );
@@ -167,10 +157,10 @@ export default function ProjectsPage() {
     if (isCreating) return;
     setIsCreating(true);
     try {
-      const projectId = await canvasApi.createProject({ name: "未命名项目", kind: "image" });
+      const projectId = await canvasApi.createProject({ name: "未命名项目" });
       router.push(`/canvas?projectId=${encodeURIComponent(String(projectId))}`);
     } catch {
-      const project = createProject({ name: "未命名项目", kind: "image" });
+      const project = createProject({ name: "未命名项目" });
       setStatusMessage("项目服务暂不可用，已创建本机草稿。");
       router.push(`/canvas?projectId=${encodeURIComponent(project.id)}`);
     } finally {
@@ -279,7 +269,7 @@ export default function ProjectsPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
                       <p className="mt-1 text-xs text-muted-gray">
-                        {projectKindLabel(project)}
+                        项目
                         {project.role ? ` · ${project.role}` : ""}
                         {project.source === "local" ? " · 本机草稿" : ""}
                       </p>

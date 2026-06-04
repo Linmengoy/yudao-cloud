@@ -12,7 +12,4 @@ public class AigcCanvasProjectCreateReqVO {
     @NotBlank(message = "项目名称不能为空")
     private String name;
 
-    @Schema(description = "项目类型", example = "image")
-    private String kind;
-
 }

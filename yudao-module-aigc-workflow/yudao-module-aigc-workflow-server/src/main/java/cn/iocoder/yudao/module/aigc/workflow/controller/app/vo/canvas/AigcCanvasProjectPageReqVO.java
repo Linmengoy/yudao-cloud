@@ -15,9 +15,6 @@ public class AigcCanvasProjectPageReqVO extends PageParam {
     @Schema(description = "项目名称")
     private String name;
 
-    @Schema(description = "项目类型", example = "image")
-    private String kind;
-
     @Schema(description = "项目状态", example = "NORMAL")
     private String status;
 

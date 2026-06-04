@@ -55,7 +55,6 @@ import {
 } from "@/features/canvas/clipboard";
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
-import type { ProjectKind } from "@/features/projects/project-store";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2, ImagePlus, Share2, Type, Video, Map as MapIcon, Grid3X3, Scan, PenLine } from "lucide-react";
 
@@ -509,12 +508,8 @@ function isSameCanvasEdge(left: AppEdge, right: AppEdge) {
     (left.targetHandle ?? null) === (right.targetHandle ?? null);
 }
 
-function summarizeCanvas(nodes: AppNode[]): { kind: ProjectKind; nodeCount: number; assetCount: number } {
-  const hasImage = nodes.some((node) => node.type === "image");
-  const hasVideo = nodes.some((node) => node.type === "video");
-  const kind: ProjectKind = hasImage && hasVideo ? "mixed" : hasVideo ? "video" : "image";
+function summarizeCanvas(nodes: AppNode[]): { nodeCount: number; assetCount: number } {
   return {
-    kind,
     nodeCount: nodes.length,
     assetCount: nodes.filter((node) => {
       if (node.type === "image") return Boolean((node.data as ImageNodeData).dataUrl);

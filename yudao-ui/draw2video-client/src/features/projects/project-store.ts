@@ -1,11 +1,8 @@
 "use client";
 
-export type ProjectKind = "image" | "video" | "mixed";
-
 export interface ProjectMeta {
   id: string;
   name: string;
-  kind: ProjectKind;
   createdAt: string;
   updatedAt: string;
   lastOpenedAt: string;
@@ -50,13 +47,12 @@ export function getProject(projectId: string): ProjectMeta | null {
   return readProjects().find((project) => project.id === projectId) ?? null;
 }
 
-export function createProject(input: Partial<Pick<ProjectMeta, "name" | "kind">> = {}): ProjectMeta {
+export function createProject(input: Partial<Pick<ProjectMeta, "name">> = {}): ProjectMeta {
   const timestamp = now();
   const projects = readProjects();
   const project: ProjectMeta = {
     id: `project_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name: input.name?.trim() || "未命名项目",
-    kind: input.kind ?? "mixed",
     createdAt: timestamp,
     updatedAt: timestamp,
     lastOpenedAt: timestamp,

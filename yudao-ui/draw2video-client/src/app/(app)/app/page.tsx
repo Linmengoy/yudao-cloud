@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderPlus, ImageIcon, Paperclip, Plus, Send, Video } from "lucide-react";
+import { FolderPlus, ImageIcon, Paperclip, Plus, Send } from "lucide-react";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { getAigcModelList, type AigcModel } from "@/features/generation/model-api";
@@ -33,7 +33,6 @@ function formatDate(value: string) {
 type ProjectListItem = {
   id: string;
   name: string;
-  kind: "image" | "video" | "mixed";
   lastOpenedAt: string;
 };
 
@@ -41,7 +40,6 @@ function toProjectListItem(project: CanvasProject): ProjectListItem {
   return {
     id: String(project.id),
     name: project.name,
-    kind: project.kind,
     lastOpenedAt: project.updateTime ?? project.createTime ?? "",
   };
 }
@@ -50,13 +48,11 @@ function localProjectToListItem(project: ProjectMeta): ProjectListItem {
   return {
     id: project.id,
     name: project.name,
-    kind: project.kind,
     lastOpenedAt: project.lastOpenedAt,
   };
 }
 
-function ProjectIcon({ project }: { project: ProjectListItem }) {
-  if (project.kind === "video") return <Video className="size-5" />;
+function ProjectIcon() {
   return <ImageIcon className="size-5" />;
 }
 
@@ -135,10 +131,10 @@ export default function WorkspacePage() {
   async function openNewProject(name?: string) {
     const projectName = name?.trim() || "未命名项目";
     try {
-      const projectId = await canvasApi.createProject({ name: projectName, kind: "image" });
+      const projectId = await canvasApi.createProject({ name: projectName });
       router.push(`/canvas?projectId=${encodeURIComponent(String(projectId))}`);
     } catch {
-      const project = createProject({ name: projectName, kind: "image" });
+      const project = createProject({ name: projectName });
       router.push(`/canvas?projectId=${encodeURIComponent(project.id)}`);
     }
   }
@@ -263,7 +259,7 @@ export default function WorkspacePage() {
               className="group overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
             >
               <div className="flex aspect-square items-center justify-center bg-muted text-muted-gray">
-                <ProjectIcon project={project} />
+                <ProjectIcon />
               </div>
               <div className="p-3">
                 <p className="truncate text-xs font-medium text-charcoal">{project.name}</p>

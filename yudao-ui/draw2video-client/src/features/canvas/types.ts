@@ -286,14 +286,12 @@ export interface CanvasState {
   viewport?: { x: number; y: number; zoom: number };
 }
 
-export type CanvasProjectKind = "image" | "video" | "mixed";
 export type CanvasProjectRole = "owner" | "editor" | "viewer";
 
 export interface CanvasProject {
   id: number;
   ownerUserId: number;
   name: string;
-  kind: CanvasProjectKind;
   coverAssetId?: number | null;
   coverUrl?: string | null;
   currentVersion: number;

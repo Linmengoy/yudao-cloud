@@ -19,7 +19,6 @@ public class AigcCanvasProjectDO extends TenantBaseDO {
     private Long id;
     private Long ownerUserId;
     private String name;
-    private String kind;
     private Long coverAssetId;
     private Long currentVersion;
     private Long latestSnapshotId;

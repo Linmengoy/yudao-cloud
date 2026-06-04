@@ -78,7 +78,6 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     public Long createProject(AigcCanvasProjectCreateReqVO reqVO, Long userId) {
         AigcCanvasProjectDO project = BeanUtils.toBean(reqVO, AigcCanvasProjectDO.class);
         project.setOwnerUserId(userId);
-        project.setKind(StrUtil.blankToDefault(reqVO.getKind(), "image"));
         project.setStatus(PROJECT_STATUS_NORMAL);
         project.setCurrentVersion(0L);
         project.setNodeCount(0);

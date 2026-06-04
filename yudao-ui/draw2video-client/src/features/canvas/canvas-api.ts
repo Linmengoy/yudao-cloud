@@ -7,7 +7,6 @@ import type {
   InviteCanvasMemberRequest,
   CanvasMember,
   CanvasProject,
-  CanvasProjectKind,
   CanvasSnapshotRecord,
   CanvasState,
   UpdateCanvasMemberRoleRequest,
@@ -20,7 +19,6 @@ export interface PageResult<T> {
 
 export interface CreateCanvasProjectInput {
   name: string;
-  kind?: CanvasProjectKind;
 }
 
 export interface UpdateCanvasProjectInput {
@@ -126,12 +124,11 @@ export function snapshotRecordToCanvasState(snapshot: CanvasSnapshotRecord | nul
 }
 
 export const canvasApi = {
-  listProjects: (params: { pageNo?: number; pageSize?: number; name?: string; kind?: CanvasProjectKind } = {}) => {
+  listProjects: (params: { pageNo?: number; pageSize?: number; name?: string } = {}) => {
     const query = new URLSearchParams();
     query.set("pageNo", String(params.pageNo ?? 1));
     query.set("pageSize", String(params.pageSize ?? 20));
     if (params.name) query.set("name", params.name);
-    if (params.kind) query.set("kind", params.kind);
     return api.get<PageResult<CanvasProject>>(`/canvas/projects?${query.toString()}`);
   },
 

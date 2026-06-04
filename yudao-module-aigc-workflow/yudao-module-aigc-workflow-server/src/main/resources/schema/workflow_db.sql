@@ -181,7 +181,6 @@ CREATE TABLE IF NOT EXISTS `aigc_canvas_project` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
   `owner_user_id` bigint NOT NULL COMMENT '拥有者用户 ID',
   `name` varchar(128) NOT NULL COMMENT '项目名称',
-  `kind` varchar(32) NOT NULL DEFAULT 'image' COMMENT '项目类型',
   `cover_asset_id` bigint DEFAULT NULL COMMENT '封面资产 ID',
   `current_version` bigint NOT NULL DEFAULT 0 COMMENT '当前画布版本',
   `latest_snapshot_id` bigint DEFAULT NULL COMMENT '最新快照 ID',

@@ -15,8 +15,6 @@ public class AigcCanvasProjectRespVO {
     private Long ownerUserId;
     @Schema(description = "项目名称")
     private String name;
-    @Schema(description = "项目类型")
-    private String kind;
     @Schema(description = "封面资产编号")
     private Long coverAssetId;
     @Schema(description = "封面 URL")

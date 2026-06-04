@@ -8,9 +8,9 @@ export function useCanvasServerStorage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const createProject = useCallback(async (name = "未命名项目", kind: CanvasProject["kind"] = "image") => {
+  const createProject = useCallback(async (name = "未命名项目") => {
     setError(null);
-    return canvasApi.createProject({ name, kind });
+    return canvasApi.createProject({ name });
   }, []);
 
   const loadProject = useCallback(async (projectId: string | number): Promise<{ project: CanvasProject; snapshot: CanvasSnapshotRecord | null; state: CanvasState | null }> => {
