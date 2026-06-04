@@ -54,7 +54,7 @@ export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
     >
       {selected ? (
         <div
-          className="nodrag nowheel pointer-events-auto absolute left-1/2 z-40 -translate-x-1/2 rounded-full border border-border-warm bg-background/95 p-1 shadow-[rgba(0,0,0,0.12)_0px_6px_18px] backdrop-blur-sm"
+          className="nodrag nowheel pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border-warm bg-background p-1 shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
           style={{ top: -62 }}
           onDoubleClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
