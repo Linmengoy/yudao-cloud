@@ -947,7 +947,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             )}
           </AnimatePresence>
           <motion.div
-            className="nodrag nowheel pointer-events-auto absolute flex items-center gap-1.5 rounded-md bg-transparent px-1 text-sm font-medium text-muted-gray transition-colors hover:bg-muted hover:text-charcoal"
+            className="nodrag nowheel pointer-events-auto absolute flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
             initial={false}
             animate={{
               left: titleLeft,
