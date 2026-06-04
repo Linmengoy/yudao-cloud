@@ -45,6 +45,7 @@ import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaTool
 import { compactInfo, downloadMedia } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
+import { CanvasNodeTitle } from "./CanvasNodeTitle";
 
 type SketchNodeProps = NodeProps<Node<SketchNodeData, "sketch">>;
 
@@ -399,14 +400,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
           )}
         </AnimatePresence>
 
-        <div
-          className="nodrag nowheel pointer-events-auto absolute left-0 flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
-          style={{
-            top: -28 * fixedUiScale,
-            maxWidth: previewSize.width,
-            width: "fit-content",
-          }}
-        >
+        <CanvasNodeTitle fixedUiScale={fixedUiScale} maxWidth={previewSize.width}>
           <PenLine className="size-4" />
           <EditableNodeTitle
             value={data.fileName}
@@ -415,7 +409,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
             className="min-w-0 truncate"
           />
           {loadingRemote && <Loader2 className="size-3.5 animate-spin" />}
-        </div>
+        </CanvasNodeTitle>
 
         <motion.div
           data-node-preview-card

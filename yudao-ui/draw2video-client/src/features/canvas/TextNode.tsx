@@ -12,6 +12,7 @@ import { waitGenerationResult } from "@/features/generation/generation-poll";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
+import { CanvasNodeTitle } from "./CanvasNodeTitle";
 
 type TextNodeProps = NodeProps<Node<TextNodeData, "text">>;
 
@@ -214,21 +215,14 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
 
   return (
     <div className="relative" style={{ width: data.width, height: data.height }}>
-      <div
-        className="nodrag nowheel pointer-events-auto absolute left-0 flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
-        style={{
-          top: -28 * fixedUiScale,
-          maxWidth: data.width,
-          width: "fit-content",
-        }}
-      >
+      <CanvasNodeTitle fixedUiScale={fixedUiScale} maxWidth={data.width}>
         <Text className="size-4" />
         <EditableNodeTitle
           value={data.fileName}
           fallback="Text"
           onCommit={(fileName) => updateData({ fileName, updatedAt: new Date().toISOString() }, { flush: true })}
         />
-      </div>
+      </CanvasNodeTitle>
 
       <motion.div
         data-node-preview-card

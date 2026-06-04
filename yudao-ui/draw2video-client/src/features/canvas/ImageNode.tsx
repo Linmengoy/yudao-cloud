@@ -45,6 +45,7 @@ import { downloadMedia, imageNodeToMediaPreview } from "@/features/media-preview
 import { cn } from "@/lib/utils";
 import { clampToViewport } from "./floating-position";
 import { EditableNodeTitle } from "./EditableNodeTitle";
+import { CanvasNodeTitle } from "./CanvasNodeTitle";
 
 type ImageNodeProps = NodeProps<Node<ImageNodeData, "image">>;
 type ConnectedImage = { edgeId: string; data: Pick<ImageNodeData | SketchNodeData, "previewUrl" | "dataUrl" | "fileName"> };
@@ -882,7 +883,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     : 1;
   const titleLeft = Math.round((visibleImageInset?.left ?? 0) * displayScale);
   const titleWidth = Math.max(80, displaySize.width - Math.round((visibleImageInset?.left ?? 0) * displayScale));
-  const titleTop = -28 * fixedUiScale;
   const pickerActiveForThisNode = referencePickerPromptId === id;
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
@@ -936,29 +936,20 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 uiScale={fixedUiScale}
                 style={{
                   left: displaySize.width / 2,
-                  top: titleTop - 36 * fixedUiScale,
+                  top: -72 * fixedUiScale,
                   pointerEvents: "auto",
                 }}
               />
             )}
           </AnimatePresence>
-          <motion.div
-            className="nodrag nowheel pointer-events-auto absolute flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
-            initial={false}
-            animate={{
-              left: titleLeft,
-              top: titleTop,
-            }}
-            style={{ maxWidth: titleWidth }}
-            transition={{ type: "spring", stiffness: 360, damping: 34 }}
-          >
+          <CanvasNodeTitle fixedUiScale={fixedUiScale} left={titleLeft} maxWidth={titleWidth}>
             <ImageIcon className="size-4" />
             <EditableNodeTitle
               value={data.fileName}
               fallback="Image"
               onCommit={(fileName) => updateData({ fileName }, { flush: true })}
             />
-          </motion.div>
+          </CanvasNodeTitle>
 
           <motion.div
             className="absolute"

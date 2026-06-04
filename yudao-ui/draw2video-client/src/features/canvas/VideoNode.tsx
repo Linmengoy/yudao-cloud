@@ -32,6 +32,7 @@ import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaTool
 import { downloadMedia, videoNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
+import { CanvasNodeTitle } from "./CanvasNodeTitle";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
 
@@ -243,7 +244,6 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const showNodeActions = selectedNodeCount <= 1;
   const videoSrc = data.videoUrl || data.previewUrl;
   const fixedUiScale = 1 / zoom;
-  const titleTop = -28 * fixedUiScale;
   const referenceImages = useMemo(() => {
     void referenceImagesSignature;
     const currentNodes = getNodes() as AppNode[];
@@ -608,29 +608,20 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               uiScale={fixedUiScale}
               style={{
                 left: displaySize.width / 2,
-                top: titleTop - 36 * fixedUiScale,
+                top: -72 * fixedUiScale,
                 pointerEvents: "auto",
               }}
             />
           )}
         </AnimatePresence>
-        <motion.div
-          className="nodrag nowheel pointer-events-auto absolute flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
-          initial={false}
-          animate={{
-            left: 0,
-            top: titleTop,
-          }}
-          style={{ maxWidth: displaySize.width }}
-          transition={{ type: "spring", stiffness: 360, damping: 34 }}
-        >
+        <CanvasNodeTitle fixedUiScale={fixedUiScale} maxWidth={displaySize.width}>
           <Video className="size-4" />
           <EditableNodeTitle
             value={data.fileName}
             fallback="Video"
             onCommit={(fileName) => updateData({ fileName }, { flush: true })}
           />
-        </motion.div>
+        </CanvasNodeTitle>
 
         <motion.div
           className="absolute"
