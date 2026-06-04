@@ -174,6 +174,14 @@ function getSelectedPreviewCardBounds(nodes: AppNode[]): SelectionRectSnapshot |
   );
 }
 
+function getNodesSelectionViewportRect(): SelectionRectSnapshot | null {
+  const rectElement = document.querySelector<HTMLElement>(".react-flow__nodesselection-rect");
+  if (!rectElement) return null;
+  const rect = rectElement.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+}
+
 function applyPreviewCardSelection(nodes: AppNode[], selectionRect: SelectionRectSnapshot): AppNode[] {
   return nodes.map((node) => {
     const cardRect = getPreviewCardViewportRect(node.id);
@@ -368,6 +376,17 @@ function snapshotSignature(snapshot: CanvasSnapshot) {
 
 function usesCardNodeInteraction(node: AppNode) {
   return node.type === "image" || node.type === "video" || node.type === "sketch" || node.type === "text" || node.type === "canvasGroup";
+}
+
+function canGroupSelectedNodes(selectedNodes: AppNode[], allNodes: AppNode[]) {
+  const selectedIds = new Set(selectedNodes.map((node) => node.id));
+  if (selectedIds.size < 2) return false;
+  if (selectedNodes.some((node) => node.type === "canvasGroup")) return false;
+  return !allNodes.some((node) => {
+    if (node.type !== "canvasGroup") return false;
+    const childIds = (node.data as GroupNodeData).childNodeIds;
+    return childIds.some((childId) => selectedIds.has(childId));
+  });
 }
 
 function withCardNodeInteraction(node: AppNode): AppNode {
@@ -623,8 +642,8 @@ function CanvasFlow() {
   const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
   const [nodeDragCommitVersion, setNodeDragCommitVersion] = useState(0);
   const [keyboardEditingNodeId, setKeyboardEditingNodeId] = useState<string | null>(null);
-  const [selectionOverlayRect, setSelectionOverlayRect] = useState<SelectionRectSnapshot | null>(null);
   const [multiSelectionBounds, setMultiSelectionBounds] = useState<SelectionRectSnapshot | null>(null);
+  const [canGroupSelection, setCanGroupSelection] = useState(false);
   const [createMenu, setCreateMenu] = useState<{
     x: number;
     y: number;
@@ -653,18 +672,19 @@ function CanvasFlow() {
   } = useReactFlow();
 
   const refreshMultiSelectionBounds = useCallback((sourceNodes?: AppNode[]) => {
-    const selectedNodes = (sourceNodes ?? getNodes() as AppNode[]).filter((node) => node.selected);
-    if (selectedNodes.length <= 1) {
-      setMultiSelectionBounds(null);
-      return;
-    }
-    setMultiSelectionBounds(getSelectedPreviewCardBounds(selectedNodes));
+    const currentNodes = sourceNodes ?? getNodes() as AppNode[];
+    const selectedNodes = currentNodes.filter((node) => node.selected);
+    const canGroup = canGroupSelectedNodes(selectedNodes, currentNodes);
+    window.requestAnimationFrame(() => {
+      const bounds = getNodesSelectionViewportRect();
+      setCanGroupSelection(canGroup);
+      setMultiSelectionBounds(bounds && selectedNodes.length > 1 ? bounds : null);
+    });
   }, [getNodes]);
 
   const handleSelectionEnd = useCallback(() => {
     const selectionRect = selectionRectRef.current;
     selectionRectRef.current = null;
-    setSelectionOverlayRect(null);
 
     window.requestAnimationFrame(() => {
       let selectedNodes = getNodes().filter((node) => node.selected);
@@ -702,6 +722,7 @@ function CanvasFlow() {
         }))
       );
       setMultiSelectionBounds(null);
+      setCanGroupSelection(false);
     });
   }, [getNodes, refreshMultiSelectionBounds, setNodes, storeApi]);
 
@@ -1480,7 +1501,7 @@ function CanvasFlow() {
     if (isReadOnly) return;
     const currentNodes = getNodes() as AppNode[];
     const selectedNodes = currentNodes.filter((node) => node.selected && node.type !== "canvasGroup");
-    if (selectedNodes.length < 2) return;
+    if (!canGroupSelectedNodes(selectedNodes, currentNodes)) return;
     const selectedIds = new Set(selectedNodes.map((node) => node.id));
     const bounds = getSelectedPreviewCardBounds(selectedNodes);
     if (!bounds) return;
@@ -1519,7 +1540,7 @@ function CanvasFlow() {
       ...unselectedNodes.slice(insertIndex),
     ]);
     setMultiSelectionBounds(null);
-    setSelectionOverlayRect(null);
+    setCanGroupSelection(false);
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(groupNode) });
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
@@ -1951,13 +1972,12 @@ function CanvasFlow() {
         if (!target.classList.contains("react-flow__pane")) {
           selectionStartRef.current = null;
           selectionRectRef.current = null;
-          setSelectionOverlayRect(null);
           return;
         }
         selectionStartRef.current = { x: event.clientX, y: event.clientY };
         selectionRectRef.current = { x: event.clientX, y: event.clientY, width: 0, height: 0 };
-        setSelectionOverlayRect(null);
         setMultiSelectionBounds(null);
+        setCanGroupSelection(false);
       }}
       onPointerMoveCapture={(event) => {
         const start = selectionStartRef.current;
@@ -1974,7 +1994,6 @@ function CanvasFlow() {
           selectionRafRef.current = null;
           const latestSelectionRect = selectionRectRef.current;
           if (!latestSelectionRect) return;
-          setSelectionOverlayRect(latestSelectionRect);
           setNodes((current) => applyPreviewCardSelection(current, latestSelectionRect));
         });
       }}
@@ -2062,6 +2081,7 @@ function CanvasFlow() {
             (getNodes() as AppNode[]).map((node) => [node.id, { ...node.position }])
           );
           setMultiSelectionBounds(null);
+          setCanGroupSelection(false);
           window.dispatchEvent(new CustomEvent("copse:canvas-interaction"));
         }}
         onNodeDragStop={() => {
@@ -2086,34 +2106,11 @@ function CanvasFlow() {
         )}
       </ReactFlow>
 
-      {selectionOverlayRect && (
-        <div
-          className="pointer-events-none fixed z-[70] rounded-lg border border-blue-500/70 bg-blue-500/[0.08] shadow-[0_0_0_1px_rgba(59,130,246,0.14)]"
-          style={{
-            left: selectionOverlayRect.x,
-            top: selectionOverlayRect.y,
-            width: selectionOverlayRect.width,
-            height: selectionOverlayRect.height,
-          }}
+      {multiSelectionBounds && canGroupSelection && (
+        <MultiSelectionToolbar
+          bounds={multiSelectionBounds}
+          onGroup={groupSelectedNodes}
         />
-      )}
-
-      {multiSelectionBounds && !selectionOverlayRect && (
-        <>
-          <div
-            className="pointer-events-none fixed z-[70] rounded-lg border border-blue-500/70 bg-blue-500/[0.04] shadow-[0_0_0_1px_rgba(59,130,246,0.12)]"
-            style={{
-              left: multiSelectionBounds.x,
-              top: multiSelectionBounds.y,
-              width: multiSelectionBounds.width,
-              height: multiSelectionBounds.height,
-            }}
-          />
-          <MultiSelectionToolbar
-            bounds={multiSelectionBounds}
-            onGroup={groupSelectedNodes}
-          />
-        </>
       )}
 
       <CanvasViewToolbar

@@ -256,8 +256,17 @@
   }
 
   .react-flow__selection {
-    border-color: transparent !important;
-    background: transparent !important;
+    border: 1px solid rgba(59, 130, 246, 0.72) !important;
+    border-radius: 12px;
+    background: rgba(59, 130, 246, 0.08) !important;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.14);
+  }
+
+  .react-flow__nodesselection-rect {
+    border: 1px solid rgba(59, 130, 246, 0.72) !important;
+    border-radius: 12px;
+    background: rgba(59, 130, 246, 0.04) !important;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12);
   }
 
   .react-flow__node.selectable.selected,
