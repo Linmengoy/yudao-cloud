@@ -29,7 +29,7 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
@@ -1054,6 +1054,21 @@ function CanvasFlow() {
     window.addEventListener("copse:node-data-patch", handleNodeDataPatch);
     return () => window.removeEventListener("copse:node-data-patch", handleNodeDataPatch);
   }, [canvasOperations, isReadOnly]);
+
+  useEffect(() => {
+    function handleEdgeDelete(event: Event) {
+      if (isReadOnly) return;
+      const detail = (event as CustomEvent<EdgeDeleteEventDetail>).detail;
+      if (!detail?.edgeId) return;
+      setEdges((eds) => eds.filter((edge) => edge.id !== detail.edgeId));
+      canvasOperations.submitOperation("EDGE_DELETE", {
+        edgeId: detail.edgeId,
+      });
+    }
+
+    window.addEventListener("copse:edge-delete", handleEdgeDelete);
+    return () => window.removeEventListener("copse:edge-delete", handleEdgeDelete);
+  }, [canvasOperations, isReadOnly, setEdges]);
 
   useEffect(() => {
     function handleGroupUngroup(event: Event) {

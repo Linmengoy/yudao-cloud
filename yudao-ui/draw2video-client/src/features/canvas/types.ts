@@ -46,6 +46,10 @@ export type GroupArrangeEventDetail = {
   mode: "horizontal" | "grid";
 };
 
+export type EdgeDeleteEventDetail = {
+  edgeId: string;
+};
+
 export type PromptNode = Node<PromptNodeData, "prompt">;
 
 // --- Result Node ---
