@@ -11,6 +11,7 @@ import cn.iocoder.yudao.module.aigc.model.dto.AigcModelRespDTO;
 import cn.iocoder.yudao.module.aigc.model.service.model.AigcModelService;
 import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
 import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
+import cn.iocoder.yudao.module.aigc.model.util.AigcModelParamUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -74,8 +75,13 @@ public class AigcModelAppController {
             @RequestParam("capability") String capability) {
         List<AigcModelParamTemplateDO> templates = paramService.getParamTemplateList(modelId, capability);
         return success(templates.stream()
-                .map(template -> BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class))
+                .map(this::convertParamTemplate)
                 .collect(Collectors.toList()));
+    }
+
+    private AigcModelParamTemplateRespDTO convertParamTemplate(AigcModelParamTemplateDO template) {
+        return BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class,
+                resp -> resp.setOptions(AigcModelParamUtils.parseOptions(template.getOptions())));
     }
 
 }
