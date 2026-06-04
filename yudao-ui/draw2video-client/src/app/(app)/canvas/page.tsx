@@ -417,6 +417,15 @@ function getMergeTargetForSelectedNodes(selectedNodes: AppNode[], allNodes: AppN
   return belongsToOtherGroup ? null : targetGroup;
 }
 
+function getSingleSelectedGroup(selectedNodes: AppNode[]) {
+  const selectedGroups = selectedNodes.filter((node) => node.type === "canvasGroup");
+  if (selectedGroups.length !== 1) return null;
+  const groupNode = selectedGroups[0];
+  const childIds = new Set((groupNode.data as GroupNodeData).childNodeIds);
+  const onlyGroupAndItsChildren = selectedNodes.every((node) => node.id === groupNode.id || childIds.has(node.id));
+  return onlyGroupAndItsChildren ? groupNode : null;
+}
+
 function withCardNodeInteraction(node: AppNode): AppNode {
   if (!usesCardNodeInteraction(node)) return node;
   return {
@@ -737,7 +746,22 @@ function CanvasFlow() {
         }));
         setNodes(nextNodes);
         refreshMultiSelectionBounds(nextNodes);
-        selectedNodes = selectedNodes.filter((node) => selectedIds.has(node.id));
+        selectedNodes = nextNodes.filter((node) => selectedIds.has(node.id));
+      }
+
+      const singleSelectedGroup = getSingleSelectedGroup(selectedNodes as AppNode[]);
+      if (singleSelectedGroup) {
+        const selectedId = singleSelectedGroup.id;
+        storeApi.setState({ nodesSelectionActive: false });
+        setNodes((nds) =>
+          nds.map((node) => ({
+            ...node,
+            selected: node.id === selectedId,
+          }))
+        );
+        setMultiSelectionBounds(null);
+        setMultiSelectionAction(null);
+        return;
       }
 
       if (selectedNodes.length !== 1) {
