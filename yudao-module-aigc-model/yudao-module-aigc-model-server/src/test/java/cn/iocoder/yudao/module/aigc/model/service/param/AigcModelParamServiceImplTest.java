@@ -109,6 +109,16 @@ public class AigcModelParamServiceImplTest extends BaseDbUnitTest {
                 Map.of("ratio", "1:1", "private", true));
     }
 
+    @Test
+    public void testValidateParams_selectEscapedOptionsSuccess() {
+        AigcModelDO model = createModel();
+        paramTemplateMapper.insert(createTemplate(model.getId(), "ratio", AigcModelParamTypeEnum.SELECT.getCode(), o -> o
+                .setOptions("[\"\\\"1:1\\\"\",\"\\\"16:9\\\"\"]").setRequiredStatus(true)));
+
+        paramService.validateParams(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
+                Map.of("ratio", "1:1"));
+    }
+
     private AigcModelDO createModel() {
         AigcModelDO model = randomPojo(AigcModelDO.class)
                 .setCode(randomString()).setStatus(1);

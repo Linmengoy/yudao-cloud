@@ -120,7 +120,7 @@ public class AigcModelParamServiceImpl implements AigcModelParamService {
                 break;
             case SELECT:
                 if (template.getOptions() != null) {
-                    List<String> options = JSONUtil.toList(template.getOptions(), String.class);
+                    List<String> options = AigcModelParamUtils.parseOptions(template.getOptions());
                     if (!options.contains(strValue)) {
                         throw exception(MODEL_PARAM_OPTION_ERROR, template.getParamName());
                     }
