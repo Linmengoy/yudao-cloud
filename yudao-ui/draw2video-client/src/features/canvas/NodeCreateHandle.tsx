@@ -16,7 +16,8 @@ type NodeCreateHandleProps = {
 
 const HANDLE_EVENT = "copse:node-create-menu";
 const BUTTON_SIZE = 28;
-const HOVER_ZONE_WIDTH = 128;
+const BUTTON_EDGE_GAP = 10;
+const HOVER_ZONE_WIDTH = 48;
 const HOVER_ZONE_HEIGHT = 168;
 
 function clamp(value: number, min: number, max: number) {
@@ -48,7 +49,7 @@ export function NodeCreateHandle({ nodeId, direction, enabled = true, selected =
   const buttonSize = toFlowUnit(BUTTON_SIZE);
   const hoverZoneWidth = toFlowUnit(HOVER_ZONE_WIDTH);
   const hoverZoneHeight = toFlowUnit(HOVER_ZONE_HEIGHT);
-  const visualLeft = toFlowUnit(isIncoming ? -52 : 32);
+  const visualLeft = toFlowUnit(isIncoming ? -(BUTTON_SIZE + BUTTON_EDGE_GAP) : BUTTON_EDGE_GAP);
   const zoneLeft = visualLeft + buttonSize / 2 - hoverZoneWidth / 2;
   const [followOffset, setFollowOffset] = useState({ x: 0, y: 0 });
   const [isFollowing, setIsFollowing] = useState(false);

@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowUp,
   Check,
+  Gem,
   ImageIcon,
   Loader2,
   Play,
@@ -23,11 +24,15 @@ import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, Referen
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
+import type { AigcModelParamTemplate } from "@/features/generation/model-api";
+import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { downloadMedia, videoNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
+import { EditableNodeTitle } from "./EditableNodeTitle";
+import { CanvasNodeTitle } from "./CanvasNodeTitle";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
 
@@ -36,14 +41,77 @@ const CARD_HEIGHT = 236;
 const PREVIEW_SLOT_WIDTH = 420;
 const PREVIEW_SLOT_HEIGHT = 420;
 const COMPOSER_WIDTH = 680;
-const SEEDANCE_MODEL_ID = "doubao-seedance-2-0-260128";
 const SEEDANCE_MODEL_NAME = "Seedance 2.0";
 const WAN_MODEL_ID = "wan2.2-ti2v-5b";
-const WAN_MODEL_NAME = "Wan 2.2";
 const RATIOS: VideoNodeData["ratio"][] = ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9"];
 const RESOLUTIONS: VideoNodeData["resolution"][] = ["480p", "720p", "1080p"];
 const DURATIONS: VideoNodeData["duration"][] = [5, 10];
 const WAN_SIZES = ["1280*704", "704*1280"] as const;
+const VIDEO_PARAM_KEYS = new Set([
+  "ratio",
+  "aspectRatio",
+  "resolution",
+  "duration",
+  "size",
+  "generateAudio",
+  "audio",
+  "watermark",
+]);
+
+function normalizeTemplateOption(option: unknown) {
+  let value = String(option ?? "").trim();
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const parsed = JSON.parse(value);
+      if (typeof parsed !== "string") break;
+      value = parsed.trim();
+    } catch {
+      break;
+    }
+  }
+  return value.replace(/\\/g, "").replace(/^"+|"+$/g, "").trim();
+}
+
+function templateOptions(template: AigcModelParamTemplate | undefined, fallback: string[]) {
+  const options = (template?.options ?? []).map(normalizeTemplateOption).filter(Boolean);
+  return options.length > 0 ? options : fallback;
+}
+
+function templateDefault(template: AigcModelParamTemplate | undefined, fallback: string) {
+  const normalized = template?.defaultValue ? normalizeTemplateOption(template.defaultValue) : "";
+  return normalized || templateOptions(template, [fallback])[0] || fallback;
+}
+
+function findTemplate(templates: AigcModelParamTemplate[], keys: string[]) {
+  return templates.find((template) => keys.includes(template.paramKey));
+}
+
+function hasParamValue(params: Record<string, unknown>, key: string | undefined) {
+  if (!key) return false;
+  const value = params[key];
+  return value !== undefined && value !== null && String(value) !== "";
+}
+
+function coerceBooleanParam(value: unknown, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    if (value === "true" || value === "1" || value === "on") return true;
+    if (value === "false" || value === "0" || value === "off") return false;
+  }
+  return fallback;
+}
+
+function formatCost(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "1x";
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function filterModelParams(params: Record<string, unknown>, templates: AigcModelParamTemplate[]) {
+  const keys = new Set(templates.map((template) => template.paramKey));
+  return Object.fromEntries(
+    Object.entries(params).filter(([key, value]) => keys.has(key) && value !== undefined && value !== null && value !== "")
+  );
+}
 
 function formatElapsed(ms: number | null | undefined) {
   if (!ms || ms < 0) return "0s";
@@ -133,11 +201,20 @@ function VideoParamButton<T extends string | number>({
 }
 
 export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodeProps) {
-  const { setNodes, setEdges } = useReactFlow();
+  const { setNodes, setEdges, getNodes, getEdges } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
-  const edges = useStore((s) => s.edges) as AppEdge[];
-  const nodes = useStore((s) => s.nodes) as AppNode[];
   const zoom = useStore((s) => s.transform[2] || 1);
+  const selectedNodeCount = useStore((s) => s.nodes.reduce((count, node) => count + (node.selected ? 1 : 0), 0));
+  const referenceImagesSignature = useStore((s) => (s.edges as AppEdge[])
+    .filter((edge) => edge.target === id)
+    .map((edge) => {
+      const node = (s.nodes as AppNode[]).find((item) => item.id === edge.source);
+      if (node?.type !== "image" && node?.type !== "sketch") return null;
+      const nodeData = node.data as ImageNodeData | SketchNodeData;
+      return [edge.id, edge.source, nodeData.previewUrl ?? "", nodeData.dataUrl ? nodeData.dataUrl.length : 0, nodeData.fileName].join(":");
+    })
+    .filter(Boolean)
+    .join("|"));
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
@@ -154,7 +231,6 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
 
   const isGenerating = data.status === "pending";
   const kind = data.kind ?? "draft";
-  const isWanModel = data.provider === "wan" || data.modelId === WAN_MODEL_ID;
   const upstreamStatus = data.upstreamStatus ?? null;
   const isQueued = isGenerating && isQueuedStatus(upstreamStatus);
   const isRunning = isGenerating && isRunningStatus(upstreamStatus);
@@ -164,13 +240,44 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const progressLabel = isQueued ? "排队中" : isRunning ? `生成中 ${formatElapsed(elapsedMs)}` : "提交中";
   const previewItem = useMemo(() => videoNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
   const displaySize = getDisplaySize(data);
-  const displayLeft = (PREVIEW_SLOT_WIDTH - displaySize.width) / 2;
-  const displayTop = 28 + PREVIEW_SLOT_HEIGHT - displaySize.height;
-  const selectedNodeCount = nodes.filter((node) => node.selected).length;
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
   const videoSrc = data.videoUrl || data.previewUrl;
   const fixedUiScale = 1 / zoom;
+  const referenceImages = useMemo(() => {
+    void referenceImagesSignature;
+    const currentNodes = getNodes() as AppNode[];
+    const currentEdges = getEdges() as AppEdge[];
+    const images: { edgeId: string; nodeId: string; data: ImageNodeData | SketchNodeData }[] = [];
+    for (const edge of currentEdges) {
+      if (edge.target !== id) continue;
+      const node = currentNodes.find((item) => item.id === edge.source);
+      if (node?.type !== "image" && node?.type !== "sketch") continue;
+      images.push({ edgeId: edge.id, nodeId: node.id, data: node.data as ImageNodeData | SketchNodeData });
+    }
+    return images;
+  }, [getEdges, getNodes, id, referenceImagesSignature]);
+  const generationCapability = referenceImages.length > 0 ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO";
+  const rawParams = useMemo(() => data.params ?? {}, [data.params]);
+  const aigcModels = useAigcModels({ type: 3, capability: generationCapability, preferredModelId: data.aigcModelId, params: rawParams });
+  const storedAigcModel = aigcModels.models.find((model) => model.id === data.aigcModelId);
+  const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
+  const activeAigcModelId = activeAigcModel?.id ?? data.aigcModelId;
+  const activeModelName = activeAigcModel?.name ?? data.modelName ?? SEEDANCE_MODEL_NAME;
+  const activeProviderModel = activeAigcModel?.model ?? data.providerModel ?? data.modelId;
+  const isWanModel = data.provider === "wan" || activeProviderModel === WAN_MODEL_ID || data.modelId === WAN_MODEL_ID;
+  const ratioTemplate = useMemo(() => findTemplate(aigcModels.templates, ["ratio", "aspectRatio"]), [aigcModels.templates]);
+  const resolutionTemplate = useMemo(() => findTemplate(aigcModels.templates, ["resolution"]), [aigcModels.templates]);
+  const durationTemplate = useMemo(() => findTemplate(aigcModels.templates, ["duration"]), [aigcModels.templates]);
+  const sizeTemplate = useMemo(() => findTemplate(aigcModels.templates, ["size"]), [aigcModels.templates]);
+  const audioTemplate = useMemo(() => findTemplate(aigcModels.templates, ["generateAudio", "audio"]), [aigcModels.templates]);
+  const ratioOptions = useMemo(() => templateOptions(ratioTemplate, RATIOS), [ratioTemplate]);
+  const resolutionOptions = useMemo(() => templateOptions(resolutionTemplate, RESOLUTIONS), [resolutionTemplate]);
+  const durationOptions = useMemo(() => templateOptions(durationTemplate, DURATIONS.map(String)), [durationTemplate]);
+  const sizeOptions = useMemo(() => templateOptions(sizeTemplate, [...WAN_SIZES]), [sizeTemplate]);
+  const effectiveParams = useMemo(() => filterModelParams(rawParams, aigcModels.templates), [aigcModels.templates, rawParams]);
+  const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
+  const canGenerate = Boolean(data.prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && Boolean(activeAigcModelId);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
@@ -180,7 +287,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [displayLeft, displayTop, displaySize.width, displaySize.height, id, updateNodeInternals]);
+  }, [displaySize.width, displaySize.height, id, updateNodeInternals]);
 
   const updateData = useCallback(
     (patch: Partial<VideoNodeData>, options?: { flush?: boolean }) => {
@@ -194,6 +301,22 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
       }));
     },
     [id, setNodes]
+  );
+
+  const updateParams = useCallback(
+    (patch: Record<string, unknown>) => {
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (node.id !== id) return node;
+          const nodeData = node.data as VideoNodeData;
+          return { ...node, data: { ...nodeData, params: { ...(nodeData.params ?? {}), ...patch }, ...patch } };
+        })
+      );
+      window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
+        detail: { nodeId: id, patch: { params: { ...(data.params ?? {}), ...patch }, ...patch } },
+      }));
+    },
+    [data.params, id, setNodes]
   );
 
   const waitAndApplyServerRun = useCallback(async (projectId: string | number, taskId: number, startedAt: string) => {
@@ -233,20 +356,51 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     void waitAndApplyServerRun(projectId, taskId, data.generationStartedAt ?? data.createdAt);
   }, [data.createdAt, data.generationStartedAt, data.status, data.taskId, waitAndApplyServerRun]);
 
-  const referenceImages = edges
-    .filter((edge) => edge.target === id)
-    .map((edge) => {
-      const node = nodes.find((n) => n.id === edge.source);
-      return node?.type === "image" || node?.type === "sketch"
-        ? { edgeId: edge.id, nodeId: node.id, data: node.data as ImageNodeData | SketchNodeData }
-        : null;
-    })
-    .filter((item): item is { edgeId: string; nodeId: string; data: ImageNodeData | SketchNodeData } => item !== null);
+  useEffect(() => {
+    if (aigcModels.loading || aigcModels.models.length === 0) return;
+    if (data.aigcModelId && aigcModels.models.some((model) => model.id === data.aigcModelId)) return;
+    const nextModel = aigcModels.selectedModel ?? aigcModels.models[0];
+    if (!nextModel) return;
+    updateData({
+      modelId: String(nextModel.id),
+      providerModel: nextModel.model,
+      modelName: nextModel.name,
+      aigcModelId: nextModel.id,
+    });
+  }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, data.aigcModelId, updateData]);
+
+  useEffect(() => {
+    if (aigcModels.templateLoading || aigcModels.templates.length === 0) return;
+    const patch: Record<string, unknown> = {};
+    for (const template of aigcModels.templates) {
+      if (!VIDEO_PARAM_KEYS.has(template.paramKey)) continue;
+      if (hasParamValue(rawParams, template.paramKey)) continue;
+      const fallback = template.paramKey === "ratio" || template.paramKey === "aspectRatio"
+        ? data.ratio
+        : template.paramKey === "resolution"
+          ? data.resolution
+          : template.paramKey === "duration"
+            ? String(data.duration)
+            : template.paramKey === "size"
+              ? data.size ?? "1280*704"
+              : template.paramKey === "generateAudio" || template.paramKey === "audio"
+                ? String(data.generateAudio)
+                : "";
+      const nextValue = templateDefault(template, fallback);
+      if (nextValue) patch[template.paramKey] = nextValue;
+    }
+    if (Object.keys(patch).length > 0) updateParams(patch);
+  }, [aigcModels.templateLoading, aigcModels.templates, data.duration, data.generateAudio, data.ratio, data.resolution, data.size, rawParams, updateParams]);
 
   const summary = useMemo(() => {
-    if (isWanModel) return `Frames · ${data.size ?? "1280*704"} · 121f · 5s`;
-    return `Frames · ${data.ratio} · ${data.resolution} · ${data.duration}s · ${data.generateAudio ? "音频" : "静音"}`;
-  }, [data.duration, data.generateAudio, data.ratio, data.resolution, data.size, isWanModel]);
+    const ratio = normalizeTemplateOption(rawParams[ratioTemplate?.paramKey ?? "ratio"] ?? data.ratio);
+    const resolution = normalizeTemplateOption(rawParams[resolutionTemplate?.paramKey ?? "resolution"] ?? data.resolution);
+    const duration = normalizeTemplateOption(rawParams[durationTemplate?.paramKey ?? "duration"] ?? data.duration);
+    const size = normalizeTemplateOption(rawParams[sizeTemplate?.paramKey ?? "size"] ?? data.size ?? "1280*704");
+    const audio = coerceBooleanParam(rawParams[audioTemplate?.paramKey ?? "generateAudio"], data.generateAudio);
+    if (sizeTemplate || isWanModel) return `Frames · ${size}`;
+    return `Frames · ${ratio} · ${resolution} · ${duration}s · ${audio ? "音频" : "静音"}`;
+  }, [audioTemplate, data.duration, data.generateAudio, data.ratio, data.resolution, data.size, durationTemplate, isWanModel, ratioTemplate, rawParams, resolutionTemplate, sizeTemplate]);
 
   useEffect(() => {
     function handleReferencePicker(e: Event) {
@@ -324,7 +478,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     const prompt = data.prompt.trim();
     if (!prompt || isGenerating) return;
 
-    if (!data.aigcModelId) {
+    if (!activeAigcModelId) {
       updateData({ status: "failed", errorMessage: "请选择 AIGC 视频模型后再生成。", upstreamStatus: "failed" });
       return;
     }
@@ -354,17 +508,12 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           runId: clientId,
           nodeType: "video",
           generateType: "VIDEO",
-          generateMode: referenceImages.length > 0 ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO",
-          modelId: data.aigcModelId,
+          generateMode: generationCapability,
+          modelId: activeAigcModelId,
           prompt,
           inputParams: JSON.stringify({
-            providerModel: data.providerModel ?? data.modelId,
-            ratio: data.ratio,
-            resolution: data.resolution,
-            duration: data.duration,
-            size: data.size,
-            generateAudio: data.generateAudio,
-            watermark: data.watermark,
+            ...effectiveParams,
+            providerModel: activeProviderModel,
             referenceImageIds: referenceImages.map((image) => image.nodeId),
             referenceImages: referenceImages.map((image) => image.data.dataUrl || image.data.previewUrl).filter(Boolean),
           }),
@@ -392,17 +541,12 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     try {
       const submit = await generationApi.submit({
         generateType: "VIDEO",
-        generateMode: referenceImages.length > 0 ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO",
-        modelId: data.aigcModelId,
+        generateMode: generationCapability,
+        modelId: activeAigcModelId,
         prompt,
         inputParams: JSON.stringify({
-          providerModel: data.providerModel ?? data.modelId,
-          ratio: data.ratio,
-          resolution: data.resolution,
-          duration: data.duration,
-          size: data.size,
-          generateAudio: data.generateAudio,
-          watermark: data.watermark,
+          ...effectiveParams,
+          providerModel: activeProviderModel,
           referenceImages: referenceImages.map((image) => image.data.dataUrl || image.data.previewUrl).filter(Boolean),
         }),
         sync: false,
@@ -449,12 +593,12 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [data.aigcModelId, data.duration, data.generateAudio, data.modelId, data.prompt, data.providerModel, data.ratio, data.resolution, data.size, data.watermark, id, isGenerating, referenceImages, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModelId, activeProviderModel, data.prompt, effectiveParams, generationCapability, id, isGenerating, referenceImages, updateData, waitAndApplyServerRun]);
 
   return (
     <>
-    <div className="relative" style={{ width: CARD_WIDTH }}>
-      <div className="relative" style={{ width: PREVIEW_SLOT_WIDTH, height: PREVIEW_SLOT_HEIGHT + 28 }}>
+    <div className="relative" style={{ width: displaySize.width, height: displaySize.height }}>
+      <div className="relative overflow-visible" style={{ width: displaySize.width, height: displaySize.height }}>
         <AnimatePresence>
           {isOnlySelectedNode && !dragging && previewItem && (
             <SelectedMediaToolbar
@@ -463,35 +607,28 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               onOpenPreview={() => setPreviewOpen(true)}
               uiScale={fixedUiScale}
               style={{
-                left: displayLeft + displaySize.width / 2,
-                top: displayTop - 54 * fixedUiScale,
+                left: displaySize.width / 2,
+                top: -54,
                 pointerEvents: "auto",
               }}
             />
           )}
         </AnimatePresence>
-        <motion.div
-          className="absolute flex items-center gap-1.5 bg-transparent px-1 text-sm font-medium text-muted-gray"
-          initial={false}
-          animate={{
-            left: displayLeft,
-            top: Math.max(0, displayTop - 28),
-            width: displaySize.width,
-          }}
-          transition={{ type: "spring", stiffness: 360, damping: 34 }}
-        >
+        <CanvasNodeTitle maxWidth={displaySize.width}>
           <Video className="size-4" />
-          <span className="line-clamp-1" title={data.fileName}>
-            Video
-          </span>
-        </motion.div>
+          <EditableNodeTitle
+            value={data.fileName}
+            fallback="Video"
+            onCommit={(fileName) => updateData({ fileName }, { flush: true })}
+          />
+        </CanvasNodeTitle>
 
         <motion.div
           className="absolute"
           initial={false}
           animate={{
-            left: displayLeft,
-            top: displayTop,
+            left: 0,
+            top: 0,
             width: displaySize.width,
             height: displaySize.height,
           }}
@@ -569,11 +706,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
             exit={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="nodrag nowheel rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
+            className="nodrag nowheel absolute rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
             style={{
               width: COMPOSER_WIDTH,
-              marginLeft: (PREVIEW_SLOT_WIDTH - COMPOSER_WIDTH) / 2,
-              marginTop: 12 * fixedUiScale,
+              left: (displaySize.width - COMPOSER_WIDTH) / 2,
+              top: displaySize.height + 12 * fixedUiScale,
               transformOrigin: "top center",
               pointerEvents: "auto",
             }}
@@ -646,7 +783,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                   className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-charcoal hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Sparkles className="size-4 text-muted-gray" />
-                  <span>{data.modelName || SEEDANCE_MODEL_NAME}</span>
+                  <span>{activeModelName}</span>
                 </button>
                 <AnimatePresence>
                   {modelOpen && (
@@ -658,57 +795,42 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     transition={{ duration: 0.14, ease: "easeOut" }}
                     className="absolute bottom-full left-0 z-[260] mb-2 w-[320px] rounded-2xl border border-border-warm bg-background p-3 shadow-lg"
                   >
-                    <div className="flex flex-col gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateData({
-                            provider: "seedance",
-                            modelId: SEEDANCE_MODEL_ID,
-                            modelName: SEEDANCE_MODEL_NAME,
-                          });
-                          setModelOpen(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-center justify-between rounded-xl px-3 py-3 text-left",
-                          !isWanModel ? "bg-muted" : "hover:bg-muted"
-                        )}
-                      >
-                        <span className="flex min-w-0 flex-col gap-1">
-                          <span className="flex items-center gap-2 text-sm font-medium text-charcoal">
-                            <Sparkles className="size-4 text-muted-gray" />
-                            {SEEDANCE_MODEL_NAME}
-                          </span>
-                          <span className="text-xs text-muted-gray">1080p · 5-10s · 音频</span>
-                        </span>
-                        {!isWanModel && <Check className="size-4 text-charcoal" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateData({
-                            provider: "wan",
-                            modelId: WAN_MODEL_ID,
-                            modelName: WAN_MODEL_NAME,
-                            size: data.size ?? "1280*704",
-                            generateAudio: false,
-                          });
-                          setModelOpen(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-center justify-between rounded-xl px-3 py-3 text-left",
-                          isWanModel ? "bg-muted" : "hover:bg-muted"
-                        )}
-                      >
-                        <span className="flex min-w-0 flex-col gap-1">
-                          <span className="flex items-center gap-2 text-sm font-medium text-charcoal">
-                            <Video className="size-4 text-muted-gray" />
-                            {WAN_MODEL_NAME}
-                          </span>
-                          <span className="text-xs text-muted-gray">T2V / I2V · 121 frames · 2 sizes</span>
-                        </span>
-                        {isWanModel && <Check className="size-4 text-charcoal" />}
-                      </button>
+                    <div className="max-h-[320px] overflow-y-auto">
+                      {aigcModels.models.length > 0 ? aigcModels.models.map((model) => {
+                        const isSelected = activeAigcModelId === model.id;
+                        return (
+                          <button
+                            key={model.id}
+                            type="button"
+                            onClick={() => {
+                              aigcModels.setSelectedModelId(model.id);
+                              updateData({
+                                modelId: String(model.id),
+                                providerModel: model.model,
+                                modelName: model.name,
+                                aigcModelId: model.id,
+                                provider: model.model === WAN_MODEL_ID ? "wan" : data.provider,
+                              });
+                              setModelOpen(false);
+                            }}
+                            className={cn(
+                              "mb-1 flex w-full items-center justify-between rounded-xl px-3 py-3 text-left last:mb-0",
+                              isSelected ? "bg-muted" : "hover:bg-muted"
+                            )}
+                          >
+                            <span className="flex min-w-0 flex-col gap-1">
+                              <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-charcoal">
+                                <Video className="size-4 shrink-0 text-muted-gray" />
+                                <span className="truncate">{model.name}</span>
+                              </span>
+                              <span className="ml-6 text-xs text-muted-gray">{generationCapability}</span>
+                            </span>
+                            {isSelected && <Check className="size-4 shrink-0 text-charcoal" />}
+                          </button>
+                        );
+                      }) : (
+                        <div className="px-3 py-4 text-sm text-muted-gray">暂无可用视频模型</div>
+                      )}
                     </div>
                   </motion.div>
                   )}
@@ -746,17 +868,17 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                       </button>
                     </div>
 
-                    {isWanModel ? (
+                    {(sizeTemplate || isWanModel) ? (
                       <>
                         <p className="mb-2 text-sm font-medium text-muted-gray">Size</p>
                         <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                          {WAN_SIZES.map((size) => (
+                          {sizeOptions.map((size) => (
                             <VideoParamButton
                               key={size}
                               group="wan-size"
                               value={size}
-                              selected={(data.size ?? "1280*704") === size}
-                              onClick={() => updateData({ size })}
+                              selected={normalizeTemplateOption(rawParams[sizeTemplate?.paramKey ?? "size"] ?? data.size ?? "1280*704") === size}
+                              onClick={() => updateParams({ [sizeTemplate?.paramKey ?? "size"]: size })}
                               className="text-sm"
                             >
                               {size}
@@ -772,13 +894,13 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                       <>
                         <p className="mb-2 text-sm font-medium text-muted-gray">Aspect Ratio</p>
                         <div className="mb-4 grid grid-cols-6 gap-1 rounded-xl bg-muted p-1">
-                          {RATIOS.map((ratio) => (
+                          {ratioOptions.map((ratio) => (
                             <VideoParamButton
                               key={ratio}
                               group="ratio"
                               value={ratio}
-                              selected={data.ratio === ratio}
-                              onClick={() => updateData({ ratio })}
+                              selected={normalizeTemplateOption(rawParams[ratioTemplate?.paramKey ?? "ratio"] ?? data.ratio) === ratio}
+                              onClick={() => updateParams({ [ratioTemplate?.paramKey ?? "ratio"]: ratio })}
                               className="text-xs"
                             >
                               {ratio}
@@ -788,13 +910,13 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
 
                         <p className="mb-2 text-sm font-medium text-muted-gray">Resolution</p>
                         <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
-                          {RESOLUTIONS.map((resolution) => (
+                          {resolutionOptions.map((resolution) => (
                             <VideoParamButton
                               key={resolution}
                               group="resolution"
                               value={resolution}
-                              selected={data.resolution === resolution}
-                              onClick={() => updateData({ resolution })}
+                              selected={normalizeTemplateOption(rawParams[resolutionTemplate?.paramKey ?? "resolution"] ?? data.resolution) === resolution}
+                              onClick={() => updateParams({ [resolutionTemplate?.paramKey ?? "resolution"]: resolution })}
                               className="text-sm"
                             >
                               {resolution}
@@ -804,13 +926,13 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
 
                         <p className="mb-2 text-sm font-medium text-muted-gray">Duration</p>
                         <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                          {DURATIONS.map((duration) => (
+                          {durationOptions.map((duration) => (
                             <VideoParamButton
                               key={duration}
                               group="duration"
                               value={duration}
-                              selected={data.duration === duration}
-                              onClick={() => updateData({ duration })}
+                              selected={normalizeTemplateOption(rawParams[durationTemplate?.paramKey ?? "duration"] ?? data.duration) === duration}
+                              onClick={() => updateParams({ [durationTemplate?.paramKey ?? "duration"]: duration })}
                               className="text-sm"
                             >
                               {duration}s
@@ -818,30 +940,34 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                           ))}
                         </div>
 
-                        <p className="mb-2 flex items-center gap-1 text-sm font-medium text-muted-gray">
-                          Generate Audio
-                          {data.generateAudio ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
-                        </p>
-                        <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                          <VideoParamButton
-                            group="audio"
-                            value="on"
-                            selected={data.generateAudio}
-                            onClick={() => updateData({ generateAudio: true })}
-                            className="text-sm"
-                          >
-                            On
-                          </VideoParamButton>
-                          <VideoParamButton
-                            group="audio"
-                            value="off"
-                            selected={!data.generateAudio}
-                            onClick={() => updateData({ generateAudio: false })}
-                            className="text-sm"
-                          >
-                            Off
-                          </VideoParamButton>
-                        </div>
+                        {(!audioTemplate || audioTemplate.paramType === "BOOLEAN" || audioTemplate.paramType === "SELECT") && (
+                          <>
+                            <p className="mb-2 flex items-center gap-1 text-sm font-medium text-muted-gray">
+                              Generate Audio
+                              {coerceBooleanParam(rawParams[audioTemplate?.paramKey ?? "generateAudio"], data.generateAudio) ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+                            </p>
+                            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+                              <VideoParamButton
+                                group="audio"
+                                value="on"
+                                selected={coerceBooleanParam(rawParams[audioTemplate?.paramKey ?? "generateAudio"], data.generateAudio)}
+                                onClick={() => updateParams({ [audioTemplate?.paramKey ?? "generateAudio"]: true })}
+                                className="text-sm"
+                              >
+                                On
+                              </VideoParamButton>
+                              <VideoParamButton
+                                group="audio"
+                                value="off"
+                                selected={!coerceBooleanParam(rawParams[audioTemplate?.paramKey ?? "generateAudio"], data.generateAudio)}
+                                onClick={() => updateParams({ [audioTemplate?.paramKey ?? "generateAudio"]: false })}
+                                className="text-sm"
+                              >
+                                Off
+                              </VideoParamButton>
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                   </motion.div>
@@ -851,11 +977,14 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="rounded-lg px-2 py-1 text-sm text-muted-gray">1x</span>
+              <span className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-muted-gray">
+                <Gem className="size-3.5" />
+                {costLabel}
+              </span>
               <button
                 type="button"
                 onClick={handleGenerate}
-                disabled={!data.prompt.trim() || isGenerating}
+                disabled={!canGenerate}
                 className="flex size-10 items-center justify-center rounded-full bg-charcoal text-off-white shadow-sm transition-opacity active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label={isGenerating ? "生成中" : "生成视频"}
               >

@@ -1,6 +1,6 @@
 # Copse App
 
-Copse is a Next.js App Router prototype for a ToC AI creative workspace. The current core surface is `/create/image`, a React Flow canvas where users create, connect, and generate image, text, and video nodes.
+Copse is a Next.js App Router prototype for a ToC AI creative workspace. The current core surface is `/canvas`, a React Flow canvas where users create, connect, and generate image, text, and video nodes.
 
 ## Stack
 
@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000/create/image`.
+Open `http://localhost:3000/canvas`.
 
 ## Environment
 
@@ -83,7 +83,7 @@ Project model:
 - `/app` shows recent projects and a new-project entry.
 - `/projects` is the project library. The sidebar project icon should land here before entering a canvas.
 - `/assets` is the asset library. The sidebar asset icon should land here and show generated image/video tables.
-- `/create/image?projectId=...` opens one project's canvas.
+- `/canvas?projectId=...` opens one project's canvas. `/create/image` is kept only as a compatibility redirect.
 - Canvas drafts are scoped by `projectId`; creating or opening a project updates its last-opened time and lightweight summary.
 
 Asset library:
@@ -95,6 +95,8 @@ Asset library:
 Current image generation behavior:
 
 - New image generation creates an `ImageNode` draft placeholder.
+- Image models, model parameters, and price display come from the AIGC model APIs. Backend SELECT options/default values are normalized so saved JSON-array values render as plain values such as `1:1`.
+- Existing image nodes persist `aigcModelId`; refreshing a project should restore the node's selected model instead of falling back to the default model.
 - Selecting the image opens a composer below the image.
 - Reference images are connected to the selected image node and shown as thumbnails in the composer toolbar.
 - Generation updates the same image node in place instead of creating a separate result node.
@@ -127,6 +129,7 @@ Current sketch behavior:
 Current video behavior:
 
 - New video nodes are draft placeholders.
+- Video generation should use AIGC model capability lists and parameter templates for `TEXT_TO_VIDEO` / `IMAGE_TO_VIDEO` instead of relying on hardcoded frontend model buttons.
 - Selecting a draft/generated video opens a composer below the fixed preview slot.
 - The video placeholder changes aspect ratio when video params change.
 - Uploaded video nodes are media-only nodes and do not open a prompt composer.
@@ -153,6 +156,8 @@ Canvas navigation:
 - Node preview cards use opaque background surfaces so the positioning dots do not show through cards.
 - Selected node toolbars, selected-node composers, and side create handles keep a stable screen size while the React Flow canvas zoom changes. This keeps prompt entry usable even when the canvas is zoomed out.
 - Node titles stay in canvas coordinates, so they scale visually with the canvas zoom and remain aligned to their preview content.
+- The canvas skips history/snapshot churn while nodes are actively dragged and saves the final position after drag stop.
+- Image nodes subscribe only to the React Flow state they actually need, so unrelated canvas changes do not force every image node through model/parameter recomputation.
 
 Canvas motion:
 
@@ -204,7 +209,8 @@ Run both before handing off canvas changes.
 
 ## Important Files
 
-- `src/app/(app)/create/image/page.tsx`: canvas orchestration.
+- `src/app/(app)/canvas/page.tsx`: canvas orchestration.
+- `src/app/(app)/create/image/page.tsx`: compatibility redirect to `/canvas`.
 - `src/features/canvas/ImageNode.tsx`: unified image/draft/generated image node.
 - `src/features/canvas/TextNode.tsx`: editable/resizable text node.
 - `src/features/canvas/VideoNode.tsx`: video draft/generated node and Seedance task polling UI.

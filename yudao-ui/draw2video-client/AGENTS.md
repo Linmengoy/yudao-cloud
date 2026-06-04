@@ -15,7 +15,7 @@ The MVP is not a generic admin panel and should not copy the Yudao Vue admin UI.
 - Marketing pages for unauthenticated users.
 - Auth modal instead of a hard route transition for login.
 - After login, use the left workspace sidebar as the primary navigation.
-- `/create/image` is the core product surface.
+- `/canvas` is the core product surface. `/create/image` is only a compatibility redirect.
 - Video creation is now in MVP on the same canvas. Keep it lightweight: draft/generated `VideoNode`, image-to-video references, async task polling, and direct node replacement. Defer advanced video workflows such as storyboards, timeline editing, multi-shot planning, masks, or batch queues.
 
 ## Tech Stack
@@ -34,7 +34,8 @@ Use existing project helpers and components before adding new abstractions.
 
 - `src/app/(marketing)/layout.tsx`: public marketing shell.
 - `src/app/(app)/layout.tsx`: authenticated workspace shell.
-- `src/app/(app)/create/image/page.tsx`: image creation canvas.
+- `src/app/(app)/canvas/page.tsx`: image/text/video creation canvas.
+- `src/app/(app)/create/image/page.tsx`: compatibility redirect to `/canvas`.
 - `src/features/canvas/*`: React Flow nodes, canvas storage, upload, clipboard, context menu.
 - `src/features/canvas/ImageNode.tsx`: unified image node for uploads, draft placeholders, and generated image results.
 - `src/features/canvas/TextNode.tsx`: editable/resizable text node and mocked text generation composer.
@@ -86,7 +87,7 @@ Project library:
 - `/app` should show recent projects and an entry for creating a new project.
 - `/projects` is the project library/list page. The sidebar project icon should navigate here first.
 - `/assets` is the asset library/list page. The sidebar asset icon should navigate here and show generated image/video categories.
-- Opening a project should navigate to `/create/image?projectId=<id>`.
+- Opening a project should navigate to `/canvas?projectId=<id>`.
 - Canvas drafts must be scoped by project ID. Do not mix all projects into one global canvas draft.
 - Project metadata should stay lightweight: name, kind, timestamps, node count, asset count, and optional thumbnail metadata. Do not store large media data in project metadata.
 
@@ -97,7 +98,7 @@ Asset library:
 - Asset rows should link back to their source project canvas.
 - Until the backend asset service exists, local asset discovery may scan saved per-project canvas drafts.
 
-The `/create/image` canvas should model creation as connected, directly editable nodes:
+The `/canvas` surface should model creation as connected, directly editable nodes:
 
 - `ImageNode`: uploaded images, draft image placeholders, generated image results, and reference images.
 - `TextNode`: editable/resizable text cards, with generation results written back into the same node.
@@ -107,6 +108,7 @@ The `/create/image` canvas should model creation as connected, directly editable
 Current image generation flow:
 
 - Creating an image prompt creates a draft `ImageNode` placeholder, not a separate prompt card.
+- Image model lists, selected model persistence, parameter templates, option/default normalization, and price display come from the AIGC model APIs.
 - Selecting an image node opens a composer below the image.
 - Reference images are linked by entering reference-pick mode from the composer `+` button, then clicking another image node.
 - Reference thumbnails appear in the composer toolbar on the same row as the `+` button.
@@ -128,6 +130,8 @@ Current text node flow:
 Current video node flow:
 
 - Creating a video prompt creates a draft `VideoNode` placeholder.
+- Video models must come from AIGC model APIs by capability (`TEXT_TO_VIDEO` without reference images, `IMAGE_TO_VIDEO` with reference images). Keep hardcoded Seedance/Wan values only as compatibility fallbacks for old saved nodes.
+- Video parameter controls should be driven by model parameter templates when templates are available, and submitted params should be filtered to the active model's template keys.
 - Selecting a draft/generated video node opens a composer below a fixed preview slot.
 - Changing video aspect ratio changes only the placeholder card ratio inside that slot; the composer should not jump.
 - Video MVP uses the real Seedance 2.0 task API through server routes.
@@ -182,6 +186,8 @@ Disallow self-connections and unrelated node type combinations.
 - Node preview cards must use opaque surfaces so canvas dots do not show through the card body.
 - Selected-node composers, small node headers/toolbars, and side create handles should visually keep a stable screen size across React Flow zoom levels.
 - Do not animate React Flow's outer node transform or canvas transform. Motion should only animate node internals, floating menus, banners, popovers, and preview-card width/height inside the fixed preview slot.
+- Avoid subscribing every media node to the full React Flow `nodes`/`edges` arrays. Derive narrow selectors for selected counts, connected references, or edge state so small canvases stay responsive.
+- Avoid recording drag intermediate frames into history or snapshots; save the final drag state after drag stop.
 
 ## Motion Rules
 
