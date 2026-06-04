@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 
 type CanvasNodeTitleProps = {
   children: ReactNode;
-  fixedUiScale: number;
   left?: number;
   maxWidth?: number;
   className?: string;
@@ -13,7 +12,6 @@ type CanvasNodeTitleProps = {
 
 export function CanvasNodeTitle({
   children,
-  fixedUiScale,
   left = 0,
   maxWidth,
   className,
@@ -26,9 +24,9 @@ export function CanvasNodeTitle({
       )}
       style={{
         left,
-        top: -8 * fixedUiScale,
+        top: -8,
         maxWidth,
-        transform: `translateY(-100%) scale(${fixedUiScale})`,
+        transform: "translateY(-100%)",
       }}
     >
       {children}

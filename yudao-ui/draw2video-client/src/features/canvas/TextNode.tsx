@@ -215,7 +215,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
 
   return (
     <div className="relative" style={{ width: data.width, height: data.height }}>
-      <CanvasNodeTitle fixedUiScale={fixedUiScale} maxWidth={data.width}>
+      <CanvasNodeTitle maxWidth={data.width}>
         <Text className="size-4" />
         <EditableNodeTitle
           value={data.fileName}

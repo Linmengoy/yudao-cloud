@@ -400,7 +400,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
           )}
         </AnimatePresence>
 
-        <CanvasNodeTitle fixedUiScale={fixedUiScale} maxWidth={previewSize.width}>
+        <CanvasNodeTitle maxWidth={previewSize.width}>
           <PenLine className="size-4" />
           <EditableNodeTitle
             value={data.fileName}

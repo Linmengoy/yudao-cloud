@@ -942,7 +942,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
               />
             )}
           </AnimatePresence>
-          <CanvasNodeTitle fixedUiScale={fixedUiScale} left={titleLeft} maxWidth={titleWidth}>
+          <CanvasNodeTitle left={titleLeft} maxWidth={titleWidth}>
             <ImageIcon className="size-4" />
             <EditableNodeTitle
               value={data.fileName}

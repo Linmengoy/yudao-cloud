@@ -614,7 +614,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             />
           )}
         </AnimatePresence>
-        <CanvasNodeTitle fixedUiScale={fixedUiScale} maxWidth={displaySize.width}>
+        <CanvasNodeTitle maxWidth={displaySize.width}>
           <Video className="size-4" />
           <EditableNodeTitle
             value={data.fileName}

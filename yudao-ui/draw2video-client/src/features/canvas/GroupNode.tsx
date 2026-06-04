@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
-import { useReactFlow, useStore } from "@xyflow/react";
+import { useReactFlow } from "@xyflow/react";
 import { Boxes } from "lucide-react";
 import type { GroupNodeData, NodeDataPatchEventDetail } from "./types";
 import { EditableNodeTitle } from "./EditableNodeTitle";
@@ -12,8 +12,6 @@ type GroupNodeProps = NodeProps<Node<GroupNodeData, "canvasGroup">>;
 
 export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
   const { setNodes } = useReactFlow();
-  const zoom = useStore((s) => s.transform[2] || 1);
-  const fixedUiScale = 1 / zoom;
 
   const updateData = useCallback(
     (patch: Partial<GroupNodeData>, options?: { flush?: boolean }) => {
@@ -40,7 +38,7 @@ export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
         height: data.height,
       }}
     >
-      <CanvasNodeTitle fixedUiScale={fixedUiScale} left={8} maxWidth={data.width}>
+      <CanvasNodeTitle left={8} maxWidth={data.width}>
         <Boxes className="size-4" />
         <EditableNodeTitle
           value={data.fileName}
