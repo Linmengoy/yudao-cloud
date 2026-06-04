@@ -513,14 +513,27 @@ WebSocket 断开
 | --- | --- | --- |
 | GET | `/app-api/canvas/projects` | 项目列表 |
 | POST | `/app-api/canvas/projects` | 创建项目 |
+| GET | `/app-api/canvas/projects/recycle-bin` | 项目回收站列表 |
 | GET | `/app-api/canvas/projects/{id}` | 项目详情 |
 | PUT | `/app-api/canvas/projects/{id}` | 更新项目名称等元数据 |
+| DELETE | `/app-api/canvas/projects/{id}` | 删除项目并移入回收站 |
+| PUT | `/app-api/canvas/projects/{id}/restore` | 从回收站恢复项目 |
 | GET | `/app-api/canvas/projects/{id}/snapshot` | 获取最新快照 |
 | GET | `/app-api/canvas/projects/{id}/operations` | 获取指定版本后的操作日志 |
 | POST | `/app-api/canvas/projects/{id}/members` | 邀请成员 |
 | GET | `/app-api/canvas/projects/{id}/members` | 成员列表 |
 | POST | `/app-api/canvas/projects/{id}/assets` | 上传或绑定资产 |
 | POST | `/app-api/canvas/projects/{id}/nodes/{nodeId}/run` | 执行节点生成任务 |
+
+### 11.1.1 项目回收站
+
+画布项目回收站采用“项目表逻辑删除 + 回收站表记录”的方式实现：
+
+- 删除项目时，服务端先校验项目存在并校验当前用户为项目拥有者，再写入 `aigc_canvas_project_recycle_bin` 回收站记录，最后调用项目正常删除逻辑，使 `aigc_canvas_project.deleted = 1`。
+- 回收站表冗余保存 `project_id`、`project_name`、`owner_user_id`、`deleted_by`、`deleted_time`、`current_version`、`latest_snapshot_id`、`node_count`、`asset_count` 等字段，用于回收站列表展示和恢复权限判断。
+- 回收站列表只展示当前用户拥有的项目，普通项目列表继续由逻辑删除过滤，只展示 `deleted = 0` 的项目。
+- 恢复项目时，服务端先校验回收站记录存在并校验当前用户为项目拥有者，再使用专门 SQL 将 `aigc_canvas_project.deleted` 从 `1` 恢复为 `0`，最后物理删除回收站记录。
+- 删除项目和写入回收站记录、恢复项目和删除回收站记录都必须放在同一个事务中，避免项目状态和回收站记录不一致。
 
 ### 11.2 WebSocket 消息类型
 

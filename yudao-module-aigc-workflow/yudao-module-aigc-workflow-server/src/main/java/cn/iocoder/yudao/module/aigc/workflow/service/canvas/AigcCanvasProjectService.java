@@ -5,6 +5,8 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinPageReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
@@ -23,6 +25,10 @@ public interface AigcCanvasProjectService {
 
     void updateProject(AigcCanvasProjectUpdateReqVO reqVO, Long userId);
 
+    void deleteProject(Long id, Long userId);
+
+    void restoreProject(Long id, Long userId);
+
     AigcCanvasProjectDO getProject(Long id, Long userId);
 
     AigcCanvasMemberDO getProjectMember(Long id, Long userId);
@@ -36,6 +42,8 @@ public interface AigcCanvasProjectService {
     void removeProjectMember(Long id, Long memberId, Long userId);
 
     PageResult<AigcCanvasProjectRespVO> getProjectPage(AigcCanvasProjectPageReqVO reqVO, Long userId);
+
+    PageResult<AigcCanvasProjectRecycleBinRespVO> getProjectRecycleBinPage(AigcCanvasProjectRecycleBinPageReqVO reqVO, Long userId);
 
     AigcCanvasSnapshotDO getLatestSnapshot(Long projectId, Long userId);
 

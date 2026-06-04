@@ -332,6 +332,23 @@ export interface CanvasProject {
   updateTime?: string;
 }
 
+export interface CanvasProjectRecycleBinRecord {
+  id: number;
+  projectId: number;
+  ownerUserId: number;
+  projectName: string;
+  coverAssetId?: number | null;
+  currentVersion: number;
+  latestSnapshotId?: number | null;
+  projectStatus: string;
+  nodeCount: number;
+  assetCount: number;
+  deletedBy: number;
+  deletedTime: string;
+  deleteReason?: string | null;
+  createTime?: string;
+}
+
 export interface CanvasMember {
   id: number;
   projectId: number;

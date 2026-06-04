@@ -198,6 +198,31 @@ CREATE TABLE IF NOT EXISTS `aigc_canvas_project` (
   KEY `idx_status` (`tenant_id`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 画布项目表';
 
+CREATE TABLE IF NOT EXISTS `aigc_canvas_project_recycle_bin` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `project_id` bigint NOT NULL COMMENT '项目 ID',
+  `owner_user_id` bigint NOT NULL COMMENT '拥有者用户 ID',
+  `project_name` varchar(128) NOT NULL COMMENT '项目名称',
+  `cover_asset_id` bigint DEFAULT NULL COMMENT '封面资产 ID',
+  `current_version` bigint NOT NULL DEFAULT 0 COMMENT '当前画布版本',
+  `latest_snapshot_id` bigint DEFAULT NULL COMMENT '最新快照 ID',
+  `project_status` varchar(32) NOT NULL DEFAULT 'NORMAL' COMMENT '删除前项目状态',
+  `node_count` int NOT NULL DEFAULT 0 COMMENT '节点数',
+  `asset_count` int NOT NULL DEFAULT 0 COMMENT '资产数',
+  `deleted_by` bigint NOT NULL COMMENT '删除用户 ID',
+  `deleted_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '删除时间',
+  `delete_reason` varchar(255) DEFAULT NULL COMMENT '删除原因',
+  `creator` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project` (`tenant_id`, `project_id`),
+  KEY `idx_owner_deleted_time` (`tenant_id`, `owner_user_id`, `deleted_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 画布项目回收站表';
+
 CREATE TABLE IF NOT EXISTS `aigc_canvas_member` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
   `project_id` bigint NOT NULL COMMENT '项目 ID',

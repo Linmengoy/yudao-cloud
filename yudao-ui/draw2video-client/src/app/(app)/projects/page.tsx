@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderPlus, ImageIcon, MoreHorizontal, Pencil, Search, Trash2 } from "lucide-react";
+import { Archive, FolderPlus, ImageIcon, MoreHorizontal, Pencil, Search, Trash2 } from "lucide-react";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { clearCanvas } from "@/features/canvas/use-canvas-storage";
@@ -82,6 +82,10 @@ function canRenameProject(project: ProjectListItem) {
   return project.source === "local" || project.role === "owner" || project.role === "editor";
 }
 
+function canDeleteProject(project: ProjectListItem) {
+  return project.source === "local" || project.role === "owner";
+}
+
 function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
   useEffect(() => {
     if (!project.coverUrl || !onLoad) return;
@@ -128,6 +132,7 @@ export default function ProjectsPage() {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState("");
   const [savingRenameId, setSavingRenameId] = useState<string | null>(null);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -282,16 +287,31 @@ export default function ProjectsPage() {
     }
   }
 
-  function handleDelete(project: ProjectListItem) {
-    if (project.source === "server") {
-      setStatusMessage("服务端项目归档/删除接口尚未开放，这期先保留项目。");
+  async function handleDelete(project: ProjectListItem) {
+    if (!canDeleteProject(project) || deletingProjectId) return;
+    const confirmed = window.confirm(
+      project.source === "server"
+        ? `删除项目「${project.name}」？删除后可在回收站恢复。`
+        : `删除本机草稿「${project.name}」？`
+    );
+    if (!confirmed) return;
+    setDeletingProjectId(project.id);
+    if (project.source === "local") {
+      deleteProject(project.id);
+      clearCanvas(project.id);
+      await refreshProjects();
+      setDeletingProjectId(null);
       return;
     }
-    const confirmed = window.confirm(`删除项目「${project.name}」？`);
-    if (!confirmed) return;
-    deleteProject(project.id);
-    clearCanvas(project.id);
-    refreshProjects();
+    try {
+      await canvasApi.deleteProject(project.id);
+      setStatusMessage("项目已移入回收站。");
+      await refreshProjects();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "删除失败，请稍后再试。");
+    } finally {
+      setDeletingProjectId(null);
+    }
   }
 
   return (
@@ -301,15 +321,24 @@ export default function ProjectsPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-charcoal">项目库</h1>
           <p className="mt-1 text-sm text-muted-gray">从项目进入画布，所有节点和素材都会按项目独立保存。</p>
         </div>
-        <button
-          type="button"
-          onClick={handleCreateProject}
-          disabled={isCreating}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px]"
-        >
-          <FolderPlus className="size-4" />
-          {isCreating ? "创建中" : "新建项目"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/projects/recycle-bin"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-border-warm bg-background px-4 py-2 text-sm font-medium text-muted-gray transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal"
+          >
+            <Archive className="size-4" />
+            回收站
+          </Link>
+          <button
+            type="button"
+            onClick={handleCreateProject}
+            disabled={isCreating}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px]"
+          >
+            <FolderPlus className="size-4" />
+            {isCreating ? "创建中" : "新建项目"}
+          </button>
+        </div>
       </div>
 
       <div className="mt-8 flex max-w-[420px] items-center gap-2 rounded-lg border border-border-warm bg-background px-3 py-2">
@@ -445,10 +474,11 @@ export default function ProjectsPage() {
                           setOpenMenuId(null);
                           handleDelete(project);
                         }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-destructive hover:bg-muted"
+                        disabled={!canDeleteProject(project) || deletingProjectId === project.id}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-destructive hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Trash2 className="size-4" />
-                        删除
+                        {deletingProjectId === project.id ? "删除中" : "删除"}
                       </button>
                     </div>
                   )}
