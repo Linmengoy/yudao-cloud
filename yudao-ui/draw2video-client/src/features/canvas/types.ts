@@ -228,7 +228,7 @@ export interface GroupNodeData {
   updatedAt?: string;
 }
 
-export type GroupNode = Node<GroupNodeData, "group">;
+export type GroupNode = Node<GroupNodeData, "canvasGroup">;
 
 // --- Union ---
 

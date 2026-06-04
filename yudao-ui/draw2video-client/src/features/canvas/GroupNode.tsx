@@ -7,7 +7,7 @@ import { Boxes } from "lucide-react";
 import type { GroupNodeData, NodeDataPatchEventDetail } from "./types";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 
-type GroupNodeProps = NodeProps<Node<GroupNodeData, "group">>;
+type GroupNodeProps = NodeProps<Node<GroupNodeData, "canvasGroup">>;
 
 export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
   const { setNodes } = useReactFlow();

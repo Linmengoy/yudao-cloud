@@ -67,7 +67,7 @@ const CANVAS_NODE_TYPES = {
   sketch: SketchNodeComponent,
   text: TextNodeComponent,
   video: VideoNodeComponent,
-  group: GroupNodeComponent,
+  canvasGroup: GroupNodeComponent,
 } satisfies NodeTypes;
 
 const CANVAS_EDGE_TYPES = {
@@ -157,12 +157,13 @@ function getPreviewCardViewportRect(nodeId: string): SelectionRectSnapshot | nul
 }
 
 function getPreviewCardRects(nodes: AppNode[]) {
-  return nodes
-    .map((node) => {
-      const rect = getPreviewCardViewportRect(node.id);
-      return rect ? { node, rect } : null;
-    })
-    .filter((item): item is { node: AppNode; rect: SelectionRectSnapshot } => Boolean(item));
+  const result: { node: AppNode; rect: SelectionRectSnapshot }[] = [];
+  for (const node of nodes) {
+    if (node.type === "canvasGroup") continue;
+    const rect = getPreviewCardViewportRect(node.id);
+    if (rect) result.push({ node, rect });
+  }
+  return result;
 }
 
 function getSelectedPreviewCardBounds(nodes: AppNode[]): SelectionRectSnapshot | null {
@@ -366,7 +367,7 @@ function snapshotSignature(snapshot: CanvasSnapshot) {
 }
 
 function usesCardNodeInteraction(node: AppNode) {
-  return node.type === "image" || node.type === "video" || node.type === "sketch" || node.type === "text" || node.type === "group";
+  return node.type === "image" || node.type === "video" || node.type === "sketch" || node.type === "text" || node.type === "canvasGroup";
 }
 
 function withCardNodeInteraction(node: AppNode): AppNode {
@@ -405,6 +406,8 @@ function defaultNodes(): AppNode[] {
 }
 
 function migrateNode(n: AppNode): AppNode {
+  const rawType = (n as { type: string }).type;
+  const nodeType = rawType === "group" ? "canvasGroup" : n.type;
   if (n.type === "prompt") {
     const d = n.data as Record<string, unknown>;
     return withCardNodeInteraction({
@@ -531,10 +534,11 @@ function migrateNode(n: AppNode): AppNode {
       },
     } as AppNode);
   }
-  if (n.type === "group") {
+  if (nodeType === "canvasGroup") {
     const d = n.data as Record<string, unknown>;
     return withCardNodeInteraction({
       ...n,
+      type: "canvasGroup",
       data: {
         fileName: typeof d.fileName === "string" ? d.fileName : "Group",
         childNodeIds: Array.isArray(d.childNodeIds) ? d.childNodeIds.filter((item): item is string => typeof item === "string") : [],
@@ -1086,8 +1090,8 @@ function CanvasFlow() {
 
         for (const change of changes) {
           if (change.type !== "position" || !change.position) continue;
-          const groupNode = nds.find((node) => node.id === change.id && node.type === "group");
-          if (groupNode?.type !== "group") continue;
+          const groupNode = nds.find((node) => node.id === change.id && node.type === "canvasGroup");
+          if (groupNode?.type !== "canvasGroup") continue;
           const previousPositions = groupDragStartRef.current;
           if (!previousPositions) continue;
           const previousGroupPosition = previousPositions[groupNode.id] ?? groupNode.position;
@@ -1123,7 +1127,7 @@ function CanvasFlow() {
             nodeId: change.id,
             position: change.position,
           });
-          if (movedNode?.type === "group") {
+          if (movedNode?.type === "canvasGroup") {
             const childIds = new Set((movedNode.data as GroupNodeData).childNodeIds);
             const previousPositions = groupDragStartRef.current;
             const previousGroupPosition = previousPositions?.[movedNode.id] ?? movedNode.position;
@@ -1475,7 +1479,7 @@ function CanvasFlow() {
   const groupSelectedNodes = useCallback(() => {
     if (isReadOnly) return;
     const currentNodes = getNodes() as AppNode[];
-    const selectedNodes = currentNodes.filter((node) => node.selected && node.type !== "group");
+    const selectedNodes = currentNodes.filter((node) => node.selected && node.type !== "canvasGroup");
     if (selectedNodes.length < 2) return;
     const selectedIds = new Set(selectedNodes.map((node) => node.id));
     const bounds = getSelectedPreviewCardBounds(selectedNodes);
@@ -1496,7 +1500,7 @@ function CanvasFlow() {
     };
     const groupNode: AppNode = withCardNodeInteraction({
       id,
-      type: "group",
+      type: "canvasGroup",
       position: topLeft,
       data: groupData,
       selected: true,

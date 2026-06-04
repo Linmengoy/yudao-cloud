@@ -260,7 +260,14 @@
     background: transparent !important;
   }
 
-  .react-flow__node.selectable.selected {
+  .react-flow__node.selectable.selected,
+  .react-flow__node-image.selectable.selected,
+  .react-flow__node-video.selectable.selected,
+  .react-flow__node-sketch.selectable.selected,
+  .react-flow__node-text.selectable.selected,
+  .react-flow__node-canvasGroup.selectable.selected {
     box-shadow: none !important;
+    border: none !important;
+    outline: none !important;
   }
 }
