@@ -41,6 +41,10 @@ export type GroupUngroupEventDetail = {
   groupId: string;
 };
 
+export type GroupArrangeEventDetail = {
+  groupId: string;
+};
+
 export type PromptNode = Node<PromptNodeData, "prompt">;
 
 // --- Result Node ---

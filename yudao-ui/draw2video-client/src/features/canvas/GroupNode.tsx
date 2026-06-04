@@ -3,8 +3,8 @@
 import { useCallback } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { useReactFlow, useStore } from "@xyflow/react";
-import { Boxes, Ungroup } from "lucide-react";
-import type { GroupNodeData, GroupUngroupEventDetail, NodeDataPatchEventDetail } from "./types";
+import { Boxes, LayoutGrid, Ungroup } from "lucide-react";
+import type { GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, NodeDataPatchEventDetail } from "./types";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
 
@@ -35,6 +35,12 @@ export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
     }));
   }, [id]);
 
+  const arrange = useCallback(() => {
+    window.dispatchEvent(new CustomEvent<GroupArrangeEventDetail>("copse:group-arrange", {
+      detail: { groupId: id },
+    }));
+  }, [id]);
+
   return (
     <div
       className="canvas-node-drag-handle pointer-events-auto relative rounded-2xl border border-dashed border-charcoal/25 bg-charcoal/[0.025] transition-[background-color,border-color,box-shadow] data-[selected=true]:border-blue-500/70 data-[selected=true]:bg-blue-500/[0.035] data-[selected=true]:shadow-[0_0_0_1px_rgba(59,130,246,0.18),0_12px_32px_rgba(59,130,246,0.08)] dark:border-white/25 dark:bg-white/[0.025] dark:data-[selected=true]:border-blue-300/75 dark:data-[selected=true]:bg-blue-300/[0.055]"
@@ -61,6 +67,17 @@ export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
           onDoubleClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
         >
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              arrange();
+            }}
+            className="flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-gray transition-colors hover:bg-muted hover:text-charcoal focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
+          >
+            <LayoutGrid className="size-3.5" />
+            整理
+          </button>
           <button
             type="button"
             onClick={(event) => {

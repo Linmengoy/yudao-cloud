@@ -29,7 +29,7 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
@@ -76,6 +76,8 @@ const CANVAS_EDGE_TYPES = {
 
 const CANVAS_NODE_DRAG_HANDLE = ".canvas-node-drag-handle";
 const TRANSPARENT_NODE_WRAPPER_STYLE = { pointerEvents: "none" as const };
+const GROUP_LAYOUT_PADDING = 18;
+const GROUP_LAYOUT_GAP = 32;
 
 type CreateNodeKind = "text" | "image" | "sketch" | "video";
 type LinkedCreateDirection = "incoming" | "outgoing";
@@ -156,6 +158,25 @@ function getPreviewCardViewportRect(nodeId: string): SelectionRectSnapshot | nul
   if (!card) return null;
   const rect = card.getBoundingClientRect();
   return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+}
+
+function getPreviewCardFlowRect(node: AppNode, screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number }) {
+  const rect = getPreviewCardViewportRect(node.id);
+  if (!rect) {
+    const data = node.data as Record<string, unknown>;
+    const fallbackWidth = node.measured?.width ?? (typeof data.width === "number" ? data.width : 320);
+    const fallbackHeight = node.measured?.height ?? (typeof data.height === "number" ? data.height : 240);
+    return {
+      width: Math.max(1, fallbackWidth),
+      height: Math.max(1, fallbackHeight),
+    };
+  }
+  const topLeft = screenToFlowPosition({ x: rect.x, y: rect.y });
+  const bottomRight = screenToFlowPosition({ x: rect.x + rect.width, y: rect.y + rect.height });
+  return {
+    width: Math.max(1, bottomRight.x - topLeft.x),
+    height: Math.max(1, bottomRight.y - topLeft.y),
+  };
 }
 
 function getPreviewCardRects(nodes: AppNode[]) {
@@ -1059,6 +1080,109 @@ function CanvasFlow() {
     window.addEventListener("copse:group-ungroup", handleGroupUngroup);
     return () => window.removeEventListener("copse:group-ungroup", handleGroupUngroup);
   }, [canvasOperations, getNodes, isReadOnly, setEdges, setNodes]);
+
+  const arrangeGroupNodes = useCallback((groupId: string) => {
+    if (isReadOnly) return;
+    const currentNodes = getNodes() as AppNode[];
+    const groupNode = currentNodes.find((node) => node.id === groupId && node.type === "canvasGroup");
+    if (!groupNode || groupNode.type !== "canvasGroup") return;
+
+    const groupData = groupNode.data as GroupNodeData;
+    const childNodes = groupData.childNodeIds
+      .map((childId) => currentNodes.find((node) => node.id === childId && node.type !== "canvasGroup"))
+      .filter((node): node is AppNode => Boolean(node));
+    if (childNodes.length === 0) return;
+
+    const childRects = childNodes
+      .map((node) => ({ node, rect: getPreviewCardFlowRect(node, screenToFlowPosition) }))
+      .filter((item): item is { node: AppNode; rect: SelectionRectSnapshot } => Boolean(item.rect));
+    if (childRects.length === 0) return;
+
+    const maxContentWidth = Math.max(220, groupData.width - GROUP_LAYOUT_PADDING * 2);
+    let cursorX = 0;
+    let cursorY = 0;
+    let rowHeight = 0;
+    let contentWidth = 0;
+    const layout = new Map<string, { x: number; y: number; width: number; height: number }>();
+
+    for (const { node, rect } of childRects) {
+      if (cursorX > 0 && cursorX + rect.width > maxContentWidth) {
+        cursorX = 0;
+        cursorY += rowHeight + GROUP_LAYOUT_GAP;
+        rowHeight = 0;
+      }
+      layout.set(node.id, {
+        x: cursorX,
+        y: cursorY,
+        width: rect.width,
+        height: rect.height,
+      });
+      contentWidth = Math.max(contentWidth, cursorX + rect.width);
+      rowHeight = Math.max(rowHeight, rect.height);
+      cursorX += rect.width + GROUP_LAYOUT_GAP;
+    }
+
+    const contentHeight = cursorY + rowHeight;
+    const nextGroupPosition = groupNode.position;
+    const nextGroupData: GroupNodeData = {
+      ...groupData,
+      width: Math.max(120, contentWidth + GROUP_LAYOUT_PADDING * 2),
+      height: Math.max(96, contentHeight + GROUP_LAYOUT_PADDING * 2),
+      updatedAt: new Date().toISOString(),
+    };
+    const nextPositions = new Map<string, { x: number; y: number }>();
+    for (const [nodeId, item] of layout.entries()) {
+      nextPositions.set(nodeId, {
+        x: nextGroupPosition.x + GROUP_LAYOUT_PADDING + item.x,
+        y: nextGroupPosition.y + GROUP_LAYOUT_PADDING + item.y,
+      });
+    }
+
+    setNodes((nds): AppNode[] => nds.map((node): AppNode => {
+      if (node.id === groupNode.id) {
+        return {
+          ...node,
+          type: "canvasGroup",
+          data: nextGroupData,
+          selected: true,
+        };
+      }
+      const nextPosition = nextPositions.get(node.id);
+      if (!nextPosition) return { ...node, selected: false };
+      return {
+        ...node,
+        position: nextPosition,
+        selected: false,
+      };
+    }));
+    setMultiSelectionBounds(null);
+    setMultiSelectionAction(null);
+    for (const [nodeId, position] of nextPositions.entries()) {
+      canvasOperations.submitOperation("NODE_MOVE", {
+        nodeId,
+        position,
+      });
+    }
+    canvasOperations.submitOperation("NODE_UPDATE_DATA", {
+      nodeId: groupNode.id,
+      patch: {
+        width: nextGroupData.width,
+        height: nextGroupData.height,
+        updatedAt: nextGroupData.updatedAt,
+      },
+    });
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+
+  useEffect(() => {
+    function handleGroupArrange(event: Event) {
+      const detail = (event as CustomEvent<GroupArrangeEventDetail>).detail;
+      if (!detail?.groupId) return;
+      arrangeGroupNodes(detail.groupId);
+    }
+
+    window.addEventListener("copse:group-arrange", handleGroupArrange);
+    return () => window.removeEventListener("copse:group-arrange", handleGroupArrange);
+  }, [arrangeGroupNodes]);
 
   useEffect(() => {
     function handleNodeEditingPresence(event: Event) {
