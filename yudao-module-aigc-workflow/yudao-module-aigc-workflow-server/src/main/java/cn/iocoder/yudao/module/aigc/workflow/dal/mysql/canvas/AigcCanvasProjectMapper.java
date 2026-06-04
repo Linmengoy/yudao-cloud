@@ -14,14 +14,14 @@ public interface AigcCanvasProjectMapper extends BaseMapperX<AigcCanvasProjectDO
 
     default PageResult<AigcCanvasProjectDO> selectPage(AigcCanvasProjectPageReqVO reqVO, Long userId, Collection<Long> sharedProjectIds) {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcCanvasProjectDO>()
+                .likeIfPresent(AigcCanvasProjectDO::getName, reqVO.getName())
+                .eqIfPresent(AigcCanvasProjectDO::getStatus, reqVO.getStatus())
                 .and(wrapper -> {
                     wrapper.eq(AigcCanvasProjectDO::getOwnerUserId, userId);
                     if (sharedProjectIds != null && !sharedProjectIds.isEmpty()) {
                         wrapper.or().in(AigcCanvasProjectDO::getId, sharedProjectIds);
                     }
                 })
-                .likeIfPresent(AigcCanvasProjectDO::getName, reqVO.getName())
-                .eqIfPresent(AigcCanvasProjectDO::getStatus, reqVO.getStatus())
                 .orderByDesc(AigcCanvasProjectDO::getUpdateTime));
     }
 
