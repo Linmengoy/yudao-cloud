@@ -7,12 +7,19 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectDO;
 import org.apache.ibatis.annotations.Mapper;
 
+import java.util.Collection;
+
 @Mapper
 public interface AigcCanvasProjectMapper extends BaseMapperX<AigcCanvasProjectDO> {
 
-    default PageResult<AigcCanvasProjectDO> selectPage(AigcCanvasProjectPageReqVO reqVO, Long userId) {
+    default PageResult<AigcCanvasProjectDO> selectPage(AigcCanvasProjectPageReqVO reqVO, Long userId, Collection<Long> sharedProjectIds) {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcCanvasProjectDO>()
-                .eq(AigcCanvasProjectDO::getOwnerUserId, userId)
+                .and(wrapper -> {
+                    wrapper.eq(AigcCanvasProjectDO::getOwnerUserId, userId);
+                    if (sharedProjectIds != null && !sharedProjectIds.isEmpty()) {
+                        wrapper.or().in(AigcCanvasProjectDO::getId, sharedProjectIds);
+                    }
+                })
                 .likeIfPresent(AigcCanvasProjectDO::getName, reqVO.getName())
                 .eqIfPresent(AigcCanvasProjectDO::getStatus, reqVO.getStatus())
                 .orderByDesc(AigcCanvasProjectDO::getUpdateTime));

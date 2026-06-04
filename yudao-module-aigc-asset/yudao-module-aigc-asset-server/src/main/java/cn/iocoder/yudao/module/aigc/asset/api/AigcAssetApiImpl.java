@@ -17,6 +17,9 @@ import jakarta.annotation.Resource;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Collections;
+import java.util.List;
+
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 
 @RestController
@@ -59,6 +62,14 @@ public class AigcAssetApiImpl implements AigcAssetApi {
     public CommonResult<AigcAssetRespDTO> getAsset(Long assetId) {
         AigcAssetDO asset = assetService.validateAssetExists(assetId);
         return success(BeanUtils.toBean(asset, AigcAssetRespDTO.class));
+    }
+
+    @Override
+    public CommonResult<List<AigcAssetRespDTO>> getAssets(List<Long> assetIds) {
+        if (assetIds == null || assetIds.isEmpty()) {
+            return success(Collections.emptyList());
+        }
+        return success(BeanUtils.toBean(assetService.getAssetList(assetIds), AigcAssetRespDTO.class));
     }
 
     @Override

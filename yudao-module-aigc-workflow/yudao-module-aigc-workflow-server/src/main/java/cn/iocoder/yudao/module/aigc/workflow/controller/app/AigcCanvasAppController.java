@@ -25,7 +25,6 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSnapshotRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSnapshotSaveReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasMemberDO;
-import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectDO;
 import cn.iocoder.yudao.module.aigc.workflow.service.canvas.AigcCanvasOperationService;
 import cn.iocoder.yudao.module.aigc.workflow.service.canvas.AigcCanvasNodeRunService;
 import cn.iocoder.yudao.module.aigc.workflow.service.canvas.AigcCanvasProjectService;
@@ -68,14 +67,7 @@ public class AigcCanvasAppController {
     @GetMapping("/projects")
     @Operation(summary = "画布项目分页")
     public CommonResult<PageResult<AigcCanvasProjectRespVO>> getProjectPage(@Valid AigcCanvasProjectPageReqVO reqVO) {
-        Long userId = getLoginUserId();
-        PageResult<AigcCanvasProjectDO> pageResult = projectService.getProjectPage(reqVO, userId);
-        PageResult<AigcCanvasProjectRespVO> respPageResult = BeanUtils.toBean(pageResult, AigcCanvasProjectRespVO.class);
-        respPageResult.getList().forEach(project -> {
-            fillProjectPermissions(project, projectService.getProjectMember(project.getId(), userId));
-            fillProjectCover(project);
-        });
-        return success(respPageResult);
+        return success(projectService.getProjectPage(reqVO, getLoginUserId()));
     }
 
     @PostMapping("/projects")

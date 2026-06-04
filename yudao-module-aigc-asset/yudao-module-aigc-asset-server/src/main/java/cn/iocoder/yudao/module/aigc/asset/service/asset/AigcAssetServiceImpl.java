@@ -37,6 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.Base64;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.*;
@@ -165,6 +168,14 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     @Override
     public AigcAssetDO getAsset(Long id) {
         return assetMapper.selectById(id);
+    }
+
+    @Override
+    public List<AigcAssetDO> getAssetList(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return assetMapper.selectBatchIds(ids);
     }
 
     @Override

@@ -14,6 +14,9 @@ import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetPageReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetVisibilityUpdateReqDTO;
 
+import java.util.Collection;
+import java.util.List;
+
 public interface AigcAssetService {
 
     Long createAsset(AigcAssetSaveReqVO reqVO);
@@ -31,6 +34,8 @@ public interface AigcAssetService {
     void recoverAsset(Long id);
 
     AigcAssetDO getAsset(Long id);
+
+    List<AigcAssetDO> getAssetList(Collection<Long> ids);
 
     AigcAssetDO validateAssetExists(Long id);
 

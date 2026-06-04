@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.List;
+
 @FeignClient(name = ApiConstants.NAME)
 @Tag(name = "RPC 服务 - AIGC 资产")
 public interface AigcAssetApi {
@@ -50,6 +52,10 @@ public interface AigcAssetApi {
     @Operation(summary = "获取资产")
     @Parameter(name = "assetId", description = "资产编号", required = true, example = "1024")
     CommonResult<AigcAssetRespDTO> getAsset(@RequestParam("assetId") Long assetId);
+
+    @PostMapping(PREFIX + "/get-assets")
+    @Operation(summary = "批量获取资产")
+    CommonResult<List<AigcAssetRespDTO>> getAssets(@RequestBody List<Long> assetIds);
 
     @GetMapping(PREFIX + "/get-asset-by-task-id")
     @Operation(summary = "根据任务编号获取资产")

@@ -34,6 +34,8 @@ type ProjectListItem = {
   id: string;
   name: string;
   lastOpenedAt: string;
+  role?: string | null;
+  source: "server" | "local";
 };
 
 function toProjectListItem(project: CanvasProject): ProjectListItem {
@@ -41,6 +43,8 @@ function toProjectListItem(project: CanvasProject): ProjectListItem {
     id: String(project.id),
     name: project.name,
     lastOpenedAt: project.updateTime ?? project.createTime ?? "",
+    role: project.role,
+    source: "server",
   };
 }
 
@@ -49,7 +53,14 @@ function localProjectToListItem(project: ProjectMeta): ProjectListItem {
     id: project.id,
     name: project.name,
     lastOpenedAt: project.lastOpenedAt,
+    source: "local",
   };
+}
+
+function projectRoleLabel(project: ProjectListItem) {
+  if (project.source === "local" || project.role === "owner") return "可管理";
+  if (project.role === "viewer") return "可浏览";
+  return "可编辑";
 }
 
 function ProjectIcon() {
@@ -263,7 +274,7 @@ export default function WorkspacePage() {
               </div>
               <div className="p-3">
                 <p className="truncate text-xs font-medium text-charcoal">{project.name}</p>
-                <p className="mt-1 text-[11px] text-muted-gray">{formatDate(project.lastOpenedAt)}</p>
+                <p className="mt-1 text-[11px] text-muted-gray">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>
               </div>
             </Link>
           ))}

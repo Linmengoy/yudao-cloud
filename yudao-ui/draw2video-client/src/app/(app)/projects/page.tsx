@@ -70,6 +70,12 @@ function ProjectIcon() {
   return <ImageIcon className="size-5" />;
 }
 
+function projectRoleLabel(project: ProjectListItem) {
+  if (project.source === "local" || project.role === "owner") return "可管理";
+  if (project.role === "viewer") return "可浏览";
+  return "可编辑";
+}
+
 function ProjectCover({ project }: { project: ProjectListItem }) {
   if (project.coverUrl) {
     return (
@@ -269,8 +275,7 @@ export default function ProjectsPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
                       <p className="mt-1 text-xs text-muted-gray">
-                        项目
-                        {project.role ? ` · ${project.role}` : ""}
+                        {projectRoleLabel(project)}
                         {project.source === "local" ? " · 本机草稿" : ""}
                       </p>
                     </div>

@@ -4,10 +4,13 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.asset.api.AigcAssetApi;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSketchSaveReqVO;
@@ -34,8 +37,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_MEMBER_EXISTS;
@@ -72,6 +80,8 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     @Resource
     @Lazy
     private AigcCanvasOperationService operationService;
+    @Resource
+    private AigcAssetApi assetApi;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -170,8 +180,74 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     }
 
     @Override
-    public PageResult<AigcCanvasProjectDO> getProjectPage(AigcCanvasProjectPageReqVO reqVO, Long userId) {
-        return projectMapper.selectPage(reqVO, userId);
+    public PageResult<AigcCanvasProjectRespVO> getProjectPage(AigcCanvasProjectPageReqVO reqVO, Long userId) {
+        Set<Long> sharedProjectIds = memberMapper.selectListByUserId(userId).stream()
+                .map(AigcCanvasMemberDO::getProjectId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        PageResult<AigcCanvasProjectDO> pageResult = projectMapper.selectPage(reqVO, userId, sharedProjectIds);
+        if (pageResult.getList() == null || pageResult.getList().isEmpty()) {
+            return PageResult.empty(pageResult.getTotal());
+        }
+
+        List<AigcCanvasProjectDO> projects = pageResult.getList();
+        List<Long> projectIds = projects.stream().map(AigcCanvasProjectDO::getId).toList();
+        Map<Long, AigcCanvasMemberDO> memberMap = memberMapper.selectListByProjectIdsAndUserId(projectIds, userId).stream()
+                .collect(Collectors.toMap(AigcCanvasMemberDO::getProjectId, Function.identity(), (first, second) -> first));
+        Map<Long, AigcAssetRespDTO> assetMap = getAssetMap(projects);
+
+        List<AigcCanvasProjectRespVO> list = projects.stream()
+                .map(project -> buildProjectResp(project, userId, memberMap.get(project.getId()), assetMap))
+                .toList();
+        return new PageResult<>(list, pageResult.getTotal());
+    }
+
+    private AigcCanvasProjectRespVO buildProjectResp(AigcCanvasProjectDO project, Long userId, AigcCanvasMemberDO member,
+                                                     Map<Long, AigcAssetRespDTO> assetMap) {
+        AigcCanvasProjectRespVO respVO = BeanUtils.toBean(project, AigcCanvasProjectRespVO.class);
+        fillProjectPermissions(respVO, project, userId, member);
+        fillProjectCover(respVO, assetMap);
+        return respVO;
+    }
+
+    private void fillProjectPermissions(AigcCanvasProjectRespVO project, AigcCanvasProjectDO projectDO, Long userId, AigcCanvasMemberDO member) {
+        String role = isProjectOwner(projectDO, userId) ? MEMBER_ROLE_OWNER : member == null ? null : member.getRole();
+        boolean canEdit = role != null && !MEMBER_ROLE_VIEWER.equals(role);
+        project.setRole(role);
+        project.setCanEdit(canEdit);
+        project.setReadonly(!canEdit);
+    }
+
+    private Map<Long, AigcAssetRespDTO> getAssetMap(List<AigcCanvasProjectDO> projects) {
+        List<Long> assetIds = projects.stream()
+                .map(AigcCanvasProjectDO::getCoverAssetId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (assetIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            List<AigcAssetRespDTO> assets = assetApi.getAssets(assetIds).getCheckedData();
+            if (assets == null || assets.isEmpty()) {
+                return Collections.emptyMap();
+            }
+            return assets.stream().collect(Collectors.toMap(AigcAssetRespDTO::getId, Function.identity(), (first, second) -> first));
+        } catch (Exception ignored) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private void fillProjectCover(AigcCanvasProjectRespVO project, Map<Long, AigcAssetRespDTO> assetMap) {
+        if (project.getCoverAssetId() == null) {
+            return;
+        }
+        AigcAssetRespDTO asset = assetMap.get(project.getCoverAssetId());
+        if (asset == null) {
+            return;
+        }
+        project.setCoverUrl(StrUtil.blankToDefault(asset.getThumbnailUrl(),
+                StrUtil.blankToDefault(asset.getCoverUrl(), asset.getFileUrl())));
     }
 
     @Override
