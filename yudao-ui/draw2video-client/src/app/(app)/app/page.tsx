@@ -34,6 +34,7 @@ type ProjectListItem = {
   id: string;
   name: string;
   lastOpenedAt: string;
+  coverUrl?: string | null;
   role?: string | null;
   source: "server" | "local";
 };
@@ -43,6 +44,7 @@ function toProjectListItem(project: CanvasProject): ProjectListItem {
     id: String(project.id),
     name: project.name,
     lastOpenedAt: project.updateTime ?? project.createTime ?? "",
+    coverUrl: project.coverUrl,
     role: project.role,
     source: "server",
   };
@@ -53,6 +55,7 @@ function localProjectToListItem(project: ProjectMeta): ProjectListItem {
     id: project.id,
     name: project.name,
     lastOpenedAt: project.lastOpenedAt,
+    coverUrl: project.thumbnailUrl,
     source: "local",
   };
 }
@@ -65,6 +68,26 @@ function projectRoleLabel(project: ProjectListItem) {
 
 function ProjectIcon() {
   return <ImageIcon className="size-5" />;
+}
+
+function ProjectCover({ project }: { project: ProjectListItem }) {
+  if (project.coverUrl) {
+    return (
+      <div className="bg-muted">
+        <img
+          src={project.coverUrl}
+          alt={`${project.name} 封面`}
+          draggable={false}
+          className="block h-auto max-w-full"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="flex aspect-square items-center justify-center bg-muted text-muted-gray">
+      <ProjectIcon />
+    </div>
+  );
 }
 
 export default function WorkspacePage() {
@@ -99,7 +122,7 @@ export default function WorkspacePage() {
 
   async function refreshProjects() {
     try {
-      const page = await canvasApi.listProjects({ pageNo: 1, pageSize: 7 });
+      const page = await canvasApi.listProjects({ pageNo: 1, pageSize: 12 });
       setProjects(page.list.map(toProjectListItem));
     } catch {
       setProjects(listProjects().map(localProjectToListItem));
@@ -253,25 +276,16 @@ export default function WorkspacePage() {
           </Link>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          <button
-            type="button"
-            onClick={() => { void openNewProject(); }}
-            className="flex aspect-square flex-col items-center justify-center rounded-xl border-2 border-dashed border-border-warm text-muted-gray transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal"
-          >
-            <FolderPlus className="size-6" />
-            <span className="mt-1.5 text-xs">新建项目</span>
-          </button>
+        <div className="mt-4 columns-2 gap-4 sm:columns-3 lg:columns-4">
+
 
           {recentProjects.map((project) => (
             <Link
               key={project.id}
               href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
-              className="group overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
+              className="group mb-4 inline-block w-full break-inside-avoid overflow-hidden rounded-xl border border-border-warm bg-background align-top transition-colors hover:border-[rgba(28,28,28,0.4)]"
             >
-              <div className="flex aspect-square items-center justify-center bg-muted text-muted-gray">
-                <ProjectIcon />
-              </div>
+              <ProjectCover project={project} />
               <div className="p-3">
                 <p className="truncate text-xs font-medium text-charcoal">{project.name}</p>
                 <p className="mt-1 text-[11px] text-muted-gray">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>

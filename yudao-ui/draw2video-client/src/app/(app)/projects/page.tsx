@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FolderPlus, ImageIcon, MoreHorizontal, Pencil, Search, Trash2 } from "lucide-react";
@@ -14,6 +14,8 @@ import {
   renameProject,
   type ProjectMeta,
 } from "@/features/projects/project-store";
+
+import type Muuri from "muuri";
 
 const PAGE_SIZE = 12;
 
@@ -76,14 +78,31 @@ function projectRoleLabel(project: ProjectListItem) {
   return "可编辑";
 }
 
-function ProjectCover({ project }: { project: ProjectListItem }) {
+function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
+  useEffect(() => {
+    if (!project.coverUrl || !onLoad) return;
+    const image = new window.Image();
+    image.onload = onLoad;
+    image.onerror = onLoad;
+    image.src = project.coverUrl;
+    return () => {
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [onLoad, project.coverUrl]);
+
   if (project.coverUrl) {
     return (
-      <div
-        className="aspect-[4/3] bg-muted bg-cover bg-center"
-        style={{ backgroundImage: `url(${project.coverUrl})` }}
-        aria-label={`${project.name} 封面`}
-      />
+      <div className="bg-muted">
+        <img
+          src={project.coverUrl}
+          alt={`${project.name} 封面`}
+          onLoad={onLoad}
+          onError={onLoad}
+          draggable={false}
+          className="block h-auto w-full"
+        />
+      </div>
     );
   }
   return (
@@ -104,6 +123,8 @@ export default function ProjectsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const gridElementRef = useRef<HTMLDivElement | null>(null);
+  const muuriRef = useRef<Muuri | null>(null);
 
   const refreshProjects = useCallback(async (search = query, nextPageNo = pageNo) => {
     setIsLoading(true);
@@ -156,6 +177,34 @@ export default function ProjectsPage() {
       window.removeEventListener("keydown", close);
     };
   }, [openMenuId]);
+
+  useEffect(() => {
+    if (isLoading || projects.length === 0 || !gridElementRef.current) return;
+    let disposed = false;
+    const element = gridElementRef.current;
+    import("muuri").then(({ default: MuuriGrid }) => {
+      if (disposed || !element) return;
+      muuriRef.current?.destroy(true);
+      muuriRef.current = new MuuriGrid(element, {
+        items: ".project-grid-item",
+        layoutDuration: 180,
+        layoutEasing: "ease",
+      });
+      requestAnimationFrame(() => muuriRef.current?.refreshItems().layout());
+    });
+    const onResize = () => muuriRef.current?.refreshItems().layout();
+    window.addEventListener("resize", onResize);
+    return () => {
+      disposed = true;
+      window.removeEventListener("resize", onResize);
+      muuriRef.current?.destroy(true);
+      muuriRef.current = null;
+    };
+  }, [isLoading, projects]);
+
+  const refreshProjectWallLayout = useCallback(() => {
+    muuriRef.current?.refreshItems().layout();
+  }, []);
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
@@ -262,75 +311,77 @@ export default function ProjectsPage() {
           )}
         </div>
       ) : (
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div ref={gridElementRef} className="relative mt-6 -m-2">
           {projects.map((project) => (
             <div
               key={project.id}
-              className="group relative overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
+              className="project-grid-item absolute w-full p-2 sm:w-1/2 lg:w-1/3 xl:w-1/4"
             >
-              <Link href={`/canvas?projectId=${encodeURIComponent(project.id)}`} className="block">
-                <ProjectCover project={project} />
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
-                      <p className="mt-1 text-xs text-muted-gray">
-                        {projectRoleLabel(project)}
-                        {project.source === "local" ? " · 本机草稿" : ""}
-                      </p>
+              <div className="group relative overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]">
+                <Link href={`/canvas?projectId=${encodeURIComponent(project.id)}`} className="block">
+                  <ProjectCover project={project} onLoad={refreshProjectWallLayout} />
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
+                        <p className="mt-1 text-xs text-muted-gray">
+                          {projectRoleLabel(project)}
+                          {project.source === "local" ? " · 本机草稿" : ""}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right text-xs text-muted-gray">
+                        <p>{project.nodeCount} 节点</p>
+                        <p className="mt-1">{project.assetCount} 素材</p>
+                      </div>
                     </div>
-                    <div className="shrink-0 text-right text-xs text-muted-gray">
-                      <p>{project.nodeCount} 节点</p>
-                      <p className="mt-1">{project.assetCount} 素材</p>
-                    </div>
+                    <p className="mt-4 text-xs text-muted-gray">最近打开 {formatDate(project.lastOpenedAt)}</p>
                   </div>
-                  <p className="mt-4 text-xs text-muted-gray">最近打开 {formatDate(project.lastOpenedAt)}</p>
-                </div>
-              </Link>
+                </Link>
 
-              <div className="absolute right-2 top-2">
-                <button
-                  type="button"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setOpenMenuId(openMenuId === project.id ? null : project.id);
-                  }}
-                  className="flex size-8 items-center justify-center rounded-lg bg-background/90 text-muted-gray shadow-sm hover:text-charcoal"
-                  aria-label="项目操作"
-                >
-                  <MoreHorizontal className="size-4" />
-                </button>
-                {openMenuId === project.id && (
-                  <div
+                <div className="absolute right-4 top-4">
+                  <button
+                    type="button"
                     onPointerDown={(event) => event.stopPropagation()}
-                    className="absolute right-0 top-9 z-10 w-36 rounded-xl border border-border-warm bg-background p-1 shadow-[0_8px_24px_rgba(28,28,28,0.12)]"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setOpenMenuId(openMenuId === project.id ? null : project.id);
+                    }}
+                    className="flex size-8 items-center justify-center rounded-lg bg-background/90 text-muted-gray shadow-sm hover:text-charcoal"
+                    aria-label="项目操作"
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOpenMenuId(null);
-                        handleRename(project);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-charcoal hover:bg-muted"
+                    <MoreHorizontal className="size-4" />
+                  </button>
+                  {openMenuId === project.id && (
+                    <div
+                      onPointerDown={(event) => event.stopPropagation()}
+                      className="absolute right-0 top-9 z-10 w-36 rounded-xl border border-border-warm bg-background p-1 shadow-[0_8px_24px_rgba(28,28,28,0.12)]"
                     >
-                      <Pencil className="size-4 text-muted-gray" />
-                      重命名
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOpenMenuId(null);
-                        handleDelete(project);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-destructive hover:bg-muted"
-                    >
-                      <Trash2 className="size-4" />
-                      删除
-                    </button>
-                  </div>
-                )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenMenuId(null);
+                          handleRename(project);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-charcoal hover:bg-muted"
+                      >
+                        <Pencil className="size-4 text-muted-gray" />
+                        重命名
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenMenuId(null);
+                          handleDelete(project);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-destructive hover:bg-muted"
+                      >
+                        <Trash2 className="size-4" />
+                        删除
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))}
