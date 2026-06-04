@@ -16,7 +16,7 @@ type NodeCreateHandleProps = {
 
 const HANDLE_EVENT = "copse:node-create-menu";
 const BUTTON_SIZE = 28;
-const HOVER_ZONE_WIDTH = 128;
+const HOVER_ZONE_WIDTH = 90;
 const HOVER_ZONE_HEIGHT = 168;
 
 function clamp(value: number, min: number, max: number) {

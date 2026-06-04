@@ -92,6 +92,8 @@ type SelectionRectSnapshot = {
   height: number;
 };
 
+type MultiSelectionAction = "group" | "merge";
+
 type PointerSnapshot = {
   x: number;
   y: number;
@@ -171,6 +173,15 @@ function getSelectedPreviewCardBounds(nodes: AppNode[]): SelectionRectSnapshot |
     getPreviewCardRects(nodes)
       .filter(({ node }) => node.selected)
       .map(({ rect }) => rect)
+  );
+}
+
+function getPreviewCardBoundsForNodeIds(nodes: AppNode[], nodeIds: Set<string>): SelectionRectSnapshot | null {
+  return unionSelectionRects(
+    nodes
+      .filter((node) => nodeIds.has(node.id) && node.type !== "canvasGroup")
+      .map((node) => getPreviewCardViewportRect(node.id))
+      .filter((rect): rect is SelectionRectSnapshot => Boolean(rect))
   );
 }
 
@@ -329,10 +340,11 @@ function CanvasViewToolbar({
 
 type MultiSelectionToolbarProps = {
   bounds: SelectionRectSnapshot;
+  actionLabel: string;
   onGroup: () => void;
 };
 
-function MultiSelectionToolbar({ bounds, onGroup }: MultiSelectionToolbarProps) {
+function MultiSelectionToolbar({ bounds, actionLabel, onGroup }: MultiSelectionToolbarProps) {
   return (
     <div
       className="pointer-events-auto fixed z-[85] -translate-x-1/2 rounded-full border border-border-warm bg-background/95 p-1 shadow-[rgba(0,0,0,0.1)_0px_4px_12px] backdrop-blur-sm"
@@ -350,7 +362,7 @@ function MultiSelectionToolbar({ bounds, onGroup }: MultiSelectionToolbarProps) 
         className="flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-gray transition-colors hover:bg-muted hover:text-charcoal focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
       >
         <Boxes className="size-3.5" />
-        分组
+        {actionLabel}
       </button>
     </div>
   );
@@ -387,6 +399,22 @@ function canGroupSelectedNodes(selectedNodes: AppNode[], allNodes: AppNode[]) {
     const childIds = (node.data as GroupNodeData).childNodeIds;
     return childIds.some((childId) => selectedIds.has(childId));
   });
+}
+
+function getMergeTargetForSelectedNodes(selectedNodes: AppNode[], allNodes: AppNode[]) {
+  const selectedGroups = selectedNodes.filter((node) => node.type === "canvasGroup");
+  if (selectedGroups.length !== 1) return null;
+  const targetGroup = selectedGroups[0];
+  const targetChildIds = new Set((targetGroup.data as GroupNodeData).childNodeIds);
+  const selectedItems = selectedNodes.filter((node) => node.type !== "canvasGroup");
+  const mergeItemIds = new Set(selectedItems.filter((node) => !targetChildIds.has(node.id)).map((node) => node.id));
+  if (mergeItemIds.size === 0) return null;
+
+  const belongsToOtherGroup = allNodes.some((node) => {
+    if (node.type !== "canvasGroup" || node.id === targetGroup.id) return false;
+    return (node.data as GroupNodeData).childNodeIds.some((childId) => mergeItemIds.has(childId));
+  });
+  return belongsToOtherGroup ? null : targetGroup;
 }
 
 function withCardNodeInteraction(node: AppNode): AppNode {
@@ -643,7 +671,7 @@ function CanvasFlow() {
   const [nodeDragCommitVersion, setNodeDragCommitVersion] = useState(0);
   const [keyboardEditingNodeId, setKeyboardEditingNodeId] = useState<string | null>(null);
   const [multiSelectionBounds, setMultiSelectionBounds] = useState<SelectionRectSnapshot | null>(null);
-  const [canGroupSelection, setCanGroupSelection] = useState(false);
+  const [multiSelectionAction, setMultiSelectionAction] = useState<MultiSelectionAction | null>(null);
   const [createMenu, setCreateMenu] = useState<{
     x: number;
     y: number;
@@ -674,10 +702,14 @@ function CanvasFlow() {
   const refreshMultiSelectionBounds = useCallback((sourceNodes?: AppNode[]) => {
     const currentNodes = sourceNodes ?? getNodes() as AppNode[];
     const selectedNodes = currentNodes.filter((node) => node.selected);
-    const canGroup = canGroupSelectedNodes(selectedNodes, currentNodes);
+    const action: MultiSelectionAction | null = canGroupSelectedNodes(selectedNodes, currentNodes)
+      ? "group"
+      : getMergeTargetForSelectedNodes(selectedNodes, currentNodes)
+        ? "merge"
+        : null;
     window.requestAnimationFrame(() => {
       const bounds = getNodesSelectionViewportRect();
-      setCanGroupSelection(canGroup);
+      setMultiSelectionAction(action);
       setMultiSelectionBounds(bounds && selectedNodes.length > 1 ? bounds : null);
     });
   }, [getNodes]);
@@ -722,7 +754,7 @@ function CanvasFlow() {
         }))
       );
       setMultiSelectionBounds(null);
-      setCanGroupSelection(false);
+      setMultiSelectionAction(null);
     });
   }, [getNodes, refreshMultiSelectionBounds, setNodes, storeApi]);
 
@@ -994,7 +1026,7 @@ function CanvasFlow() {
       );
       setEdges((eds) => eds.filter((edge) => edge.source !== detail.groupId && edge.target !== detail.groupId));
       setMultiSelectionBounds(null);
-      setCanGroupSelection(false);
+      setMultiSelectionAction(null);
       canvasOperations.submitOperation("NODE_DELETE", {
         nodeId: detail.groupId,
       });
@@ -1523,10 +1555,70 @@ function CanvasFlow() {
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
+  const mergeSelectedNodesIntoGroup = useCallback((groupNode: AppNode) => {
+    if (isReadOnly || groupNode.type !== "canvasGroup") return false;
+    const currentNodes = getNodes() as AppNode[];
+    const selectedNodes = currentNodes.filter((node) => node.selected);
+    const targetGroup = getMergeTargetForSelectedNodes(selectedNodes, currentNodes);
+    if (!targetGroup || targetGroup.id !== groupNode.id || targetGroup.type !== "canvasGroup") return false;
+
+    const now = new Date().toISOString();
+    const currentChildIds = (targetGroup.data as GroupNodeData).childNodeIds;
+    const selectedItemIds = selectedNodes
+      .filter((node) => node.type !== "canvasGroup")
+      .map((node) => node.id);
+    const mergedChildIds = Array.from(new Set([...currentChildIds, ...selectedItemIds]));
+    const bounds = getPreviewCardBoundsForNodeIds(currentNodes, new Set(mergedChildIds));
+    if (!bounds) return false;
+
+    const padding = 18;
+    const topLeft = screenToFlowPosition({ x: bounds.x - padding, y: bounds.y - padding });
+    const bottomRight = screenToFlowPosition({ x: bounds.x + bounds.width + padding, y: bounds.y + bounds.height + padding });
+    const nextData: GroupNodeData = {
+      ...(targetGroup.data as GroupNodeData),
+      childNodeIds: mergedChildIds,
+      width: Math.max(120, bottomRight.x - topLeft.x),
+      height: Math.max(96, bottomRight.y - topLeft.y),
+      updatedAt: now,
+    };
+
+    setNodes((nds): AppNode[] => nds.map((node): AppNode => {
+      if (node.id !== targetGroup.id) return { ...node, selected: false };
+      return {
+        ...node,
+        type: "canvasGroup",
+        position: topLeft,
+        data: nextData,
+        selected: true,
+      };
+    }));
+    setMultiSelectionBounds(null);
+    setMultiSelectionAction(null);
+    canvasOperations.submitOperation("NODE_MOVE", {
+      nodeId: targetGroup.id,
+      position: topLeft,
+    });
+    canvasOperations.submitOperation("NODE_UPDATE_DATA", {
+      nodeId: targetGroup.id,
+      patch: {
+        childNodeIds: nextData.childNodeIds,
+        width: nextData.width,
+        height: nextData.height,
+        updatedAt: nextData.updatedAt,
+      },
+    });
+    return true;
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+
   const groupSelectedNodes = useCallback(() => {
     if (isReadOnly) return;
     const currentNodes = getNodes() as AppNode[];
-    const selectedNodes = currentNodes.filter((node) => node.selected && node.type !== "canvasGroup");
+    const allSelectedNodes = currentNodes.filter((node) => node.selected);
+    const mergeTarget = getMergeTargetForSelectedNodes(allSelectedNodes, currentNodes);
+    if (mergeTarget && mergeSelectedNodesIntoGroup(mergeTarget)) return;
+    if (allSelectedNodes.some((node) => node.type === "canvasGroup")) return;
+
+    const selectedNodes = allSelectedNodes.filter((node) => node.type !== "canvasGroup");
     if (!canGroupSelectedNodes(selectedNodes, currentNodes)) return;
     const selectedIds = new Set(selectedNodes.map((node) => node.id));
     const bounds = getSelectedPreviewCardBounds(selectedNodes);
@@ -1566,9 +1658,9 @@ function CanvasFlow() {
       ...unselectedNodes.slice(insertIndex),
     ]);
     setMultiSelectionBounds(null);
-    setCanGroupSelection(false);
+    setMultiSelectionAction(null);
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(groupNode) });
-  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+  }, [canvasOperations, getNodes, isReadOnly, mergeSelectedNodesIntoGroup, screenToFlowPosition, setNodes]);
 
   const closeReferencePicker = useCallback(() => {
     window.dispatchEvent(new CustomEvent<ReferencePickerEventDetail>("copse:reference-picker", {
@@ -2003,7 +2095,7 @@ function CanvasFlow() {
         selectionStartRef.current = { x: event.clientX, y: event.clientY };
         selectionRectRef.current = { x: event.clientX, y: event.clientY, width: 0, height: 0 };
         setMultiSelectionBounds(null);
-        setCanGroupSelection(false);
+        setMultiSelectionAction(null);
       }}
       onPointerMoveCapture={(event) => {
         const start = selectionStartRef.current;
@@ -2107,7 +2199,7 @@ function CanvasFlow() {
             (getNodes() as AppNode[]).map((node) => [node.id, { ...node.position }])
           );
           setMultiSelectionBounds(null);
-          setCanGroupSelection(false);
+          setMultiSelectionAction(null);
           window.dispatchEvent(new CustomEvent("copse:canvas-interaction"));
         }}
         onNodeDragStop={() => {
@@ -2132,9 +2224,10 @@ function CanvasFlow() {
         )}
       </ReactFlow>
 
-      {multiSelectionBounds && canGroupSelection && (
+      {multiSelectionBounds && multiSelectionAction && (
         <MultiSelectionToolbar
           bounds={multiSelectionBounds}
+          actionLabel={multiSelectionAction === "merge" ? "合并" : "分组"}
           onGroup={groupSelectedNodes}
         />
       )}

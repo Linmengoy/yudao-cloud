@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
-import { useReactFlow } from "@xyflow/react";
+import { useReactFlow, useStore } from "@xyflow/react";
 import { Boxes, Ungroup } from "lucide-react";
 import type { GroupNodeData, GroupUngroupEventDetail, NodeDataPatchEventDetail } from "./types";
 import { EditableNodeTitle } from "./EditableNodeTitle";
@@ -12,6 +12,8 @@ type GroupNodeProps = NodeProps<Node<GroupNodeData, "canvasGroup">>;
 
 export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
   const { setNodes } = useReactFlow();
+  const selectedNodeCount = useStore((s) => s.nodes.reduce((count, node) => count + (node.selected ? 1 : 0), 0));
+  const showGroupActions = selected && selectedNodeCount === 1;
 
   const updateData = useCallback(
     (patch: Partial<GroupNodeData>, options?: { flush?: boolean }) => {
@@ -52,7 +54,7 @@ export function GroupNodeComponent({ id, data, selected }: GroupNodeProps) {
         height: data.height,
       }}
     >
-      {selected ? (
+      {showGroupActions ? (
         <div
           className="nodrag nowheel pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border-warm bg-background p-1 shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
           style={{ top: -62 }}
