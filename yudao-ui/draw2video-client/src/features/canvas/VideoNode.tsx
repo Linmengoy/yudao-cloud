@@ -241,6 +241,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const displaySize = getDisplaySize(data);
   const displayLeft = (PREVIEW_SLOT_WIDTH - displaySize.width) / 2;
   const displayTop = 28 + PREVIEW_SLOT_HEIGHT - displaySize.height;
+  const titleTop = Math.max(0, displayTop - 28);
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
   const videoSrc = data.videoUrl || data.previewUrl;
@@ -609,7 +610,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               uiScale={fixedUiScale}
               style={{
                 left: displayLeft + displaySize.width / 2,
-                top: displayTop - 54 * fixedUiScale,
+                top: titleTop - 48 * fixedUiScale,
                 pointerEvents: "auto",
               }}
             />
@@ -620,9 +621,9 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           initial={false}
           animate={{
             left: displayLeft,
-            top: Math.max(0, displayTop - 28),
-            width: displaySize.width,
+            top: titleTop,
           }}
+          style={{ maxWidth: displaySize.width }}
           transition={{ type: "spring", stiffness: 360, damping: 34 }}
         >
           <Video className="size-4" />

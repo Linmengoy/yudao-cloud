@@ -218,6 +218,8 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
         className="nodrag nowheel pointer-events-auto flex items-center gap-1.5 rounded-md bg-transparent px-1 text-sm font-medium text-muted-gray transition-colors hover:bg-muted hover:text-charcoal"
         style={{
           marginBottom: 8,
+          maxWidth: data.width,
+          width: "fit-content",
         }}
       >
         <Text className="size-4" />

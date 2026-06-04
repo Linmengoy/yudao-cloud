@@ -392,7 +392,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
               uiScale={fixedUiScale}
               style={{
                 left: previewSize.width / 2,
-                top: -50 * fixedUiScale,
+                top: -78 * fixedUiScale,
                 pointerEvents: "auto",
               }}
             />
@@ -402,7 +402,8 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
         <div
           className="nodrag nowheel pointer-events-auto mb-2 flex items-center gap-1.5 rounded-md bg-transparent px-1 text-sm font-medium text-muted-gray transition-colors hover:bg-muted hover:text-charcoal"
           style={{
-            width: previewSize.width,
+            maxWidth: previewSize.width,
+            width: "fit-content",
           }}
         >
           <PenLine className="size-4" />

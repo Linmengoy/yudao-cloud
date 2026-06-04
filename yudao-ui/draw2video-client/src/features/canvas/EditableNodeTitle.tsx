@@ -45,7 +45,7 @@ export function EditableNodeTitle({ value, fallback, onCommit, className }: Edit
             setEditing(false);
           }
         }}
-        className="nodrag nowheel pointer-events-auto min-w-0 flex-1 rounded bg-background/90 px-1 py-0 text-sm font-medium text-charcoal outline-none ring-1 ring-charcoal/25"
+        className="nodrag nowheel pointer-events-auto min-w-[96px] rounded bg-background/90 px-1 py-0 text-sm font-medium text-charcoal outline-none ring-1 ring-charcoal/25"
       />
     );
   }

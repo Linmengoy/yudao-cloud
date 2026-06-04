@@ -886,6 +886,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     : 1;
   const titleLeft = displayLeft + Math.round((visibleImageInset?.left ?? 0) * displayScale);
   const titleWidth = Math.max(80, displaySize.width - Math.round((visibleImageInset?.left ?? 0) * displayScale));
+  const titleTop = Math.max(0, displayTop - 28);
   const pickerActiveForThisNode = referencePickerPromptId === id;
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
@@ -939,7 +940,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 uiScale={fixedUiScale}
                 style={{
                   left: displayLeft + displaySize.width / 2,
-                  top: displayTop - 54 * fixedUiScale,
+                  top: titleTop - 48 * fixedUiScale,
                   pointerEvents: "auto",
                 }}
               />
@@ -950,9 +951,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             initial={false}
             animate={{
               left: titleLeft,
-              top: Math.max(0, displayTop - 28),
-              width: titleWidth,
+              top: titleTop,
             }}
+            style={{ maxWidth: titleWidth }}
             transition={{ type: "spring", stiffness: 360, damping: 34 }}
           >
             <ImageIcon className="size-4" />
