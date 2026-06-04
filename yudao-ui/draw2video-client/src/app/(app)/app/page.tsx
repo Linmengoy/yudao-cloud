@@ -6,17 +6,18 @@ import { useRouter } from "next/navigation";
 import { FolderPlus, ImageIcon, Paperclip, Plus, Send, Video } from "lucide-react";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
+import { getAigcModelList, type AigcModel } from "@/features/generation/model-api";
 import { createProject, listProjects, type ProjectMeta } from "@/features/projects/project-store";
 
-const MODELS = [
-  { id: "gpt-image", label: "GPT Image" },
-  { id: "seedance", label: "Seedance 2.0" },
-  { id: "nano", label: "Nano Banana Pro" },
-  { id: "design", label: "Design" },
-  { id: "branding", label: "Branding" },
-  { id: "ecommerce", label: "E-Commerce" },
-  { id: "video", label: "Video", disabled: true },
-];
+const MODEL_TYPE_LABELS: Record<number, string> = {
+  1: "文本",
+  2: "图片",
+  3: "视频",
+  4: "音频",
+  5: "审核",
+};
+
+const MODEL_TYPE_ORDER = [2, 3, 4, 1, 5];
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -62,10 +63,32 @@ function ProjectIcon({ project }: { project: ProjectListItem }) {
 export default function WorkspacePage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
-  const [selectedModel, setSelectedModel] = useState("gpt-image");
+  const [models, setModels] = useState<AigcModel[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
+  const [activeModelType, setActiveModelType] = useState<number | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const recentProjects = useMemo(() => projects.slice(0, 7), [projects]);
+  const modelGroups = useMemo(() => {
+    const groups = new Map<number, AigcModel[]>();
+    for (const model of models) {
+      groups.set(model.type, [...(groups.get(model.type) ?? []), model]);
+    }
+    return [...groups.entries()].sort(([a], [b]) => {
+      const aIndex = MODEL_TYPE_ORDER.indexOf(a);
+      const bIndex = MODEL_TYPE_ORDER.indexOf(b);
+      if (aIndex === -1 && bIndex === -1) return a - b;
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    });
+  }, [models]);
+  const selectedModel = useMemo(
+    () => models.find((model) => model.id === selectedModelId) ?? null,
+    [models, selectedModelId]
+  );
 
   async function refreshProjects() {
     try {
@@ -79,6 +102,34 @@ export default function WorkspacePage() {
   useEffect(() => {
     const timer = window.setTimeout(refreshProjects, 0);
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    const timer = window.setTimeout(() => {
+      setModelsLoading(true);
+      setModelsError(null);
+      getAigcModelList()
+        .then((data) => {
+          if (ignore) return;
+          setModels(data);
+          setSelectedModelId((current) => {
+            if (data.some((item) => item.id === current)) return current;
+            return data.find((item) => item.defaultModel)?.id ?? data[0]?.id ?? null;
+          });
+          setActiveModelType(null);
+        })
+        .catch((err) => {
+          if (!ignore) setModelsError(err instanceof Error ? err.message : "模型列表加载失败");
+        })
+        .finally(() => {
+          if (!ignore) setModelsLoading(false);
+        });
+    }, 0);
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   async function openNewProject(name?: string) {
@@ -124,7 +175,7 @@ export default function WorkspacePage() {
             className="w-full resize-none bg-transparent text-sm text-charcoal placeholder:text-muted-gray focus:outline-none"
           />
           <div className="mt-2 flex items-center justify-between">
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 className="flex size-8 items-center justify-center rounded-lg text-muted-gray hover:bg-muted hover:text-charcoal"
@@ -139,37 +190,48 @@ export default function WorkspacePage() {
               >
                 <Paperclip className="size-4" />
               </button>
+              {modelsLoading && models.length === 0 && (
+                <span className="px-2 text-xs text-muted-gray">模型加载中...</span>
+              )}
+              {!modelsLoading && modelsError && models.length === 0 && (
+                <span className="px-2 text-xs text-muted-gray">{modelsError}</span>
+              )}
+              {!modelsLoading && !modelsError && models.length === 0 && (
+                <span className="px-2 text-xs text-muted-gray">暂无可用模型</span>
+              )}
+              {modelGroups.map(([type, items]) => (
+                <select
+                  key={type}
+                  value={activeModelType === type && selectedModel?.type === type ? String(selectedModel.id) : ""}
+                  onChange={(event) => {
+                    setSelectedModelId(Number(event.target.value));
+                    setActiveModelType(type);
+                  }}
+                  className="h-8 rounded-lg border border-border-warm bg-background px-2 text-xs text-muted-gray outline-none transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal focus:border-[rgba(28,28,28,0.55)]"
+                >
+                  <option value="" disabled>{MODEL_TYPE_LABELS[type] ?? `类型 ${type}`}</option>
+                  {items.map((model) => (
+                    <option key={model.id} value={model.id}>{model.name}</option>
+                  ))}
+                </select>
+              ))}
             </div>
-            <button
-              onClick={handleSubmit}
-              disabled={!prompt.trim() || submitting}
-              className="flex size-8 items-center justify-center rounded-lg bg-charcoal text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80 disabled:opacity-50"
-            >
-              <Send className="size-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              {selectedModel && (
+                <span className="max-w-40 truncate rounded-full bg-muted px-2.5 py-1 text-xs text-muted-gray" title={selectedModel.name}>
+                  {selectedModel.name}
+                </span>
+              )}
+              <button
+                onClick={handleSubmit}
+                disabled={!prompt.trim() || submitting}
+                className="flex size-8 items-center justify-center rounded-lg bg-charcoal text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80 disabled:opacity-50"
+              >
+                <Send className="size-4" />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-
-      {/* Model chips */}
-      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-        {MODELS.map((m) => (
-          <button
-            key={m.id}
-            disabled={m.disabled}
-            onClick={() => !m.disabled && setSelectedModel(m.id)}
-            className={`rounded-full px-3.5 py-1.5 text-xs transition-colors ${
-              m.disabled
-                ? "cursor-not-allowed text-muted-gray/40 line-through"
-                : selectedModel === m.id
-                  ? "bg-charcoal text-off-white"
-                  : "border border-border-warm text-muted-gray hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal"
-            }`}
-          >
-            {m.label}
-            {m.disabled && " (即将推出)"}
-          </button>
-        ))}
       </div>
 
       {/* Recent projects */}
