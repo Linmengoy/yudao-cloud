@@ -5,10 +5,14 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetPageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetVisibilityUpdateReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.enums.AigcAssetAccessTypeEnum;
+import cn.iocoder.yudao.module.aigc.asset.enums.AigcAssetFileRoleEnum;
 import cn.iocoder.yudao.module.aigc.asset.service.asset.AigcAssetService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -27,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils.getLoginUserId;
@@ -44,15 +49,16 @@ public class AigcAssetAppController {
     @Operation(summary = "获取我的资产详情")
     @Parameter(name = "id", description = "资产编号", required = true)
     public CommonResult<AigcAssetRespDTO> getMyAsset(@RequestParam("id") Long id) {
-        AigcAssetDO asset = assetService.getUserAsset(id, getLoginUserId());
-        return success(BeanUtils.toBean(asset, AigcAssetRespDTO.class));
+        return success(assetService.getAssetResp(id, getLoginUserId()));
     }
 
     @GetMapping("/my-page")
     @Operation(summary = "获取我的资产分页")
     public CommonResult<PageResult<AigcAssetRespDTO>> getMyAssetPage(@Valid AigcAssetPageReqVO reqVO) {
         PageResult<AigcAssetDO> pageResult = assetService.getUserAssetPage(reqVO, getLoginUserId());
-        return success(BeanUtils.toBean(pageResult, AigcAssetRespDTO.class));
+        PageResult<AigcAssetRespDTO> respPage = BeanUtils.toBean(pageResult, AigcAssetRespDTO.class);
+        respPage.setList(assetService.getAssetRespList(pageResult.getList().stream().map(AigcAssetDO::getId).toList(), getLoginUserId()));
+        return success(respPage);
     }
 
     @PostMapping("/upload")
@@ -91,11 +97,23 @@ public class AigcAssetAppController {
 
     @PostMapping("/download")
     @Operation(summary = "下载我的资产")
-    public CommonResult<String> downloadMyAsset(@Valid @RequestBody AigcAssetDownloadReqDTO reqDTO) {
-        AigcAssetDO asset = assetService.getAccessibleAsset(reqDTO.getAssetId(), getLoginUserId());
-        reqDTO.setUserId(getLoginUserId());
-        assetService.increaseDownloadCount(reqDTO);
-        return success(asset.getFileUrl());
+    public CommonResult<AigcAssetAccessUrlRespDTO> downloadMyAsset(@Valid @RequestBody AigcAssetDownloadReqDTO reqDTO) {
+        return success(assetService.getAccessUrl(new AigcAssetAccessUrlReqDTO()
+                .setAssetId(reqDTO.getAssetId())
+                .setFileRole(AigcAssetFileRoleEnum.ORIGINAL.getCode())
+                .setAccessType(AigcAssetAccessTypeEnum.DOWNLOAD.getCode()), getLoginUserId()));
+    }
+
+    @PostMapping("/access-url")
+    @Operation(summary = "获取资产访问 URL")
+    public CommonResult<AigcAssetAccessUrlRespDTO> getAccessUrl(@Valid @RequestBody AigcAssetAccessUrlReqDTO reqDTO) {
+        return success(assetService.getAccessUrl(reqDTO, getLoginUserId()));
+    }
+
+    @PostMapping("/access-urls")
+    @Operation(summary = "批量获取资产访问 URL")
+    public CommonResult<List<AigcAssetAccessUrlRespDTO>> getAccessUrls(@Valid @RequestBody List<AigcAssetAccessUrlReqDTO> reqDTOs) {
+        return success(assetService.getAccessUrls(reqDTOs, getLoginUserId()));
     }
 
     @PostMapping("/use")

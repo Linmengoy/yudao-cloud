@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.asset.dal.dataobject;
 
 import cn.iocoder.yudao.framework.tenant.core.db.TenantBaseDO;
 import com.baomidou.mybatisplus.annotation.KeySequence;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -34,14 +35,23 @@ public class AigcAssetDO extends TenantBaseDO {
     private String title;
     private String description;
     private String tags;
+    @TableField(exist = false)
     private Long fileId;
+    @TableField(exist = false)
     private String fileUrl;
+    @TableField(exist = false)
     private String originUrl;
+    @TableField(exist = false)
     private Long coverFileId;
+    @TableField(exist = false)
     private String coverUrl;
+    @TableField(exist = false)
     private String thumbnailUrl;
+    @TableField(exist = false)
     private String mimeType;
+    @TableField(exist = false)
     private String fileExt;
+    @TableField(exist = false)
     private Long fileSize;
     private Integer width;
     private Integer height;

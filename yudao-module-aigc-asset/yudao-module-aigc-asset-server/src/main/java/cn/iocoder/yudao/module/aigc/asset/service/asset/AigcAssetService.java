@@ -6,11 +6,14 @@ import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetPageReqVO
 import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetSaveReqVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDownloadLogDO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAuditUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetPageReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetVisibilityUpdateReqDTO;
 
@@ -35,7 +38,11 @@ public interface AigcAssetService {
 
     AigcAssetDO getAsset(Long id);
 
+    AigcAssetRespDTO getAssetResp(Long id, Long userId);
+
     List<AigcAssetDO> getAssetList(Collection<Long> ids);
+
+    List<AigcAssetRespDTO> getAssetRespList(Collection<Long> ids, Long userId);
 
     AigcAssetDO validateAssetExists(Long id);
 
@@ -56,6 +63,10 @@ public interface AigcAssetService {
     void updateVisibility(AigcAssetVisibilityUpdateReqDTO reqDTO);
 
     void increaseDownloadCount(AigcAssetDownloadReqDTO reqDTO);
+
+    AigcAssetAccessUrlRespDTO getAccessUrl(AigcAssetAccessUrlReqDTO reqDTO, Long userId);
+
+    List<AigcAssetAccessUrlRespDTO> getAccessUrls(List<AigcAssetAccessUrlReqDTO> reqDTOs, Long userId);
 
     void increaseUseCount(Long id, Long userId);
 

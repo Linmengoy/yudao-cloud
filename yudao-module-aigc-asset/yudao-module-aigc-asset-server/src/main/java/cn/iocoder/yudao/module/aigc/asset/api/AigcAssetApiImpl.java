@@ -2,7 +2,6 @@ package cn.iocoder.yudao.module.aigc.asset.api;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
-import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAuditUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
@@ -60,8 +59,7 @@ public class AigcAssetApiImpl implements AigcAssetApi {
 
     @Override
     public CommonResult<AigcAssetRespDTO> getAsset(Long assetId) {
-        AigcAssetDO asset = assetService.validateAssetExists(assetId);
-        return success(BeanUtils.toBean(asset, AigcAssetRespDTO.class));
+        return success(assetService.getAssetResp(assetId, null));
     }
 
     @Override
@@ -69,19 +67,18 @@ public class AigcAssetApiImpl implements AigcAssetApi {
         if (assetIds == null || assetIds.isEmpty()) {
             return success(Collections.emptyList());
         }
-        return success(BeanUtils.toBean(assetService.getAssetList(assetIds), AigcAssetRespDTO.class));
+        return success(assetService.getAssetRespList(assetIds, null));
     }
 
     @Override
     public CommonResult<AigcAssetRespDTO> getAssetByTaskId(Long taskId) {
-        AigcAssetDO asset = assetService.getAssetByTaskId(taskId);
-        return success(BeanUtils.toBean(asset, AigcAssetRespDTO.class));
+        return success(assetService.getAssetResp(assetService.getAssetByTaskId(taskId).getId(), null));
     }
 
     @Override
     public CommonResult<PageResult<AigcAssetRespDTO>> getUserAssets(AigcAssetPageReqDTO reqDTO) {
         PageResult<AigcAssetDO> pageResult = assetService.getAssetPage(reqDTO);
-        return success(BeanUtils.toBean(pageResult, AigcAssetRespDTO.class));
+        return success(new PageResult<>(assetService.getAssetRespList(pageResult.getList().stream().map(AigcAssetDO::getId).toList(), reqDTO.getUserId()), pageResult.getTotal()));
     }
 
     @Override
