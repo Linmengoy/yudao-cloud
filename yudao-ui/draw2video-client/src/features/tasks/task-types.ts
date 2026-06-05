@@ -46,6 +46,7 @@ export interface AigcTask {
   currencyType?: string;
   outputAssetId?: number;
   outputAssetType?: string;
+  outputSummary?: string;
   outputText?: string;
   outputData?: string;
   failReason?: string;

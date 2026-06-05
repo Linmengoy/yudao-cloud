@@ -82,15 +82,18 @@ Project model:
 
 - `/app` shows recent projects and a new-project entry.
 - `/projects` is the project library. The sidebar project icon should land here before entering a canvas.
-- `/assets` is the asset library. The sidebar asset icon should land here and show generated image/video tables.
+- `/assets` is the asset library. The sidebar asset icon should land here and show generated image/video assets in a compact masonry wall.
 - `/canvas?projectId=...` opens one project's canvas. `/create/image` is kept only as a compatibility redirect.
 - Canvas drafts are scoped by `projectId`; creating or opening a project updates its last-opened time and lightweight summary.
 
 Asset library:
 
-- Generated images and videos are collected from saved project canvases.
+- Generated images and videos are loaded from the backend asset page API incrementally instead of fetching the entire asset set at once.
 - Uploaded media is not listed as a generated asset.
-- Each asset row links back to the source project canvas.
+- The asset wall uses a compact Muuri layout: media keeps its natural ratio, wide items may span multiple columns, and column count adapts to the container width.
+- Scrolling near the bottom loads the next page; when there are no more records the page shows an “已加载全部” state.
+- Asset search is debounced and should be sent through paged backend filtering rather than filtering a preloaded full dataset.
+- Each asset item links to its asset detail or source project canvas when only a local fallback exists.
 
 Current image generation behavior:
 

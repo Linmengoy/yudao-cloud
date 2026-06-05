@@ -35,7 +35,7 @@ public class AigcTaskAppController {
     @Operation(summary = "获取任务详情")
     @Parameter(name = "id", description = "任务ID", required = true)
     public CommonResult<AigcTaskRespDTO> getTask(@RequestParam("id") Long id) {
-        AigcTaskDO task = taskService.getUserTask(id, getLoginUserId());
+        AigcTaskDO task = taskService.getUserTaskWithResult(id, getLoginUserId());
         return success(toAppRespDTO(task));
     }
 

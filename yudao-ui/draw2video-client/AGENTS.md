@@ -95,7 +95,11 @@ Asset library:
 
 - List generated images and generated videos separately.
 - Do not list uploaded reference media as generated assets.
-- Asset rows should link back to their source project canvas.
+- The asset library should use paged backend loading with infinite scroll. Do not fetch all assets up front.
+- Search in the asset library should be debounced and sent through the paged backend query when possible.
+- The `/assets` media wall should use a compact Muuri masonry layout: media keeps natural ratio, wide media can span multiple columns, and column count adapts to container width.
+- When infinite scroll reaches the end, show an explicit “已加载全部” state.
+- Asset items should link to their detail page or, for local fallback assets, back to their source project canvas.
 - Until the backend asset service exists, local asset discovery may scan saved per-project canvas drafts.
 
 The `/canvas` surface should model creation as connected, directly editable nodes:

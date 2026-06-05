@@ -38,7 +38,7 @@ export function TaskCard({ task }: { task: AigcTask }) {
         <span>{formatPoints(task.salePrice, task.currencyType)}</span>
       </div>
       {safety.status !== "idle" ? <SafetyInlineNotice state={safety} className="mt-3" /> : task.failReason && <p className="mt-3 line-clamp-2 text-xs text-destructive">{task.failReason}</p>}
-      {task.outputText && <p className="mt-3 line-clamp-2 text-xs text-muted-gray">{task.outputText}</p>}
+      {task.outputSummary && <p className="mt-3 line-clamp-2 text-xs text-muted-gray">{task.outputSummary}</p>}
     </Link>
   );
 }

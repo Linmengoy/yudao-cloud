@@ -18,8 +18,7 @@ CREATE TABLE `aigc_task` (
   `external_task_id` varchar(128) DEFAULT NULL COMMENT '第三方任务编号',
   `output_asset_id` bigint DEFAULT NULL COMMENT '输出资产ID',
   `output_asset_type` varchar(32) DEFAULT NULL COMMENT '输出资产类型',
-  `output_text` longtext DEFAULT NULL COMMENT '文本输出',
-  `output_data` json DEFAULT NULL COMMENT '结构化输出',
+  `output_summary` varchar(1024) DEFAULT NULL COMMENT '输出摘要',
   `fail_code` varchar(128) DEFAULT NULL COMMENT '失败错误码',
   `fail_reason` varchar(1024) DEFAULT NULL COMMENT '失败原因',
   `submit_time` datetime DEFAULT NULL COMMENT '提交时间',
@@ -39,12 +38,29 @@ CREATE TABLE `aigc_task` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_task_no` (`task_no`),
   UNIQUE KEY `uk_client_request` (`tenant_id`, `user_id`, `client_request_id`),
+  KEY `idx_tenant_user_deleted_id` (`tenant_id`, `user_id`, `deleted`, `id`),
   KEY `idx_user_status` (`user_id`, `status`),
   KEY `idx_status_create_time` (`status`, `create_time`),
   KEY `idx_external_task_id` (`external_task_id`),
   KEY `idx_model_id` (`model_id`),
   KEY `idx_tenant_status` (`tenant_id`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC任务主表';
+
+CREATE TABLE `aigc_task_result` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `task_id` bigint NOT NULL COMMENT '任务ID',
+  `output_text` longtext DEFAULT NULL COMMENT '文本输出',
+  `output_data` json DEFAULT NULL COMMENT '结构化输出',
+  `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_task_id` (`task_id`),
+  KEY `idx_tenant_task` (`tenant_id`, `task_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC任务结果表';
 
 CREATE TABLE `aigc_task_log` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',

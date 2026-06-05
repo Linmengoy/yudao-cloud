@@ -7,7 +7,10 @@ import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.task.controller.admin.task.vo.AigcTaskPageReqVO;
 import cn.iocoder.yudao.module.aigc.task.controller.admin.task.vo.AigcTaskStatisticsRespVO;
 import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskDO;
+import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskResultDO;
 import cn.iocoder.yudao.module.aigc.task.dal.mysql.AigcTaskMapper;
+import cn.iocoder.yudao.module.aigc.task.dal.mysql.AigcTaskResultMapper;
+import cn.iocoder.yudao.module.aigc.task.dal.mysql.AigcTaskStatisticsAggregate;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.enums.AigcTaskStatusEnum;
@@ -17,9 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -49,6 +50,8 @@ public class AigcTaskServiceImpl implements AigcTaskService {
 
     @Resource
     private AigcTaskMapper taskMapper;
+    @Resource
+    private AigcTaskResultMapper taskResultMapper;
     @Resource
     private AigcTaskLogService taskLogService;
 
@@ -87,6 +90,16 @@ public class AigcTaskServiceImpl implements AigcTaskService {
     }
 
     @Override
+    public AigcTaskDO getTaskWithResult(Long id) {
+        return fillResult(getTask(id));
+    }
+
+    @Override
+    public AigcTaskDO getTaskByTaskNoWithResult(String taskNo) {
+        return fillResult(getTaskByTaskNo(taskNo));
+    }
+
+    @Override
     public AigcTaskDO validateTaskExists(Long id) {
         AigcTaskDO task = taskMapper.selectById(id);
         if (task == null) {
@@ -107,29 +120,26 @@ public class AigcTaskServiceImpl implements AigcTaskService {
 
     @Override
     public AigcTaskStatisticsRespVO getTaskStatistics() {
-        List<AigcTaskDO> tasks = taskMapper.selectList();
-        long successCount = countByStatus(tasks, AigcTaskStatusEnum.SUCCESS.getCode());
-        long failedCount = countByStatus(tasks, AigcTaskStatusEnum.FAILED.getCode());
-        long finishedCount = successCount + failedCount + countByStatus(tasks, AigcTaskStatusEnum.CANCELLED.getCode()) + countByStatus(tasks, AigcTaskStatusEnum.REFUNDED.getCode());
-        long totalDuration = tasks.stream()
-                .filter(task -> task.getSubmitTime() != null && task.getFinishTime() != null)
-                .mapToLong(task -> Duration.between(task.getSubmitTime(), task.getFinishTime()).toMillis())
-                .sum();
-        long durationCount = tasks.stream().filter(task -> task.getSubmitTime() != null && task.getFinishTime() != null).count();
-        long timeoutCount = tasks.stream()
-                .filter(task -> task.getExpireTime() != null && task.getExpireTime().isBefore(LocalDateTime.now()))
-                .filter(task -> !Set.of(AigcTaskStatusEnum.SUCCESS.getCode(), AigcTaskStatusEnum.FAILED.getCode(), AigcTaskStatusEnum.CANCELLED.getCode(), AigcTaskStatusEnum.REFUNDED.getCode()).contains(task.getStatus()))
-                .count();
+        AigcTaskStatisticsAggregate statistics = taskMapper.selectStatistics(
+                AigcTaskStatusEnum.SUCCESS.getCode(),
+                AigcTaskStatusEnum.FAILED.getCode(),
+                AigcTaskStatusEnum.REFUNDING.getCode(),
+                Set.of(AigcTaskStatusEnum.SUCCESS.getCode(), AigcTaskStatusEnum.FAILED.getCode(), AigcTaskStatusEnum.CANCELLED.getCode(), AigcTaskStatusEnum.REFUNDED.getCode()),
+                Set.of(AigcTaskStatusEnum.QUEUED.getCode(), AigcTaskStatusEnum.RUNNING.getCode(), AigcTaskStatusEnum.CALLBACK_WAITING.getCode()),
+                LocalDateTime.now());
+        long successCount = nullToZero(statistics.getSuccessCount());
+        long failedCount = nullToZero(statistics.getFailedCount());
+        long finishedCount = nullToZero(statistics.getFinishedCount());
         return new AigcTaskStatisticsRespVO()
-                .setTotalCount((long) tasks.size())
+                .setTotalCount(nullToZero(statistics.getTotalCount()))
                 .setSuccessCount(successCount)
                 .setFailedCount(failedCount)
-                .setRefundingCount(countByStatus(tasks, AigcTaskStatusEnum.REFUNDING.getCode()))
-                .setBacklogCount(tasks.stream().filter(task -> Set.of(AigcTaskStatusEnum.QUEUED.getCode(), AigcTaskStatusEnum.RUNNING.getCode(), AigcTaskStatusEnum.CALLBACK_WAITING.getCode()).contains(task.getStatus())).count())
-                .setTimeoutCount(timeoutCount)
+                .setRefundingCount(nullToZero(statistics.getRefundingCount()))
+                .setBacklogCount(nullToZero(statistics.getBacklogCount()))
+                .setTimeoutCount(nullToZero(statistics.getTimeoutCount()))
                 .setSuccessRate(finishedCount == 0 ? 0D : (double) successCount / finishedCount)
                 .setFailedRate(finishedCount == 0 ? 0D : (double) failedCount / finishedCount)
-                .setAvgDurationMillis(durationCount == 0 ? 0L : totalDuration / durationCount);
+                .setAvgDurationMillis(nullToZero(statistics.getAvgDurationMillis()));
     }
 
     @Override
@@ -139,6 +149,11 @@ public class AigcTaskServiceImpl implements AigcTaskService {
             throw exception(TASK_NOT_OWNER);
         }
         return task;
+    }
+
+    @Override
+    public AigcTaskDO getUserTaskWithResult(Long id, Long userId) {
+        return fillResult(getUserTask(id, userId));
     }
 
     @Override
@@ -160,6 +175,7 @@ public class AigcTaskServiceImpl implements AigcTaskService {
         if (AigcTaskStatusEnum.SUCCESS.getCode().equals(toStatus)) {
             updateObj.setProgress(100);
         }
+        updateObj.setOutputSummary(buildOutputSummary(reqDTO.getOutputText()));
         if (AigcTaskStatusEnum.RUNNING.getCode().equals(toStatus)) {
             updateObj.setStartTime(LocalDateTime.now());
         }
@@ -176,6 +192,9 @@ public class AigcTaskServiceImpl implements AigcTaskService {
                 return;
             }
             throw exception(TASK_STATUS_TRANSFER_INVALID);
+        }
+        if (reqDTO.getOutputText() != null || reqDTO.getOutputData() != null) {
+            taskResultMapper.saveByTaskId(reqDTO.getTaskId(), reqDTO.getOutputText(), reqDTO.getOutputData());
         }
         taskLogService.createTaskLog(task.getId(), task.getTaskNo(), task.getStatus(), toStatus, "STATUS_UPDATE", "任务状态变更");
     }
@@ -199,8 +218,27 @@ public class AigcTaskServiceImpl implements AigcTaskService {
         taskMapper.incrementRetryCount(taskId);
     }
 
-    private long countByStatus(List<AigcTaskDO> tasks, String status) {
-        return tasks.stream().filter(task -> Objects.equals(task.getStatus(), status)).count();
+    private long nullToZero(Long value) {
+        return value == null ? 0L : value;
+    }
+
+    private AigcTaskDO fillResult(AigcTaskDO task) {
+        if (task == null) {
+            return null;
+        }
+        AigcTaskResultDO result = taskResultMapper.selectByTaskId(task.getId());
+        if (result == null) {
+            return task;
+        }
+        return task.setOutputText(result.getOutputText())
+                .setOutputData(result.getOutputData());
+    }
+
+    private String buildOutputSummary(String outputText) {
+        if (outputText == null) {
+            return null;
+        }
+        return outputText.length() <= 500 ? outputText : outputText.substring(0, 500);
     }
 
     private void validateStatusTransfer(String fromStatus, String toStatus) {

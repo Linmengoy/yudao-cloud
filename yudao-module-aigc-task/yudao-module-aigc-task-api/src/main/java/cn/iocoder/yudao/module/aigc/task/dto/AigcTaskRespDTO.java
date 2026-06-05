@@ -63,6 +63,9 @@ public class AigcTaskRespDTO {
     @Schema(description = "输出资产类型")
     private String outputAssetType;
 
+    @Schema(description = "输出摘要")
+    private String outputSummary;
+
     @Schema(description = "文本输出")
     private String outputText;
 

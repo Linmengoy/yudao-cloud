@@ -7,6 +7,8 @@ import cn.iocoder.yudao.module.aigc.task.controller.admin.task.vo.AigcTaskPageRe
 import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskDO;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -37,6 +39,10 @@ public interface AigcTaskMapper extends BaseMapperX<AigcTaskDO> {
 
     default PageResult<AigcTaskDO> selectPageByUserId(cn.iocoder.yudao.framework.common.pojo.PageParam reqVO, Long userId) {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcTaskDO>()
+                .select(AigcTaskDO::getId, AigcTaskDO::getTaskNo, AigcTaskDO::getTaskType,
+                        AigcTaskDO::getStatus, AigcTaskDO::getProgress, AigcTaskDO::getSalePrice,
+                        AigcTaskDO::getCurrencyType, AigcTaskDO::getOutputAssetId, AigcTaskDO::getOutputAssetType,
+                        AigcTaskDO::getOutputSummary, AigcTaskDO::getFailReason, AigcTaskDO::getCreateTime, AigcTaskDO::getFinishTime)
                 .eq(AigcTaskDO::getUserId, userId)
                 .orderByDesc(AigcTaskDO::getId));
     }
@@ -60,5 +66,39 @@ public interface AigcTaskMapper extends BaseMapperX<AigcTaskDO> {
                 .lt(AigcTaskDO::getExpireTime, now)
                 .orderByAsc(AigcTaskDO::getExpireTime));
     }
+
+    @Select("""
+            <script>
+            SELECT
+                COUNT(1) AS totalCount,
+                COALESCE(SUM(CASE WHEN status = #{successStatus} THEN 1 ELSE 0 END), 0) AS successCount,
+                COALESCE(SUM(CASE WHEN status = #{failedStatus} THEN 1 ELSE 0 END), 0) AS failedCount,
+                COALESCE(SUM(CASE WHEN status IN
+                    <foreach collection="finishedStatuses" item="status" open="(" separator="," close=")">
+                        #{status}
+                    </foreach>
+                    THEN 1 ELSE 0 END), 0) AS finishedCount,
+                COALESCE(SUM(CASE WHEN status = #{refundingStatus} THEN 1 ELSE 0 END), 0) AS refundingCount,
+                COALESCE(SUM(CASE WHEN status IN
+                    <foreach collection="backlogStatuses" item="status" open="(" separator="," close=")">
+                        #{status}
+                    </foreach>
+                    THEN 1 ELSE 0 END), 0) AS backlogCount,
+                COALESCE(SUM(CASE WHEN expire_time IS NOT NULL AND expire_time &lt; #{now} AND status NOT IN
+                    <foreach collection="finishedStatuses" item="status" open="(" separator="," close=")">
+                        #{status}
+                    </foreach>
+                    THEN 1 ELSE 0 END), 0) AS timeoutCount,
+                COALESCE(AVG(CASE WHEN submit_time IS NOT NULL AND finish_time IS NOT NULL THEN TIMESTAMPDIFF(MICROSECOND, submit_time, finish_time) / 1000 ELSE NULL END), 0) AS avgDurationMillis
+            FROM aigc_task
+            WHERE deleted = 0
+            </script>
+            """)
+    AigcTaskStatisticsAggregate selectStatistics(@Param("successStatus") String successStatus,
+                                                 @Param("failedStatus") String failedStatus,
+                                                 @Param("refundingStatus") String refundingStatus,
+                                                 @Param("finishedStatuses") Collection<String> finishedStatuses,
+                                                 @Param("backlogStatuses") Collection<String> backlogStatuses,
+                                                 @Param("now") LocalDateTime now);
 
 }

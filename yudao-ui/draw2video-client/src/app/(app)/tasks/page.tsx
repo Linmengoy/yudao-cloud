@@ -16,7 +16,7 @@ export default function TasksPage() {
     setLoading(true);
     setError("");
     try {
-      const data = await getAigcTaskPage({ pageNo: 1, pageSize: 30 });
+      const data = await getAigcTaskPage({ pageNo: 1, pageSize: 12 });
       setTasks(data.list ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "任务列表加载失败");

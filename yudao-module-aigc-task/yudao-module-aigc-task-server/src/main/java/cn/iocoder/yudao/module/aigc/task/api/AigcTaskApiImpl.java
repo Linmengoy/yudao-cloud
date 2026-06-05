@@ -36,13 +36,13 @@ public class AigcTaskApiImpl implements AigcTaskApi {
 
     @Override
     public CommonResult<AigcTaskRespDTO> getTask(Long taskId) {
-        AigcTaskDO task = taskService.validateTaskExists(taskId);
+        AigcTaskDO task = taskService.getTaskWithResult(taskId);
         return success(BeanUtils.toBean(task, AigcTaskRespDTO.class));
     }
 
     @Override
     public CommonResult<AigcTaskRespDTO> getTaskByTaskNo(String taskNo) {
-        AigcTaskDO task = taskService.getTaskByTaskNo(taskNo);
+        AigcTaskDO task = taskService.getTaskByTaskNoWithResult(taskNo);
         return success(BeanUtils.toBean(task, AigcTaskRespDTO.class));
     }
 

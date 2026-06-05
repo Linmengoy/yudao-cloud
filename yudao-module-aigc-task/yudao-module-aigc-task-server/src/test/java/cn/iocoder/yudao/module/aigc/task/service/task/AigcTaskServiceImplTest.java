@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.aigc.task.service.task;
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
 import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskDO;
 import cn.iocoder.yudao.module.aigc.task.dal.mysql.AigcTaskMapper;
+import cn.iocoder.yudao.module.aigc.task.controller.admin.task.vo.AigcTaskStatisticsRespVO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.enums.AigcTaskStatusEnum;
@@ -10,6 +11,8 @@ import cn.iocoder.yudao.module.aigc.task.service.log.AigcTaskLogServiceImpl;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Import;
+
+import java.time.LocalDateTime;
 
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServiceException;
 import static cn.iocoder.yudao.module.aigc.task.enums.ErrorCodeConstants.*;
@@ -102,6 +105,28 @@ public class AigcTaskServiceImplTest extends BaseDbUnitTest {
         assertEquals(AigcTaskStatusEnum.CANCELLED.getCode(), taskMapper.selectById(taskId).getStatus());
     }
 
+    @Test
+    public void testGetTaskStatistics() {
+        LocalDateTime now = LocalDateTime.now();
+        taskMapper.insert(createTaskDO("TASK-SUCCESS", AigcTaskStatusEnum.SUCCESS.getCode(), now.minusMinutes(3), now.minusMinutes(1), null));
+        taskMapper.insert(createTaskDO("TASK-FAILED", AigcTaskStatusEnum.FAILED.getCode(), now.minusMinutes(2), now.minusMinutes(1), null));
+        taskMapper.insert(createTaskDO("TASK-QUEUED", AigcTaskStatusEnum.QUEUED.getCode(), null, null, null));
+        taskMapper.insert(createTaskDO("TASK-TIMEOUT", AigcTaskStatusEnum.RUNNING.getCode(), null, null, now.minusMinutes(1)));
+        taskMapper.insert(createTaskDO("TASK-REFUNDING", AigcTaskStatusEnum.REFUNDING.getCode(), null, null, null));
+
+        AigcTaskStatisticsRespVO statistics = taskService.getTaskStatistics();
+
+        assertEquals(5L, statistics.getTotalCount());
+        assertEquals(1L, statistics.getSuccessCount());
+        assertEquals(1L, statistics.getFailedCount());
+        assertEquals(1L, statistics.getRefundingCount());
+        assertEquals(2L, statistics.getBacklogCount());
+        assertEquals(1L, statistics.getTimeoutCount());
+        assertEquals(0.5D, statistics.getSuccessRate());
+        assertEquals(0.5D, statistics.getFailedRate());
+        assertEquals(90000L, statistics.getAvgDurationMillis());
+    }
+
     private AigcTaskCreateReqDTO createReqDTO() {
         return new AigcTaskCreateReqDTO()
                 .setClientRequestId("REQ-1")
@@ -111,6 +136,22 @@ public class AigcTaskServiceImplTest extends BaseDbUnitTest {
                 .setModelId(200L)
                 .setProviderId(300L)
                 .setCurrencyType("POINT");
+    }
+
+    private AigcTaskDO createTaskDO(String taskNo, String status, LocalDateTime submitTime, LocalDateTime finishTime, LocalDateTime expireTime) {
+        return new AigcTaskDO()
+                .setTaskNo(taskNo)
+                .setUserId(100L)
+                .setTaskType("TEXT_GENERATE")
+                .setCapability("TEXT_GENERATE")
+                .setModelId(200L)
+                .setStatus(status)
+                .setProgress(0)
+                .setSubmitTime(submitTime)
+                .setFinishTime(finishTime)
+                .setExpireTime(expireTime)
+                .setRetryCount(0)
+                .setMaxRetryCount(3);
     }
 
 }

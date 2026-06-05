@@ -16,6 +16,10 @@ public interface AigcTaskService {
 
     AigcTaskDO getTaskByTaskNo(String taskNo);
 
+    AigcTaskDO getTaskWithResult(Long id);
+
+    AigcTaskDO getTaskByTaskNoWithResult(String taskNo);
+
     AigcTaskDO validateTaskExists(Long id);
 
     PageResult<AigcTaskDO> getTaskPage(AigcTaskPageReqVO reqVO);
@@ -25,6 +29,8 @@ public interface AigcTaskService {
     AigcTaskStatisticsRespVO getTaskStatistics();
 
     AigcTaskDO getUserTask(Long id, Long userId);
+
+    AigcTaskDO getUserTaskWithResult(Long id, Long userId);
 
     void updateTaskStatus(Long taskId, String toStatus);
 
