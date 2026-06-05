@@ -1,4 +1,4 @@
-# AIGC 画布团队协作技术方案
+# AIGC 画布团队协作与共享邀请技术方案
 
 ## 1. 背景与目标
 
@@ -437,6 +437,187 @@ WebSocket 断开
 - 服务端不能信任客户端传入的 `actorUserId`，应从登录态获取。
 - operation payload 需要做大小限制和字段白名单校验。
 
+### 9.3 共享邀请与成员管理
+
+共享邀请是画布协作能力的用户可见入口，本质上属于同一条协作链路：底层继续复用 `projectId`、`canvas_member`、snapshot、operation log 和 WebSocket 项目房间，不重新设计同步协议。
+
+核心目标：
+
+- 在画布页面右上角增加“共享”入口。
+- 支持查看当前画布项目成员。
+- 支持通过 userId 邀请用户加入当前画布项目，后续升级为手机号、邮箱、昵称搜索。
+- 支持设置成员角色：owner、editor、viewer。
+- 支持复制协作链接，被邀请用户通过 `/create/image?projectId=xxx` 打开同一个画布项目。
+- 支持成员变更后的实时权限刷新，被降级用户立即只读，被移除用户立即退出或进入无权限状态。
+- 支持租户边界校验、成员操作审计、敏感操作二次确认和基础防滥用策略。
+
+第一版产品形态：
+
+```text
+共享画布
+
+协作链接：
+[ /create/image?projectId=123 ] [复制链接]
+
+邀请成员：
+[ 用户 ID 输入框 ] [角色选择 editor/viewer ] [邀请]
+
+当前成员：
+头像 / 用户名 / 角色 / 操作
+- 张三 owner
+- 李四 editor [改为 viewer] [移除]
+- 王五 viewer [改为 editor] [移除]
+```
+
+第一版简化策略：
+
+- 先用 userId 邀请，不做手机号、邮箱、昵称搜索。
+- 角色只支持 editor、viewer，不能直接邀请 owner。
+- owner 不允许被修改和移除，第一版不做所有权转移。
+- 只有 owner 可以邀请、移除、修改角色。
+- editor 可以复制链接，但不能管理成员。
+- viewer 只能查看成员和复制链接，不能提交编辑 operation。
+- 移除成员、将 editor 降级为 viewer 必须二次确认。
+- 成员变更后通过 WebSocket 通知所有在线端刷新成员和权限。
+
+成员管理 REST API：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/app-api/canvas/projects/{projectId}/members` | 查询成员列表 |
+| POST | `/app-api/canvas/projects/{projectId}/members` | 邀请成员 |
+| PUT | `/app-api/canvas/projects/{projectId}/members/{memberId}` | 修改成员角色 |
+| DELETE | `/app-api/canvas/projects/{projectId}/members/{memberId}` | 移除成员 |
+| GET | `/app-api/canvas/member-candidates?keyword=xxx` | 第二阶段用户搜索邀请 |
+
+成员类型建议：
+
+```ts
+export type CanvasProjectRole = "owner" | "editor" | "viewer"
+
+export interface CanvasMember {
+  id: number
+  projectId: number
+  userId: number
+  nickname?: string
+  avatar?: string
+  role: CanvasProjectRole
+  joinedTime?: string
+  lastActiveTime?: string
+}
+
+export interface InviteCanvasMemberRequest {
+  userId: number
+  role: Exclude<CanvasProjectRole, "owner">
+}
+
+export interface UpdateCanvasMemberRoleRequest {
+  role: Exclude<CanvasProjectRole, "owner">
+}
+```
+
+前端接入点：
+
+- 在 `canvas-api.ts` 增加 `getProjectMembers`、`inviteProjectMember`、`updateProjectMemberRole`、`removeProjectMember`。
+- 新增 `CanvasShareDialog.tsx`，负责展示协作链接、复制链接、查询成员、邀请成员、修改角色、移除成员和权限控制。
+- 在 `page.tsx` 增加 `shareDialogOpen` 状态，并在右上角在线协作状态附近接入“共享”按钮。
+- 使用 `window.location.origin` 和服务端数字 `projectId` 生成共享链接。
+- 当 `projectId` 是本地 `project_*` 草稿时禁用共享、成员管理和 WebSocket join。
+
+成员更新实时通知：
+
+```json
+{
+  "type": "canvas-member-updated",
+  "projectId": "10001",
+  "operatorUserId": 20001,
+  "targetUserId": 20002,
+  "action": "role-updated"
+}
+```
+
+`action` 可选值：
+
+```text
+member-added
+role-updated
+member-removed
+```
+
+建议增加强制退出消息：
+
+```json
+{
+  "type": "canvas-member-kicked",
+  "projectId": "10001",
+  "targetUserId": 20002,
+  "reason": "member-removed"
+}
+```
+
+前端处理规则：
+
+- 收到 `member-added`：刷新成员列表，不影响当前画布编辑状态。
+- 收到 `role-updated`：刷新项目详情和成员列表；如果目标用户是当前用户，则重新计算 `isReadOnly`。
+- 收到 `member-removed`：刷新成员列表；如果目标用户是当前用户，则关闭共享弹窗、停止提交 operation、离开或关闭 WebSocket 房间，并展示无权限状态。
+- 如果刷新项目详情、snapshot 或 operation API 返回无权限，前端必须停止提交 operation，避免继续产生失败请求。
+
+成员审计日志建议：
+
+```sql
+CREATE TABLE canvas_member_audit_log (
+  id BIGINT NOT NULL PRIMARY KEY,
+  project_id BIGINT NOT NULL,
+  operator_user_id BIGINT NOT NULL,
+  target_user_id BIGINT NOT NULL,
+  action VARCHAR(32) NOT NULL,
+  before_role VARCHAR(32) NULL,
+  after_role VARCHAR(32) NULL,
+  reason VARCHAR(255) NULL,
+  create_time DATETIME NOT NULL
+);
+```
+
+审计规则：
+
+- 邀请成员、修改角色、移除成员必须写审计日志。
+- 操作者必须从登录态获取，不能信任前端传入的 operatorUserId。
+- 被邀请用户必须存在、状态正常，并属于当前租户或明确允许协作的组织范围。
+- 成员列表只能被项目成员读取，不能通过 projectId 枚举其他项目成员。
+- 成员管理接口需要频率限制，避免通过 userId 枚举或批量骚扰。
+
+共享链接安全规则：
+
+- `/create/image?projectId=10001` 只代表项目入口，不代表访问授权。
+- 用户打开链接后，后端仍然必须校验当前用户是否为项目成员。
+- 非成员应返回无权限，前端展示无权限页面或提示联系项目 owner。
+- 第一版不做“任何拿到链接的人都能加入”，避免项目泄露。
+
+后续邀请 token 模型：
+
+```sql
+CREATE TABLE canvas_invite_link (
+  id BIGINT NOT NULL PRIMARY KEY,
+  project_id BIGINT NOT NULL,
+  token VARCHAR(128) NOT NULL,
+  default_role VARCHAR(32) NOT NULL,
+  expire_time DATETIME NULL,
+  max_uses INT NULL,
+  used_count INT NOT NULL DEFAULT 0,
+  status VARCHAR(32) NOT NULL,
+  create_user_id BIGINT NOT NULL,
+  create_time DATETIME NOT NULL,
+  update_time DATETIME NOT NULL
+);
+```
+
+邀请 token 安全规则：
+
+- token 必须使用高强度随机值，不能使用 projectId、userId 等可猜测信息。
+- token 支持过期时间、使用次数和主动撤销。
+- 默认角色只能是 viewer 或 editor，不能是 owner。
+- 使用 token 加入项目前仍需要登录态和租户校验。
+
 ## 10. 前端改造方案
 
 ### 10.1 模块拆分
@@ -522,6 +703,8 @@ WebSocket 断开
 | GET | `/app-api/canvas/projects/{id}/operations` | 获取指定版本后的操作日志 |
 | POST | `/app-api/canvas/projects/{id}/members` | 邀请成员 |
 | GET | `/app-api/canvas/projects/{id}/members` | 成员列表 |
+| PUT | `/app-api/canvas/projects/{id}/members/{memberId}` | 修改成员角色 |
+| DELETE | `/app-api/canvas/projects/{id}/members/{memberId}` | 移除成员 |
 | POST | `/app-api/canvas/projects/{id}/assets` | 上传或绑定资产 |
 | POST | `/app-api/canvas/projects/{id}/nodes/{nodeId}/run` | 执行节点生成任务 |
 
@@ -549,6 +732,7 @@ WebSocket 断开
 | canvas-op-rejected | 服务端 -> 客户端 | 拒绝操作 |
 | canvas-presence | 双向 | 临时协作状态 |
 | canvas-member-updated | 服务端 -> 客户端 | 成员变化 |
+| canvas-member-kicked | 服务端 -> 客户端 | 被移除成员强制退出 |
 | canvas-task-progress | 服务端 -> 客户端 | 任务进度推送 |
 
 ### 11.3 房间管理
@@ -1119,7 +1303,63 @@ P2：生产能力增强。
 4. 协作者 UI：渲染远端选区、在线成员头像、编辑中状态，补齐 viewer 只读体验。
 5. 多实例房间：将当前内存房间状态升级到 Redis/MQ 或复用 Yudao WebSocket sender 的集群能力。
 
-## 20. 结论
+## 20. 飞书共享画布参考价值与路线调整
+
+飞书共享画布的节点树、混合协同算法、分层渲染和 WebSocket 实时通信对本项目有参考价值，但更适合作为长期架构参照和体验标杆，不适合作为当前阶段的直接重构目标。
+
+当前项目已经基于 React Flow、服务端项目、快照、operation log、WebSocket 房间广播和成员权限形成可落地路径。现阶段应继续坚持“服务端权威状态 + 节点级 operation log + WebSocket 项目房间广播”的路线，优先补齐可靠同步、共享邀请、资产中心化和节点任务服务端编排，而不是直接迁移到全量节点树、全画布 CRDT 或自研渲染引擎。
+
+### 20.1 可吸收能力
+
+- 操作原子化：所有持久化编辑都拆解为 `NODE_CREATE`、`NODE_MOVE`、`NODE_UPDATE_DATA`、`EDGE_CREATE`、`ASSET_ATTACH`、`TASK_STATUS_PATCH` 等 operation。
+- 增量同步：继续以 `clientId + opId + baseVersion + nextVersion` 支撑幂等、补拉和断线恢复，避免反复传输完整画布。
+- Presence 分层：鼠标、选区、编辑中状态、在线头像和视口等临时协作状态只走 WebSocket，不进入 operation log。
+- 权限实时刷新：成员角色变化、成员移除和踢出事件需要实时广播，客户端收到后立即刷新角色、切换只读或退出画布。
+- 局部 CRDT：后续只对长文本节点、富文本节点、评论正文等高并发文本内容引入 Yjs，不把整个画布结构改成 CRDT。
+- 多实例广播：当进入生产多实例部署后，项目房间、成员变更、踢出和任务进度事件应通过 Redis/MQ 或现有 Yudao WebSocket 集群 sender 广播。
+
+### 20.2 暂不照搬能力
+
+- 暂不重构为全量节点树模型：React Flow 的 nodes 和 edges 已能覆盖当前 AIGC 工作流画布，强行改为无限层级节点树会导致编辑器、存储、operation 和渲染链路大范围重做。
+- 暂不引入全画布 CRDT：当前对象级协作更适合服务端顺序化和字段级合并，全量 CRDT 会增加权限、审计、资产绑定、任务状态回写和问题排查复杂度。
+- 暂不自研 Canvas/SVG/WebGL 渲染引擎：当前瓶颈主要是协作可靠性、共享入口、成员权限和资产共享，不是 React Flow 渲染内核。
+- 暂不切换 Protocol Buffers：JSON WebSocket 足够支持当前内部联调和小规模协作，待消息体积、延迟或吞吐成为瓶颈后再升级二进制协议。
+- 暂不做公开无门槛链接加入：`projectId` 链接只作为入口，后端仍必须通过成员表校验访问权限。
+
+### 20.3 调整后的优先级
+
+P0：可靠同步闭环。
+
+- 快照策略服务端化，避免多个客户端全量 snapshot 相互覆盖。
+- WebSocket 增加自动重连、pending operation 队列、ack 超时和失败重试。
+- `baseVersion` 升级为冲突检测输入，明确旧版本 operation 的接受、合并或拒绝规则。
+- 当前图状态缓存继续可观测化，并预留 Redis 缓存或持久化当前图状态的升级空间。
+
+P0：共享邀请闭环。
+
+- 补齐共享按钮、成员弹窗、复制链接、邀请 userId、成员角色修改和移除成员。
+- 成员变更通过 `canvas-member-updated` 或 `canvas-member-kicked` 实时通知在线端。
+- 被降级用户立即进入 viewer 只读，被移除用户立即停止提交 operation 并进入无权限状态。
+
+P1：协作者体验。
+
+- 基于 presence 渲染远端光标、远端选区、编辑中状态和在线成员头像。
+- 为协作者分配稳定颜色，并与成员列表、光标、选区边框保持一致。
+- 增加 presence 超时清理，避免异常断线后残留光标或选区。
+
+P1：资产和任务协作。
+
+- 图片、视频等媒体继续进入资产服务，节点只保存资产 ID、版本 ID 和预览 URL。
+- 节点生成任务改由服务端编排，任务状态通过 `TASK_STATUS_PATCH` 广播，生成结果通过 `ASSET_ATTACH` 绑定。
+
+P2：长期增强。
+
+- 长文本、富文本和评论正文引入局部 Yjs。
+- 增加邀请 token、有效期、撤销、使用次数和邀请审计。
+- 多实例房间、成员变更、任务进度和踢出事件接入 Redis/MQ 广播。
+- 在节点数量和渲染复杂度明显上升后，再评估自研渲染分层、虚拟化和 WebGL 加速。
+
+## 21. 结论
 
 本方案推荐采用“服务端权威状态 + 节点级 operation log + WebSocket 项目房间广播”的路线，先实现可落地的 Figma 式基础协作体验，再逐步补齐可靠性、任务编排、资产中心化和局部 CRDT 能力。
 

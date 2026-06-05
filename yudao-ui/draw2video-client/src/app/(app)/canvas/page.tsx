@@ -103,7 +103,7 @@ type PointerSnapshot = {
 
 const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video"];
 const DEFAULT_CANVAS_VIEWPORT = { x: 110, y: 90, zoom: 0.78 };
-const NODE_DATA_PATCH_DEBOUNCE_MS = 600;
+const NODE_DATA_PATCH_DEBOUNCE_MS = 200;
 const CANVAS_SAVE_DEBOUNCE_MS = 1500;
 const SNAPSHOT_ONLY_NODE_DATA_KEYS = new Set(["prompt", "content"]);
 
