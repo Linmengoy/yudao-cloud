@@ -1,9 +1,12 @@
 "use client";
 
 import { useId } from "react";
-import { BaseEdge, getBezierPath, useStore, type EdgeProps } from "@xyflow/react";
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, useReactFlow, useStore, type EdgeProps } from "@xyflow/react";
+import { Scissors } from "lucide-react";
+import type { EdgeDeleteEventDetail } from "./types";
 
 export function CanvasSignalEdge({
+  id,
   source,
   sourceX,
   sourceY,
@@ -15,13 +18,14 @@ export function CanvasSignalEdge({
   selected,
 }: EdgeProps) {
   const gradientId = useId().replace(/:/g, "");
+  const { setEdges } = useReactFlow();
   const isConnectedToSelectedNode = useStore((store) =>
     store.nodes.some((node) => node.selected && (node.id === source || node.id === target))
   );
   const shouldAnimate = selected || isConnectedToSelectedNode;
   const gradientDx = targetX - sourceX;
   const gradientDy = targetY - sourceY;
-  const [edgePath] = getBezierPath({
+  const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -80,7 +84,38 @@ export function CanvasSignalEdge({
           strokeWidth: selected ? 2.4 : 1.8,
         }}
       />
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={18}
+        className="cursor-pointer"
+        onClick={(event) => {
+          event.stopPropagation();
+          setEdges((eds) => eds.map((edge) => ({ ...edge, selected: edge.id === id })));
+        }}
+      />
       {shouldAnimate && <path className="copse-signal-edge-gradient" d={edgePath} stroke={`url(#${gradientId})`} />}
+      {selected ? (
+        <EdgeLabelRenderer>
+          <button
+            type="button"
+            className="nodrag nopan pointer-events-auto absolute flex size-10 items-center justify-center rounded-full border border-border-warm bg-background text-charcoal shadow-[rgba(0,0,0,0.16)_0px_4px_14px] transition-colors hover:bg-muted focus:outline-none focus:shadow-[rgba(0,0,0,0.18)_0px_4px_16px]"
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            }}
+            aria-label="解除关联"
+            onClick={(event) => {
+              event.stopPropagation();
+              window.dispatchEvent(new CustomEvent<EdgeDeleteEventDetail>("copse:edge-delete", {
+                detail: { edgeId: id },
+              }));
+            }}
+          >
+            <Scissors className="size-5" />
+          </button>
+        </EdgeLabelRenderer>
+      ) : null}
     </>
   );
 }

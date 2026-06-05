@@ -12,6 +12,10 @@ public interface AigcProviderClient {
 
     AigcProviderSubmitRespDTO query(String providerTaskId);
 
+    default AigcProviderSubmitRespDTO query(AigcProviderSubmitReqDTO reqDTO) {
+        return query(reqDTO.getProviderTaskId());
+    }
+
     boolean verifyCallback(AigcGenerateCallbackReqDTO reqDTO);
 
 }

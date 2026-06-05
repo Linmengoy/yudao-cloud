@@ -15,6 +15,7 @@ public class AigcProviderSubmitReqDTO {
     private String providerModel;
     private Long providerId;
     private String providerCode;
+    private String providerTaskId;
     private String providerBaseUrl;
     private String providerApiKey;
     private String providerSecretKey;

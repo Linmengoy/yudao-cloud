@@ -32,11 +32,14 @@ function applyTheme(mode: ThemeMode) {
 }
 
 function subscribeTheme(callback: () => void) {
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
   window.addEventListener("storage", callback);
   window.addEventListener("copse-theme-change", callback);
+  mediaQuery.addEventListener("change", callback);
   return () => {
     window.removeEventListener("storage", callback);
     window.removeEventListener("copse-theme-change", callback);
+    mediaQuery.removeEventListener("change", callback);
   };
 }
 
@@ -49,7 +52,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     applyTheme(mode);
-    window.localStorage.setItem(STORAGE_KEY, mode);
   }, [mode]);
 
   const toggleMode = useCallback(() => {
