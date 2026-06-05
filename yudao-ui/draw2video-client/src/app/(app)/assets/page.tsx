@@ -2,22 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import Link from "next/link";
-import { Download, Loader2, RefreshCw, Search } from "lucide-react";
-import { deleteMyAsset, downloadMyAsset, getMyAssetList } from "@/features/assets/asset-api";
-import { AssetAuditBadge, AssetVisibilityBadge } from "@/features/assets/components/asset-status-badge";
+import { Loader2, RefreshCw, Search } from "lucide-react";
+import { getMyAssetPage } from "@/features/assets/asset-api";
 import { getAccessToken } from "@/lib/api-client";
 import {
   getAssetPreviewUrl,
-  formatDateTime,
-  formatFileSize,
   getAssetTypeLabel,
-  canDownloadAsset,
 } from "@/features/assets/asset-dictionaries";
 import type { AigcAsset } from "@/features/assets/asset-types";
 import { listGeneratedAssets, type GeneratedAsset } from "@/features/assets/asset-library";
 import type Muuri from "muuri";
+import type { Item, LayoutFunctionCallback } from "muuri";
 
 type AssetTab = "ALL" | "IMAGE" | "VIDEO" | "OTHER";
+
+const MIN_ASSET_COLUMN_WIDTH = 220;
+const PAGE_SIZE = 30;
 
 function localToAsset(asset: GeneratedAsset): AigcAsset {
   return {
@@ -63,16 +63,72 @@ function getFullAssetPreviewUrl(asset: AigcAsset) {
   return asset.fileUrl || getAssetPreviewUrl(asset);
 }
 
-function AssetWallPreview({ asset, onLoad }: { asset: AigcAsset; onLoad: () => void }) {
+function getAssetKey(asset: AigcAsset) {
+  return String(asset.assetNo || asset.id);
+}
+
+function getAssetSpan(asset: AigcAsset, measuredRatio?: number) {
+  const ratio = measuredRatio || (asset.width && asset.height ? asset.width / asset.height : 1);
+  if (ratio >= 1.45) return 2;
+  return 1;
+}
+
+function getColumnCount(width: number) {
+  return Math.max(1, Math.floor(width / MIN_ASSET_COLUMN_WIDTH));
+}
+
+function assetWallLayout(_grid: Muuri, id: number, items: Item[], width: number, _height: number, callback: LayoutFunctionCallback) {
+  const columnCount = getColumnCount(width);
+  const columnWidth = width / columnCount;
+  const columnHeights = Array.from({ length: columnCount }, () => 0);
+  const slots: number[] = [];
+
+  items.forEach((item) => {
+    const element = item.getElement();
+    const requestedSpan = Number(element?.dataset.span || 1);
+    const span = Math.max(1, Math.min(columnCount, requestedSpan));
+    const itemWidth = columnWidth * span;
+    if (element) element.style.width = `${itemWidth}px`;
+
+    let bestColumn = 0;
+    let bestTop = Number.POSITIVE_INFINITY;
+    for (let column = 0; column <= columnCount - span; column += 1) {
+      const top = Math.max(...columnHeights.slice(column, column + span));
+      if (top < bestTop) {
+        bestTop = top;
+        bestColumn = column;
+      }
+    }
+
+    const left = bestColumn * columnWidth;
+    const top = Number.isFinite(bestTop) ? bestTop : 0;
+    const itemHeight = item.getHeight();
+    for (let column = bestColumn; column < bestColumn + span; column += 1) {
+      columnHeights[column] = top + itemHeight;
+    }
+    slots.push(left, top);
+  });
+
+  callback({
+    id,
+    items,
+    slots,
+    styles: {
+      height: `${Math.max(0, ...columnHeights)}px`,
+    },
+  });
+}
+
+function AssetWallPreview({ asset, onLoad }: { asset: AigcAsset; onLoad: (ratio?: number) => void }) {
   const previewUrl = getFullAssetPreviewUrl(asset);
   if (asset.assetType === "IMAGE" && previewUrl) {
-    return <img src={previewUrl} alt={asset.title || "图片资产预览"} className="block h-auto w-full rounded-xl border border-border-warm bg-muted" loading="lazy" onLoad={onLoad} />;
+    return <img src={previewUrl} alt={asset.title || "图片资产预览"} className="block h-auto w-full" loading="lazy" onLoad={(event) => onLoad(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)} />;
   }
   if (asset.assetType === "VIDEO" && asset.fileUrl) {
-    return <video src={asset.fileUrl} poster={asset.coverUrl || asset.thumbnailUrl} controls className="block h-auto w-full rounded-xl border border-border-warm bg-muted" onLoadedMetadata={onLoad} />;
+    return <video src={asset.fileUrl} poster={asset.coverUrl || asset.thumbnailUrl} controls className="block h-auto w-full" onLoadedMetadata={(event) => onLoad(event.currentTarget.videoWidth / event.currentTarget.videoHeight)} />;
   }
   return (
-    <div className="flex min-h-[180px] w-full items-center justify-center rounded-xl border border-border-warm bg-muted text-sm text-muted-gray">
+    <div className="flex min-h-[180px] w-full items-center justify-center bg-muted text-sm text-muted-gray">
       {getAssetTypeLabel(asset.assetType)}
     </div>
   );
@@ -93,46 +149,95 @@ function EmptyState({ tab }: { tab: AssetTab }) {
 export default function AssetsPage() {
   const [tab, setTab] = useState<AssetTab>("ALL");
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [assets, setAssets] = useState<AigcAsset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
-  const [usingLocalFallback, setUsingLocalFallback] = useState(false);
+  const [measuredRatios, setMeasuredRatios] = useState<Record<string, number>>({});
   const [pullDistance, setPullDistance] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const gridElementRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreElementRef = useRef<HTMLDivElement | null>(null);
   const muuriRef = useRef<Muuri | null>(null);
   const touchStartYRef = useRef<number | null>(null);
+  const loadingPageRef = useRef(false);
+  const pageNoRef = useRef(1);
+  const hasMoreRef = useRef(true);
+  const assetsLengthRef = useRef(0);
 
-  const loadAssets = useCallback(async () => {
-    setLoading(true);
+  const loadAssets = useCallback(async (reset = false) => {
+    if (loadingPageRef.current) return;
+    if (!reset && !hasMoreRef.current) return;
+    loadingPageRef.current = true;
+    const nextPageNo = reset ? 1 : pageNoRef.current;
+    setLoading(reset);
+    setLoadingMore(!reset);
     setError("");
-    setUsingLocalFallback(false);
+    if (reset) {
+      pageNoRef.current = 1;
+      hasMoreRef.current = true;
+      assetsLengthRef.current = 0;
+      setAssets([]);
+      setMeasuredRatios({});
+      setTotal(0);
+      setHasMore(true);
+    }
     try {
-      const data = await getMyAssetList();
-      setAssets(data ?? []);
+      const data = await getMyAssetPage({
+        pageNo: nextPageNo,
+        pageSize: PAGE_SIZE,
+        assetType: tab === "IMAGE" || tab === "VIDEO" ? tab : undefined,
+        title: debouncedQuery.trim() || undefined,
+      });
+      const nextList = data.list ?? [];
+      const nextTotal = data.total ?? 0;
+      const currentLength = reset ? 0 : assetsLengthRef.current;
+      const mergedLength = currentLength + nextList.length;
+      setAssets((items) => reset ? nextList : [...items, ...nextList]);
+      setTotal(nextTotal);
+      pageNoRef.current = nextPageNo + 1;
+      assetsLengthRef.current = mergedLength;
+      hasMoreRef.current = nextList.length > 0 && mergedLength < nextTotal;
+      setHasMore(hasMoreRef.current);
     } catch (err) {
       if (!getAccessToken()) {
         setAssets([]);
-        setUsingLocalFallback(false);
+        setTotal(0);
+        setHasMore(false);
+        hasMoreRef.current = false;
+        assetsLengthRef.current = 0;
         setError("登录已过期，请重新登录后查看资产。");
         return;
       }
       const localAssets = (await listGeneratedAssets()).map(localToAsset);
       setAssets(localAssets);
-      setUsingLocalFallback(localAssets.length > 0);
+      setTotal(localAssets.length);
+      setHasMore(false);
+      hasMoreRef.current = false;
+      assetsLengthRef.current = localAssets.length;
       setError(localAssets.length > 0 ? "真实资产接口暂不可用，当前展示本地项目生成记录。" : err instanceof Error ? err.message : "资产列表加载失败");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       setPullDistance(0);
+      loadingPageRef.current = false;
     }
-  }, []);
+  }, [debouncedQuery, tab]);
 
   useEffect(() => {
-    const timer = window.setTimeout(loadAssets, 0);
+    const timer = window.setTimeout(() => loadAssets(true), 0);
     return () => window.clearTimeout(timer);
   }, [loadAssets]);
 
-  const filteredAssets = useMemo(() => assets.filter((asset) => matchesTab(asset, tab) && matchesQuery(asset, query)), [assets, query, tab]);
-  const assetLayoutKey = useMemo(() => filteredAssets.map((asset) => asset.assetNo || asset.id).join("|"), [filteredAssets]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 400);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  const filteredAssets = useMemo(() => assets.filter((asset) => matchesTab(asset, tab) && matchesQuery(asset, debouncedQuery)), [assets, debouncedQuery, tab]);
+  const assetLayoutKey = useMemo(() => filteredAssets.map((asset) => getAssetKey(asset)).join("|"), [filteredAssets]);
   const counts = useMemo(() => ({
     ALL: assets.length,
     IMAGE: assets.filter((asset) => asset.assetType === "IMAGE").length,
@@ -149,6 +254,7 @@ export default function AssetsPage() {
       muuriRef.current?.destroy(false);
       muuriRef.current = new MuuriGrid(element, {
         items: ".asset-grid-item",
+        layout: assetWallLayout,
         layoutDuration: 180,
         layoutEasing: "ease",
       });
@@ -164,9 +270,23 @@ export default function AssetsPage() {
     };
   }, [assetLayoutKey, loading]);
 
-  const refreshAssetWallLayout = useCallback(() => {
-    muuriRef.current?.refreshItems().layout();
+  const handlePreviewLoad = useCallback((asset: AigcAsset, ratio?: number) => {
+    if (ratio && Number.isFinite(ratio)) {
+      const key = getAssetKey(asset);
+      setMeasuredRatios((values) => values[key] === ratio ? values : { ...values, [key]: ratio });
+    }
+    requestAnimationFrame(() => muuriRef.current?.refreshItems().layout());
   }, []);
+
+  useEffect(() => {
+    const element = loadMoreElementRef.current;
+    if (!element || loading || loadingMore || !hasMore) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadAssets(false);
+    }, { rootMargin: "600px 0px" });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasMore, loadAssets, loading, loadingMore]);
 
   function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
     if (window.scrollY > 0 || loading) return;
@@ -181,29 +301,11 @@ export default function AssetsPage() {
 
   function handleTouchEnd() {
     if (pullDistance >= 64) {
-      loadAssets();
+      loadAssets(true);
     } else {
       setPullDistance(0);
     }
     touchStartYRef.current = null;
-  }
-
-  async function handleDownload(asset: AigcAsset) {
-    if (!canDownloadAsset(asset)) return;
-    if (!Number.isFinite(asset.id)) {
-      if (asset.fileUrl) window.open(asset.fileUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-    const url = await downloadMyAsset({ assetId: asset.id });
-    window.open(url || asset.fileUrl, "_blank", "noopener,noreferrer");
-    loadAssets();
-  }
-
-  async function handleDelete(asset: AigcAsset) {
-    if (!Number.isFinite(asset.id)) return;
-    if (!window.confirm("确认删除这个资产吗？")) return;
-    await deleteMyAsset(asset.id);
-    loadAssets();
   }
 
   return (
@@ -219,7 +321,7 @@ export default function AssetsPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-charcoal">资产库</h1>
           <p className="mt-1 text-sm text-muted-gray">集中查看生成图片、生成视频和其它文件型结果。</p>
         </div>
-        <button type="button" onClick={loadAssets} disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-[rgba(28,28,28,0.4)] px-3 py-2 text-sm text-charcoal hover:bg-muted active:opacity-80 disabled:opacity-50" aria-label="刷新资产列表" title="刷新资产列表">
+        <button type="button" onClick={() => loadAssets(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-[rgba(28,28,28,0.4)] px-3 py-2 text-sm text-charcoal hover:bg-muted active:opacity-80 disabled:opacity-50" aria-label="刷新资产列表" title="刷新资产列表">
           <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
           刷新
         </button>
@@ -251,36 +353,26 @@ export default function AssetsPage() {
       ) : filteredAssets.length === 0 ? (
         <EmptyState tab={tab} />
       ) : (
-        <div ref={gridElementRef} className="relative mt-6 -m-2">
-          {filteredAssets.map((asset) => (
-            <div key={asset.assetNo || asset.id} className="asset-grid-item absolute w-full p-2 sm:w-1/2 xl:w-1/3">
-              <div className="rounded-xl border border-border-warm bg-background p-3">
+        <>
+          <div ref={gridElementRef} className="relative mt-6 -m-0.5">
+            {filteredAssets.map((asset) => (
+              <div key={getAssetKey(asset)} data-span={getAssetSpan(asset, measuredRatios[getAssetKey(asset)])} className="asset-grid-item absolute p-0.5">
                 <Link href={getAssetHref(asset)} className="block" aria-label={`查看资产 ${asset.title || asset.assetNo || asset.id}`}>
-                  <AssetWallPreview asset={asset} onLoad={refreshAssetWallLayout} />
+                  <AssetWallPreview asset={asset} onLoad={(ratio) => handlePreviewLoad(asset, ratio)} />
                 </Link>
-                <div className="mt-3 min-w-0">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-charcoal">{asset.title || asset.assetNo || "未命名资产"}</p>
-                      <p className="mt-1 text-xs text-muted-gray">{getAssetTypeLabel(asset.assetType)} · {formatFileSize(asset.fileSize)}</p>
-                    </div>
-                    <button type="button" onClick={() => handleDownload(asset)} disabled={!canDownloadAsset(asset)} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-border-warm text-charcoal hover:bg-muted disabled:opacity-40" aria-label="下载资产" title={canDownloadAsset(asset) ? "下载资产" : "审核通过后可下载"}>
-                      <Download className="size-4" />
-                    </button>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <AssetAuditBadge status={asset.auditStatus} />
-                    <AssetVisibilityBadge visibility={asset.visibility} />
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-gray">
-                    <span>{formatDateTime(asset.createTime)}</span>
-                    {Number.isFinite(asset.id) ? <button type="button" onClick={() => handleDelete(asset)} className="text-destructive hover:underline">删除</button> : usingLocalFallback ? <Link href={getAssetHref(asset)} className="text-charcoal hover:underline">打开项目</Link> : null}
-                  </div>
-                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+          <div ref={loadMoreElementRef} className="mt-8 flex justify-center py-4 text-xs text-muted-gray">
+            {loadingMore ? (
+              <span className="inline-flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" />加载更多...</span>
+            ) : hasMore ? (
+              <span>继续下滑加载更多</span>
+            ) : total > 0 ? (
+              <span>已加载全部</span>
+            ) : null}
+          </div>
+        </>
       )}
     </div>
   );
