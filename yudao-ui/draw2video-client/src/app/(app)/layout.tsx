@@ -92,11 +92,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!loggedIn) return null;
 
   const credits = wallet ? wallet.balance : 0;
+  const isCanvasRoute = pathname.startsWith("/canvas");
 
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
-      <aside className="relative z-[160] hidden w-[72px] shrink-0 flex-col items-center border-r border-border-warm bg-background py-4 md:flex">
+      {!isCanvasRoute && <aside className="relative z-[160] hidden w-[72px] shrink-0 flex-col items-center border-r border-border-warm bg-background py-4 md:flex">
         <div className="mb-4 flex size-10 items-center justify-center rounded-lg bg-charcoal text-sm font-semibold text-off-white">
           C
         </div>
@@ -233,7 +234,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </div>
-      </aside>
+      </aside>}
 
       {/* Main area */}
       <div className="relative z-0 flex flex-1 flex-col overflow-hidden">
