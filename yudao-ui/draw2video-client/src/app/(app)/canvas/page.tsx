@@ -29,7 +29,7 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
@@ -45,10 +45,13 @@ import { filterSyncableNodeDataPatch, sanitizeNodeForCanvasOperation } from "@/f
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
-import { clearImages, clearVideos, saveImage, saveVideo } from "@/features/canvas/image-store";
-import { ToolbarIconButton } from "@/features/canvas/ToolbarIconButton";
+import { saveImage, saveVideo } from "@/features/canvas/image-store";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
+import { useAuth } from "@/features/auth/auth-store";
+import { ThemeToggle } from "@/features/theme/ThemeToggle";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
+import { formatCompactPoints } from "@/features/wallet/wallet-api";
 import {
   isEditableElement,
   getImageFilesFromPasteEvent,
@@ -57,7 +60,8 @@ import {
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
-import { Boxes, Plus, Trash2, ImagePlus, Share2, Type, Video, Map as MapIcon, Grid3X3, Scan, PenLine } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, BookOpen, Boxes, ChevronRight, Folder, Globe, HelpCircle, ImagePlus, LogOut, MessageCircle, Palette, PenLine, Plus, Settings, Share2, Sparkles, Type, Video, Wallet, Map as MapIcon, Grid3X3, Scan } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -356,6 +360,373 @@ function CanvasViewToolbar({
         />
       </div>
     </div>
+  );
+}
+
+type CanvasSyncState = "saved" | "saving" | "offline" | "error";
+
+type CanvasProjectHeaderProps = {
+  projectName: string;
+  syncState: CanvasSyncState;
+  readOnly: boolean;
+  onBack: () => void;
+  onRename: (name: string) => void;
+};
+
+function CanvasProjectHeader({
+  projectName,
+  syncState,
+  readOnly,
+  onBack,
+  onRename,
+}: CanvasProjectHeaderProps) {
+  const [draftName, setDraftName] = useState(projectName);
+  const [editing, setEditing] = useState(false);
+
+  const syncLabel =
+    syncState === "error"
+      ? "保存失败"
+      : syncState === "offline"
+        ? "离线"
+        : syncState === "saving"
+          ? "保存中"
+          : "已保存";
+
+  const syncClass =
+    syncState === "error"
+      ? "bg-destructive"
+      : syncState === "offline"
+        ? "bg-muted-gray"
+        : syncState === "saving"
+          ? "bg-amber-500"
+          : "bg-green-500";
+
+  function commitName() {
+    const nextName = draftName.trim() || "未命名项目";
+    setEditing(false);
+    if (nextName !== projectName) onRename(nextName);
+  }
+
+  return (
+    <div className="pointer-events-auto absolute left-4 top-4 z-[90] flex items-center gap-3">
+      <button
+        type="button"
+        onClick={onBack}
+        aria-label="返回项目库"
+        title="返回项目库"
+        className="flex size-10 items-center justify-center rounded-full border border-border-warm bg-background/95 text-charcoal shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.08)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] backdrop-blur-sm transition-colors hover:bg-muted focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
+      >
+        <ArrowLeft className="size-5" />
+      </button>
+
+      <div className="flex min-w-0 items-center gap-2 px-1 py-1">
+        {editing ? (
+          <input
+            value={draftName}
+            autoFocus
+            onChange={(event) => setDraftName(event.currentTarget.value)}
+            onBlur={commitName}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitName();
+              if (event.key === "Escape") {
+                setDraftName(projectName);
+                setEditing(false);
+              }
+            }}
+            className="h-6 w-[180px] rounded-md border border-border-warm bg-background px-2 text-sm font-medium text-charcoal outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              if (!readOnly) {
+                setDraftName(projectName);
+                setEditing(true);
+              }
+            }}
+            className="max-w-[220px] truncate text-sm font-medium text-charcoal"
+            title={readOnly ? projectName : "点击修改项目名"}
+          >
+            {projectName}
+          </button>
+        )}
+
+        <span className="flex items-center gap-1.5 text-xs text-muted-gray">
+          <span className={cn("size-2 rounded-full", syncClass)} />
+          {syncLabel}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+type CanvasUtilityBarProps = {
+  canShare: boolean;
+  onShare: () => void;
+};
+
+function CanvasUtilityBar({ canShare, onShare }: CanvasUtilityBarProps) {
+  const { wallet, user, logout } = useAuth();
+  const credits = wallet ? formatCompactPoints(wallet.balance) : "0";
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!profileOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setProfileOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [profileOpen]);
+
+  return (
+    <div className="pointer-events-auto absolute right-4 top-4 z-[90] flex items-center gap-2 rounded-full border border-border-warm bg-background/95 px-2 py-1.5 shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.08)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] backdrop-blur-sm">
+      {canShare && (
+        <button
+          type="button"
+          onClick={onShare}
+          className="inline-flex size-9 items-center justify-center rounded-full text-charcoal transition-colors hover:bg-muted"
+          aria-label="分享"
+          title="分享"
+        >
+          <Share2 className="size-5" />
+        </button>
+      )}
+
+      <Link
+        href="/pricing"
+        className="inline-flex size-9 items-center justify-center rounded-full text-charcoal transition-colors hover:bg-muted"
+        aria-label="开会员"
+        title="开会员"
+      >
+        <Sparkles className="size-5 text-violet-500" />
+      </Link>
+
+      <Link
+        href="/wallet"
+        className="inline-flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-charcoal transition-colors hover:bg-muted"
+        title="余额 / 用量"
+      >
+        <Wallet className="size-5" />
+        {credits}
+      </Link>
+
+      <NotificationBell className="size-9 rounded-full [&_svg]:size-5" />
+      <ThemeToggle className="size-9 rounded-full p-0 [&_svg]:size-5" />
+
+      <div className="relative" ref={profileRef}>
+        <button
+          type="button"
+          onClick={() => setProfileOpen((value) => !value)}
+          title={user?.nickname ?? "用户"}
+          aria-label="用户菜单"
+          aria-expanded={profileOpen}
+          className="flex size-9 items-center justify-center rounded-full bg-charcoal text-xs font-medium text-off-white transition-opacity hover:opacity-80"
+        >
+          {user?.nickname?.[0] ?? "U"}
+        </button>
+
+        {profileOpen && (
+          <div className="absolute right-0 top-full z-[220] mt-2 w-[340px] rounded-xl border border-border-warm bg-background shadow-lg">
+            <div className="flex items-center gap-3 border-b border-border-warm px-4 py-4">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-charcoal text-sm font-medium text-off-white">
+                {user?.nickname?.[0] ?? "U"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-charcoal">
+                  {user?.nickname ?? "用户"}
+                </p>
+                {user?.mobile && (
+                  <p className="truncate text-xs text-muted-gray">
+                    {user.mobile.replace(/^(\d{3})\d{4}(\d{4})$/, "$1****$2")}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border-b border-border-warm px-4 py-3">
+              <div>
+                <p className="text-xs text-muted-gray">Free 计划</p>
+                <p className="text-sm font-medium text-charcoal">{credits}</p>
+              </div>
+              <Link
+                href="/pricing"
+                onClick={() => setProfileOpen(false)}
+                className="inline-flex items-center gap-1 rounded-md border border-[rgba(28,28,28,0.4)] px-3 py-1.5 text-xs font-medium text-charcoal active:opacity-80"
+              >
+                升级
+                <ChevronRight className="size-3" />
+              </Link>
+            </div>
+
+            <div className="py-1">
+              <CanvasProfileMenuLink href="/profile" icon={<Settings className="size-4" />} label="账户管理" onClick={() => setProfileOpen(false)} />
+              <CanvasProfileMenuLink href="/wallet" icon={<Wallet className="size-4" />} label="钱包 / 用量" onClick={() => setProfileOpen(false)} />
+              <CanvasProfileMenuLink href="#" icon={<BookOpen className="size-4" />} label="使用指南" onClick={() => setProfileOpen(false)} />
+              <CanvasProfileMenuLink href="#" icon={<MessageCircle className="size-4" />} label="联系我们" onClick={() => setProfileOpen(false)} />
+              <CanvasProfileMenuLink href="#" icon={<Globe className="size-4" />} label="简体中文" onClick={() => setProfileOpen(false)} />
+            </div>
+
+            <div className="border-t border-border-warm py-1">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm("确定要退出登录吗？")) return;
+                  setProfileOpen(false);
+                  await logout();
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-muted-gray transition-colors hover:bg-muted hover:text-charcoal"
+              >
+                <LogOut className="size-4" />
+                退出登录
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CanvasProfileMenuLink({
+  href,
+  icon,
+  label,
+  onClick,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className="flex items-center gap-3 px-4 py-2.5 text-sm text-muted-gray transition-colors hover:bg-muted hover:text-charcoal"
+    >
+      {icon}
+      {label}
+    </Link>
+  );
+}
+
+type CanvasToolDockProps = {
+  readOnly: boolean;
+  onAddNode: (kind: CreateNodeKind) => void;
+};
+
+function CanvasToolDock({ readOnly, onAddNode }: CanvasToolDockProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  if (readOnly) return null;
+
+  function createNode(kind: CreateNodeKind) {
+    onAddNode(kind);
+    setMenuOpen(false);
+  }
+
+  return (
+    <div
+      className="pointer-events-auto absolute left-4 top-1/2 z-[90] -translate-y-1/2"
+      onMouseLeave={() => setMenuOpen(false)}
+    >
+      <nav className="flex w-[58px] flex-col items-center gap-1 rounded-full border border-border-warm bg-background/95 px-[7px] py-2 shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.08)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] backdrop-blur-sm">
+        <button
+          type="button"
+          onMouseEnter={() => setMenuOpen(true)}
+          onClick={() => setMenuOpen((value) => !value)}
+          className="flex size-11 items-center justify-center rounded-full bg-charcoal text-off-white transition-opacity hover:opacity-90"
+          aria-expanded={menuOpen}
+          aria-label={menuOpen ? "关闭添加节点菜单" : "添加节点"}
+          title={menuOpen ? "关闭添加节点菜单" : "添加节点"}
+        >
+          <Plus
+            className={cn(
+              "size-5 transition-transform duration-200 ease-out",
+              menuOpen && "rotate-45"
+            )}
+          />
+        </button>
+        <ToolDockButton label="画板" icon={<Palette className="size-5" />} />
+        <ToolDockButton label="素材库" icon={<Folder className="size-5" />} />
+        <ToolDockButton label="帮助" icon={<HelpCircle className="size-5" />} />
+      </nav>
+
+      <AnimatePresence>
+        {menuOpen && (
+          <>
+            <div className="absolute left-[58px] top-0 h-full w-6" aria-hidden="true" />
+            <motion.div
+              initial={{ opacity: 0, x: -6, scale: 0.98 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -6, scale: 0.98 }}
+              transition={{ duration: 0.14, ease: "easeOut" }}
+              className="absolute left-[76px] top-0 w-[300px] rounded-[28px] border border-border-warm bg-background/98 p-4 shadow-[0_18px_50px_rgba(28,28,28,0.16)] backdrop-blur-md"
+            >
+              <p className="px-2 pb-2 text-xs text-muted-gray">添加节点</p>
+              <div className="space-y-1">
+                <CreateNodeMenuButton icon={<Type className="size-5" />} title="文字" description="文本提示词、设定和旁白内容" onClick={() => createNode("text")} />
+                <CreateNodeMenuButton icon={<PenLine className="size-5" />} title="画板" description="草图画板，用来规划镜头和构图" onClick={() => createNode("sketch")} />
+                <CreateNodeMenuButton icon={<ImagePlus className="size-5" />} title="图片" description="图片生成和图像参考节点" onClick={() => createNode("image")} />
+                <CreateNodeMenuButton icon={<Video className="size-5" />} title="视频" description="视频生成节点" onClick={() => createNode("video")} />
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ToolDockButton({ label, icon }: { label: string; icon: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className="flex size-11 items-center justify-center rounded-full text-charcoal transition-colors hover:bg-muted"
+    >
+      {icon}
+    </button>
+  );
+}
+
+function CreateNodeMenuButton({
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-muted"
+    >
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-charcoal">
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-charcoal">{title}</span>
+        <span className="block truncate text-xs text-muted-gray">{description}</span>
+      </span>
+    </button>
   );
 }
 
@@ -689,9 +1060,11 @@ function CanvasFlow() {
   const [pasteToast, setPasteToast] = useState("");
   const [isHydrated, setIsHydrated] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
+  const [projectName, setProjectName] = useState("未命名项目");
   const [projectRole, setProjectRole] = useState<CanvasProjectRole | null>(null);
   const [projectMembers, setProjectMembers] = useState<CanvasMember[]>([]);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [isSavingSnapshot, setIsSavingSnapshot] = useState(false);
   const [lastAppliedVersion, setLastAppliedVersion] = useState(0);
   const [latestKnownVersion, setLatestKnownVersion] = useState(0);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
@@ -826,6 +1199,14 @@ function CanvasFlow() {
   const editingNodeIdRef = useRef<string | null>(null);
   const nodeDataPatchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const lastAppliedVersionRef = useRef(0);
+
+  const syncState: CanvasSyncState = saveError
+    ? "error"
+    : !canvasRealtime.isConnected && serverProjectId
+      ? "offline"
+      : isSavingSnapshot || canvasOperations.pendingOperationCount > 0
+        ? "saving"
+        : "saved";
 
   const markAppliedVersion = useCallback((version: number) => {
     lastAppliedVersionRef.current = Math.max(lastAppliedVersionRef.current, version);
@@ -1054,6 +1435,21 @@ function CanvasFlow() {
     window.addEventListener("copse:node-data-patch", handleNodeDataPatch);
     return () => window.removeEventListener("copse:node-data-patch", handleNodeDataPatch);
   }, [canvasOperations, isReadOnly]);
+
+  useEffect(() => {
+    function handleEdgeDelete(event: Event) {
+      if (isReadOnly) return;
+      const detail = (event as CustomEvent<EdgeDeleteEventDetail>).detail;
+      if (!detail?.edgeId) return;
+      setEdges((eds) => eds.filter((edge) => edge.id !== detail.edgeId));
+      canvasOperations.submitOperation("EDGE_DELETE", {
+        edgeId: detail.edgeId,
+      });
+    }
+
+    window.addEventListener("copse:edge-delete", handleEdgeDelete);
+    return () => window.removeEventListener("copse:edge-delete", handleEdgeDelete);
+  }, [canvasOperations, isReadOnly, setEdges]);
 
   useEffect(() => {
     function handleGroupUngroup(event: Event) {
@@ -1467,6 +1863,7 @@ function CanvasFlow() {
       try {
         const serverResult = await loadProject(projectId);
         const saved = serverResult.state;
+        setProjectName(serverResult.project.name || "未命名项目");
         setIsReadOnly(serverResult.project.readonly === true || serverResult.project.canEdit === false);
         setProjectRole(serverResult.project.role ?? null);
         canvasApi.getProjectMembers(projectId).then(setProjectMembers).catch(() => setProjectMembers([]));
@@ -1532,6 +1929,7 @@ function CanvasFlow() {
       try {
         const summary = summarizeCanvas(nodes);
         if (!isReadOnly && serverProjectId && canvasOperations.pendingOperationCount === 0) {
+          setIsSavingSnapshot(true);
           saveSnapshot(serverProjectId, {
             nodes,
             edges,
@@ -1541,11 +1939,17 @@ function CanvasFlow() {
             ...summary,
           }).then((snapshot) => {
             markAppliedVersion(snapshot.version);
-          }).catch(() => syncFromVersion(lastAppliedVersionRef.current));
+            setSaveError("");
+          }).catch(() => {
+            setSaveError("服务端画布保存失败，请稍后重试");
+            syncFromVersion(lastAppliedVersionRef.current);
+          }).finally(() => {
+            setIsSavingSnapshot(false);
+          });
           canvasApi.updateProject(serverProjectId, summary).catch(() => undefined);
         }
-        setSaveError("");
       } catch {
+        setIsSavingSnapshot(false);
         setSaveError("服务端画布保存失败，请稍后重试");
       }
     }, CANVAS_SAVE_DEBOUNCE_MS);
@@ -2164,32 +2568,6 @@ function CanvasFlow() {
     return () => window.removeEventListener("copse:node-create-menu", handleNodeCreateMenu);
   }, [openCreateMenuAt]);
 
-  // --- Clear ---
-  const [confirmClear, setConfirmClear] = useState(false);
-
-  const handleClear = useCallback(() => {
-    if (isReadOnly) return;
-    if (!confirmClear) {
-      setConfirmClear(true);
-      return;
-    }
-    closeReferencePicker();
-    closeCreateMenu();
-    canvasOperations.submitOperation("CANVAS_CLEAR", {});
-    setNodes(defaultNodes());
-    setEdges([]);
-    setViewport(DEFAULT_CANVAS_VIEWPORT, { duration: 180 });
-    clearImages();
-    clearVideos();
-    setConfirmClear(false);
-  }, [canvasOperations, closeCreateMenu, closeReferencePicker, confirmClear, isReadOnly, setNodes, setEdges, setViewport]);
-
-  useEffect(() => {
-    if (!confirmClear) return;
-    const t = setTimeout(() => setConfirmClear(false), 3000);
-    return () => clearTimeout(t);
-  }, [confirmClear]);
-
   useEffect(() => {
     if (!createMenu.visible) return;
 
@@ -2228,6 +2606,27 @@ function CanvasFlow() {
 
   const createMenuOrigin = createMenu.originNodeId ? nodes.find((node) => node.id === createMenu.originNodeId) : undefined;
   const createMenuKinds = getCreateKindsForOrigin(createMenuOrigin?.type, createMenu.direction);
+
+  const handleRenameProject = (name: string) => {
+    if (!serverProjectId || isReadOnly) return;
+    const previousName = projectName;
+    setProjectName(name);
+    canvasApi.updateProject(serverProjectId, { name }).catch(() => {
+      setProjectName(previousName);
+      setSaveError("项目名称保存失败，请稍后重试");
+    });
+  };
+
+  const addNodeFromDock = (kind: CreateNodeKind) => {
+    const position = screenToFlowPosition({
+      x: Math.min(window.innerWidth - 240, 360),
+      y: window.innerHeight / 2,
+    });
+    if (kind === "text") addTextNode(position);
+    if (kind === "image") addImageDraftNode(position);
+    if (kind === "sketch") addSketchNode(position);
+    if (kind === "video") addVideoNode(position);
+  };
 
   return (
     <div
@@ -2285,6 +2684,24 @@ function CanvasFlow() {
         openCreateMenuAt({ x: event.clientX, y: event.clientY });
       }}
     >
+      <CanvasProjectHeader
+        projectName={projectName}
+        syncState={syncState}
+        readOnly={isReadOnly}
+        onBack={() => router.push("/projects")}
+        onRename={handleRenameProject}
+      />
+
+      <CanvasUtilityBar
+        canShare={Boolean(serverProjectId)}
+        onShare={() => setShareDialogOpen(true)}
+      />
+
+      <CanvasToolDock
+        readOnly={isReadOnly || Boolean(referencePickerPromptId)}
+        onAddNode={addNodeFromDock}
+      />
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -2443,16 +2860,6 @@ function CanvasFlow() {
       )}
 
       {serverProjectId && (
-        <div className="pointer-events-auto absolute right-4 top-4 z-50">
-        <ToolbarIconButton
-          label="共享"
-          icon={<Share2 className="size-3.5" />}
-          onClick={() => setShareDialogOpen(true)}
-        />
-        </div>
-      )}
-
-      {serverProjectId && (
         <CanvasShareDialog
           open={shareDialogOpen}
           projectId={serverProjectId}
@@ -2549,34 +2956,6 @@ function CanvasFlow() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Floating toolbar */}
-      {!referencePickerPromptId && !isReadOnly && (
-        <div className="pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-border-warm bg-background px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-          <ToolbarIconButton
-            label="新建 Image"
-            icon={<Plus className="size-3.5" />}
-            onClick={() => addImageDraftNode()}
-            variant="primary"
-          />
-          <ToolbarIconButton
-            label="新建 Sketch"
-            icon={<PenLine className="size-3.5" />}
-            onClick={() => addSketchNode()}
-          />
-          <ToolbarIconButton
-            label="上传素材"
-            icon={<ImagePlus className="size-3.5" />}
-            onClick={() => fileInputRef.current?.click()}
-          />
-          <ToolbarIconButton
-            label={confirmClear ? "确认清空" : "清空画布"}
-            icon={<Trash2 className="size-3.5" />}
-            onClick={handleClear}
-            variant={confirmClear ? "danger" : "default"}
-          />
-        </div>
-      )}
 
       {/* Hidden file input */}
       <input
