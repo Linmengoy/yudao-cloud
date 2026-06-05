@@ -1032,6 +1032,37 @@ function isSameCanvasEdge(left: AppEdge, right: AppEdge) {
     (left.targetHandle ?? null) === (right.targetHandle ?? null);
 }
 
+function getNodeBounds(node: AppNode) {
+  const measured = node.measured;
+  const width = node.width ?? measured?.width ?? 0;
+  const height = node.height ?? measured?.height ?? 0;
+  if (width <= 0 || height <= 0) return null;
+  return {
+    x: node.position.x,
+    y: node.position.y,
+    width,
+    height,
+  };
+}
+
+function findNodeAtFlowPoint(nodes: AppNode[], point: { x: number; y: number }, excludedNodeId?: string) {
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const node = nodes[index];
+    if (node.id === excludedNodeId || node.type === "canvasGroup") continue;
+    const bounds = getNodeBounds(node);
+    if (!bounds) continue;
+    if (
+      point.x >= bounds.x &&
+      point.x <= bounds.x + bounds.width &&
+      point.y >= bounds.y &&
+      point.y <= bounds.y + bounds.height
+    ) {
+      return node;
+    }
+  }
+  return null;
+}
+
 function summarizeCanvas(nodes: AppNode[]): { nodeCount: number; assetCount: number } {
   return {
     nodeCount: nodes.length,
@@ -2540,6 +2571,30 @@ function CanvasFlow() {
       if (!point) return;
 
       const direction = connectionState.fromHandle.type === "target" ? "incoming" : "outgoing";
+      const targetNode = findNodeAtFlowPoint(getNodes() as AppNode[], screenToFlowPosition(point), connectionState.fromNode.id);
+      if (targetNode) {
+        const connection =
+          direction === "incoming"
+            ? { source: targetNode.id, target: connectionState.fromNode.id }
+            : { source: connectionState.fromNode.id, target: targetNode.id };
+        if (isValidCanvasConnection(connection, getNodes() as AppNode[])) {
+          const edge: AppEdge = {
+            ...connection,
+            id: `e-${connection.source}-${connection.target}-${Date.now()}`,
+            type: "signal",
+          };
+          let shouldSubmit = false;
+          setEdges((eds) => {
+            if (eds.some((item) => isSameCanvasEdge(item, edge))) return eds;
+            shouldSubmit = true;
+            return addEdge(edge, eds);
+          });
+          if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge });
+        }
+        closeCreateMenu();
+        return;
+      }
+
       const from = getNodeCardPreviewAnchor(connectionState.fromNode.id, direction) ?? flowToScreenPosition(connectionState.from);
       ignoreNextPaneClickRef.current = true;
       openCreateMenuAt(point, {
@@ -2551,7 +2606,7 @@ function CanvasFlow() {
         direction,
       });
     },
-    [flowToScreenPosition, isReadOnly, openCreateMenuAt]
+    [canvasOperations, closeCreateMenu, flowToScreenPosition, getNodes, isReadOnly, openCreateMenuAt, screenToFlowPosition, setEdges]
   );
 
   useEffect(() => {

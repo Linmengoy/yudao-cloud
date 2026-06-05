@@ -305,7 +305,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         if (record == null) {
             throw exception(GENERATE_RECORD_NOT_EXISTS);
         }
-        AigcProviderSubmitRespDTO resp = providerClientFactory.getClient(record.getProviderCode()).query(record.getProviderTaskId());
+        AigcProviderSubmitRespDTO resp = providerClientFactory.getClient(record.getProviderCode()).query(buildProviderQueryReq(record));
         if (!Boolean.TRUE.equals(resp.getSuccess())) {
             failRecord(record, resp.getErrorCode(), resp.getErrorMessage());
             return;
@@ -365,6 +365,30 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setApiAction("submit").setRequestId(record.getGenerateNo()).setRequestSummary(buildRequestSummary(record)).setResponseSummary(buildResponseSummary(resp))
                 .setSuccess(Boolean.TRUE.equals(resp.getSuccess())).setErrorCode(resp.getErrorCode()).setErrorMessage(resp.getErrorMessage()).setDurationMs(System.currentTimeMillis() - start));
         return resp;
+    }
+
+    private AigcProviderSubmitReqDTO buildProviderQueryReq(AigcGenerateRecordDO record) {
+        AigcModelRespDTO model = modelApi.getModel(record.getModelId()).getCheckedData();
+        AigcModelProviderRespDTO provider = record.getProviderId() == null ? null : modelApi.getProvider(record.getProviderId()).getCheckedData();
+        return new AigcProviderSubmitReqDTO()
+                .setRecordId(record.getId())
+                .setTaskId(record.getTaskId())
+                .setUserId(record.getUserId())
+                .setModelId(record.getModelId())
+                .setModelCode(record.getModelCode())
+                .setProviderModel(model == null ? null : model.getModel())
+                .setProviderId(record.getProviderId())
+                .setProviderCode(record.getProviderCode())
+                .setProviderTaskId(record.getProviderTaskId())
+                .setProviderBaseUrl(provider == null ? null : provider.getApiBaseUrl())
+                .setProviderApiKey(provider == null ? null : provider.getApiKey())
+                .setProviderSecretKey(provider == null ? null : provider.getSecretKey())
+                .setProviderExtraConfig(provider == null ? null : provider.getExtraConfig())
+                .setProviderTimeoutSeconds(provider == null ? null : provider.getTimeoutSeconds())
+                .setGenerateType(record.getGenerateType())
+                .setGenerateMode(record.getGenerateMode())
+                .setPrompt(record.getPrompt())
+                .setInputParams(record.getInputParams());
     }
 
     private void finishSuccess(AigcGenerateRecordDO record, AigcProviderSubmitRespDTO resp) {
