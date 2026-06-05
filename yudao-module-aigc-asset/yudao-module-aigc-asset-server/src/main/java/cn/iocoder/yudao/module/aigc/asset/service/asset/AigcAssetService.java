@@ -58,6 +58,8 @@ public interface AigcAssetService {
 
     PageResult<AigcAssetDO> getUserAssetPage(AigcAssetPageReqVO reqVO, Long userId);
 
+    List<AigcAssetDO> getUserAssetList(AigcAssetPageReqVO reqVO, Long userId);
+
     void updateAuditStatus(AigcAssetAuditUpdateReqDTO reqDTO);
 
     void updateVisibility(AigcAssetVisibilityUpdateReqDTO reqDTO);

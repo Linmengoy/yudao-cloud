@@ -9,6 +9,8 @@ import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetPageReqDTO;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.apache.ibatis.annotations.Mapper;
 
+import java.util.List;
+
 @Mapper
 public interface AigcAssetMapper extends BaseMapperX<AigcAssetDO> {
 
@@ -30,6 +32,18 @@ public interface AigcAssetMapper extends BaseMapperX<AigcAssetDO> {
 
     default PageResult<AigcAssetDO> selectPage(AigcAssetPageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcAssetDO>()
+                .eqIfPresent(AigcAssetDO::getUserId, reqVO.getUserId())
+                .eqIfPresent(AigcAssetDO::getAssetType, reqVO.getAssetType())
+                .eqIfPresent(AigcAssetDO::getSourceType, reqVO.getSourceType())
+                .eqIfPresent(AigcAssetDO::getAuditStatus, reqVO.getAuditStatus())
+                .eqIfPresent(AigcAssetDO::getVisibility, reqVO.getVisibility())
+                .eqIfPresent(AigcAssetDO::getStatus, reqVO.getStatus())
+                .likeIfPresent(AigcAssetDO::getTitle, reqVO.getTitle())
+                .orderByDesc(AigcAssetDO::getId));
+    }
+
+    default List<AigcAssetDO> selectList(AigcAssetPageReqVO reqVO) {
+        return selectList(new LambdaQueryWrapperX<AigcAssetDO>()
                 .eqIfPresent(AigcAssetDO::getUserId, reqVO.getUserId())
                 .eqIfPresent(AigcAssetDO::getAssetType, reqVO.getAssetType())
                 .eqIfPresent(AigcAssetDO::getSourceType, reqVO.getSourceType())

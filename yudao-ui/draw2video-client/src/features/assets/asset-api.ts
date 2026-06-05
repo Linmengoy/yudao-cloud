@@ -25,6 +25,10 @@ export function getMyAssetPage(params: AigcAssetPageParams) {
   return api.get<PageResult<AigcAsset>>(`/aigc/asset/my-page${toQuery(params)}`);
 }
 
+export function getMyAssetList(params: Partial<Omit<AigcAssetPageParams, "pageNo" | "pageSize">> = {}) {
+  return api.get<AigcAsset[]>(`/aigc/asset/my-list${toQuery(params)}`);
+}
+
 export function getMyAsset(id: number | string) {
   return api.get<AigcAsset>(`/aigc/asset/my-get${toQuery({ id })}`);
 }

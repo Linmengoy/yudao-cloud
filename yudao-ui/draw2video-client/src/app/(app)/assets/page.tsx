@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import Link from "next/link";
 import { Download, Loader2, RefreshCw, Search } from "lucide-react";
-import { deleteMyAsset, downloadMyAsset, getMyAssetPage } from "@/features/assets/asset-api";
-import { AssetPreview } from "@/features/assets/components/asset-preview";
+import { deleteMyAsset, downloadMyAsset, getMyAssetList } from "@/features/assets/asset-api";
 import { AssetAuditBadge, AssetVisibilityBadge } from "@/features/assets/components/asset-status-badge";
 import { getAccessToken } from "@/lib/api-client";
 import {
+  getAssetPreviewUrl,
   formatDateTime,
   formatFileSize,
   getAssetTypeLabel,
@@ -15,6 +15,7 @@ import {
 } from "@/features/assets/asset-dictionaries";
 import type { AigcAsset } from "@/features/assets/asset-types";
 import { listGeneratedAssets, type GeneratedAsset } from "@/features/assets/asset-library";
+import type Muuri from "muuri";
 
 type AssetTab = "ALL" | "IMAGE" | "VIDEO" | "OTHER";
 
@@ -58,6 +59,25 @@ function matchesQuery(asset: AigcAsset, query: string) {
     .some((value) => String(value).toLowerCase().includes(keyword));
 }
 
+function getFullAssetPreviewUrl(asset: AigcAsset) {
+  return asset.fileUrl || getAssetPreviewUrl(asset);
+}
+
+function AssetWallPreview({ asset, onLoad }: { asset: AigcAsset; onLoad: () => void }) {
+  const previewUrl = getFullAssetPreviewUrl(asset);
+  if (asset.assetType === "IMAGE" && previewUrl) {
+    return <img src={previewUrl} alt={asset.title || "图片资产预览"} className="block h-auto w-full rounded-xl border border-border-warm bg-muted" loading="lazy" onLoad={onLoad} />;
+  }
+  if (asset.assetType === "VIDEO" && asset.fileUrl) {
+    return <video src={asset.fileUrl} poster={asset.coverUrl || asset.thumbnailUrl} controls className="block h-auto w-full rounded-xl border border-border-warm bg-muted" onLoadedMetadata={onLoad} />;
+  }
+  return (
+    <div className="flex min-h-[180px] w-full items-center justify-center rounded-xl border border-border-warm bg-muted text-sm text-muted-gray">
+      {getAssetTypeLabel(asset.assetType)}
+    </div>
+  );
+}
+
 function EmptyState({ tab }: { tab: AssetTab }) {
   return (
     <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-border-warm bg-background/70 px-6 py-16 text-center">
@@ -77,14 +97,18 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [usingLocalFallback, setUsingLocalFallback] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const gridElementRef = useRef<HTMLDivElement | null>(null);
+  const muuriRef = useRef<Muuri | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
 
   const loadAssets = useCallback(async () => {
     setLoading(true);
     setError("");
     setUsingLocalFallback(false);
     try {
-      const data = await getMyAssetPage({ pageNo: 1, pageSize: 60 });
-      setAssets(data.list ?? []);
+      const data = await getMyAssetList();
+      setAssets(data ?? []);
     } catch (err) {
       if (!getAccessToken()) {
         setAssets([]);
@@ -98,6 +122,7 @@ export default function AssetsPage() {
       setError(localAssets.length > 0 ? "真实资产接口暂不可用，当前展示本地项目生成记录。" : err instanceof Error ? err.message : "资产列表加载失败");
     } finally {
       setLoading(false);
+      setPullDistance(0);
     }
   }, []);
 
@@ -107,12 +132,61 @@ export default function AssetsPage() {
   }, [loadAssets]);
 
   const filteredAssets = useMemo(() => assets.filter((asset) => matchesTab(asset, tab) && matchesQuery(asset, query)), [assets, query, tab]);
+  const assetLayoutKey = useMemo(() => filteredAssets.map((asset) => asset.assetNo || asset.id).join("|"), [filteredAssets]);
   const counts = useMemo(() => ({
     ALL: assets.length,
     IMAGE: assets.filter((asset) => asset.assetType === "IMAGE").length,
     VIDEO: assets.filter((asset) => asset.assetType === "VIDEO").length,
     OTHER: assets.filter((asset) => asset.assetType !== "IMAGE" && asset.assetType !== "VIDEO").length,
   }), [assets]);
+
+  useEffect(() => {
+    if (loading || !assetLayoutKey || !gridElementRef.current) return;
+    let disposed = false;
+    const element = gridElementRef.current;
+    import("muuri").then(({ default: MuuriGrid }) => {
+      if (disposed || !element) return;
+      muuriRef.current?.destroy(false);
+      muuriRef.current = new MuuriGrid(element, {
+        items: ".asset-grid-item",
+        layoutDuration: 180,
+        layoutEasing: "ease",
+      });
+      requestAnimationFrame(() => muuriRef.current?.refreshItems().layout());
+    });
+    const onResize = () => muuriRef.current?.refreshItems().layout();
+    window.addEventListener("resize", onResize);
+    return () => {
+      disposed = true;
+      window.removeEventListener("resize", onResize);
+      muuriRef.current?.destroy(false);
+      muuriRef.current = null;
+    };
+  }, [assetLayoutKey, loading]);
+
+  const refreshAssetWallLayout = useCallback(() => {
+    muuriRef.current?.refreshItems().layout();
+  }, []);
+
+  function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
+    if (window.scrollY > 0 || loading) return;
+    touchStartYRef.current = event.touches[0]?.clientY ?? null;
+  }
+
+  function handleTouchMove(event: TouchEvent<HTMLDivElement>) {
+    if (touchStartYRef.current === null || loading) return;
+    const distance = (event.touches[0]?.clientY ?? 0) - touchStartYRef.current;
+    setPullDistance(distance > 0 ? Math.min(96, distance * 0.5) : 0);
+  }
+
+  function handleTouchEnd() {
+    if (pullDistance >= 64) {
+      loadAssets();
+    } else {
+      setPullDistance(0);
+    }
+    touchStartYRef.current = null;
+  }
 
   async function handleDownload(asset: AigcAsset) {
     if (!canDownloadAsset(asset)) return;
@@ -133,7 +207,13 @@ export default function AssetsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-[1180px] flex-col px-6 py-10">
+    <div className="mx-auto flex max-w-[1180px] flex-col px-6 py-10" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+      <div className="flex justify-center overflow-hidden text-xs text-muted-gray" style={{ height: pullDistance }}>
+        <div className="flex items-center gap-2">
+          <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+          {pullDistance >= 64 ? "松开刷新" : "下拉刷新"}
+        </div>
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-charcoal">资产库</h1>
@@ -171,29 +251,31 @@ export default function AssetsPage() {
       ) : filteredAssets.length === 0 ? (
         <EmptyState tab={tab} />
       ) : (
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div ref={gridElementRef} className="relative mt-6 -m-2">
           {filteredAssets.map((asset) => (
-            <div key={asset.assetNo || asset.id} className="rounded-xl border border-border-warm bg-background p-3">
-              <Link href={getAssetHref(asset)} className="block" aria-label={`查看资产 ${asset.title || asset.assetNo || asset.id}`}>
-                <AssetPreview asset={asset} />
-              </Link>
-              <div className="mt-3 min-w-0">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-charcoal">{asset.title || asset.assetNo || "未命名资产"}</p>
-                    <p className="mt-1 text-xs text-muted-gray">{getAssetTypeLabel(asset.assetType)} · {formatFileSize(asset.fileSize)}</p>
+            <div key={asset.assetNo || asset.id} className="asset-grid-item absolute w-full p-2 sm:w-1/2 xl:w-1/3">
+              <div className="rounded-xl border border-border-warm bg-background p-3">
+                <Link href={getAssetHref(asset)} className="block" aria-label={`查看资产 ${asset.title || asset.assetNo || asset.id}`}>
+                  <AssetWallPreview asset={asset} onLoad={refreshAssetWallLayout} />
+                </Link>
+                <div className="mt-3 min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-charcoal">{asset.title || asset.assetNo || "未命名资产"}</p>
+                      <p className="mt-1 text-xs text-muted-gray">{getAssetTypeLabel(asset.assetType)} · {formatFileSize(asset.fileSize)}</p>
+                    </div>
+                    <button type="button" onClick={() => handleDownload(asset)} disabled={!canDownloadAsset(asset)} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-border-warm text-charcoal hover:bg-muted disabled:opacity-40" aria-label="下载资产" title={canDownloadAsset(asset) ? "下载资产" : "审核通过后可下载"}>
+                      <Download className="size-4" />
+                    </button>
                   </div>
-                  <button type="button" onClick={() => handleDownload(asset)} disabled={!canDownloadAsset(asset)} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-border-warm text-charcoal hover:bg-muted disabled:opacity-40" aria-label="下载资产" title={canDownloadAsset(asset) ? "下载资产" : "审核通过后可下载"}>
-                    <Download className="size-4" />
-                  </button>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <AssetAuditBadge status={asset.auditStatus} />
-                  <AssetVisibilityBadge visibility={asset.visibility} />
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-gray">
-                  <span>{formatDateTime(asset.createTime)}</span>
-                  {Number.isFinite(asset.id) ? <button type="button" onClick={() => handleDelete(asset)} className="text-destructive hover:underline">删除</button> : usingLocalFallback ? <Link href={getAssetHref(asset)} className="text-charcoal hover:underline">打开项目</Link> : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <AssetAuditBadge status={asset.auditStatus} />
+                    <AssetVisibilityBadge visibility={asset.visibility} />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-gray">
+                    <span>{formatDateTime(asset.createTime)}</span>
+                    {Number.isFinite(asset.id) ? <button type="button" onClick={() => handleDelete(asset)} className="text-destructive hover:underline">删除</button> : usingLocalFallback ? <Link href={getAssetHref(asset)} className="text-charcoal hover:underline">打开项目</Link> : null}
+                  </div>
                 </div>
               </div>
             </div>

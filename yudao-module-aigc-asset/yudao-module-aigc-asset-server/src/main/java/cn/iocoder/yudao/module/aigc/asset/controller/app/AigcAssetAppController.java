@@ -61,6 +61,13 @@ public class AigcAssetAppController {
         return success(respPage);
     }
 
+    @GetMapping("/my-list")
+    @Operation(summary = "获取我的资产列表")
+    public CommonResult<List<AigcAssetRespDTO>> getMyAssetList(@Valid AigcAssetPageReqVO reqVO) {
+        List<AigcAssetDO> list = assetService.getUserAssetList(reqVO, getLoginUserId());
+        return success(assetService.getAssetRespList(list.stream().map(AigcAssetDO::getId).toList(), getLoginUserId()));
+    }
+
     @PostMapping("/upload")
     @Operation(summary = "上传资产")
     public CommonResult<Long> uploadAsset(@RequestParam("file") MultipartFile file,

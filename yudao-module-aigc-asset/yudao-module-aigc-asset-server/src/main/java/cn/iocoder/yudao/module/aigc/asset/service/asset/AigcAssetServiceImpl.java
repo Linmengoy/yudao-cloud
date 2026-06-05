@@ -269,6 +269,13 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     }
 
     @Override
+    public List<AigcAssetDO> getUserAssetList(AigcAssetPageReqVO reqVO, Long userId) {
+        reqVO.setUserId(userId);
+        reqVO.setStatus(AigcAssetStatusEnum.NORMAL.getCode());
+        return assetMapper.selectList(reqVO);
+    }
+
+    @Override
     public void updateAuditStatus(AigcAssetAuditUpdateReqDTO reqDTO) {
         validateAssetExists(reqDTO.getId());
         assetMapper.updateById(new AigcAssetDO()
