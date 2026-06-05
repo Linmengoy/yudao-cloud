@@ -6,6 +6,7 @@ import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Schema(description = "RPC 服务 - AIGC 资产 Response DTO")
 @Data
@@ -54,25 +55,28 @@ public class AigcAssetRespDTO {
     @Schema(description = "标签")
     private String tags;
 
-    @Schema(description = "文件编号")
+    @Schema(description = "资产文件列表")
+    private List<AigcAssetFileRespDTO> files;
+
+    @Schema(description = "兼容字段：文件编号")
     private Long fileId;
 
-    @Schema(description = "文件 URL")
+    @Schema(description = "兼容字段：文件访问 URL")
     private String fileUrl;
 
-    @Schema(description = "封面 URL")
+    @Schema(description = "兼容字段：封面访问 URL")
     private String coverUrl;
 
-    @Schema(description = "缩略图 URL")
+    @Schema(description = "兼容字段：缩略图访问 URL")
     private String thumbnailUrl;
 
-    @Schema(description = "MIME 类型")
+    @Schema(description = "兼容字段：MIME 类型")
     private String mimeType;
 
-    @Schema(description = "文件扩展名")
+    @Schema(description = "兼容字段：文件扩展名")
     private String fileExt;
 
-    @Schema(description = "文件大小")
+    @Schema(description = "兼容字段：文件大小")
     private Long fileSize;
 
     @Schema(description = "宽度")

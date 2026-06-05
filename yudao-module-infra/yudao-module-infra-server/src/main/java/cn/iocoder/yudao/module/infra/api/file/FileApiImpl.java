@@ -2,6 +2,8 @@ package cn.iocoder.yudao.module.infra.api.file;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateReqDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.service.file.FileService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,8 +26,19 @@ public class FileApiImpl implements FileApi {
     }
 
     @Override
+    public CommonResult<FileCreateRespDTO> createFileV2(FileCreateReqDTO createReqDTO) {
+        return success(fileService.createFileV2(createReqDTO.getContent(), createReqDTO.getName(),
+                createReqDTO.getDirectory(), createReqDTO.getType()));
+    }
+
+    @Override
     public CommonResult<String> presignGetUrl(String url, Integer expirationSeconds) {
         return success(fileService.presignGetUrl(url, expirationSeconds));
+    }
+
+    @Override
+    public CommonResult<FilePresignRespDTO> presignGetUrlV2(Long configId, String path, Integer expirationSeconds) {
+        return success(fileService.presignGetUrlV2(configId, path, expirationSeconds));
     }
 
 }

@@ -9,18 +9,24 @@ import cn.hutool.crypto.digest.DigestUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.http.HttpUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FileCreateReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePageReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePresignedUrlRespVO;
+import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileConfigDO;
 import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileDO;
 import cn.iocoder.yudao.module.infra.dal.mysql.file.FileMapper;
 import cn.iocoder.yudao.module.infra.framework.file.core.client.FileClient;
+import cn.iocoder.yudao.module.infra.framework.file.core.client.s3.S3FileClientConfig;
+import cn.iocoder.yudao.module.infra.framework.file.core.enums.FileStorageEnum;
 import cn.iocoder.yudao.module.infra.framework.file.core.utils.FileTypeUtils;
 import com.google.common.annotations.VisibleForTesting;
 import jakarta.annotation.Resource;
 import lombok.SneakyThrows;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static cn.hutool.core.date.DatePattern.PURE_DATE_PATTERN;
@@ -70,6 +76,12 @@ public class FileServiceImpl implements FileService {
     @Override
     @SneakyThrows
     public String createFile(byte[] content, String name, String directory, String type) {
+        return createFileV2(content, name, directory, type).getUrl();
+    }
+
+    @Override
+    @SneakyThrows
+    public FileCreateRespDTO createFileV2(byte[] content, String name, String directory, String type) {
         // 1.1 处理 type 为空的情况
         if (StrUtil.isEmpty(type)) {
             type = FileTypeUtils.getMineType(content, name);
@@ -92,12 +104,14 @@ public class FileServiceImpl implements FileService {
         FileClient client = fileConfigService.getMasterFileClient();
         Assert.notNull(client, "客户端(master) 不能为空");
         String url = client.upload(content, path, type);
+        url = HttpUtils.removeUrlQuery(url);
 
         // 3. 保存到数据库
-        fileMapper.insert(new FileDO().setConfigId(client.getId())
+        FileDO file = new FileDO().setConfigId(client.getId())
                 .setName(name).setPath(path).setUrl(url)
-                .setType(type).setSize((long) content.length));
-        return url;
+                .setType(type).setSize((long) content.length);
+        fileMapper.insert(file);
+        return buildCreateRespDTO(file, client.getId());
     }
 
     @VisibleForTesting
@@ -158,6 +172,18 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
+    public FilePresignRespDTO presignGetUrlV2(Long configId, String path, Integer expirationSeconds) {
+        FileClient fileClient = fileConfigService.getFileClient(configId);
+        Assert.notNull(fileClient, "客户端({}) 不能为空", configId);
+        int expireSeconds = expirationSeconds != null ? expirationSeconds : 86400;
+        return new FilePresignRespDTO()
+                .setUrl(fileClient.presignGetUrl(path, expireSeconds))
+                .setExpireSeconds(expireSeconds)
+                .setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds))
+                .setPublicAccess(isPublicAccess(configId));
+    }
+
+    @Override
     public Long createFile(FileCreateReqVO createReqVO) {
         createReqVO.setUrl(HttpUtils.removeUrlQuery(createReqVO.getUrl())); // 目的：移除私有桶情况下，URL 的签名参数
         FileDO file = BeanUtils.toBean(createReqVO, FileDO.class);
@@ -214,6 +240,32 @@ public class FileServiceImpl implements FileService {
         FileClient client = fileConfigService.getFileClient(configId);
         Assert.notNull(client, "客户端({}) 不能为空", configId);
         return client.getContent(path);
+    }
+
+    private FileCreateRespDTO buildCreateRespDTO(FileDO file, Long configId) {
+        FileConfigDO config = fileConfigService.getFileConfig(configId);
+        FileStorageEnum storage = config == null ? null : FileStorageEnum.getByStorage(config.getStorage());
+        S3FileClientConfig s3Config = config != null && config.getConfig() instanceof S3FileClientConfig ? (S3FileClientConfig) config.getConfig() : null;
+        return new FileCreateRespDTO()
+                .setId(file.getId())
+                .setConfigId(configId)
+                .setStorageType(storage == null ? null : storage.name())
+                .setBucket(s3Config == null ? null : s3Config.getBucket())
+                .setObjectKey(file.getPath())
+                .setPath(file.getPath())
+                .setName(file.getName())
+                .setUrl(file.getUrl())
+                .setType(file.getType())
+                .setSize(file.getSize())
+                .setPublicAccess(isPublicAccess(configId));
+    }
+
+    private Boolean isPublicAccess(Long configId) {
+        FileConfigDO config = fileConfigService.getFileConfig(configId);
+        if (config == null || !(config.getConfig() instanceof S3FileClientConfig s3Config)) {
+            return true;
+        }
+        return s3Config.getEnablePublicAccess();
     }
 
 }

@@ -4,6 +4,8 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FileCreateReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePageReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePresignedUrlRespVO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileDO;
 import jakarta.validation.constraints.NotEmpty;
 
@@ -36,6 +38,9 @@ public interface FileService {
     String createFile(@NotEmpty(message = "文件内容不能为空") byte[] content,
                       String name, String directory, String type);
 
+    FileCreateRespDTO createFileV2(@NotEmpty(message = "文件内容不能为空") byte[] content,
+                                   String name, String directory, String type);
+
     /**
      * 生成文件预签名地址信息，用于上传
      *
@@ -53,6 +58,8 @@ public interface FileService {
      * @return 文件预签名地址
      */
     String presignGetUrl(String url, Integer expirationSeconds);
+
+    FilePresignRespDTO presignGetUrlV2(Long configId, String path, Integer expirationSeconds);
 
     /**
      * 创建文件

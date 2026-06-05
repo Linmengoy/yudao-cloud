@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderPlus, ImageIcon, MoreHorizontal, Pencil, Search, Trash2 } from "lucide-react";
+import { Archive, FolderPlus, ImageIcon, Search, Trash2 } from "lucide-react";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { clearCanvas } from "@/features/canvas/use-canvas-storage";
@@ -11,7 +11,6 @@ import {
   createProject,
   deleteProject,
   listProjects,
-  renameProject,
   type ProjectMeta,
 } from "@/features/projects/project-store";
 
@@ -78,6 +77,10 @@ function projectRoleLabel(project: ProjectListItem) {
   return "可编辑";
 }
 
+function canDeleteProject(project: ProjectListItem) {
+  return project.source === "local" || project.role === "owner";
+}
+
 function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
   useEffect(() => {
     if (!project.coverUrl || !onLoad) return;
@@ -117,16 +120,18 @@ export default function ProjectsPage() {
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [pageNo, setPageNo] = useState(1);
   const [total, setTotal] = useState(0);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const muuriRef = useRef<Muuri | null>(null);
+  const projectLayoutKey = useMemo(() => projects.map((project) => project.id).join("|"), [projects]);
 
-  const refreshProjects = useCallback(async (search = query, nextPageNo = pageNo) => {
+  const refreshProjects = useCallback(async (search = debouncedQuery, nextPageNo = pageNo) => {
     setIsLoading(true);
     try {
       const page = await canvasApi.listProjects({
@@ -158,33 +163,25 @@ export default function ProjectsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [pageNo, query]);
+  }, [debouncedQuery, pageNo]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => refreshProjects(query, pageNo), 0);
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 350);
     return () => window.clearTimeout(timer);
-  }, [pageNo, query, refreshProjects]);
+  }, [query]);
 
   useEffect(() => {
-    if (!openMenuId) return;
-    function close() {
-      setOpenMenuId(null);
-    }
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", close);
-    return () => {
-      window.removeEventListener("pointerdown", close);
-      window.removeEventListener("keydown", close);
-    };
-  }, [openMenuId]);
+    const timer = window.setTimeout(() => refreshProjects(debouncedQuery, pageNo), 0);
+    return () => window.clearTimeout(timer);
+  }, [debouncedQuery, pageNo, refreshProjects]);
 
   useEffect(() => {
-    if (isLoading || projects.length === 0 || !gridElementRef.current) return;
+    if (isLoading || !projectLayoutKey || !gridElementRef.current) return;
     let disposed = false;
     const element = gridElementRef.current;
     import("muuri").then(({ default: MuuriGrid }) => {
       if (disposed || !element) return;
-      muuriRef.current?.destroy(true);
+      muuriRef.current?.destroy(false);
       muuriRef.current = new MuuriGrid(element, {
         items: ".project-grid-item",
         layoutDuration: 180,
@@ -197,10 +194,10 @@ export default function ProjectsPage() {
     return () => {
       disposed = true;
       window.removeEventListener("resize", onResize);
-      muuriRef.current?.destroy(true);
+      muuriRef.current?.destroy(false);
       muuriRef.current = null;
     };
-  }, [isLoading, projects]);
+  }, [isLoading, projectLayoutKey]);
 
   const refreshProjectWallLayout = useCallback(() => {
     muuriRef.current?.refreshItems().layout();
@@ -223,32 +220,31 @@ export default function ProjectsPage() {
     }
   }
 
-  async function handleRename(project: ProjectListItem) {
-    const nextName = window.prompt("项目名称", project.name);
-    if (!nextName) return;
+  async function handleDelete(project: ProjectListItem) {
+    if (!canDeleteProject(project) || deletingProjectId) return;
+    const confirmed = window.confirm(
+      project.source === "server"
+        ? `删除项目「${project.name}」？删除后可在回收站恢复。`
+        : `删除本机草稿「${project.name}」？`
+    );
+    if (!confirmed) return;
+    setDeletingProjectId(project.id);
     if (project.source === "local") {
-      renameProject(project.id, nextName);
-      refreshProjects();
+      deleteProject(project.id);
+      clearCanvas(project.id);
+      await refreshProjects();
+      setDeletingProjectId(null);
       return;
     }
     try {
-      await canvasApi.updateProject(project.id, { name: nextName.trim() });
-      refreshProjects();
+      await canvasApi.deleteProject(project.id);
+      setStatusMessage("项目已移入回收站。");
+      await refreshProjects();
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "重命名失败，请稍后再试。");
+      setStatusMessage(error instanceof Error ? error.message : "删除失败，请稍后再试。");
+    } finally {
+      setDeletingProjectId(null);
     }
-  }
-
-  function handleDelete(project: ProjectListItem) {
-    if (project.source === "server") {
-      setStatusMessage("服务端项目归档/删除接口尚未开放，这期先保留项目。");
-      return;
-    }
-    const confirmed = window.confirm(`删除项目「${project.name}」？`);
-    if (!confirmed) return;
-    deleteProject(project.id);
-    clearCanvas(project.id);
-    refreshProjects();
   }
 
   return (
@@ -258,15 +254,24 @@ export default function ProjectsPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-charcoal">项目库</h1>
           <p className="mt-1 text-sm text-muted-gray">从项目进入画布，所有节点和素材都会按项目独立保存。</p>
         </div>
-        <button
-          type="button"
-          onClick={handleCreateProject}
-          disabled={isCreating}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px]"
-        >
-          <FolderPlus className="size-4" />
-          {isCreating ? "创建中" : "新建项目"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/projects/recycle-bin"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-border-warm bg-background px-4 py-2 text-sm font-medium text-muted-gray transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal"
+          >
+            <Archive className="size-4" />
+            回收站
+          </Link>
+          <button
+            type="button"
+            onClick={handleCreateProject}
+            disabled={isCreating}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px]"
+          >
+            <FolderPlus className="size-4" />
+            {isCreating ? "创建中" : "新建项目"}
+          </button>
+        </div>
       </div>
 
       <div className="mt-8 flex max-w-[420px] items-center gap-2 rounded-lg border border-border-warm bg-background px-3 py-2">
@@ -320,67 +325,36 @@ export default function ProjectsPage() {
               <div className="group relative overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]">
                 <Link href={`/canvas?projectId=${encodeURIComponent(project.id)}`} className="block">
                   <ProjectCover project={project} onLoad={refreshProjectWallLayout} />
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
+                </Link>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
                         <p className="mt-1 text-xs text-muted-gray">
                           {projectRoleLabel(project)}
                           {project.source === "local" ? " · 本机草稿" : ""}
                         </p>
-                      </div>
-                      <div className="shrink-0 text-right text-xs text-muted-gray">
-                        <p>{project.nodeCount} 节点</p>
-                        <p className="mt-1">{project.assetCount} 素材</p>
-                      </div>
                     </div>
-                    <p className="mt-4 text-xs text-muted-gray">最近打开 {formatDate(project.lastOpenedAt)}</p>
+                    <div className="shrink-0 text-right text-xs text-muted-gray">
+                      <p>{project.nodeCount} 节点</p>
+                      <p className="mt-1">{project.assetCount} 素材</p>
+                    </div>
                   </div>
-                </Link>
-
-                <div className="absolute right-4 top-4">
-                  <button
-                    type="button"
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setOpenMenuId(openMenuId === project.id ? null : project.id);
-                    }}
-                    className="flex size-8 items-center justify-center rounded-lg bg-background/90 text-muted-gray shadow-sm hover:text-charcoal"
-                    aria-label="项目操作"
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </button>
-                  {openMenuId === project.id && (
-                    <div
-                      onPointerDown={(event) => event.stopPropagation()}
-                      className="absolute right-0 top-9 z-10 w-36 rounded-xl border border-border-warm bg-background p-1 shadow-[0_8px_24px_rgba(28,28,28,0.12)]"
-                    >
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <p className="min-w-0 text-xs text-muted-gray">最近打开 {formatDate(project.lastOpenedAt)}</p>
+                    {canDeleteProject(project) && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setOpenMenuId(null);
-                          handleRename(project);
-                        }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-charcoal hover:bg-muted"
+                        onClick={() => handleDelete(project)}
+                        disabled={deletingProjectId === project.id}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-destructive opacity-0 transition-colors hover:bg-muted group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="删除项目"
                       >
-                        <Pencil className="size-4 text-muted-gray" />
-                        重命名
+                        <Trash2 className="size-3.5" />
+                        {deletingProjectId === project.id ? "删除中" : ""}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOpenMenuId(null);
-                          handleDelete(project);
-                        }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-destructive hover:bg-muted"
-                      >
-                        <Trash2 className="size-4" />
-                        删除
-                      </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

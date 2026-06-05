@@ -7,6 +7,7 @@ import type {
   InviteCanvasMemberRequest,
   CanvasMember,
   CanvasProject,
+  CanvasProjectRecycleBinRecord,
   CanvasSnapshotRecord,
   CanvasState,
   UpdateCanvasMemberRoleRequest,
@@ -132,9 +133,21 @@ export const canvasApi = {
     return api.get<PageResult<CanvasProject>>(`/canvas/projects?${query.toString()}`);
   },
 
+  listProjectRecycleBin: (params: { pageNo?: number; pageSize?: number; name?: string } = {}) => {
+    const query = new URLSearchParams();
+    query.set("pageNo", String(params.pageNo ?? 1));
+    query.set("pageSize", String(params.pageSize ?? 20));
+    if (params.name) query.set("name", params.name);
+    return api.get<PageResult<CanvasProjectRecycleBinRecord>>(`/canvas/projects/recycle-bin?${query.toString()}`);
+  },
+
   createProject: (input: CreateCanvasProjectInput) => api.post<number>("/canvas/projects", input),
 
   getProject: (projectId: string | number) => api.get<CanvasProject>(`/canvas/projects/${projectId}`),
+
+  deleteProject: (projectId: string | number) => api.delete<boolean>(`/canvas/projects/${projectId}`),
+
+  restoreProject: (projectId: string | number) => api.put<boolean>(`/canvas/projects/${projectId}/restore`),
 
   getProjectMembers: (projectId: string | number) => api.get<CanvasMember[]>(`/canvas/projects/${projectId}/members`),
 

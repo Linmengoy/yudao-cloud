@@ -17,6 +17,8 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSyncRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinPageReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
@@ -68,6 +70,12 @@ public class AigcCanvasAppController {
     @Operation(summary = "画布项目分页")
     public CommonResult<PageResult<AigcCanvasProjectRespVO>> getProjectPage(@Valid AigcCanvasProjectPageReqVO reqVO) {
         return success(projectService.getProjectPage(reqVO, getLoginUserId()));
+    }
+
+    @GetMapping("/projects/recycle-bin")
+    @Operation(summary = "画布项目回收站分页")
+    public CommonResult<PageResult<AigcCanvasProjectRecycleBinRespVO>> getProjectRecycleBinPage(@Valid AigcCanvasProjectRecycleBinPageReqVO reqVO) {
+        return success(projectService.getProjectRecycleBinPage(reqVO, getLoginUserId()));
     }
 
     @PostMapping("/projects")
@@ -123,6 +131,22 @@ public class AigcCanvasAppController {
     public CommonResult<Boolean> updateProject(@PathVariable("id") Long id, @Valid @RequestBody AigcCanvasProjectUpdateReqVO reqVO) {
         reqVO.setId(id);
         projectService.updateProject(reqVO, getLoginUserId());
+        return success(true);
+    }
+
+    @DeleteMapping("/projects/{id}")
+    @Operation(summary = "删除画布项目到回收站")
+    @Parameter(name = "id", description = "项目编号", required = true)
+    public CommonResult<Boolean> deleteProject(@PathVariable("id") Long id) {
+        projectService.deleteProject(id, getLoginUserId());
+        return success(true);
+    }
+
+    @PutMapping("/projects/{id}/restore")
+    @Operation(summary = "恢复画布项目")
+    @Parameter(name = "id", description = "项目编号", required = true)
+    public CommonResult<Boolean> restoreProject(@PathVariable("id") Long id) {
+        projectService.restoreProject(id, getLoginUserId());
         return success(true);
     }
 

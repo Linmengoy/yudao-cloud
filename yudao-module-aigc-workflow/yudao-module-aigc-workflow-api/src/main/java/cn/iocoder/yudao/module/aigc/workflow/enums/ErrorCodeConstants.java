@@ -33,5 +33,6 @@ public interface ErrorCodeConstants {
     ErrorCode CANVAS_MEMBER_ROLE_INVALID = new ErrorCode(1_046_000_108, "画布项目成员角色不支持");
     ErrorCode CANVAS_MEMBER_EXISTS = new ErrorCode(1_046_000_109, "画布项目成员已存在");
     ErrorCode CANVAS_OWNER_CAN_NOT_CHANGE = new ErrorCode(1_046_000_110, "画布项目拥有者不能被修改或移除");
+    ErrorCode CANVAS_PROJECT_RECYCLE_BIN_NOT_EXISTS = new ErrorCode(1_046_000_111, "画布项目回收站记录不存在");
 
 }

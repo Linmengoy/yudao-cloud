@@ -18,7 +18,19 @@ public class AigcAssetCreateRespDTO {
     @Schema(description = "资产类型", example = "IMAGE")
     private String assetType;
 
+    @Schema(description = "资产文件编号")
+    private Long assetFileId;
+
+    @Schema(description = "文件编号")
+    private Long fileId;
+
     @Schema(description = "文件 URL")
     private String fileUrl;
+
+    @Schema(description = "对象 Key")
+    private String objectKey;
+
+    @Schema(description = "文件路径")
+    private String filePath;
 
 }

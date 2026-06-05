@@ -4,6 +4,8 @@ import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasMemberDO;
 import org.apache.ibatis.annotations.Mapper;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -23,7 +25,9 @@ public interface AigcCanvasMemberMapper extends BaseMapperX<AigcCanvasMemberDO> 
         if (projectIds == null || projectIds.isEmpty()) {
             return Collections.emptyList();
         }
-        return selectList(AigcCanvasMemberDO::getProjectId, projectIds, AigcCanvasMemberDO::getUserId, userId);
+        return selectList(new LambdaQueryWrapper<AigcCanvasMemberDO>()
+        .in(AigcCanvasMemberDO::getProjectId, projectIds)
+        .eq(AigcCanvasMemberDO::getUserId, userId));
     }
 
     default List<AigcCanvasMemberDO> selectListByProjectId(Long projectId) {

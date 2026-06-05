@@ -921,3 +921,202 @@ mvn -pl yudao-module-aigc-asset/yudao-module-aigc-asset-server -am -DskipTests c
 ```
 
 就足够支撑 `aigc-gen`、`aigc-task`、`aigc-billing` 跑通图片、视频、音频等 AIGC 生成结果的商业化闭环，并为后续社区、模板、工作流和发布导出服务沉淀可复用资产。
+
+## 18. 签名 URL 存储改造方案
+
+本节记录 2026-06-05 已落地的资产访问 URL 改造。此前资产表长期保存 `fileUrl`、`coverUrl`、`thumbnailUrl`，在 OSS/S3 私有桶场景下可能保存带 `X-Amz-Signature`、`X-Amz-Expires`、`X-Amz-Credential` 的临时签名 URL，导致资产过期后无法预览或下载。
+
+改造后的核心原则：
+
+- 数据库不保存 OSS/S3 预签名 URL。
+- `aigc_asset` 只保存资产业务信息。
+- `aigc_asset_file` 保存稳定文件引用，包括 `file_id`、`storage_config_id`、`object_key`、`file_path`、`access_mode`。
+- 私有资源访问 URL 由后端根据 `storage_config_id + file_path` 动态生成。
+- Redis 缓存未超时签名 URL，避免每次访问都重新生成。
+- 下载日志不保存完整签名 URL。
+
+### 18.1 数据库模型
+
+`aigc_asset` 移除以下长期 URL 和文件字段：
+
+```text
+file_id
+file_url
+origin_url
+cover_file_id
+cover_url
+thumbnail_url
+mime_type
+file_ext
+file_size
+```
+
+新增 `aigc_asset_file`，用于保存文件级稳定引用：
+
+```text
+asset_id              资产 ID
+file_role             文件角色：ORIGINAL/PREVIEW/THUMBNAIL/COVER/WATERMARK/TRANSCODED
+file_id               Infra 文件 ID
+storage_config_id     文件存储配置 ID
+storage_type          存储类型
+bucket                Bucket
+object_key            对象 Key
+file_path             平台文件路径
+origin_url            第三方原始 URL，仅溯源
+access_mode           访问模式：1 私有签名、2 公开、3 CDN 公开
+public_url            公开访问 URL，仅公开资源/CDN 资源使用
+```
+
+SQL 已同步维护在：
+
+- `sql/mysql/asset/asset_db.sql`
+- `yudao-module-aigc-asset/yudao-module-aigc-asset-server/src/main/resources/schema/asset_db.sql`
+
+### 18.2 Infra 文件服务 V2
+
+新增文件创建响应 DTO：
+
+```text
+FileCreateRespDTO
+  id
+  configId
+  storageType
+  bucket
+  objectKey
+  path
+  name
+  url
+  type
+  size
+  publicAccess
+```
+
+新增文件预签名响应 DTO：
+
+```text
+FilePresignRespDTO
+  url
+  expireSeconds
+  expireTime
+  publicAccess
+```
+
+新增 RPC 接口：
+
+```text
+FileApi.createFileV2(...)
+FileApi.presignGetUrlV2(configId, path, expirationSeconds)
+```
+
+V2 上传不再只返回 URL，而是返回稳定文件引用。`infra_file.url` 入库前会移除 query 参数，避免私有桶签名参数落库。
+
+### 18.3 资产创建流程
+
+资产创建统一走以下流程：
+
+```text
+1. 用户上传、第三方 URL 或 Data URL 进入资产服务
+2. 资产服务下载/解码文件内容
+3. 调用 FileApi.createFileV2 上传到平台文件服务
+4. aigc_asset 写业务主记录
+5. aigc_asset_file 写 ORIGINAL 文件引用
+6. 接口返回资产 ID、资产文件 ID 和运行时访问 URL
+```
+
+`origin_url` 只写入 `aigc_asset_file.origin_url` 用于溯源，不作为展示、预览、下载地址。
+
+### 18.4 访问 URL 与 Redis 缓存
+
+访问 URL 生成遵循以下流程：
+
+```text
+1. 查询 asset 和 asset_file
+2. 校验资产状态、审核状态、用户权限
+3. access_mode=PUBLIC/CDN_PUBLIC 时直接返回 public_url
+4. access_mode=PRIVATE_SIGNED 时先查 Redis
+5. Redis 命中且剩余 TTL > 60 秒，直接复用缓存 URL
+6. Redis 未命中或即将过期，调用 FileApi.presignGetUrlV2 生成新 URL
+7. 新 URL 写入 Redis，TTL = 签名有效期 - 60 秒
+8. 返回访问 URL
+```
+
+缓存 Key：
+
+```text
+aigc:asset:access-url:{tenantId}:{assetFileId}:{fileRole}:{accessType}:{userKey}
+```
+
+锁 Key：
+
+```text
+aigc:asset:access-url:lock:{tenantId}:{assetFileId}:{fileRole}:{accessType}:{userKey}
+```
+
+缓存策略：
+
+- `PREVIEW`、`THUMBNAIL`、`COVER` 不按用户缓存，`userKey=PUBLIC`。
+- `DOWNLOAD` 按用户缓存，`userKey=userId`。
+- Redis 剩余 TTL 小于等于 60 秒视为不可复用。
+- 使用 Redisson 锁防止同一个资产文件缓存击穿。
+
+默认有效期：
+
+| 访问类型 | 签名有效期 | Redis TTL |
+| -------- | ---------- | --------- |
+| PREVIEW | 900 秒 | 840 秒 |
+| THUMBNAIL | 900 秒 | 840 秒 |
+| COVER | 900 秒 | 840 秒 |
+| DOWNLOAD | 1800 秒 | 1740 秒 |
+
+### 18.5 用户端接口
+
+新增/调整用户端接口：
+
+```text
+GET  /aigc/asset/my-get
+GET  /aigc/asset/my-page
+POST /aigc/asset/access-url
+POST /aigc/asset/access-urls
+POST /aigc/asset/download
+```
+
+下载接口现在返回 `AigcAssetAccessUrlRespDTO`，不再直接返回数据库中的 `fileUrl` 字符串。下载接口每次调用仍增加下载次数，但下载日志不保存完整签名 URL。
+
+### 18.6 响应兼容
+
+`AigcAssetRespDTO` 新增 `files` 文件列表，包含每个文件角色的访问 URL 和过期信息。
+
+同时保留兼容字段：
+
+```text
+fileUrl
+coverUrl
+thumbnailUrl
+mimeType
+fileExt
+fileSize
+```
+
+这些兼容字段现在表示运行时访问 URL，不再表示数据库长期保存字段。画布和工作流当前读取这些字段的代码可继续工作，但不得把这些运行时 URL 重新持久化为资产主数据。
+
+### 18.7 生成模块影响
+
+`aigc-gen` 对 Data URL 不再提前上传并写入 `fileUrl`，而是把 Data URL 交给资产服务统一资产化。生成记录仍保存 `assetIds`，展示 URL 通过资产查询或访问 URL 接口动态获取。
+
+### 18.8 安全约束
+
+- `aigc_asset` 不保存签名 URL。
+- `aigc_asset_file.public_url` 只允许公开资源或 CDN 资源使用。
+- 私有资源只保存稳定引用，访问时动态签名。
+- 下载日志不保存完整签名 URL。
+- Redis 可短期保存签名 URL，但 TTL 必须小于签名 URL 有效期。
+- 画布 JSON、项目封面、生成记录不得长期保存带签名参数的访问 URL。
+
+### 18.9 已验证命令
+
+```text
+mvn -pl yudao-module-aigc-asset/yudao-module-aigc-asset-server -am -DskipTests compile
+mvn -pl yudao-module-infra/yudao-module-infra-server,yudao-module-aigc-gen/yudao-module-aigc-gen-server,yudao-module-aigc-workflow/yudao-module-aigc-workflow-server -am -DskipTests compile
+```
+
+验证结果均为 `BUILD SUCCESS`。

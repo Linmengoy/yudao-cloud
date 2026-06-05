@@ -2,6 +2,8 @@ package cn.iocoder.yudao.module.infra.api.file;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateReqDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.enums.ApiConstants;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -58,6 +60,15 @@ public interface FileApi {
     @Operation(summary = "保存文件，并返回文件的访问路径")
     CommonResult<String> createFile(@Valid @RequestBody FileCreateReqDTO createReqDTO);
 
+    default FileCreateRespDTO createFileV2(@NotEmpty(message = "文件内容不能为空") byte[] content,
+                                           String name, String directory, String type) {
+        return createFileV2(new FileCreateReqDTO().setName(name).setDirectory(directory).setType(type).setContent(content)).getCheckedData();
+    }
+
+    @PostMapping(PREFIX + "/create-v2")
+    @Operation(summary = "保存文件，并返回文件信息")
+    CommonResult<FileCreateRespDTO> createFileV2(@Valid @RequestBody FileCreateReqDTO createReqDTO);
+
     /**
      * 生成文件预签名地址，用于读取
      *
@@ -69,5 +80,11 @@ public interface FileApi {
     @Operation(summary = "生成文件预签名地址，用于读取")
     CommonResult<String> presignGetUrl(@NotEmpty(message = "URL 不能为空") @RequestParam("url") String url,
                                        Integer expirationSeconds);
+
+    @GetMapping(PREFIX + "/presigned-url-v2")
+    @Operation(summary = "生成文件预签名地址，用于读取")
+    CommonResult<FilePresignRespDTO> presignGetUrlV2(@RequestParam("configId") Long configId,
+                                                     @NotEmpty(message = "文件路径不能为空") @RequestParam("path") String path,
+                                                     @RequestParam(value = "expirationSeconds", required = false) Integer expirationSeconds);
 
 }

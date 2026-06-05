@@ -10,6 +10,8 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinPageReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
@@ -19,12 +21,14 @@ import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasAss
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasMemberDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasOperationLogDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectDO;
+import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectRecycleBinDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasSketchDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasSnapshotDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasMemberMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasAssetRefMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasOperationLogMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasProjectMapper;
+import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasProjectRecycleBinMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasSketchMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasSnapshotMapper;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.AigcCanvasRoomService;
@@ -52,6 +56,7 @@ import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CAN
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_NO_PERMISSION;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_OWNER_CAN_NOT_CHANGE;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_PROJECT_NOT_EXISTS;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_PROJECT_RECYCLE_BIN_NOT_EXISTS;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_SNAPSHOT_VERSION_CONFLICT;
 
 @Service
@@ -65,6 +70,8 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
 
     @Resource
     private AigcCanvasProjectMapper projectMapper;
+    @Resource
+    private AigcCanvasProjectRecycleBinMapper projectRecycleBinMapper;
     @Resource
     private AigcCanvasMemberMapper memberMapper;
     @Resource
@@ -108,6 +115,37 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     public void updateProject(AigcCanvasProjectUpdateReqVO reqVO, Long userId) {
         validateEditableProject(reqVO.getId(), userId);
         projectMapper.updateById(BeanUtils.toBean(reqVO, AigcCanvasProjectDO.class));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteProject(Long id, Long userId) {
+        AigcCanvasProjectDO project = validateOwnerProject(id, userId);
+        AigcCanvasProjectRecycleBinDO recycleBin = new AigcCanvasProjectRecycleBinDO();
+        recycleBin.setProjectId(project.getId());
+        recycleBin.setOwnerUserId(project.getOwnerUserId());
+        recycleBin.setProjectName(project.getName());
+        recycleBin.setCoverAssetId(project.getCoverAssetId());
+        recycleBin.setCurrentVersion(project.getCurrentVersion());
+        recycleBin.setLatestSnapshotId(project.getLatestSnapshotId());
+        recycleBin.setProjectStatus(project.getStatus());
+        recycleBin.setNodeCount(project.getNodeCount());
+        recycleBin.setAssetCount(project.getAssetCount());
+        recycleBin.setDeletedBy(userId);
+        recycleBin.setDeletedTime(LocalDateTime.now());
+        projectRecycleBinMapper.insert(recycleBin);
+        projectMapper.deleteById(id);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void restoreProject(Long id, Long userId) {
+        AigcCanvasProjectRecycleBinDO recycleBin = validateOwnerRecycleBin(id, userId);
+        int updateCount = projectRecycleBinMapper.restoreProject(recycleBin.getProjectId());
+        if (updateCount == 0) {
+            throw exception(CANVAS_PROJECT_NOT_EXISTS);
+        }
+        projectRecycleBinMapper.deletePhysicallyById(recycleBin.getId());
     }
 
     @Override
@@ -181,7 +219,8 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
 
     @Override
     public PageResult<AigcCanvasProjectRespVO> getProjectPage(AigcCanvasProjectPageReqVO reqVO, Long userId) {
-        Set<Long> sharedProjectIds = memberMapper.selectListByUserId(userId).stream()
+        List<AigcCanvasMemberDO> members = memberMapper.selectListByUserId(userId);
+        Set<Long> sharedProjectIds = members.stream()
                 .map(AigcCanvasMemberDO::getProjectId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
@@ -191,8 +230,9 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         }
 
         List<AigcCanvasProjectDO> projects = pageResult.getList();
-        List<Long> projectIds = projects.stream().map(AigcCanvasProjectDO::getId).toList();
-        Map<Long, AigcCanvasMemberDO> memberMap = memberMapper.selectListByProjectIdsAndUserId(projectIds, userId).stream()
+        Set<Long> projectIds = projects.stream().map(AigcCanvasProjectDO::getId).collect(Collectors.toSet());
+        Map<Long, AigcCanvasMemberDO> memberMap = members.stream()
+                .filter(member -> projectIds.contains(member.getProjectId()))
                 .collect(Collectors.toMap(AigcCanvasMemberDO::getProjectId, Function.identity(), (first, second) -> first));
         Map<Long, AigcAssetRespDTO> assetMap = getAssetMap(projects);
 
@@ -200,6 +240,12 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
                 .map(project -> buildProjectResp(project, userId, memberMap.get(project.getId()), assetMap))
                 .toList();
         return new PageResult<>(list, pageResult.getTotal());
+    }
+
+    @Override
+    public PageResult<AigcCanvasProjectRecycleBinRespVO> getProjectRecycleBinPage(AigcCanvasProjectRecycleBinPageReqVO reqVO, Long userId) {
+        PageResult<AigcCanvasProjectRecycleBinDO> pageResult = projectRecycleBinMapper.selectPage(reqVO, userId);
+        return new PageResult<>(BeanUtils.toBean(pageResult.getList(), AigcCanvasProjectRecycleBinRespVO.class), pageResult.getTotal());
     }
 
     private AigcCanvasProjectRespVO buildProjectResp(AigcCanvasProjectDO project, Long userId, AigcCanvasMemberDO member,
@@ -412,15 +458,27 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         return project;
     }
 
-    private void validateOwnerProject(Long projectId, Long userId) {
+    private AigcCanvasProjectDO validateOwnerProject(Long projectId, Long userId) {
         AigcCanvasProjectDO project = validateReadableProject(projectId, userId);
         if (isProjectOwner(project, userId)) {
-            return;
+            return project;
         }
         AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndUserId(projectId, userId);
         if (member == null || !MEMBER_ROLE_OWNER.equals(member.getRole())) {
             throw exception(CANVAS_NO_PERMISSION);
         }
+        return project;
+    }
+
+    private AigcCanvasProjectRecycleBinDO validateOwnerRecycleBin(Long projectId, Long userId) {
+        AigcCanvasProjectRecycleBinDO recycleBin = projectRecycleBinMapper.selectByProjectId(projectId);
+        if (recycleBin == null) {
+            throw exception(CANVAS_PROJECT_RECYCLE_BIN_NOT_EXISTS);
+        }
+        if (!Objects.equals(recycleBin.getOwnerUserId(), userId)) {
+            throw exception(CANVAS_NO_PERMISSION);
+        }
+        return recycleBin;
     }
 
     private boolean isProjectOwner(AigcCanvasProjectDO project, Long userId) {

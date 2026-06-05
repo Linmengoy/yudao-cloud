@@ -393,7 +393,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setBizId(record.getGenerateNo()).setTaskId(record.getTaskId()).setModelId(record.getModelId()).setProviderId(record.getProviderId()).setTitle(record.getGenerateType() + "生成资产")
                 .setPromptSnapshot(buildPromptSnapshot(record.getPrompt())).setGenerateSnapshot(record.getInputParams()).setVisibility("PRIVATE").setAuditStatus("PENDING");
         if (dataUrl) {
-            fillDataUrlAssetFile(reqDTO, url);
+            reqDTO.setOriginUrl(url);
         } else {
             reqDTO.setOriginUrl(url);
         }

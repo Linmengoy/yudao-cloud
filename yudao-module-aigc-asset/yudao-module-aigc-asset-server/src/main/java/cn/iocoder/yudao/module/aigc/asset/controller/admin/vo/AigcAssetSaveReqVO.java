@@ -37,8 +37,7 @@ public class AigcAssetSaveReqVO {
     @Schema(description = "平台文件编号")
     private Long fileId;
 
-    @Schema(description = "平台文件 URL", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "平台文件 URL 不能为空")
+    @Schema(description = "平台文件 URL")
     private String fileUrl;
 
     @Schema(description = "封面 URL")
