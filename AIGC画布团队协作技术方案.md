@@ -66,7 +66,8 @@
   -> useCanvasOperations 生成标准 operation
   -> 本地乐观更新 nodes/edges
   -> useCanvasRealtime 发送 WebSocket 消息
-  -> 服务端鉴权、冲突处理、版本递增、落库
+  -> 服务端鉴权、冲突处理、版本递增
+  -> 默认路径同步落 MySQL；启用 Redis 热日志后先写 Redis，再由 Worker 周期落盘
   -> WebSocket 广播已确认 operation
   -> 其他客户端按版本顺序应用 operation
 ```
@@ -80,6 +81,8 @@
 - AIGC 编排层：文本、图片、视频任务调度、计费、审核、结果入库、节点状态推送。
 
 ## 4. 数据模型设计
+
+第 4 章到第 20 章默认描述当前同步 MySQL 路线；第 21 章为生产增强路线。启用 Redis 热日志后，operation 的实时接收、版本分配和短期补拉由 Redis 承担，MySQL 表作为最终持久化、恢复和审计来源。
 
 ### 4.1 canvas_project
 
@@ -129,7 +132,7 @@
 
 ### 4.4 canvas_operation_log
 
-保存每次画布结构变更。
+保存最终持久化后的画布结构变更。默认路径中 operation 实时写入该表；启用 Redis 热日志后，实时 operation 先进入 Redis Stream，再由 Worker 批量写入该表。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -231,7 +234,7 @@
 
 ### 5.2 第一阶段 Operation 类型
 
-| 类型 | 说明 | 是否持久化 |
+| 类型 | 说明 | 是否最终持久化 |
 | --- | --- | --- |
 | NODE_CREATE | 新增节点 | 是 |
 | NODE_DELETE | 删除节点及关联边 | 是 |
@@ -244,7 +247,7 @@
 | ASSET_DETACH | 节点解绑资产 | 是 |
 | TASK_STATUS_PATCH | 服务端任务状态回写节点 | 是 |
 
-视口位置、鼠标位置、选中状态不作为持久化 operation。
+视口位置、鼠标位置、选中状态不作为持久化 operation。启用 Redis 热日志后，表中的“是”表示最终由 Worker 落入 MySQL，不代表 WebSocket ACK 时已经完成 MySQL 落盘。
 
 ### 5.3 Presence 消息
 
@@ -289,7 +292,7 @@ presence 只用于临时协作体验，不写入 operation log。
 - 服务端按项目维度串行应用 operation，保证版本号单调递增。
 - 每个 operation 必须携带 `baseVersion`，但第一阶段不要求 `baseVersion` 必须等于服务端当前版本。
 - 服务端根据当前状态重新校验 operation 是否仍可应用。
-- 应用成功后生成 `nextVersion` 并广播。
+- 应用成功后生成版本并广播。默认路径中该版本为 `nextVersion`；启用 Redis 热日志后广播版本为 `hotVersion`，落盘后再推进 `persistedVersion`。
 - 应用失败时返回 reject，客户端回滚对应乐观更新或重新拉取状态。
 
 ### 6.2 类型级冲突规则
@@ -318,7 +321,7 @@ presence 只用于临时协作体验，不写入 operation log。
 客户端需要维护：
 
 - `clientId`：浏览器标签页级唯一 ID。
-- `lastAppliedVersion`：当前已应用到本地画布的服务端版本。
+- `lastAppliedVersion`：当前已应用到本地画布的服务端版本。默认路径中对应 `nextVersion`；启用 Redis 热日志后对应已应用的 `hotVersion`，保存状态需额外依赖 `persistedVersion` 或服务端 checkpoint。
 - `pendingOperations`：已本地乐观更新但未被服务端确认的操作。
 - `appliedOperationIds`：已处理操作 ID 集合，用于去重。
 
@@ -336,6 +339,8 @@ WebSocket 断开
   -> 服务端逐个确认或拒绝
   -> 如果差量日志缺失，服务端返回最新 snapshot
 ```
+
+启用 Redis 热日志后，missed operations 由 MySQL 持久日志和 Redis 热日志按版本拼接返回，`toVersion` 对应当前可同步的 `hotVersion`。
 
 ### 7.3 差量同步消息
 
@@ -356,6 +361,9 @@ WebSocket 断开
   "projectId": "p_123",
   "fromVersion": 22,
   "toVersion": 30,
+  "persistedVersion": 28,
+  "hotVersion": 30,
+  "snapshotVersion": 20,
   "operations": []
 }
 ```
@@ -380,9 +388,10 @@ WebSocket 断开
 ### 7.4 幂等机制
 
 - 客户端每个 operation 必须生成唯一 `opId`。
-- 服务端使用 `projectId + clientId + opId` 做唯一约束。
-- 如果收到重复 operation，服务端不重复应用，直接返回第一次应用后的结果。
-- 客户端收到自己提交的 `canvas-op-applied` 后，从 pending 队列移除对应操作。
+- 服务端使用 `projectId + clientId + opId` 做幂等去重。
+- 默认路径通过 MySQL 唯一键防重复；启用 Redis 热日志后，热路径先查 Redis 幂等键，落盘时继续依赖 MySQL 唯一键防重复。
+- 如果收到重复 operation，服务端不重复应用，直接返回第一次应用后的结果；启用 Redis 热日志后，返回内容至少包含 `hotVersion` 和当前持久化状态。
+- 客户端收到自己提交的 `canvas-op-applied` 后，从 pending 队列移除对应操作；如果 UI 要显示“已保存”，必须等待 `persisted` 状态或服务端 checkpoint。
 
 ## 8. 撤销重做设计
 
@@ -409,8 +418,8 @@ WebSocket 断开
 ### 8.3 前端历史策略
 
 - 未确认操作可以保留本地临时 history。
-- 已确认操作进入协作 history。
-- 协作 undo 优先从当前用户的 operation log 中寻找可撤销操作。
+- 已 applied 的操作可以进入协作 history；需要显示已保存状态时必须等待 persisted。
+- 协作 undo 优先从当前用户已确认操作中寻找可撤销操作，数据来源包括 Redis 热日志和 MySQL operation log；如果产品只允许撤销已持久化操作，需要显式限制为 persisted 操作。
 - 如果目标节点已经被他人删除，撤销操作应失败并提示状态已变化。
 
 ## 9. 权限与安全
@@ -700,7 +709,7 @@ CREATE TABLE canvas_invite_link (
 | DELETE | `/app-api/canvas/projects/{id}` | 删除项目并移入回收站 |
 | PUT | `/app-api/canvas/projects/{id}/restore` | 从回收站恢复项目 |
 | GET | `/app-api/canvas/projects/{id}/snapshot` | 获取最新快照 |
-| GET | `/app-api/canvas/projects/{id}/operations` | 获取指定版本后的操作日志 |
+| GET | `/app-api/canvas/projects/{id}/operations` | 获取指定版本后的同步增量；默认查 MySQL operation log，启用 Redis 热日志后拼接 MySQL + Redis，并在缺失时返回 snapshot fallback |
 | POST | `/app-api/canvas/projects/{id}/members` | 邀请成员 |
 | GET | `/app-api/canvas/projects/{id}/members` | 成员列表 |
 | PUT | `/app-api/canvas/projects/{id}/members/{memberId}` | 修改成员角色 |
@@ -748,9 +757,9 @@ CREATE TABLE canvas_invite_link (
 ### 11.4 快照策略
 
 - 每 100 到 500 个 operation 生成一次快照，具体阈值按画布规模压测确定。
-- 项目长时间无人编辑时，可以异步压缩历史 operation。
+- 项目长时间无人编辑时，可以异步压缩历史 operation。默认路径压缩 MySQL operation；启用 Redis 热日志后，只能基于 `persistedVersion` 生成快照，不能压缩仅在 Redis 中 accepted/applied 的热操作。
 - 快照生成失败不能影响实时编辑链路。
-- 获取项目时优先加载最新快照，再回放快照之后的 operation。
+- 获取项目时优先加载最新快照，再回放快照之后的 operation。启用 Redis 热日志后，先回放 MySQL 已持久日志，再回放 Redis 未落盘热日志，确保恢复到 `hotVersion`。
 
 ## 12. 生成任务协作改造
 
@@ -789,7 +798,7 @@ CREATE TABLE canvas_invite_link (
 - `outputPreviewUrl`
 - `updatedAt`
 
-任务状态更新由服务端系统用户写入 operation log，`actorUserId` 可为空或使用 system 标识。
+任务状态更新也按统一 operation 提交流程处理，默认路径由服务端系统用户写入 MySQL operation log；启用 Redis 热日志后先写 Redis 热日志并广播，再由 Worker 落盘，`actorUserId` 可为空或使用 system 标识。
 
 ## 13. Yjs / CRDT 引入策略
 
@@ -806,7 +815,7 @@ CREATE TABLE canvas_invite_link (
 
 ### 13.3 推荐方式
 
-- 画布结构仍使用服务端 operation log。
+- 画布结构仍使用服务端 operation log 作为最终持久化记录；生产增强路径下 Redis Stream 承接热日志。
 - 文本节点内容单独使用 Yjs document。
 - 节点数据只保存 Yjs 文档 ID、摘要、最后更新时间。
 - Yjs 文档持久化和权限仍由服务端项目权限控制。
@@ -1108,7 +1117,7 @@ CREATE TABLE canvas_invite_link (
 - 每 100 到 500 条 operation 生成一次 snapshot。
 - snapshot 生成异步执行，不阻塞实时编辑链路。
 - 旧 operation 可归档或仅保留最新 snapshot 之后的差量。
-- 前端自动保存 snapshot 降频，operation 继续实时写入。
+- 前端自动保存 snapshot 降频，operation 默认实时写入 MySQL；启用 Redis 热日志后实时写 Redis Stream，MySQL 周期批量落盘。
 
 影响范围：
 
@@ -1257,7 +1266,7 @@ CREATE TABLE canvas_invite_link (
 
 P0：可靠同步闭环。
 
-- 收敛客户端自动保存 snapshot，改为服务端定期或阈值触发快照。
+- 收敛客户端自动保存 snapshot，改为服务端定期或阈值触发快照；启用 Redis 热日志后，快照只能覆盖已 `persistedVersion` 的操作，不能覆盖仅在 Redis 中 accepted/applied 的热操作。
 - 为 WebSocket 增加自动重连、pending operation 队列、ack 超时和失败重试。
 - 将 `baseVersion` 从记录字段升级为冲突检测输入，明确旧版本操作的接受、合并或拒绝规则。
 - 将当前图状态缓存升级为可观测、可限流的缓存组件，后续支持 Redis 或持久化当前图状态。
@@ -1359,7 +1368,343 @@ P2：长期增强。
 - 多实例房间、成员变更、任务进度和踢出事件接入 Redis/MQ 广播。
 - 在节点数量和渲染复杂度明显上升后，再评估自研渲染分层、虚拟化和 WebGL 加速。
 
-## 21. 结论
+## 21. Redis 热日志与 MySQL 周期落盘方案
+
+当画布进入多人协作、高频拖拽、节点数据连续更新和长时间项目编辑阶段后，如果每条 operation 都同步写入 MySQL，`aigc_canvas_operation_log` 的 insert、唯一索引竞争、项目版本更新和差量查询会逐步成为性能瓶颈。本节作为生产级性能增强方案，推荐采用“Redis 做热日志 + MySQL 周期落盘”的架构：Redis 承接实时协作热路径，MySQL 承接最终持久化、快照、审计和恢复。
+
+### 21.1 设计目标
+
+- 降低 MySQL 高频 insert 和项目版本锁竞争压力。
+- 保持 WebSocket 实时协作体验，operation 接收和广播尽量低延迟。
+- 支持客户端断线后从 Redis 热日志和 MySQL 持久日志拼接增量。
+- 支持 Worker 周期批量落盘，减少事务次数和索引写入次数。
+- 支持定期 snapshot 压缩，避免 operation log 无限增长。
+- 保留最终可恢复、可审计、可追踪的数据链路。
+
+### 21.2 总体架构
+
+```text
+前端 React Flow 画布
+  -> WebSocket / REST 提交 operation
+  -> 后端接入层鉴权、校验、幂等检查
+  -> Redis Stream 写入热日志并分配 hotVersion
+  -> Redis 保存项目热状态和短期增量
+  -> WebSocket 广播 canvas-op-applied
+  -> OperationPersistWorker 周期批量写 MySQL
+  -> SnapshotCompactWorker 定期生成 snapshot
+  -> 清理或归档旧 operation
+```
+
+核心分工：
+
+- Redis：热 operation 日志、项目热版本、幂等键、短期增量同步、当前画布热状态、presence 和在线状态。
+- MySQL：最终 operation log、项目 currentVersion、snapshot、资产引用、成员权限、审计日志。
+- Worker：Redis 到 MySQL 的周期落盘、snapshot 压缩、异常恢复和积压监控。
+- 前端：本地乐观更新、pending/accepted/persisted 状态管理、重连补拉和必要时补交 operation。
+
+### 21.3 版本模型
+
+需要区分 Redis 热版本和 MySQL 持久版本：
+
+| 版本 | 存储位置 | 说明 |
+| --- | --- | --- |
+| `hotVersion` | Redis | Redis 接收 operation 后分配的实时协作版本 |
+| `persistedVersion` | Redis + MySQL checkpoint | MySQL 已持久化到的 operation 版本 |
+| `snapshotVersion` | Redis + MySQL snapshot | 最新 snapshot 覆盖到的版本 |
+
+正常情况下必须满足：
+
+```text
+snapshotVersion <= persistedVersion <= hotVersion
+```
+
+示例：
+
+```text
+snapshotVersion = 100
+persistedVersion = 120
+hotVersion = 129
+```
+
+含义：100 之前已经被 snapshot 覆盖，101 到 120 已落 MySQL，121 到 129 仍在 Redis 热日志中。
+
+### 21.4 Redis Key 设计
+
+建议所有 key 按 `projectId` 拆分，避免全局热点大 key。
+
+| Key | 类型 | 说明 |
+| --- | --- | --- |
+| `canvas:ops:{projectId}` | Stream | 项目热 operation 日志 |
+| `canvas:version:{projectId}` | String | 当前 Redis 热版本 `hotVersion` |
+| `canvas:persisted-version:{projectId}` | String | MySQL 已落盘版本 |
+| `canvas:snapshot-version:{projectId}` | String | 最新 snapshot 覆盖版本 |
+| `canvas:state:{projectId}` | String / Hash | 当前画布热状态 |
+| `canvas:op:idempotent:{projectId}:{clientId}:{opId}` | String | operation 幂等键 |
+| `canvas:active-projects` | Set / ZSet | 活跃项目集合，供 Worker 调度 |
+
+Redis Stream 消息建议字段：
+
+```json
+{
+  "projectId": "1001",
+  "clientId": "client-a",
+  "opId": "op-001",
+  "actorUserId": "2001",
+  "baseVersion": "128",
+  "hotVersion": "129",
+  "operationType": "NODE_MOVE",
+  "operationJson": "{\"nodeId\":\"node-1\",\"position\":{\"x\":100,\"y\":200}}",
+  "inverseOperationJson": "{}",
+  "createdAt": "1710000000000"
+}
+```
+
+幂等键 TTL 建议设置为 1 到 7 天，避免客户端重试或重连补交导致重复应用。
+
+### 21.5 Operation 提交流程
+
+接入层收到 `canvas-op` 后，不再同步写 MySQL operation log，而是先写 Redis 热日志：
+
+```text
+submitOperation(req)
+  -> 校验登录态、租户、项目成员和 editor 权限
+  -> 校验 operationType、operationJson、payload 大小和字段白名单
+  -> 检查 canvas:op:idempotent:{projectId}:{clientId}:{opId}
+  -> 如果已存在，返回已有 hotVersion
+  -> INCR canvas:version:{projectId} 得到 hotVersion
+  -> XADD canvas:ops:{projectId} 写入 operation
+  -> SET 幂等键并设置 TTL
+  -> 应用 operation 到 canvas:state:{projectId}
+  -> 将 projectId 写入 canvas:active-projects
+  -> 广播 canvas-op-applied
+  -> 返回 accepted
+```
+
+为了保证 `INCR`、`XADD`、幂等键写入的原子性，推荐用 Redis Lua 脚本完成。这样同一个项目在 Redis 层获得单调递增版本，MySQL 不参与实时抢版本。
+
+### 21.6 前端 ACK 语义调整
+
+引入 Redis 热日志后，前端不能再把“服务端返回成功”理解为“已经落 MySQL”。建议 operation 状态拆分为：
+
+| 状态 | 说明 |
+| --- | --- |
+| `pending` | 本地已产生，尚未被服务端接收 |
+| `accepted` | 已写入 Redis 热日志，已获得 hotVersion |
+| `applied` | 已被服务端广播并应用到协作房间 |
+| `persisted` | 已由 Worker 落入 MySQL |
+| `rejected` | 权限、校验、冲突或 payload 问题导致拒绝 |
+
+WebSocket 事件建议：
+
+| 事件 | 说明 |
+| --- | --- |
+| `canvas-op-accepted` | 服务端已接收并写入 Redis |
+| `canvas-op-applied` | 服务端已分配版本并广播给房间 |
+| `canvas-op-persisted` | Worker 已落盘到 MySQL，可选发送 |
+| `canvas-op-rejected` | 服务端拒绝 operation |
+
+如果第一版不希望增加 `persisted` UI，可以只在重连时校验落盘状态；但如果页面右上角要显示“已保存”，则必须区分 `accepted` 和 `persisted`。
+
+### 21.7 差量同步流程
+
+客户端重连或补拉时携带 `afterVersion`，服务端需要从 MySQL 和 Redis 拼接增量：
+
+```text
+afterVersion = 120
+persistedVersion = 125
+hotVersion = 130
+
+返回：
+  MySQL operation_log 中 121 到 125
+  Redis 热日志中 126 到 130
+```
+
+同步规则：
+
+- 如果 `afterVersion < snapshotVersion`，直接返回最新 snapshot，并附带 snapshot 之后可回放的 operation。
+- 如果 `afterVersion <= persistedVersion`，先查 MySQL 中 `afterVersion + 1` 到 `persistedVersion`。
+- 如果 `persistedVersion < hotVersion`，再查 Redis 中 `persistedVersion + 1` 到 `hotVersion`。
+- 如果 Redis 热日志缺失必要版本，返回 snapshot fallback，避免客户端停留在不完整状态。
+
+### 21.8 周期落盘 Worker
+
+`OperationPersistWorker` 负责将 Redis 热日志批量写入 MySQL：
+
+```text
+persistWorker(projectId)
+  -> 读取 persistedVersion 和 hotVersion
+  -> 如果 hotVersion <= persistedVersion，跳过
+  -> 从 Redis Stream 拉取 persistedVersion + 1 到 hotVersion 的 operation
+  -> 按 hotVersion 排序并做幂等过滤
+  -> 批量 insert aigc_canvas_operation_log
+  -> 更新 aigc_canvas_project.current_version = hotVersion
+  -> 更新 aigc_canvas_persist_checkpoint.persisted_version = hotVersion
+  -> 更新 canvas:persisted-version:{projectId} = hotVersion
+  -> 必要时广播 canvas-op-persisted
+```
+
+推荐触发条件：
+
+- 每 1 到 3 秒落盘一次。
+- 每累计 50 到 200 条 operation 落盘一次。
+- 项目空闲超过 5 到 10 秒后主动补一次落盘。
+- 用户关闭页面、房间无人在线或服务关闭前尽量补一次落盘。
+
+MySQL 写入应保持批量事务：多条 operation 一次 insert，项目 `currentVersion` 一次 update，避免每条 operation 一个事务。
+
+### 21.9 快照压缩 Worker
+
+`SnapshotCompactWorker` 负责把已落盘 operation 压缩成 snapshot：
+
+```text
+snapshotWorker(projectId)
+  -> 读取 snapshotVersion 和 persistedVersion
+  -> 判断 persistedVersion - snapshotVersion 是否超过阈值
+  -> 从 Redis state 或 MySQL snapshot + operation 重建当前画布
+  -> 写入 aigc_canvas_snapshot
+  -> 更新项目 latest_snapshot_id 和 snapshotVersion
+  -> 归档或清理 snapshotVersion 之前的旧 operation
+  -> 清理 Redis 中不再需要的热日志
+```
+
+推荐阈值：
+
+- 每 300 到 500 条 operation 生成一次 snapshot。
+- 或每 5 到 10 分钟生成一次 snapshot。
+- 或项目停止编辑 30 秒后生成一次 snapshot。
+
+快照生成失败不能阻塞实时编辑链路，只能告警并稍后重试。
+
+### 21.10 Redis 热日志清理
+
+Redis 只保留短期热日志，不能无限增长。建议保留策略：
+
+```text
+保留 max(snapshotVersion, persistedVersion - safetyWindow) 之后的日志
+```
+
+示例：
+
+```text
+snapshotVersion = 1000
+persistedVersion = 1300
+hotVersion = 1320
+safetyWindow = 1000
+```
+
+可以保留 1001 到 1320 的日志，或者按项目规模保留最近 1000 到 5000 条 operation。清理时要保证客户端仍能通过 snapshot fallback 恢复，不能只删除 Redis 而不更新 snapshot 和 checkpoint。
+
+### 21.11 MySQL Checkpoint 表
+
+建议新增落盘检查点表，用于服务重启、Redis 异常恢复和监控：
+
+```sql
+CREATE TABLE aigc_canvas_persist_checkpoint (
+  id BIGINT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+  project_id BIGINT NOT NULL,
+  hot_version BIGINT NOT NULL DEFAULT 0,
+  persisted_version BIGINT NOT NULL DEFAULT 0,
+  snapshot_version BIGINT NOT NULL DEFAULT 0,
+  last_persist_time DATETIME NULL,
+  last_snapshot_time DATETIME NULL,
+  create_time DATETIME NOT NULL,
+  update_time DATETIME NOT NULL,
+  UNIQUE KEY uk_project_id (project_id)
+);
+```
+
+用途：
+
+- 服务启动时恢复每个项目的 `persistedVersion` 和 `snapshotVersion`。
+- Redis 数据丢失时判断 MySQL 已保存到哪里。
+- 监控 `hotVersion - persistedVersion` 的落盘积压。
+- 支持运维排查落盘延迟和 snapshot 压缩延迟。
+
+### 21.12 一致性与可靠性
+
+推荐可靠性等级：`Redis Stream + AOF everysec + 客户端重试 + MySQL 周期批量落盘`。
+
+Redis 建议配置：
+
+```text
+appendonly yes
+appendfsync everysec
+```
+
+一致性处理规则：
+
+- Redis 写入成功但 MySQL 尚未落盘时，客户端状态为 `accepted`，不能等同于最终持久化完成。
+- Worker 写 MySQL 失败时，Redis Stream 消息不能 ack 或不能标记为已落盘，必须重试。
+- MySQL 批量写入必须继续使用 `projectId + clientId + opId` 幂等唯一键，防止重复落盘。
+- 同一 `projectId` 的落盘需要按版本顺序推进，不能跳过中间版本直接更新 `persistedVersion`。
+- 服务重启后 `RecoveryWorker` 要扫描 Redis 和 checkpoint，补齐 `persistedVersion < hotVersion` 的项目。
+- Redis 热日志缺失时必须返回 snapshot fallback，不能让客户端回放不完整 operation。
+
+如果业务要求“服务端确认后绝不丢操作”，可以增加 MySQL 轻量接收表，只记录 `projectId、clientId、opId、hotVersion、createdAt`，完整 operation 仍由 Redis 周期落盘。但该方案会重新引入一部分 MySQL 写压力，建议在可靠性要求明确后再采用。
+
+### 21.13 监控指标与告警
+
+必须监控以下指标：
+
+| 指标 | 说明 | 建议告警 |
+| --- | --- | --- |
+| `hotVersion - persistedVersion` | Redis 未落盘积压条数 | 单项目超过 1000 条 |
+| `persistedVersion - snapshotVersion` | snapshot 压缩落后条数 | 单项目超过 3000 条 |
+| Redis Stream 长度 | 热日志内存压力 | 超过项目阈值 |
+| Operation 落盘延迟 | 从 accepted 到 persisted 的耗时 | P95 超过 10 秒 |
+| MySQL batch insert 耗时 | 周期落盘性能 | P95 超过 1 秒 |
+| `syncOperations` P95/P99 | 断线补拉体验 | 明显高于实时接口 |
+| Worker 重试次数 | 落盘异常 | 连续失败立即告警 |
+
+### 21.14 推荐落地阶段
+
+第一阶段先做低风险改造：
+
+- 前端继续降低高频提交，拖拽结束只提交最终 `NODE_MOVE`。
+- `NODE_UPDATE_DATA` 继续 debounce 和 patch 合并。
+- 服务端 snapshot 改为定期或阈值触发，减少客户端全量覆盖风险。
+- 保留当前同步写 MySQL 作为默认路径。
+
+第二阶段引入 Redis 热日志：
+
+- 新增 Redis Stream 和 Lua 原子写入脚本。
+- 提交 operation 改为写 Redis 并返回 `accepted`。
+- WebSocket 广播使用 Redis `hotVersion`。
+- `syncOperations` 支持 MySQL + Redis 拼接增量。
+
+第三阶段引入周期落盘和恢复：
+
+- 新增 `OperationPersistWorker` 批量写 MySQL。
+- 新增 checkpoint 表和 `RecoveryWorker`。
+- 前端区分 `accepted` 和 `persisted`。
+- 增加积压、延迟、失败重试监控。
+
+第四阶段引入自动压缩和冷热分离：
+
+- 新增 `SnapshotCompactWorker`。
+- snapshot 成功后归档或清理旧 operation。
+- Redis 热日志按窗口清理。
+- 历史 operation 可迁移到归档表，在线同步只查最新 snapshot 之后的日志。
+
+### 21.15 适用边界
+
+适合使用本方案的场景：
+
+- 多人同时编辑同一画布。
+- 节点拖拽、缩放、数据 patch 高频发生。
+- MySQL operation insert TPS 或项目版本锁等待已经明显升高。
+- 客户端断线重连需要快速补拉最近增量。
+- 需要保留最终审计和恢复能力，但允许 Redis 与 MySQL 存在秒级短暂不一致。
+
+不建议过早使用本方案的场景：
+
+- 当前仍是单人或少量协作，MySQL 指标没有压力。
+- 团队暂时没有 Worker、Redis AOF、恢复任务和监控告警的维护能力。
+- 业务要求服务端 ack 后必须立即完成强持久化，不能接受 Redis 与 MySQL 短暂不一致。
+
+最终推荐路线：先完成“前端降频 + 服务端 snapshot 化 + operation 压缩”，当 `submitOperation` P95、数据库 insert TPS、锁等待或单项目 operation 增长达到瓶颈后，再升级到“Redis 热日志 + MySQL 周期落盘”。
+
+## 22. 结论
 
 本方案推荐采用“服务端权威状态 + 节点级 operation log + WebSocket 项目房间广播”的路线，先实现可落地的 Figma 式基础协作体验，再逐步补齐可靠性、任务编排、资产中心化和局部 CRDT 能力。
 

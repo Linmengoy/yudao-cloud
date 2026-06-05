@@ -1,21 +1,21 @@
 import type { AigcTaskStatus, AigcTaskType } from "./task-types";
 
 export const taskStatusMeta: Record<string, { label: string; className: string; dotClassName: string; polling: boolean }> = {
-  CREATED: { label: "已创建", className: "border-border-warm text-muted-gray", dotClassName: "bg-muted-gray", polling: true },
-  PRICE_CALCULATED: { label: "已计价", className: "border-border-warm text-muted-gray", dotClassName: "bg-muted-gray", polling: true },
-  FROZEN: { label: "已冻结积分", className: "border-[rgba(28,28,28,0.4)] text-charcoal", dotClassName: "bg-charcoal", polling: true },
-  QUEUED: { label: "排队中", className: "border-[rgba(28,28,28,0.4)] text-charcoal", dotClassName: "bg-charcoal", polling: true },
-  RUNNING: { label: "生成中", className: "border-[rgba(28,28,28,0.4)] text-charcoal", dotClassName: "bg-charcoal", polling: true },
-  SUBMITTED: { label: "已提交供应商", className: "border-[rgba(28,28,28,0.4)] text-charcoal", dotClassName: "bg-charcoal", polling: true },
-  CALLBACK_WAITING: { label: "等待结果", className: "border-[rgba(28,28,28,0.4)] text-charcoal", dotClassName: "bg-charcoal", polling: true },
-  DOWNLOADING: { label: "结果处理中", className: "border-[rgba(28,28,28,0.4)] text-charcoal", dotClassName: "bg-charcoal", polling: true },
-  ASSET_CREATING: { label: "生成资产中", className: "border-[rgba(28,28,28,0.4)] text-charcoal", dotClassName: "bg-charcoal", polling: true },
-  AUDITING: { label: "审核中", className: "border-[rgba(28,28,28,0.4)] text-charcoal", dotClassName: "bg-charcoal", polling: true },
-  SUCCESS: { label: "已完成", className: "border-border-warm text-charcoal", dotClassName: "bg-charcoal", polling: false },
-  FAILED: { label: "生成失败", className: "border-border-warm text-destructive", dotClassName: "bg-destructive", polling: false },
-  CANCELLED: { label: "已取消", className: "border-border-warm text-muted-gray", dotClassName: "bg-muted-gray", polling: false },
-  REFUNDING: { label: "退款处理中", className: "border-[rgba(28,28,28,0.4)] text-charcoal", dotClassName: "bg-charcoal", polling: true },
-  REFUNDED: { label: "已退款", className: "border-border-warm text-charcoal", dotClassName: "bg-charcoal", polling: false },
+  CREATED: { label: "已创建", className: "border-slate-200 bg-slate-50 text-slate-600", dotClassName: "bg-slate-500", polling: true },
+  PRICE_CALCULATED: { label: "已计价", className: "border-slate-200 bg-slate-50 text-slate-600", dotClassName: "bg-slate-500", polling: true },
+  FROZEN: { label: "已冻结积分", className: "border-amber-200 bg-amber-50 text-amber-700", dotClassName: "bg-amber-500", polling: true },
+  QUEUED: { label: "排队中", className: "border-amber-200 bg-amber-50 text-amber-700", dotClassName: "bg-amber-500", polling: true },
+  RUNNING: { label: "生成中", className: "border-blue-200 bg-blue-50 text-blue-700", dotClassName: "bg-blue-500", polling: true },
+  SUBMITTED: { label: "已提交供应商", className: "border-amber-200 bg-amber-50 text-amber-700", dotClassName: "bg-amber-500", polling: true },
+  CALLBACK_WAITING: { label: "等待结果", className: "border-amber-200 bg-amber-50 text-amber-700", dotClassName: "bg-amber-500", polling: true },
+  DOWNLOADING: { label: "结果处理中", className: "border-blue-200 bg-blue-50 text-blue-700", dotClassName: "bg-blue-500", polling: true },
+  ASSET_CREATING: { label: "生成资产中", className: "border-blue-200 bg-blue-50 text-blue-700", dotClassName: "bg-blue-500", polling: true },
+  AUDITING: { label: "审核中", className: "border-violet-200 bg-violet-50 text-violet-700", dotClassName: "bg-violet-500", polling: true },
+  SUCCESS: { label: "已完成", className: "border-emerald-200 bg-emerald-50 text-emerald-700", dotClassName: "bg-emerald-500", polling: false },
+  FAILED: { label: "生成失败", className: "border-red-200 bg-red-50 text-red-700", dotClassName: "bg-red-500", polling: false },
+  CANCELLED: { label: "已取消", className: "border-slate-200 bg-slate-50 text-slate-600", dotClassName: "bg-slate-500", polling: false },
+  REFUNDING: { label: "退款处理中", className: "border-cyan-200 bg-cyan-50 text-cyan-700", dotClassName: "bg-cyan-500", polling: true },
+  REFUNDED: { label: "已退款", className: "border-cyan-200 bg-cyan-50 text-cyan-700", dotClassName: "bg-cyan-500", polling: false },
 };
 
 export const taskTypeLabels: Record<string, string> = {
@@ -31,8 +31,8 @@ export const taskTypeLabels: Record<string, string> = {
 };
 
 export function getTaskStatusMeta(status?: AigcTaskStatus | string) {
-  if (!status) return { label: "未知", className: "border-border-warm text-muted-gray", dotClassName: "bg-muted-gray", polling: false };
-  return taskStatusMeta[status] ?? { label: status, className: "border-border-warm text-muted-gray", dotClassName: "bg-muted-gray", polling: false };
+  if (!status) return { label: "未知", className: "border-slate-200 bg-slate-50 text-slate-600", dotClassName: "bg-slate-500", polling: false };
+  return taskStatusMeta[status] ?? { label: status, className: "border-slate-200 bg-slate-50 text-slate-600", dotClassName: "bg-slate-500", polling: false };
 }
 
 export function getTaskTypeLabel(type?: AigcTaskType | string) {
