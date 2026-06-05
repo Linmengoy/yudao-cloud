@@ -11,6 +11,7 @@ import {
   createProject,
   deleteProject,
   listProjects,
+  renameProject,
   type ProjectMeta,
 } from "@/features/projects/project-store";
 
@@ -81,6 +82,10 @@ function canDeleteProject(project: ProjectListItem) {
   return project.source === "local" || project.role === "owner";
 }
 
+function canRenameProject(project: ProjectListItem) {
+  return project.source === "local" || (project.readonly !== true && project.role !== "viewer");
+}
+
 function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
   useEffect(() => {
     if (!project.coverUrl || !onLoad) return;
@@ -124,6 +129,9 @@ export default function ProjectsPage() {
   const [pageNo, setPageNo] = useState(1);
   const [total, setTotal] = useState(0);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editingProjectName, setEditingProjectName] = useState("");
+  const [savingProjectId, setSavingProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -247,6 +255,41 @@ export default function ProjectsPage() {
     }
   }
 
+  function startRename(project: ProjectListItem) {
+    if (!canRenameProject(project) || savingProjectId) return;
+    setEditingProjectId(project.id);
+    setEditingProjectName(project.name);
+  }
+
+  function cancelRename() {
+    setEditingProjectId(null);
+    setEditingProjectName("");
+  }
+
+  async function submitRename(project: ProjectListItem) {
+    if (savingProjectId) return;
+    const nextName = editingProjectName.trim();
+    if (!nextName || nextName === project.name) {
+      cancelRename();
+      return;
+    }
+    setSavingProjectId(project.id);
+    try {
+      if (project.source === "local") {
+        renameProject(project.id, nextName);
+      } else {
+        await canvasApi.updateProject(project.id, { name: nextName });
+      }
+      setProjects((items) => items.map((item) => item.id === project.id ? { ...item, name: nextName } : item));
+      setStatusMessage("");
+      cancelRename();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "项目名称修改失败，请稍后再试。");
+    } finally {
+      setSavingProjectId(null);
+    }
+  }
+
   return (
     <div className="mx-auto flex max-w-[1180px] flex-col px-6 py-10">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -329,7 +372,30 @@ export default function ProjectsPage() {
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-charcoal">{project.name}</p>
+                      {editingProjectId === project.id ? (
+                        <input
+                          value={editingProjectName}
+                          autoFocus
+                          disabled={savingProjectId === project.id}
+                          onChange={(event) => setEditingProjectName(event.target.value)}
+                          onBlur={() => submitRename(project)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") submitRename(project);
+                            if (event.key === "Escape") cancelRename();
+                          }}
+                          className="w-full rounded-md border border-border-warm bg-background px-2 py-1 text-sm font-medium text-charcoal outline-none focus:border-[rgba(28,28,28,0.45)] disabled:opacity-60"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startRename(project)}
+                          disabled={!canRenameProject(project) || savingProjectId === project.id}
+                          className="block max-w-full truncate rounded-sm text-left text-sm font-medium text-charcoal outline-none hover:text-charcoal disabled:cursor-default disabled:hover:text-charcoal"
+                          title={canRenameProject(project) ? "点击修改项目名称" : project.name}
+                        >
+                          {project.name}
+                        </button>
+                      )}
                         <p className="mt-1 text-xs text-muted-gray">
                           {projectRoleLabel(project)}
                           {project.source === "local" ? " · 本机草稿" : ""}
