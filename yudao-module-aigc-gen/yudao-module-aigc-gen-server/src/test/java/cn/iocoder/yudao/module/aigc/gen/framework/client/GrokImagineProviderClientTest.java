@@ -98,6 +98,36 @@ public class GrokImagineProviderClientTest {
         }
     }
 
+    @Test
+    public void testSubmit_imageToVideoUsesSnakeCaseAspectRatio() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/videos", exchange -> handleVideoSubmit(exchange, requestBody));
+        server.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            GrokImagineProviderClient client = new GrokImagineProviderClient();
+
+            AigcProviderSubmitRespDTO respDTO = client.submit(new AigcProviderSubmitReqDTO()
+                    .setProviderBaseUrl(baseUrl)
+                    .setProviderApiKey("test-key")
+                    .setProviderModel("grok-imagine-video-1.5-preview")
+                    .setPrompt("图片中的人物在左右观望")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setInputParams("""
+                            {"aspect_ratio":"9:16","duration":"5","resolution":"480p","providerModel":"grok-imagine-video-1.5-preview","referenceImages":["data:image/jpeg;base64,aW1hZ2UtYnl0ZXM="]}
+                            """));
+
+            assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(requestBody.get());
+            assertEquals("720x1280", body.getStr("size"));
+            assertFalse(body.containsKey("aspect_ratio"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private void handleVideoSubmit(HttpExchange exchange, AtomicReference<String> requestBody) throws IOException {
         requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
         byte[] response = "{\"id\":\"video-task-1\",\"status\":\"queued\"}".getBytes(StandardCharsets.UTF_8);

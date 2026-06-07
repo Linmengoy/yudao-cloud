@@ -131,6 +131,7 @@ public class GrokImagineProviderClient implements AigcProviderClient {
                 || "resolution".equals(key)
                 || "ratio".equals(key)
                 || "aspectRatio".equals(key)
+                || "aspect_ratio".equals(key)
                 || "size".equals(key)
                 || "image".equals(key)
                 || "image_url".equals(key)
@@ -199,7 +200,7 @@ public class GrokImagineProviderClient implements AigcProviderClient {
         if (StrUtil.isNotBlank(size)) {
             return size.replace("*", "x");
         }
-        String ratio = firstNonBlank(params.getStr("ratio"), params.getStr("aspectRatio"), resolveImageRatio(image), "16:9");
+        String ratio = firstNonBlank(params.getStr("ratio"), params.getStr("aspectRatio"), params.getStr("aspect_ratio"), resolveImageRatio(image), "16:9");
         String resolution = params.getStr("resolution", "720p");
         int longSide = "1080p".equalsIgnoreCase(resolution) ? 1920 : 1280;
         return switch (ratio) {
