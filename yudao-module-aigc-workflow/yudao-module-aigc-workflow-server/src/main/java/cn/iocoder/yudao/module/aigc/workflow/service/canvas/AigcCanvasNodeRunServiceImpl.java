@@ -11,6 +11,7 @@ import cn.iocoder.yudao.module.aigc.gen.api.AigcGenerateApi;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateResultRespDTO;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateSubmitReqDTO;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateSubmitRespDTO;
+import cn.iocoder.yudao.module.aigc.gen.enums.AigcGenerateStatusEnum;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunSyncReqVO;
@@ -26,10 +27,17 @@ import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @Validated
 public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
+
+    private static final Set<String> PROVIDER_SYNC_STATUSES = Set.of(
+            AigcGenerateStatusEnum.SUBMITTED.getCode(),
+            AigcGenerateStatusEnum.CALLBACK_WAITING.getCode(),
+            AigcGenerateStatusEnum.SYNCING.getCode()
+    );
 
     @Resource
     private AigcCanvasProjectService projectService;
@@ -86,6 +94,10 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
 
     private AigcGenerateResultRespDTO getResultReadyForCanvas(Long taskId) {
         AigcGenerateResultRespDTO result = generateApi.getResult(taskId).getCheckedData();
+        if (isProviderSyncStatus(result)) {
+            generateApi.syncTask(taskId).getCheckedData();
+            result = generateApi.getResult(taskId).getCheckedData();
+        }
         if (!isSuccessWithPendingDataUrlAsset(result)) {
             return result;
         }
@@ -97,6 +109,10 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             }
         }
         return result.setStatus("ASSET_CREATING");
+    }
+
+    private boolean isProviderSyncStatus(AigcGenerateResultRespDTO result) {
+        return result != null && PROVIDER_SYNC_STATUSES.contains(result.getStatus());
     }
 
     private boolean isSuccessWithPendingDataUrlAsset(AigcGenerateResultRespDTO result) {

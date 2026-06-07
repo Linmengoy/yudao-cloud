@@ -165,10 +165,13 @@ public class AigcTaskServiceImpl implements AigcTaskService {
     @Transactional(rollbackFor = Exception.class)
     public void updateTaskStatus(AigcTaskStatusUpdateReqDTO reqDTO, String toStatus) {
         AigcTaskDO task = validateTaskExists(reqDTO.getTaskId());
-        if (Objects.equals(task.getStatus(), toStatus)) {
+        boolean sameStatus = Objects.equals(task.getStatus(), toStatus);
+        if (sameStatus && !hasStatusUpdatePayload(reqDTO)) {
             return;
         }
-        validateStatusTransfer(task.getStatus(), toStatus);
+        if (!sameStatus) {
+            validateStatusTransfer(task.getStatus(), toStatus);
+        }
         AigcTaskDO updateObj = BeanUtils.toBean(reqDTO, AigcTaskDO.class)
                 .setId(reqDTO.getTaskId())
                 .setStatus(toStatus);
@@ -176,14 +179,14 @@ public class AigcTaskServiceImpl implements AigcTaskService {
             updateObj.setProgress(100);
         }
         updateObj.setOutputSummary(buildOutputSummary(reqDTO.getOutputText()));
-        if (AigcTaskStatusEnum.RUNNING.getCode().equals(toStatus)) {
+        if (!sameStatus && AigcTaskStatusEnum.RUNNING.getCode().equals(toStatus)) {
             updateObj.setStartTime(LocalDateTime.now());
         }
-        if (AigcTaskStatusEnum.CALLBACK_WAITING.getCode().equals(toStatus)) {
+        if (!sameStatus && AigcTaskStatusEnum.CALLBACK_WAITING.getCode().equals(toStatus)) {
             updateObj.setCallbackTime(LocalDateTime.now());
         }
-        if (AigcTaskStatusEnum.SUCCESS.getCode().equals(toStatus) || AigcTaskStatusEnum.FAILED.getCode().equals(toStatus)
-                || AigcTaskStatusEnum.CANCELLED.getCode().equals(toStatus) || AigcTaskStatusEnum.REFUNDED.getCode().equals(toStatus)) {
+        if (!sameStatus && (AigcTaskStatusEnum.SUCCESS.getCode().equals(toStatus) || AigcTaskStatusEnum.FAILED.getCode().equals(toStatus)
+                || AigcTaskStatusEnum.CANCELLED.getCode().equals(toStatus) || AigcTaskStatusEnum.REFUNDED.getCode().equals(toStatus))) {
             updateObj.setFinishTime(LocalDateTime.now());
         }
         if (taskMapper.updateByIdAndStatus(updateObj, task.getStatus()) == 0) {
@@ -196,7 +199,20 @@ public class AigcTaskServiceImpl implements AigcTaskService {
         if (reqDTO.getOutputText() != null || reqDTO.getOutputData() != null) {
             taskResultMapper.saveByTaskId(reqDTO.getTaskId(), reqDTO.getOutputText(), reqDTO.getOutputData());
         }
-        taskLogService.createTaskLog(task.getId(), task.getTaskNo(), task.getStatus(), toStatus, "STATUS_UPDATE", "任务状态变更");
+        if (!sameStatus) {
+            taskLogService.createTaskLog(task.getId(), task.getTaskNo(), task.getStatus(), toStatus, "STATUS_UPDATE", "任务状态变更");
+        }
+    }
+
+    private boolean hasStatusUpdatePayload(AigcTaskStatusUpdateReqDTO reqDTO) {
+        return reqDTO.getExternalTaskId() != null
+                || reqDTO.getOutputAssetId() != null
+                || reqDTO.getOutputAssetType() != null
+                || reqDTO.getOutputText() != null
+                || reqDTO.getOutputData() != null
+                || reqDTO.getFailCode() != null
+                || reqDTO.getFailReason() != null
+                || reqDTO.getProgress() != null;
     }
 
     @Override
