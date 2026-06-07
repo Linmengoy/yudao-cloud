@@ -14,6 +14,9 @@ import cn.iocoder.yudao.module.aigc.gen.framework.client.dto.AigcProviderSubmitR
 import cn.iocoder.yudao.module.aigc.gen.framework.security.AigcGenerateFileSecurityUtils;
 import org.springframework.stereotype.Component;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -99,13 +102,14 @@ public class GrokImagineProviderClient implements AigcProviderClient {
         body.set("model", StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode()));
         body.set("prompt", StrUtil.blankToDefault(reqDTO.getPrompt(), ""));
         if (isVideo(reqDTO)) {
+            String providerImage = null;
             String image = firstNonBlank(params.getStr("image_url"), params.getStr("image"), firstInputImage(params));
             if (StrUtil.isNotBlank(image)) {
-                String providerImage = toProviderImage(image, reqDTO);
+                providerImage = toProviderImage(image, reqDTO);
                 body.set("images", new JSONArray().put(providerImage).put(providerImage));
             }
             body.set("seconds", resolveSeconds(params));
-            body.set("size", resolveVideoSize(params));
+            body.set("size", resolveVideoSize(params, providerImage));
         } else {
             body.set("n", params.getInt("n", 1));
         }
@@ -190,12 +194,12 @@ public class GrokImagineProviderClient implements AigcProviderClient {
         return "15";
     }
 
-    private String resolveVideoSize(JSONObject params) {
+    private String resolveVideoSize(JSONObject params, String image) {
         String size = firstNonBlank(params.getStr("size"), params.getStr("grokSize"));
         if (StrUtil.isNotBlank(size)) {
             return size.replace("*", "x");
         }
-        String ratio = firstNonBlank(params.getStr("ratio"), params.getStr("aspectRatio"), "16:9");
+        String ratio = firstNonBlank(params.getStr("ratio"), params.getStr("aspectRatio"), resolveImageRatio(image), "16:9");
         String resolution = params.getStr("resolution", "720p");
         int longSide = "1080p".equalsIgnoreCase(resolution) ? 1920 : 1280;
         return switch (ratio) {
@@ -206,6 +210,45 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             case "21:9" -> longSide == 1920 ? "1920x823" : "1280x549";
             default -> longSide == 1920 ? "1920x1080" : "1280x720";
         };
+    }
+
+    private String resolveImageRatio(String image) {
+        if (StrUtil.isBlank(image) || !StrUtil.startWithIgnoreCase(image, "data:")) {
+            return null;
+        }
+        try {
+            int commaIndex = image.indexOf(',');
+            if (commaIndex < 0) {
+                return null;
+            }
+            BufferedImage bufferedImage = ImageIO.read(new ByteArrayInputStream(Base64.getDecoder().decode(image.substring(commaIndex + 1))));
+            if (bufferedImage == null || bufferedImage.getWidth() <= 0 || bufferedImage.getHeight() <= 0) {
+                return null;
+            }
+            return closestRatio(bufferedImage.getWidth(), bufferedImage.getHeight());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String closestRatio(int width, int height) {
+        double ratio = (double) width / height;
+        if (Math.abs(ratio - 1D) < 0.08D) {
+            return "1:1";
+        }
+        if (ratio < 0.68D) {
+            return "9:16";
+        }
+        if (ratio < 0.9D) {
+            return "3:4";
+        }
+        if (ratio < 1.5D) {
+            return "4:3";
+        }
+        if (ratio > 2D) {
+            return "21:9";
+        }
+        return "16:9";
     }
 
     private AigcProviderSubmitRespDTO parseImageResponse(String body) {
