@@ -108,10 +108,19 @@ public class GrokImagineProviderClient implements AigcProviderClient {
     }
 
     private boolean isInternalParam(String key) {
-        return "inputImages".equals(key) || "inputImageIds".equals(key) || "inputImageUrls".equals(key);
+        return "providerModel".equals(key)
+                || "referenceImages".equals(key)
+                || "referenceImageIds".equals(key)
+                || "inputImages".equals(key)
+                || "inputImageIds".equals(key)
+                || "inputImageUrls".equals(key);
     }
 
     private String firstInputImage(JSONObject params) {
+        JSONArray referenceImages = params.getJSONArray("referenceImages");
+        if (referenceImages != null && !referenceImages.isEmpty()) {
+            return referenceImages.getStr(0);
+        }
         JSONArray inputImages = params.getJSONArray("inputImages");
         if (inputImages != null && !inputImages.isEmpty()) {
             JSONObject image = JSONUtil.parseObj(inputImages.get(0));
