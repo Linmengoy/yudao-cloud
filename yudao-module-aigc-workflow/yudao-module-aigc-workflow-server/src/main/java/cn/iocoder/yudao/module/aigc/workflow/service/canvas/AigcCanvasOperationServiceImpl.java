@@ -50,7 +50,7 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
             "generationRunStartedAt", "elapsedMs", "upstreamStatus", "ratio", "resolution", "duration",
             "size", "generateAudio", "watermark", "createdAt", "updatedAt"));
     private static final Set<String> BLOCKED_NODE_DATA_KEYS = new HashSet<>(Arrays.asList(
-            "dataUrl", "videoUrl", "blobUrl", "objectUrl", "localUrl", "inputImages", "imageUrls"));
+            "dataUrl", "blobUrl", "objectUrl", "localUrl", "inputImages", "imageUrls"));
 
     @Resource
     private AigcCanvasProjectService projectService;
