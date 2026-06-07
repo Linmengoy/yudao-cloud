@@ -21,6 +21,7 @@ import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasOpe
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.AigcCanvasRoomService;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasOperationAppliedMessage;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -31,6 +32,7 @@ import java.util.Set;
 
 @Service
 @Validated
+@Slf4j
 public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
 
     private static final Set<String> PROVIDER_SYNC_STATUSES = Set.of(
@@ -95,7 +97,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     private AigcGenerateResultRespDTO getResultReadyForCanvas(Long taskId) {
         AigcGenerateResultRespDTO result = generateApi.getResult(taskId).getCheckedData();
         if (isProviderSyncStatus(result)) {
-            generateApi.syncTask(taskId).getCheckedData();
+            syncProviderTaskQuietly(taskId);
             result = generateApi.getResult(taskId).getCheckedData();
         }
         if (!isSuccessWithPendingDataUrlAsset(result)) {
@@ -113,6 +115,14 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
 
     private boolean isProviderSyncStatus(AigcGenerateResultRespDTO result) {
         return result != null && PROVIDER_SYNC_STATUSES.contains(result.getStatus());
+    }
+
+    private void syncProviderTaskQuietly(Long taskId) {
+        try {
+            generateApi.syncTask(taskId).getCheckedData();
+        } catch (Exception ex) {
+            log.warn("[syncProviderTaskQuietly][taskId({}) 同步第三方任务失败，保留当前画布轮询状态]", taskId, ex);
+        }
     }
 
     private boolean isSuccessWithPendingDataUrlAsset(AigcGenerateResultRespDTO result) {
