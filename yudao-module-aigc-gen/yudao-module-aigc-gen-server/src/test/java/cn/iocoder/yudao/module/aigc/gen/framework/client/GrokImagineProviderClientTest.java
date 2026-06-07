@@ -28,6 +28,7 @@ public class GrokImagineProviderClientTest {
         server.start();
         try {
             String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            String imageUrl = "data:image/jpeg;base64,aW1hZ2UtYnl0ZXM=";
             GrokImagineProviderClient client = new GrokImagineProviderClient();
 
             AigcProviderSubmitRespDTO respDTO = client.submit(new AigcProviderSubmitReqDTO()
@@ -38,19 +39,25 @@ public class GrokImagineProviderClientTest {
                     .setGenerateType("VIDEO")
                     .setGenerateMode("IMAGE_TO_VIDEO")
                     .setInputParams("""
-                            {"duration":"5","resolution":"480p","providerModel":"grok-imagine-video-1.5-preview","referenceImageIds":["draft_1"],"referenceImages":["https://example.com/input.jpg"]}
-                            """));
+                            {"duration":"5","resolution":"480p","ratio":"16:9","providerModel":"grok-imagine-video-1.5-preview","referenceImageIds":["draft_1"],"referenceImages":["%s"]}
+                            """.formatted(imageUrl)));
 
-            assertTrue(respDTO.getSuccess());
+            assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
             JSONObject body = JSONUtil.parseObj(requestBody.get());
             assertEquals("grok-imagine-video-1.5-preview", body.getStr("model"));
             assertEquals("Angelina jolie 在海边散步", body.getStr("prompt"));
-            assertEquals("https://example.com/input.jpg", body.getStr("image_url"));
-            assertEquals("5", body.getStr("duration"));
-            assertEquals("480p", body.getStr("resolution"));
+            assertFalse(body.containsKey("image_url"));
+            assertEquals("6", body.getStr("seconds"));
+            assertEquals("1280x720", body.getStr("size"));
+            assertEquals(2, body.getJSONArray("images").size());
+            assertTrue(body.getJSONArray("images").getStr(0).startsWith("data:image/jpeg;base64,"));
+            assertEquals(body.getJSONArray("images").getStr(0), body.getJSONArray("images").getStr(1));
             assertFalse(body.containsKey("providerModel"));
             assertFalse(body.containsKey("referenceImages"));
             assertFalse(body.containsKey("referenceImageIds"));
+            assertFalse(body.containsKey("duration"));
+            assertFalse(body.containsKey("resolution"));
+            assertFalse(body.containsKey("ratio"));
         } finally {
             server.stop(0);
         }
@@ -65,4 +72,5 @@ public class GrokImagineProviderClientTest {
             os.write(response);
         }
     }
+
 }
