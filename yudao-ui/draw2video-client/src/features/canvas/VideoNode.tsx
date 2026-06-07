@@ -576,7 +576,33 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           >
             <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[inherit]">
               {videoSrc ? (
-                <video src={videoSrc} className="size-full object-contain" controls />
+                <video
+                  src={videoSrc}
+                  className="size-full object-contain"
+                  controls
+                  onLoadedMetadata={(event) => {
+                    const video = event.currentTarget;
+                    const patch: Partial<VideoNodeData> = {};
+                    if (
+                      video.videoWidth > 0 &&
+                      video.videoHeight > 0 &&
+                      (data.width !== video.videoWidth || data.height !== video.videoHeight)
+                    ) {
+                      patch.width = video.videoWidth;
+                      patch.height = video.videoHeight;
+                    }
+                    if (
+                      Number.isFinite(video.duration) &&
+                      video.duration > 0 &&
+                      data.durationSec !== video.duration
+                    ) {
+                      patch.durationSec = video.duration;
+                    }
+                    if (Object.keys(patch).length > 0) {
+                      updateData(patch, { flush: true });
+                    }
+                  }}
+                />
               ) : (
                 <Play className="size-12 text-muted-gray/40" />
               )}
