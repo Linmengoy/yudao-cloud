@@ -8,10 +8,15 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,6 +68,66 @@ public class GrokImagineProviderClientTest {
         }
     }
 
+    @Test
+    public void testSubmit_imageToVideoInfersPortraitSizeFromReferenceImage() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/videos", exchange -> handleVideoSubmit(exchange, requestBody));
+        server.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            String imageUrl = createDataImage(90, 160);
+            GrokImagineProviderClient client = new GrokImagineProviderClient();
+
+            AigcProviderSubmitRespDTO respDTO = client.submit(new AigcProviderSubmitReqDTO()
+                    .setProviderBaseUrl(baseUrl)
+                    .setProviderApiKey("test-key")
+                    .setProviderModel("grok-imagine-video-1.5-preview")
+                    .setPrompt("图中的人物在四处观望")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setInputParams("""
+                            {"duration":"5","resolution":"480p","providerModel":"grok-imagine-video-1.5-preview","referenceImages":["%s"]}
+                            """.formatted(imageUrl)));
+
+            assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(requestBody.get());
+            assertEquals("720x1280", body.getStr("size"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_imageToVideoUsesSnakeCaseAspectRatio() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/videos", exchange -> handleVideoSubmit(exchange, requestBody));
+        server.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            GrokImagineProviderClient client = new GrokImagineProviderClient();
+
+            AigcProviderSubmitRespDTO respDTO = client.submit(new AigcProviderSubmitReqDTO()
+                    .setProviderBaseUrl(baseUrl)
+                    .setProviderApiKey("test-key")
+                    .setProviderModel("grok-imagine-video-1.5-preview")
+                    .setPrompt("图片中的人物在左右观望")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setInputParams("""
+                            {"aspect_ratio":"9:16","duration":"5","resolution":"480p","providerModel":"grok-imagine-video-1.5-preview","referenceImages":["data:image/jpeg;base64,aW1hZ2UtYnl0ZXM="]}
+                            """));
+
+            assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(requestBody.get());
+            assertEquals("720x1280", body.getStr("size"));
+            assertFalse(body.containsKey("aspect_ratio"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private void handleVideoSubmit(HttpExchange exchange, AtomicReference<String> requestBody) throws IOException {
         requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
         byte[] response = "{\"id\":\"video-task-1\",\"status\":\"queued\"}".getBytes(StandardCharsets.UTF_8);
@@ -71,6 +136,18 @@ public class GrokImagineProviderClientTest {
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(response);
         }
+    }
+
+    private String createDataImage(int width, int height) throws IOException {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                image.setRGB(x, y, Color.WHITE.getRGB());
+            }
+        }
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", outputStream);
+        return "data:image/png;base64," + Base64.getEncoder().encodeToString(outputStream.toByteArray());
     }
 
 }
