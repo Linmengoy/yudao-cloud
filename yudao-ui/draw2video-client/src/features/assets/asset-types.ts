@@ -61,6 +61,7 @@ export interface AigcAssetPageParams {
   pageNo: number;
   pageSize: number;
   assetType?: string;
+  sourceType?: string;
   title?: string;
 }
 

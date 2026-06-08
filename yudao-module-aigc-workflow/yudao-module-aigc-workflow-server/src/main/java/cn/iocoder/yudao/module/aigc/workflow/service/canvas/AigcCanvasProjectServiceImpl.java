@@ -136,9 +136,10 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         submitServerOperation(projectId, userId, "server_quick_generate", "node_create_" + nodeId,
                 "NODE_CREATE", new JSONObject().set("node", node), 0L);
 
-        if ("video".equals(nodeType) && reqVO.getReferenceAssetId() != null) {
-            bindReferenceAssetQuietly(projectId, nodeId, reqVO.getReferenceAssetId());
-            updateProjectCover(projectId, reqVO.getReferenceAssetId());
+        List<Long> referenceAssetIds = quickGenerateReferenceAssetIds(reqVO);
+        if ("video".equals(nodeType) && !referenceAssetIds.isEmpty()) {
+            referenceAssetIds.forEach(assetId -> bindReferenceAssetQuietly(projectId, nodeId, assetId));
+            updateProjectCover(projectId, referenceAssetIds.get(0));
         }
 
         AigcCanvasProjectDO project = projectMapper.selectById(projectId);
@@ -586,14 +587,43 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         if (StrUtil.isNotBlank(reqVO.getProviderModel())) {
             params.set("providerModel", reqVO.getProviderModel());
         }
-        if (reqVO.getReferenceAssetId() != null) {
-            params.set("referenceAssetIds", List.of(reqVO.getReferenceAssetId()));
-            params.set("referenceImageIds", List.of(String.valueOf(reqVO.getReferenceAssetId())));
+        List<Long> referenceAssetIds = quickGenerateReferenceAssetIds(reqVO);
+        if (!referenceAssetIds.isEmpty() && !hasJsonArrayValue(params, "referenceAssetIds")) {
+            params.set("referenceAssetIds", referenceAssetIds);
         }
-        if (StrUtil.isNotBlank(reqVO.getReferencePreviewUrl())) {
-            params.set("referenceImages", List.of(reqVO.getReferencePreviewUrl()));
+        if (!referenceAssetIds.isEmpty() && !hasJsonArrayValue(params, "referenceImageIds")) {
+            params.set("referenceImageIds", referenceAssetIds.stream().map(String::valueOf).toList());
+        }
+        List<String> referencePreviewUrls = quickGenerateReferencePreviewUrls(reqVO);
+        if (!referencePreviewUrls.isEmpty() && !hasJsonArrayValue(params, "referenceImages")) {
+            params.set("referenceImages", referencePreviewUrls);
         }
         return params.toString();
+    }
+
+    private List<Long> quickGenerateReferenceAssetIds(AigcCanvasProjectQuickGenerateReqVO reqVO) {
+        if (reqVO.getReferenceAssetIds() != null && !reqVO.getReferenceAssetIds().isEmpty()) {
+            return reqVO.getReferenceAssetIds().stream().filter(Objects::nonNull).distinct().toList();
+        }
+        return reqVO.getReferenceAssetId() == null ? Collections.emptyList() : List.of(reqVO.getReferenceAssetId());
+    }
+
+    private List<String> quickGenerateReferencePreviewUrls(AigcCanvasProjectQuickGenerateReqVO reqVO) {
+        if (reqVO.getReferencePreviewUrls() != null && !reqVO.getReferencePreviewUrls().isEmpty()) {
+            return reqVO.getReferencePreviewUrls().stream().filter(StrUtil::isNotBlank).distinct().toList();
+        }
+        return StrUtil.isBlank(reqVO.getReferencePreviewUrl()) ? Collections.emptyList() : List.of(reqVO.getReferencePreviewUrl());
+    }
+
+    private boolean hasJsonArrayValue(JSONObject params, String key) {
+        Object value = params.get(key);
+        if (value instanceof JSONArray array) {
+            return !array.isEmpty();
+        }
+        if (value instanceof List<?> list) {
+            return !list.isEmpty();
+        }
+        return false;
     }
 
     private String inferVideoProvider(String providerModel, String modelName) {

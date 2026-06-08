@@ -89,14 +89,18 @@ Project model:
 Asset library:
 
 - Generated images and videos are loaded from the backend asset page API incrementally instead of fetching the entire asset set at once.
-- Uploaded media is not listed as a generated asset.
+- Uploaded image assets are listed separately from generated image assets by `sourceType`.
 - The asset wall uses a compact Muuri layout: media keeps its natural ratio, wide items may span multiple columns, and column count adapts to the container width.
 - Scrolling near the bottom loads the next page; when there are no more records the page shows an “已加载全部” state.
 - Asset search is debounced and should be sent through paged backend filtering rather than filtering a preloaded full dataset.
 - Each asset item links to its asset detail or source project canvas when only a local fallback exists.
+- The `/app` plus button opens an image asset picker. Selected generated or uploaded images become quick-generate reference images.
 
 Current image generation behavior:
 
+- `/app` quick generation supports pasted, uploaded, and asset-picked reference images. References are shown immediately, cached in `localStorage`, and restored when the user returns to the page.
+- Multiple quick-generate reference images are supported. The first image is still sent through legacy single-reference fields for compatibility, while the complete list is sent through array fields.
+- Quick generation loads active model parameter templates for the selected generation mode and sends default model params with the request.
 - New image generation creates an `ImageNode` draft placeholder.
 - Image models, model parameters, and price display come from the AIGC model APIs. Backend SELECT options/default values are normalized so saved JSON-array values render as plain values such as `1:1`.
 - Existing image nodes persist `aigcModelId`; refreshing a project should restore the node's selected model instead of falling back to the default model.
@@ -131,6 +135,7 @@ Current sketch behavior:
 
 Current video behavior:
 
+- `/app` quick video generation uses the same reference-image cache and multi-image payload. Providers that only support one image use the first reference image.
 - New video nodes are draft placeholders.
 - Video generation should use AIGC model capability lists and parameter templates for `TEXT_TO_VIDEO` / `IMAGE_TO_VIDEO` instead of relying on hardcoded frontend model buttons.
 - Selecting a draft/generated video opens a composer below the fixed preview slot.
@@ -209,6 +214,8 @@ npm run build
 ```
 
 Run both before handing off canvas changes.
+
+For the `/app` reference-image flow, asset picker split, and quick-generate payload contract, see `docs/reference-images-and-assets.md`.
 
 ## Important Files
 
