@@ -235,8 +235,9 @@
 - 默认按创建时间倒序分页展示当前用户资产，禁止一次性拉取全部资产。
 - 顶部提供紧凑筛选胶囊：全部、生成图片、上传图片、生成视频、其它文件；不使用顶部大 Tab。
 - 图片资产不再把上传图和生成图混在一起。生成图片使用 `assetType=IMAGE&sourceType=GENERATE`；上传图片使用 `assetType=IMAGE&sourceType=UPLOAD`。
+- 分类胶囊右侧数量必须来自后端 `GET /aigc/asset/my-category-counts`，统计口径与当前搜索 `title` 等公共过滤条件一致；切换分类只改变分页列表条件，不能用当前页列表反推其它分类总数。
 - 加号资产选择弹窗可从生成图片或上传图片中选择参考图，选中后只作为当前生成请求的参考输入，不改变生成结果资产类型。
-- 列表和选择弹窗展示图片时优先使用资产响应中的当前访问 URL；若后端返回 `files[].expireTime`，前端需把它视为刷新提示，不能把 URL 当作长期持久字段写入项目或节点。
+- 列表和选择弹窗展示图片时优先使用资产响应中的当前访问 URL；若后端返回 `files[].expireTime`，前端需把它视为刷新提示，不能把 URL 当作长期持久字段写入项目或节点。Canvas 打开已有项目时应通过 `POST /aigc/asset/access-urls` 批量刷新节点资产 URL，避免逐个调用详情接口导致图片很久才显示。
 - 搜索输入需要防抖，优先通过分页接口的标题参数请求服务端过滤；不要为了搜索把全部资产预加载到前端。
 - 列表采用 Muuri 紧凑瀑布流图片墙，按容器宽度动态计算列数，窗口变窄时自然降为多列、两列或单列。
 - 图片和视频使用全尺寸可见预览，不裁剪、不套外层卡片、不显示圆角边和元数据信息；点击媒体进入资产详情。
@@ -291,7 +292,9 @@
 | ---- | ---- | ---- | ---- |
 | 我的资产分页 | GET | `/aigc/asset/my-page?pageNo={pageNo}&pageSize={pageSize}&assetType=&sourceType=` | 查询当前登录用户资产分页 |
 | 我的资产详情 | GET | `/aigc/asset/my-get?id={id}` | 查询当前登录用户有权访问的资产详情 |
+| 我的资产分类数量 | GET | `/aigc/asset/my-category-counts?title=` | 按资产库胶囊分组返回当前用户资产总数 |
 | 上传资产 | POST | `/aigc/asset/upload` | 创建当前用户上传资产元数据 |
+| 批量访问 URL | POST | `/aigc/asset/access-urls` | 根据 `assetId + fileRole + accessType` 批量获取运行时签名 URL |
 | 更新资产 | PUT | `/aigc/asset/update` | 更新标题、描述和标签 |
 | 更新可见性 | PUT | `/aigc/asset/visibility` | 更新当前用户资产可见性 |
 | 删除资产 | DELETE | `/aigc/asset/delete?id={id}` | 删除当前用户自己的资产 |

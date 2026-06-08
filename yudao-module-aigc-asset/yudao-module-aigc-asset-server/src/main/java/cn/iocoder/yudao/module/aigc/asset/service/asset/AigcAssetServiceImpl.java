@@ -24,6 +24,7 @@ import cn.iocoder.yudao.module.aigc.asset.dal.redis.AigcAssetAccessUrlRedisDAO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAuditUpdateReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCategoryCountRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
@@ -306,6 +307,33 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         reqVO.setUserId(userId);
         reqVO.setStatus(AigcAssetStatusEnum.NORMAL.getCode());
         return assetMapper.selectList(reqVO);
+    }
+
+    @Override
+    public AigcAssetCategoryCountRespDTO getUserAssetCategoryCounts(AigcAssetPageReqVO reqVO, Long userId) {
+        AigcAssetPageReqVO baseReqVO = buildUserAssetCountReqVO(reqVO, userId);
+        return new AigcAssetCategoryCountRespDTO()
+                .setAllCount(assetMapper.selectCount(baseReqVO))
+                .setGeneratedImageCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
+                        .setAssetType(AigcAssetTypeEnum.IMAGE.getCode())
+                        .setSourceType(AigcAssetSourceTypeEnum.GENERATE.getCode())))
+                .setUploadedImageCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
+                        .setAssetType(AigcAssetTypeEnum.IMAGE.getCode())
+                        .setSourceType(AigcAssetSourceTypeEnum.UPLOAD.getCode())))
+                .setVideoCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
+                        .setAssetType(AigcAssetTypeEnum.VIDEO.getCode())))
+                .setOtherCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
+                        .setCategory("OTHER")));
+    }
+
+    private AigcAssetPageReqVO buildUserAssetCountReqVO(AigcAssetPageReqVO reqVO, Long userId) {
+        AigcAssetPageReqVO countReqVO = new AigcAssetPageReqVO();
+        countReqVO.setUserId(userId);
+        countReqVO.setStatus(AigcAssetStatusEnum.NORMAL.getCode());
+        countReqVO.setAuditStatus(reqVO.getAuditStatus());
+        countReqVO.setVisibility(reqVO.getVisibility());
+        countReqVO.setTitle(reqVO.getTitle());
+        return countReqVO;
     }
 
     @Override

@@ -48,7 +48,7 @@ import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
 import { saveImage, saveVideo } from "@/features/canvas/image-store";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
-import { getMyAsset } from "@/features/assets/asset-api";
+import { getAssetAccessUrls, getMyAsset } from "@/features/assets/asset-api";
 import { getAssetPreviewExpireTime, getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import { useAuth } from "@/features/auth/auth-store";
 import { ThemeToggle } from "@/features/theme/ThemeToggle";
@@ -1045,6 +1045,13 @@ function getNodeAssetId(node: AppNode) {
   return data.assetId ?? data.outputAssetId ?? null;
 }
 
+function getNodeAssetAccessRequest(node: AppNode, assetId: number) {
+  if (node.type === "video") {
+    return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
+  }
+  return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
+}
+
 function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | null): AppNode {
   if (node.type === "video") {
     return {
@@ -1074,29 +1081,7 @@ function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | nul
 }
 
 function defaultNodes(): AppNode[] {
-  const id = "draft_default";
-  return [
-    withCardNodeInteraction({
-      id,
-      type: "image",
-      position: { x: 250, y: 200 },
-      data: {
-        imageId: id,
-        fileName: "Image",
-        dataUrl: "",
-        mimeType: "image/png",
-        createdAt: new Date().toISOString(),
-        kind: "draft",
-        prompt: "",
-        modelId: DEFAULT_PROMPT_DATA.modelId,
-        params: { ...DEFAULT_PROMPT_DATA.params },
-        status: "idle",
-        taskId: null,
-        errorMessage: null,
-        elapsedMs: null,
-      },
-    }),
-  ];
+  return [];
 }
 
 function migrateNode(n: AppNode): AppNode {
@@ -1555,20 +1540,43 @@ function CanvasFlow() {
 
   const refreshAssetUrls = useCallback(async (nodesToRefresh: AppNode[]) => {
     const mediaNodes = nodesToRefresh
-      .map((node) => ({ nodeId: node.id, assetId: getNodeAssetId(node) }))
-      .filter((item): item is { nodeId: string; assetId: number } => typeof item.assetId === "number");
+      .map((node) => ({ nodeId: node.id, node, assetId: getNodeAssetId(node) }))
+      .filter((item): item is { nodeId: string; node: AppNode; assetId: number } => typeof item.assetId === "number");
     if (mediaNodes.length === 0) return;
 
-    const entries = await Promise.all(mediaNodes.map(async ({ nodeId, assetId }) => {
-      try {
-        const asset = await getMyAsset(assetId);
-        const url = getAssetPreviewUrl(asset);
-        return url ? { nodeId, url, expireTime: getAssetPreviewExpireTime(asset) ?? null } : null;
-      } catch {
-        return null;
+    const requestsByAssetId = new Map<number, ReturnType<typeof getNodeAssetAccessRequest>>();
+    mediaNodes.forEach(({ node, assetId }) => {
+      if (!requestsByAssetId.has(assetId)) {
+        requestsByAssetId.set(assetId, getNodeAssetAccessRequest(node, assetId));
       }
-    }));
-    const urlByNodeId = new Map(entries.filter((entry): entry is { nodeId: string; url: string; expireTime: string | null } => Boolean(entry)).map((entry) => [entry.nodeId, entry]));
+    });
+
+    type AssetUrlEntry = { nodeId: string; url: string; expireTime: string | null };
+    const entries: AssetUrlEntry[] = await getAssetAccessUrls([...requestsByAssetId.values()])
+      .then((responses) => {
+        const urlByAssetId = new Map(responses
+          .filter((response) => response?.url)
+          .map((response) => [response.assetId, { url: response.url, expireTime: response.expireTime ?? null }]));
+        return mediaNodes
+          .map(({ nodeId, assetId }) => {
+            const entry = urlByAssetId.get(assetId);
+            return entry ? { nodeId, ...entry } : null;
+          })
+          .filter((entry): entry is AssetUrlEntry => Boolean(entry));
+      })
+      .catch(async () => {
+        const fallbackEntries = await Promise.all(mediaNodes.map(async ({ nodeId, assetId }) => {
+          try {
+            const asset = await getMyAsset(assetId);
+            const url = getAssetPreviewUrl(asset);
+            return url ? { nodeId, url, expireTime: getAssetPreviewExpireTime(asset) ?? null } : null;
+          } catch {
+            return null;
+          }
+        }));
+        return fallbackEntries.filter((entry): entry is AssetUrlEntry => Boolean(entry));
+      });
+    const urlByNodeId = new Map(entries.map((entry) => [entry.nodeId, entry]));
     if (urlByNodeId.size === 0) return;
 
     setNodes((nds) => nds.map((node) => {

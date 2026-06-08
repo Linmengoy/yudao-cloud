@@ -528,7 +528,10 @@ AigcAssetApi
 | ---- | ---- | ---- |
 | GET | `/aigc/asset/my-page` | 我的资产分页 |
 | GET | `/aigc/asset/my-get` | 我的资产详情 |
+| GET | `/aigc/asset/my-category-counts` | 我的资产分类数量 |
 | POST | `/aigc/asset/upload` | 上传资产（支持 MultipartFile） |
+| POST | `/aigc/asset/access-url` | 获取单个资产文件运行时访问 URL |
+| POST | `/aigc/asset/access-urls` | 批量获取资产文件运行时访问 URL |
 | PUT | `/aigc/asset/update` | 修改我的资产信息 |
 | PUT | `/aigc/asset/visibility` | 修改我的资产可见性 |
 | DELETE | `/aigc/asset/delete` | 删除我的资产 |
@@ -547,6 +550,18 @@ AigcAssetApi
 | 其它文件 | 客户端兜底分组，展示非图片、非视频资产 |
 
 上传参考图如果通过 `/aigc/asset/upload` 资产化，应写入 `sourceType=UPLOAD`。生成服务创建的图片、视频资产应写入 `sourceType=GENERATE`。前端从资产库选择参考图只会引用已有资产，不应把参考图来源类型改成生成结果来源类型。
+
+`/aigc/asset/my-category-counts` 与 `/my-page` 使用同一套用户归属、状态、标题搜索等公共过滤条件，但会分别返回以下计数字段：
+
+| 字段 | 统计口径 |
+| ---- | ---- |
+| `allCount` | 当前用户全部未删除资产 |
+| `generatedImageCount` | `assetType=IMAGE&sourceType=GENERATE` |
+| `uploadedImageCount` | `assetType=IMAGE&sourceType=UPLOAD` |
+| `videoCount` | `assetType=VIDEO` |
+| `otherCount` | 非图片、非视频资产 |
+
+资产库分类胶囊上的数量必须使用该接口，不能从当前分页结果推导。否则切换分类或分页加载不完整时，分类总数会随着当前页数据变化而不一致。
 
 ## 8. 核心流程
 
@@ -1094,6 +1109,8 @@ POST /aigc/asset/download
 ```
 
 下载接口现在返回 `AigcAssetAccessUrlRespDTO`，不再直接返回数据库中的 `fileUrl` 字符串。下载接口每次调用仍增加下载次数，但下载日志不保存完整签名 URL。
+
+`POST /aigc/asset/access-urls` 接收多个 `assetId + fileRole + accessType` 请求，批量返回 `AigcAssetAccessUrlRespDTO`。Canvas 打开项目、恢复 snapshot 或 URL 接近过期时应优先调用批量接口刷新图片/视频节点展示地址；单个详情接口 `/my-get` 只作为兼容兜底，避免大量节点逐个请求导致首屏图片显示很慢。
 
 ### 18.6 响应兼容
 

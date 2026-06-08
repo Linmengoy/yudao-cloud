@@ -685,6 +685,8 @@ CREATE TABLE canvas_invite_link (
 - localStorage 可缓存最近打开项目 ID、最近一次 snapshot、用户偏好。
 - IndexedDB 可缓存媒体预览和离线草稿，但必须能从服务端资产重新恢复。
 - 项目列表、项目名称、节点数量、资产数量应来自服务端 API。
+- 空项目或无 snapshot 的画布保持空画布，不自动创建默认节点；节点只能来自服务端 snapshot、用户操作或 `/app` 快速生成初始化。
+- 恢复 canvas 中图片/视频节点时，长期身份以 `assetId/outputAssetId` 为准，展示 URL 通过资产服务批量访问接口刷新；历史 snapshot 或 operation 中的临时签名 URL 不作为恢复事实源。
 
 ### 10.5 项目 ID 边界
 

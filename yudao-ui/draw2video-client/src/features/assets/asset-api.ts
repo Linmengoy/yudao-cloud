@@ -2,6 +2,9 @@ import { api } from "@/lib/api-client";
 import { API_BASE_URL, API_TENANT_ID, API_TERMINAL, getAccessToken } from "@/lib/api-client";
 import type {
   AigcAsset,
+  AigcAssetAccessUrlReq,
+  AigcAssetAccessUrlResp,
+  AigcAssetCategoryCounts,
   AigcAssetType,
   AigcAssetDownloadReq,
   AigcAssetPageParams,
@@ -25,12 +28,20 @@ export function getMyAssetPage(params: AigcAssetPageParams) {
   return api.get<PageResult<AigcAsset>>(`/aigc/asset/my-page${toQuery(params)}`);
 }
 
+export function getMyAssetCategoryCounts(params: Partial<Omit<AigcAssetPageParams, "pageNo" | "pageSize">> = {}) {
+  return api.get<AigcAssetCategoryCounts>(`/aigc/asset/my-category-counts${toQuery(params)}`);
+}
+
 export function getMyAssetList(params: Partial<Omit<AigcAssetPageParams, "pageNo" | "pageSize">> = {}) {
   return api.get<AigcAsset[]>(`/aigc/asset/my-list${toQuery(params)}`);
 }
 
 export function getMyAsset(id: number | string) {
   return api.get<AigcAsset>(`/aigc/asset/my-get${toQuery({ id })}`);
+}
+
+export function getAssetAccessUrls(requests: AigcAssetAccessUrlReq[]) {
+  return api.post<AigcAssetAccessUrlResp[]>("/aigc/asset/access-urls", requests);
 }
 
 export function updateMyAsset(data: AigcAssetUpdateReq) {

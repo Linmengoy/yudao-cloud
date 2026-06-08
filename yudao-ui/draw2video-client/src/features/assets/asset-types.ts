@@ -78,8 +78,35 @@ export interface AigcAssetPageParams {
   pageNo: number;
   pageSize: number;
   assetType?: string;
+  category?: string;
   sourceType?: string;
   title?: string;
+}
+
+export interface AigcAssetCategoryCounts {
+  allCount: number;
+  generatedImageCount: number;
+  uploadedImageCount: number;
+  videoCount: number;
+  otherCount: number;
+}
+
+export interface AigcAssetAccessUrlReq {
+  assetId: number | string;
+  fileRole: string;
+  accessType: string;
+}
+
+export interface AigcAssetAccessUrlResp {
+  assetId: number;
+  assetFileId?: number;
+  fileRole: string;
+  accessType: string;
+  url: string;
+  expireSeconds?: number;
+  expireTime?: string;
+  publicAccess?: boolean;
+  cacheHit?: boolean;
 }
 
 export interface AigcAssetUpdateReq {

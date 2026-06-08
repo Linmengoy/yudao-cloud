@@ -4,31 +4,36 @@ import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.experimental.Accessors;
 
-@Schema(description = "管理后台 - AIGC 资产分页 Request VO")
+@Schema(description = "Admin - AIGC asset page request")
 @Data
 @EqualsAndHashCode(callSuper = true)
+@Accessors(chain = true)
 public class AigcAssetPageReqVO extends PageParam {
 
-    @Schema(description = "用户编号", example = "1024")
+    @Schema(description = "User ID", example = "1024")
     private Long userId;
 
-    @Schema(description = "资产类型", example = "IMAGE")
+    @Schema(description = "Asset type", example = "IMAGE")
     private String assetType;
 
-    @Schema(description = "来源类型", example = "GENERATE")
+    @Schema(description = "Asset category", example = "OTHER")
+    private String category;
+
+    @Schema(description = "Source type", example = "GENERATE")
     private String sourceType;
 
-    @Schema(description = "审核状态", example = "PASS")
+    @Schema(description = "Audit status", example = "PASS")
     private String auditStatus;
 
-    @Schema(description = "可见性", example = "PRIVATE")
+    @Schema(description = "Visibility", example = "PRIVATE")
     private String visibility;
 
-    @Schema(description = "状态", example = "NORMAL")
+    @Schema(description = "Status", example = "NORMAL")
     private String status;
 
-    @Schema(description = "资产标题")
+    @Schema(description = "Asset title")
     private String title;
 
 }

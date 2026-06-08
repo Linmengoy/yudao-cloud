@@ -368,6 +368,7 @@ yudao-module-aigc-workflow-server
 - 每个参考图节点通过 `signal` 边连接到目标生成节点，使 canvas 的 `ImageNode` / `VideoNode` 可以通过 incoming edges 读取参考图。
 - `runReqVO.inputParams` 接收完整归一化参数，用于真正发起生成任务。
 - 节点展示用的 `params` 应剥离请求专用字段，例如 `referenceImages`、`referenceAssetIds`、`referenceImageIds`、`inputImages`、`inputImageUrls`、`inputImageIds`，避免把参考图传输字段重复展示为模型参数。
+- 普通打开 `/canvas` 或新建空项目时，不应自动生成默认节点；只有 `/app` 快速生成、用户显式创建、上传、粘贴或从资产库拖入时才创建节点。
 
 Canvas 持久化约束：
 

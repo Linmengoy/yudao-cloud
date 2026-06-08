@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import Link from "next/link";
 import { Loader2, RefreshCw, Search } from "lucide-react";
-import { getMyAssetPage } from "@/features/assets/asset-api";
+import { getMyAssetCategoryCounts, getMyAssetPage } from "@/features/assets/asset-api";
 import { getAccessToken } from "@/lib/api-client";
 import {
   getAssetPreviewUrl,
@@ -15,9 +15,17 @@ import type Muuri from "muuri";
 import type { Item, LayoutFunctionCallback } from "muuri";
 
 type AssetTab = "ALL" | "GENERATED_IMAGE" | "UPLOADED_IMAGE" | "VIDEO" | "OTHER";
+type AssetTabCounts = Record<AssetTab, number>;
 
 const MIN_ASSET_COLUMN_WIDTH = 220;
 const PAGE_SIZE = 30;
+const EMPTY_COUNTS: AssetTabCounts = {
+  ALL: 0,
+  GENERATED_IMAGE: 0,
+  UPLOADED_IMAGE: 0,
+  VIDEO: 0,
+  OTHER: 0,
+};
 
 function localToAsset(asset: GeneratedAsset): AigcAsset {
   return {
@@ -61,11 +69,23 @@ function matchesTab(asset: AigcAsset, tab: AssetTab) {
   return asset.assetType === tab;
 }
 
+function buildLocalAssetCounts(assets: AigcAsset[], query: string): AssetTabCounts {
+  const matchedAssets = assets.filter((asset) => matchesQuery(asset, query));
+  return {
+    ALL: matchedAssets.length,
+    GENERATED_IMAGE: matchedAssets.filter(isGeneratedImage).length,
+    UPLOADED_IMAGE: matchedAssets.filter(isUploadedImage).length,
+    VIDEO: matchedAssets.filter((asset) => asset.assetType === "VIDEO").length,
+    OTHER: matchedAssets.filter((asset) => asset.assetType !== "IMAGE" && asset.assetType !== "VIDEO").length,
+  };
+}
+
 function getAssetTabQuery(tab: AssetTab) {
   if (tab === "GENERATED_IMAGE") return { assetType: "IMAGE", sourceType: "GENERATE" };
   if (tab === "UPLOADED_IMAGE") return { assetType: "IMAGE", sourceType: "UPLOAD" };
-  if (tab === "VIDEO") return { assetType: "VIDEO", sourceType: undefined };
-  return { assetType: undefined, sourceType: undefined };
+  if (tab === "VIDEO") return { assetType: "VIDEO", sourceType: undefined, category: undefined };
+  if (tab === "OTHER") return { assetType: undefined, sourceType: undefined, category: "OTHER" };
+  return { assetType: undefined, sourceType: undefined, category: undefined };
 }
 
 function getAssetTabLabel(tab: AssetTab) {
@@ -182,6 +202,7 @@ export default function AssetsPage() {
   const [measuredRatios, setMeasuredRatios] = useState<Record<string, number>>({});
   const [pullDistance, setPullDistance] = useState(0);
   const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<AssetTabCounts>(EMPTY_COUNTS);
   const [hasMore, setHasMore] = useState(true);
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const loadMoreElementRef = useRef<HTMLDivElement | null>(null);
@@ -207,22 +228,38 @@ export default function AssetsPage() {
       setAssets([]);
       setMeasuredRatios({});
       setTotal(0);
+      setCounts(EMPTY_COUNTS);
       setHasMore(true);
     }
     try {
       const tabQuery = getAssetTabQuery(tab);
-      const data = await getMyAssetPage({
-        pageNo: nextPageNo,
-        pageSize: PAGE_SIZE,
-        assetType: tabQuery.assetType,
-        sourceType: tabQuery.sourceType,
-        title: debouncedQuery.trim() || undefined,
-      });
+      const [data, categoryCounts] = await Promise.all([
+        getMyAssetPage({
+          pageNo: nextPageNo,
+          pageSize: PAGE_SIZE,
+          assetType: tabQuery.assetType,
+          category: tabQuery.category,
+          sourceType: tabQuery.sourceType,
+          title: debouncedQuery.trim() || undefined,
+        }),
+        reset
+          ? getMyAssetCategoryCounts({ title: debouncedQuery.trim() || undefined })
+          : Promise.resolve(null),
+      ]);
       const nextList = data.list ?? [];
       const nextTotal = data.total ?? 0;
       const currentLength = reset ? 0 : assetsLengthRef.current;
       const mergedLength = currentLength + nextList.length;
       setAssets((items) => reset ? nextList : [...items, ...nextList]);
+      if (categoryCounts) {
+        setCounts({
+          ALL: categoryCounts.allCount ?? 0,
+          GENERATED_IMAGE: categoryCounts.generatedImageCount ?? 0,
+          UPLOADED_IMAGE: categoryCounts.uploadedImageCount ?? 0,
+          VIDEO: categoryCounts.videoCount ?? 0,
+          OTHER: categoryCounts.otherCount ?? 0,
+        });
+      }
       setTotal(nextTotal);
       pageNoRef.current = nextPageNo + 1;
       assetsLengthRef.current = mergedLength;
@@ -232,6 +269,7 @@ export default function AssetsPage() {
       if (!getAccessToken()) {
         setAssets([]);
         setTotal(0);
+        setCounts(EMPTY_COUNTS);
         setHasMore(false);
         hasMoreRef.current = false;
         assetsLengthRef.current = 0;
@@ -239,8 +277,10 @@ export default function AssetsPage() {
         return;
       }
       const localAssets = (await listGeneratedAssets()).map(localToAsset);
+      const localCounts = buildLocalAssetCounts(localAssets, debouncedQuery);
       setAssets(localAssets);
       setTotal(localAssets.length);
+      setCounts(localCounts);
       setHasMore(false);
       hasMoreRef.current = false;
       assetsLengthRef.current = localAssets.length;
@@ -265,13 +305,6 @@ export default function AssetsPage() {
 
   const filteredAssets = useMemo(() => assets.filter((asset) => matchesTab(asset, tab) && matchesQuery(asset, debouncedQuery)), [assets, debouncedQuery, tab]);
   const assetLayoutKey = useMemo(() => filteredAssets.map((asset) => getAssetKey(asset)).join("|"), [filteredAssets]);
-  const counts = useMemo(() => ({
-    ALL: assets.length,
-    GENERATED_IMAGE: assets.filter(isGeneratedImage).length,
-    UPLOADED_IMAGE: assets.filter(isUploadedImage).length,
-    VIDEO: assets.filter((asset) => asset.assetType === "VIDEO").length,
-    OTHER: assets.filter((asset) => asset.assetType !== "IMAGE" && asset.assetType !== "VIDEO").length,
-  }), [assets]);
 
   useEffect(() => {
     if (loading || !assetLayoutKey || !gridElementRef.current) return;
