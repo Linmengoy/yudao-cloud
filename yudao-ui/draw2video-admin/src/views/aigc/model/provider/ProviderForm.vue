@@ -58,6 +58,40 @@
           </el-form-item>
         </el-col>
       </el-row>
+      <el-form-item label="启用代理" prop="proxyEnabled">
+        <el-switch v-model="formData.proxyEnabled" />
+      </el-form-item>
+      <template v-if="formData.proxyEnabled">
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="代理协议" prop="proxyProtocol">
+              <el-select v-model="formData.proxyProtocol" class="!w-1/1" placeholder="请选择代理协议">
+                <el-option v-for="item in PROXY_PROTOCOLS" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="代理端口" prop="proxyPort">
+              <el-input-number v-model="formData.proxyPort" class="!w-1/1" :min="1" :max="65535" controls-position="right" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="代理地址" prop="proxyHost">
+              <el-input v-model="formData.proxyHost" placeholder="请输入代理 Host 或 IP" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="代理用户名" prop="proxyUsername">
+              <el-input v-model="formData.proxyUsername" clearable placeholder="可选" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="代理密码" prop="proxyPassword">
+          <el-input v-model="formData.proxyPassword" show-password placeholder="不修改请留空" />
+        </el-form-item>
+      </template>
       <el-form-item label="扩展配置" prop="extraConfig">
         <el-input v-model="formData.extraConfig" type="textarea" :rows="3" placeholder="请输入 JSON 扩展配置" />
       </el-form-item>
@@ -89,6 +123,12 @@ const dialogTitle = ref('')
 const formLoading = ref(false)
 const formType = ref('')
 const formRef = ref()
+const PROXY_PROTOCOLS = [
+  { label: 'HTTP', value: 'HTTP' },
+  { label: 'HTTPS', value: 'HTTPS' },
+  { label: 'SOCKS5', value: 'SOCKS5' },
+  { label: 'SOCKS5H（远程 DNS）', value: 'SOCKS5H' }
+]
 const formData = ref<AigcModelProviderSaveReqVO>({
   id: undefined,
   code: undefined,
@@ -99,6 +139,12 @@ const formData = ref<AigcModelProviderSaveReqVO>({
   secretKey: undefined,
   extraConfig: undefined,
   timeoutSeconds: 60,
+  proxyEnabled: false,
+  proxyProtocol: 'SOCKS5',
+  proxyHost: undefined,
+  proxyPort: undefined,
+  proxyUsername: undefined,
+  proxyPassword: undefined,
   rateLimitConfig: undefined,
   healthStatus: 'UNKNOWN',
   status: CommonStatusEnum.ENABLE,
@@ -109,6 +155,9 @@ const formRules = reactive({
   name: [{ required: true, message: '渠道名称不能为空', trigger: 'blur' }],
   apiBaseUrl: [{ required: true, message: 'API 地址不能为空', trigger: 'blur' }],
   authType: [{ required: true, message: '鉴权方式不能为空', trigger: 'change' }],
+  proxyProtocol: [{ required: true, message: '代理协议不能为空', trigger: 'change' }],
+  proxyHost: [{ required: true, message: '代理地址不能为空', trigger: 'blur' }],
+  proxyPort: [{ required: true, message: '代理端口不能为空', trigger: 'blur' }],
   status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
 })
 
@@ -123,6 +172,9 @@ const open = async (type: string, id?: number) => {
       formData.value = await AigcModelProviderApi.getProvider(id)
       formData.value.apiKey = undefined
       formData.value.secretKey = undefined
+      formData.value.proxyPassword = undefined
+      formData.value.proxyProtocol = formData.value.proxyProtocol || 'SOCKS5'
+      formData.value.proxyEnabled = Boolean(formData.value.proxyEnabled)
     } finally {
       formLoading.value = false
     }
@@ -144,6 +196,12 @@ const removeEmptySecret = (data: AigcModelProviderSaveReqVO) => {
   if (data.secretKey === null || data.secretKey === undefined) {
     delete data.secretKey
   }
+  if (typeof data.proxyPassword === 'string' && data.proxyPassword.trim() === '') {
+    delete data.proxyPassword
+  }
+  if (data.proxyPassword === null || data.proxyPassword === undefined) {
+    delete data.proxyPassword
+  }
 }
 
 const submitForm = async () => {
@@ -151,6 +209,13 @@ const submitForm = async () => {
   formLoading.value = true
   try {
     const data = { ...formData.value }
+    if (!data.proxyEnabled) {
+      data.proxyProtocol = undefined
+      data.proxyHost = undefined
+      data.proxyPort = undefined
+      data.proxyUsername = undefined
+      data.proxyPassword = undefined
+    }
     if (formType.value === 'update') {
       removeEmptySecret(data)
     }
@@ -179,6 +244,12 @@ const resetForm = () => {
     secretKey: undefined,
     extraConfig: undefined,
     timeoutSeconds: 60,
+    proxyEnabled: false,
+    proxyProtocol: 'SOCKS5',
+    proxyHost: undefined,
+    proxyPort: undefined,
+    proxyUsername: undefined,
+    proxyPassword: undefined,
     rateLimitConfig: undefined,
     healthStatus: 'UNKNOWN',
     status: CommonStatusEnum.ENABLE,

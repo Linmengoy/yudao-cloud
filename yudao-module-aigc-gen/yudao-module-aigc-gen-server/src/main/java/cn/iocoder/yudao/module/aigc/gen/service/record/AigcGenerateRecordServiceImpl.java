@@ -349,6 +349,9 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setProviderBaseUrl(provider == null ? null : provider.getApiBaseUrl()).setProviderApiKey(provider == null ? null : provider.getApiKey())
                 .setProviderSecretKey(provider == null ? null : provider.getSecretKey()).setProviderExtraConfig(provider == null ? null : provider.getExtraConfig())
                 .setProviderTimeoutSeconds(provider == null ? null : provider.getTimeoutSeconds())
+                .setProxyEnabled(provider == null ? null : provider.getProxyEnabled()).setProxyProtocol(provider == null ? null : provider.getProxyProtocol())
+                .setProxyHost(provider == null ? null : provider.getProxyHost()).setProxyPort(provider == null ? null : provider.getProxyPort())
+                .setProxyUsername(provider == null ? null : provider.getProxyUsername()).setProxyPassword(provider == null ? null : provider.getProxyPassword())
                 .setGenerateType(record.getGenerateType()).setGenerateMode(record.getGenerateMode()).setPrompt(record.getPrompt()).setInputParams(reqDTO.getInputParams()).setSync(reqDTO.getSync());
         long start = System.currentTimeMillis();
         AigcProviderSubmitRespDTO resp;
@@ -385,6 +388,12 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setProviderSecretKey(provider == null ? null : provider.getSecretKey())
                 .setProviderExtraConfig(provider == null ? null : provider.getExtraConfig())
                 .setProviderTimeoutSeconds(provider == null ? null : provider.getTimeoutSeconds())
+                .setProxyEnabled(provider == null ? null : provider.getProxyEnabled())
+                .setProxyProtocol(provider == null ? null : provider.getProxyProtocol())
+                .setProxyHost(provider == null ? null : provider.getProxyHost())
+                .setProxyPort(provider == null ? null : provider.getProxyPort())
+                .setProxyUsername(provider == null ? null : provider.getProxyUsername())
+                .setProxyPassword(provider == null ? null : provider.getProxyPassword())
                 .setGenerateType(record.getGenerateType())
                 .setGenerateMode(record.getGenerateMode())
                 .setPrompt(record.getPrompt())
@@ -416,6 +425,11 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         AigcAssetCreateReqDTO reqDTO = new AigcAssetCreateReqDTO().setUserId(record.getUserId()).setAssetType(record.getGenerateType()).setSourceType("GENERATE").setBizType("TASK")
                 .setBizId(record.getGenerateNo()).setTaskId(record.getTaskId()).setModelId(record.getModelId()).setProviderId(record.getProviderId()).setTitle(record.getGenerateType() + "生成资产")
                 .setPromptSnapshot(buildPromptSnapshot(record.getPrompt())).setGenerateSnapshot(record.getInputParams()).setVisibility("PRIVATE").setAuditStatus("PENDING");
+        AigcModelProviderRespDTO provider = record.getProviderId() == null ? null : modelApi.getProvider(record.getProviderId()).getCheckedData();
+        if (provider != null) {
+            reqDTO.setProxyEnabled(provider.getProxyEnabled()).setProxyProtocol(provider.getProxyProtocol()).setProxyHost(provider.getProxyHost()).setProxyPort(provider.getProxyPort())
+                    .setProxyUsername(provider.getProxyUsername()).setProxyPassword(provider.getProxyPassword());
+        }
         if (dataUrl) {
             reqDTO.setOriginUrl(url);
         } else {

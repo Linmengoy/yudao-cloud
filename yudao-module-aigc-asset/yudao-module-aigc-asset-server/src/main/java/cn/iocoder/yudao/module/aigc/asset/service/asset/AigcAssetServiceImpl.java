@@ -2,8 +2,9 @@ package cn.iocoder.yudao.module.aigc.asset.service.asset;
 
 import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.BooleanUtil;
-import cn.hutool.http.HttpUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
@@ -66,6 +67,8 @@ import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.*;
 @Service
 @Validated
 public class AigcAssetServiceImpl implements AigcAssetService {
+
+    private static final int REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS = 20_000;
 
     @Resource
     private AigcAssetMapper assetMapper;
@@ -440,7 +443,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         if (StrUtil.startWithIgnoreCase(reqDTO.getOriginUrl(), "data:")) {
             return prepareDataUrlFile(reqDTO);
         }
-        byte[] content = HttpUtil.downloadBytes(reqDTO.getOriginUrl());
+        byte[] content = downloadOriginFile(reqDTO);
         if (content == null || content.length == 0) {
             throw exception(ASSET_DOWNLOAD_FAILED);
         }
@@ -448,6 +451,17 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         FileCreateRespDTO file = fileApi.createFileV2(content, reqDTO.getTitle(), "aigc/asset", reqDTO.getMimeType());
         reqDTO.setFileSize((long) content.length);
         return buildAssetFileDO(null, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, reqDTO.getOriginUrl(), reqDTO.getWidth(), reqDTO.getHeight(), reqDTO.getDuration());
+    }
+
+    private byte[] downloadOriginFile(AigcAssetCreateReqDTO reqDTO) {
+        try (HttpResponse response = AigcAssetProxyUtils.applyProxy(HttpRequest.get(reqDTO.getOriginUrl()).timeout(REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS), reqDTO).execute()) {
+            if (!response.isOk()) {
+                throw exception(ASSET_DOWNLOAD_FAILED);
+            }
+            return response.bodyBytes();
+        } catch (Exception ex) {
+            throw exception(ASSET_DOWNLOAD_FAILED);
+        }
     }
 
     private AigcAssetFileDO prepareDataUrlFile(AigcAssetCreateReqDTO reqDTO) {
