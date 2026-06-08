@@ -71,3 +71,8 @@ xxl:
   job:
     admin:
       addresses: http://xxl-job-admin:8080/xxl-job-admin
+yudao:
+  websocket:
+    enable: true
+    path: /aigc/workflow/ws
+    sender-type: redis

@@ -6,6 +6,7 @@ param(
   [string]$Platform = "linux/amd64",
   [string]$ClientApiBaseUrl = "",
   [string]$ClientAppApiPrefix = "/app-api",
+  [string]$ClientWsBaseUrl = "ws://111.228.39.103:48080",
   [ValidateSet("all", "admin", "client")]
   [string]$Target = "all",
   [string]$ArchiveName = "",
@@ -63,6 +64,58 @@ function Run-Command {
   }
 }
 
+function Remove-PathWithRetry {
+  param(
+    [string]$Path,
+    [int]$Attempts = 3
+  )
+
+  for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
+    if (!(Test-Path -LiteralPath $Path)) {
+      return
+    }
+
+    try {
+      Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+      return
+    } catch {
+      if ($Attempt -eq $Attempts) {
+        throw
+      }
+      Start-Sleep -Seconds $Attempt
+    }
+  }
+}
+
+function Save-DockerImages {
+  param(
+    [string]$OutputPath,
+    [string[]]$ImageNames
+  )
+
+  $OutputDir = Split-Path -Parent $OutputPath
+  $OutputName = Split-Path -Leaf $OutputPath
+  $Attempts = 3
+
+  for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
+    $TempPath = Join-Path $OutputDir ".${OutputName}.save-${PID}-${Attempt}.tmp"
+    try {
+      Remove-PathWithRetry $TempPath
+      Run-Command "docker" (@("save", "-o", $TempPath) + $ImageNames)
+      Remove-PathWithRetry $OutputPath
+      Move-Item -LiteralPath $TempPath -Destination $OutputPath -Force -ErrorAction Stop
+      return
+    } catch {
+      Remove-PathWithRetry $TempPath
+      if ($Attempt -eq $Attempts) {
+        throw
+      }
+      Write-Warning "Save archive failed (attempt ${Attempt}/${Attempts}): $($_.Exception.Message). Retrying..."
+      Start-Sleep -Seconds ([Math]::Min(5, $Attempt * 2))
+    }
+  }
+}
+
 Invoke-Step "Check directories" {
   if (($Target -eq "all" -or $Target -eq "admin") -and !(Test-Path $AdminDir)) { throw "Admin directory not found: $AdminDir" }
   if (($Target -eq "all" -or $Target -eq "client") -and !(Test-Path $ClientDir)) { throw "Client directory not found: $ClientDir" }
@@ -88,6 +141,7 @@ if (!$SkipBuild) {
         "--platform", $Platform,
         "--build-arg", "NEXT_PUBLIC_API_BASE_URL=$ClientApiBaseUrl",
         "--build-arg", "NEXT_PUBLIC_APP_API_PREFIX=$ClientAppApiPrefix",
+        "--build-arg", "NEXT_PUBLIC_WS_BASE_URL=$ClientWsBaseUrl",
         "-t", "draw2video-client:latest",
         "--load",
         $ClientDir
@@ -98,8 +152,7 @@ if (!$SkipBuild) {
 
 if (!$SkipSave) {
   Invoke-Step "Save frontend images" {
-    if (Test-Path $ArchivePath) { Remove-Item $ArchivePath -Force }
-    Run-Command "docker" (@("save", "-o", $ArchivePath) + $Images)
+    Save-DockerImages $ArchivePath $Images
   }
 }
 

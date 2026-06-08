@@ -47,7 +47,7 @@ export function createCanvasWebSocket(onMessage: (message: CanvasRealtimeMessage
   const token = getAccessToken();
   const baseUrl = getWebSocketBaseUrl();
   const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
-  const socket = new WebSocket(`${baseUrl}/websocket${tokenQuery}`);
+  const socket = new WebSocket(`${baseUrl}/aigc/workflow/ws${tokenQuery}`);
 
   socket.addEventListener("message", (event) => {
     try {

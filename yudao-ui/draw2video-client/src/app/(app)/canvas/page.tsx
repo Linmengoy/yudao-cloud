@@ -1871,6 +1871,7 @@ function CanvasFlow() {
     });
   }, [serverProjectId, canvasRealtime, getViewport, nodes, screenToFlowPosition]);
 
+  // 初始化项目
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (routeProjectId) {

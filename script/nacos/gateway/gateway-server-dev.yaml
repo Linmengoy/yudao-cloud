@@ -225,6 +225,10 @@ spring:
                 - Path=/app-api/aigc/workflow/**, /app-api/canvas/**
               filters:
                 - RewritePath=/app-api/aigc/workflow/v3/api-docs, /v3/api-docs
+            - id: aigc-workflow-websocket
+              uri: grayLb://aigc-workflow-server
+              predicates:
+                - Path=/aigc/workflow/ws/**
             - id: iot-admin-api
               uri: grayLb://iot-server
               predicates:
