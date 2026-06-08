@@ -454,7 +454,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     }
 
     private byte[] downloadOriginFile(AigcAssetCreateReqDTO reqDTO) {
-        try (HttpResponse response = AigcAssetProxyUtils.applyProxy(HttpRequest.get(reqDTO.getOriginUrl()).timeout(REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS), reqDTO).execute()) {
+        try (HttpResponse response = AigcAssetProxyUtils.execute(HttpRequest.get(reqDTO.getOriginUrl()).timeout(REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS), reqDTO)) {
             if (!response.isOk()) {
                 throw exception(ASSET_DOWNLOAD_FAILED);
             }
