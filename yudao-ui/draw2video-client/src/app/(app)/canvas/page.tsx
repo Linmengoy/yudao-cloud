@@ -1337,14 +1337,31 @@ function findNodeAtFlowPoint(nodes: AppNode[], point: { x: number; y: number }, 
 }
 
 function summarizeCanvas(nodes: AppNode[]): { nodeCount: number; assetCount: number } {
+  const assetIds = new Set<number>();
+  const addAssetId = (value: unknown) => {
+    if (typeof value === "number" && value > 0) {
+      assetIds.add(value);
+      return;
+    }
+    if (typeof value === "string" && /^\d+$/.test(value)) {
+      assetIds.add(Number(value));
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(addAssetId);
+    }
+  };
+  nodes.forEach((node) => {
+    const data = node.data as Record<string, unknown>;
+    addAssetId(data.assetId);
+    addAssetId(data.outputAssetId);
+    addAssetId(data.previewAssetId);
+    addAssetId(data.assetIdList);
+    addAssetId(data.assetIds);
+  });
   return {
     nodeCount: nodes.length,
-    assetCount: nodes.filter((node) => {
-      if (node.type === "image") return Boolean((node.data as ImageNodeData).dataUrl);
-      if (node.type === "sketch") return Boolean((node.data as SketchNodeData).dataUrl || (node.data as SketchNodeData).sceneJson);
-      if (node.type === "video") return Boolean((node.data as VideoNodeData).videoUrl);
-      return false;
-    }).length,
+    assetCount: assetIds.size,
   };
 }
 

@@ -322,7 +322,7 @@ export const generationApi = {
 - 粘贴、本地上传、资产选择得到的图片都会追加到同一个参考图列表。
 - 第一张参考图作为主预览图展示，并继续用于旧版单图字段兼容。
 - 多余参考图在缩略图条中展示，可以逐张移除。
-- 参考图列表缓存到 `localStorage` 的 `copse:workspace:reference-images`，切走后再回到 `/app` 会恢复当前参考图。
+- 参考图列表缓存到 `localStorage` 的 `copse:workspace:reference-images`，切走后再回到 `/app` 会恢复当前参考图；缓存主体应是 `assetId`、文件名、MIME、尺寸等稳定信息，预览 URL 只作为运行时显示值，私有 OSS/S3 URL 过期前需要重新读取资产详情刷新。
 - 右侧滑杆按钮打开模型参数弹窗，表单复用 canvas 节点使用的 `DynamicParamForm`。
 
 `/app` 提交前置条件：
@@ -331,6 +331,7 @@ export const generationApi = {
 - 参考图上传完成后才能提交。
 - 参数模板加载完成后才能提交。
 - 如果模板加载失败或必填参数缺失，页面会展示原因并打开参数弹窗。
+- 提交 `quickGenerateProject` 时同时发送旧版单图字段和新版多图数组字段：单图取唯一参考图，多图取首张作为旧版兼容字段，并把完整 `referenceAssetIds` / `referencePreviewUrls` 传给后端；模型参数使用参数弹窗中合并模板默认值后的结果。
 
 图片生成流程：
 
@@ -919,3 +920,4 @@ draw2video-client/src/lib/api-client.ts
 - 生成资产转存文件名不能使用固定标题，例如 `IMAGE生成资产.png`，否则同一天同路径会覆盖，多个不同 assetId 会指向同一 `file_url`。data URL 落文件时必须包含 `generateNo`、`taskId` 或唯一 ID。
 - 管理端回调与渠道日志目前只有分页接口，没有详情接口，可先用行数据打开抽屉展示；如果分页返回字段被裁剪，需要补详情接口。
 - 用户端画布节点保存 taskId、recordId、assetIds 时，要遵守现有 canvas persistence 规则，避免把大媒体内容写入 localStorage。
+- 用户端不能把私有 OSS/S3 签名 URL 当作稳定参考图来源。`/app` 和 canvas 都应以 `assetId` 为准刷新访问 URL，`previewUrl`、`outputPreviewUrl`、`videoUrl` 只能作为当前渲染态。

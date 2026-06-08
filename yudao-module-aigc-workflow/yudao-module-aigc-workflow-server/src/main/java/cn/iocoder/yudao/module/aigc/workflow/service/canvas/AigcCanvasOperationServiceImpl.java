@@ -96,7 +96,20 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
         update.setId(project.getId());
         update.setCurrentVersion(nextVersion);
         projectMapper.updateById(update);
+        if (isStatisticsAffectedOperation(reqVO.getOperationType())) {
+            projectService.refreshProjectStatistics(project.getId());
+        }
         return operation;
+    }
+
+    private boolean isStatisticsAffectedOperation(String operationType) {
+        return "NODE_CREATE".equals(operationType)
+                || "NODE_DELETE".equals(operationType)
+                || "NODE_UPDATE_DATA".equals(operationType)
+                || "ASSET_ATTACH".equals(operationType)
+                || "ASSET_DETACH".equals(operationType)
+                || "TASK_STATUS_PATCH".equals(operationType)
+                || "CANVAS_CLEAR".equals(operationType);
     }
 
     @Override

@@ -95,10 +95,11 @@ Asset library:
 - Asset search is debounced and should be sent through paged backend filtering rather than filtering a preloaded full dataset.
 - Each asset item links to its asset detail or source project canvas when only a local fallback exists.
 - The `/app` plus button opens an image asset picker. Selected generated or uploaded images become quick-generate reference images.
+- Private OSS/S3 asset URLs are treated as runtime access tickets. UI state may hold `fileUrl`, `thumbnailUrl`, `previewUrl`, `videoUrl`, or `files[].accessUrl` for display, but persisted canvas/project data should keep stable `assetId` / `outputAssetId` values and refresh URLs from the asset detail/access-url APIs when the page opens or a URL is close to expiring.
 
 Current image generation behavior:
 
-- `/app` quick generation supports pasted, uploaded, and asset-picked reference images. References are shown immediately, cached in `localStorage`, and restored when the user returns to the page.
+- `/app` quick generation supports pasted, uploaded, and asset-picked reference images. References are shown immediately, cached in `localStorage`, and restored when the user returns to the page. The cache is keyed by stable asset metadata; signed preview URLs are refreshed from the asset API instead of being trusted as permanent links.
 - Multiple quick-generate reference images are supported. The first image is still sent through legacy single-reference fields for compatibility, while the complete list is sent through array fields.
 - Quick generation filters models by the current input capability (`TEXT_TO_IMAGE` / `IMAGE_TO_IMAGE` / `TEXT_TO_VIDEO` / `IMAGE_TO_VIDEO`), opens a `DynamicParamForm` parameter popover from the sliders button, and sends the selected params with template defaults filled in.
 - New image generation creates an `ImageNode` draft placeholder.
@@ -108,6 +109,7 @@ Current image generation behavior:
 - Reference images are connected to the selected image node and shown as thumbnails in the composer toolbar.
 - Generation updates the same image node in place instead of creating a separate result node.
 - Server-backed node runs apply the final `TASK_STATUS_PATCH` from `operation.operationJson.payload.patch` immediately after `run/sync` succeeds. Do not rely only on realtime/sync echo for the node that initiated the run.
+- Image and video generation patches persist output asset IDs, not signed output URLs. Runtime keys such as `previewUrl`, `outputPreviewUrl`, `videoUrl`, and `assetUrlExpireTime` are stripped from snapshots, operation payloads, and local project persistence, then repopulated from current asset responses for display.
 - Uploaded images are media-only nodes; selecting one does not open a prompt composer.
 - Empty draft images render inside a fixed preview slot, and the placeholder card changes aspect ratio when image size params change.
 - Real images and sketch previews display at their natural aspect ratio, scaled down to a bounded max size with the full image visible. They should not show an extra card border or black letterbox around the media.

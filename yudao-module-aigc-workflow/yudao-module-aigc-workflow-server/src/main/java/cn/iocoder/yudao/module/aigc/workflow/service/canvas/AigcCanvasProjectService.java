@@ -35,6 +35,8 @@ public interface AigcCanvasProjectService {
 
     AigcCanvasProjectDO getProject(Long id, Long userId);
 
+    AigcCanvasProjectRespVO getProjectDetail(Long id, Long userId);
+
     AigcCanvasMemberDO getProjectMember(Long id, Long userId);
 
     List<AigcCanvasMemberDO> getProjectMembers(Long id, Long userId);
@@ -58,6 +60,8 @@ public interface AigcCanvasProjectService {
     AigcCanvasSketchDO saveSketch(AigcCanvasSketchSaveReqVO reqVO, Long userId);
 
     Long bindAsset(AigcCanvasAssetBindReqVO reqVO, Long userId);
+
+    void refreshProjectStatistics(Long projectId);
 
     AigcCanvasProjectDO validateEditableProject(Long projectId, Long userId);
 

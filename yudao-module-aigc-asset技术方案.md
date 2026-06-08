@@ -1028,13 +1028,15 @@ V2 上传不再只返回 URL，而是返回稳定文件引用。`infra_file.url`
 ```text
 1. 用户上传、第三方 URL 或 Data URL 进入资产服务
 2. 资产服务下载/解码文件内容
-3. 调用 FileApi.createFileV2 上传到平台文件服务
+3. 生成唯一存储文件名后调用 FileApi.createFileV2 上传到平台文件服务
 4. aigc_asset 写业务主记录
 5. aigc_asset_file 写 ORIGINAL 文件引用
 6. 接口返回资产 ID、资产文件 ID 和运行时访问 URL
 ```
 
 `origin_url` 只写入 `aigc_asset_file.origin_url` 用于溯源，不作为展示、预览、下载地址。
+
+资产服务在调用文件服务前统一生成服务端存储文件名，用户上传文件名、资产标题和生成标题只作为展示元数据。用户上传、第三方 URL 转存、Data URL 解码入库都必须走同一套唯一命名逻辑，避免同一天同路径下 `IMAGE生成资产.png`、`image.png` 这类固定名称互相覆盖，导致多个不同 `assetId` 指向同一个底层对象。
 
 ### 18.4 访问 URL 与 Redis 缓存
 
@@ -1123,7 +1125,16 @@ fileSize
 - Redis 可短期保存签名 URL，但 TTL 必须小于签名 URL 有效期。
 - 画布 JSON、项目封面、生成记录不得长期保存带签名参数的访问 URL。
 
-### 18.9 已验证命令
+### 18.9 上传/转存文件命名防覆盖
+
+当前实现约束：
+
+- `/aigc/asset/upload` 用户上传资产时，即使原始文件名相同，也必须创建新的底层存储对象。
+- `createImageAsset`、`createVideoAsset`、`createFromRemoteUrl`、`createFromDataUrl` 等生成结果资产化入口，不能直接使用固定标题或第三方文件名作为对象存储 Key。
+- 原始 `fileName`、`title`、`mimeType`、宽高、大小等信息继续保存为资产展示和检索元数据，不参与对象存储唯一性判断。
+- Canvas 上传、`/app` 参考图上传和生成结果资产化都依赖资产服务这一层防覆盖逻辑，前端不应通过相同文件名覆盖旧资产。
+
+### 18.10 已验证命令
 
 ```text
 mvn -pl yudao-module-aigc-asset/yudao-module-aigc-asset-server -am -DskipTests compile

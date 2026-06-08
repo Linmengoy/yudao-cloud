@@ -1,12 +1,10 @@
 package cn.iocoder.yudao.module.aigc.workflow.controller.app;
 
-import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
-import cn.iocoder.yudao.module.aigc.asset.api.AigcAssetApi;
-import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunReqVO;
@@ -23,7 +21,6 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
-import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSketchRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSketchSaveReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSnapshotRespVO;
@@ -65,8 +62,6 @@ public class AigcCanvasAppController {
     private AigcCanvasOperationService operationService;
     @Resource
     private AigcCanvasNodeRunService nodeRunService;
-    @Resource
-    private AigcAssetApi assetApi;
 
     @GetMapping("/projects")
     @Operation(summary = "画布项目分页")
@@ -97,11 +92,7 @@ public class AigcCanvasAppController {
     @Operation(summary = "画布项目详情")
     @Parameter(name = "id", description = "项目编号", required = true)
     public CommonResult<AigcCanvasProjectRespVO> getProject(@PathVariable("id") Long id) {
-        Long userId = getLoginUserId();
-        AigcCanvasProjectRespVO project = BeanUtils.toBean(projectService.getProject(id, userId), AigcCanvasProjectRespVO.class);
-        fillProjectPermissions(project, projectService.getProjectMember(id, userId));
-        fillProjectCover(project);
-        return success(project);
+        return success(projectService.getProjectDetail(id, getLoginUserId()));
     }
 
     @GetMapping("/projects/{id}/members")
@@ -247,18 +238,6 @@ public class AigcCanvasAppController {
         project.setRole(role);
         project.setCanEdit(canEdit);
         project.setReadonly(!canEdit);
-    }
-
-    private void fillProjectCover(AigcCanvasProjectRespVO project) {
-        if (project.getCoverAssetId() == null) {
-            return;
-        }
-        try {
-            AigcAssetRespDTO asset = assetApi.getAsset(project.getCoverAssetId()).getCheckedData();
-            project.setCoverUrl(StrUtil.blankToDefault(asset.getThumbnailUrl(),
-                    StrUtil.blankToDefault(asset.getCoverUrl(), asset.getFileUrl())));
-        } catch (Exception ignored) {
-        }
     }
 
 }

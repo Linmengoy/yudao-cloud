@@ -204,6 +204,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         }
         Long assetId = assetIds.get(0);
         bindOutputAsset(reqVO, assetId, result.getTaskId());
+        projectService.refreshProjectStatistics(reqVO.getProjectId());
         if ("image".equals(reqVO.getNodeType())) {
             AigcCanvasProjectDO update = new AigcCanvasProjectDO();
             update.setId(reqVO.getProjectId());
