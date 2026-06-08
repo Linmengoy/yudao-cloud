@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.aigc.asset.service.asset;
 import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.http.Header;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONUtil;
@@ -47,6 +48,7 @@ import cn.iocoder.yudao.module.infra.api.file.FileApi;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -66,9 +68,11 @@ import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.*;
 
 @Service
 @Validated
+@Slf4j
 public class AigcAssetServiceImpl implements AigcAssetService {
 
     private static final int REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS = 20_000;
+    private static final String REMOTE_FILE_DOWNLOAD_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
     @Resource
     private AigcAssetMapper assetMapper;
@@ -454,12 +458,20 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     }
 
     private byte[] downloadOriginFile(AigcAssetCreateReqDTO reqDTO) {
-        try (HttpResponse response = AigcAssetProxyUtils.execute(HttpRequest.get(reqDTO.getOriginUrl()).timeout(REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS), reqDTO)) {
+        HttpRequest request = HttpRequest.get(reqDTO.getOriginUrl())
+                .header(Header.USER_AGENT, REMOTE_FILE_DOWNLOAD_USER_AGENT)
+                .header(Header.ACCEPT, "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                .timeout(REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS);
+        try (HttpResponse response = AigcAssetProxyUtils.execute(request, reqDTO)) {
             if (!response.isOk()) {
+                log.warn("[downloadOriginFile][originUrl({}) proxy({}:{}) HTTP 下载失败 status({}) body({})]",
+                        reqDTO.getOriginUrl(), reqDTO.getProxyHost(), reqDTO.getProxyPort(), response.getStatus(), StrUtil.maxLength(response.body(), 512));
                 throw exception(ASSET_DOWNLOAD_FAILED);
             }
             return response.bodyBytes();
         } catch (Exception ex) {
+            log.warn("[downloadOriginFile][originUrl({}) proxy({}:{}) 下载异常]",
+                    reqDTO.getOriginUrl(), reqDTO.getProxyHost(), reqDTO.getProxyPort(), ex);
             throw exception(ASSET_DOWNLOAD_FAILED);
         }
     }
