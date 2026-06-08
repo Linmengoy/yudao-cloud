@@ -49,6 +49,15 @@ export function downloadMyAsset(data: AigcAssetDownloadReq) {
   return api.post<string>("/aigc/asset/download", data);
 }
 
+export function captureVideoFrameAsset(data: {
+  assetId: number;
+  capturedAt: "current" | "first" | "last";
+  timeSec?: number | null;
+  title?: string;
+}) {
+  return api.post<number>("/aigc/asset/capture-video-frame", data);
+}
+
 export async function uploadAsset(file: File, assetType: AigcAssetType, title?: string) {
   const form = new FormData();
   form.append("file", file);

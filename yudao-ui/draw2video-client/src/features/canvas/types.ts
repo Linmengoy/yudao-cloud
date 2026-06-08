@@ -55,6 +55,19 @@ export type EdgeDeleteEventDetail = {
   edgeId: string;
 };
 
+export type VideoFrameCaptureEventDetail = {
+  sourceNodeId: string;
+  dataUrl?: string;
+  assetId?: number | null;
+  assetVersionId?: number | null;
+  previewUrl?: string | null;
+  width?: number;
+  height?: number;
+  mimeType: string;
+  fileName: string;
+  capturedAt: "current" | "first" | "last";
+};
+
 export type PromptNode = Node<PromptNodeData, "prompt">;
 
 // --- Result Node ---
