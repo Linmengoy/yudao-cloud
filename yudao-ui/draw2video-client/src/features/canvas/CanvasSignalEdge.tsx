@@ -94,6 +94,12 @@ export function CanvasSignalEdge({
           event.stopPropagation();
           setEdges((eds) => eds.map((edge) => ({ ...edge, selected: edge.id === id })));
         }}
+        onDoubleClick={(event) => {
+          event.stopPropagation();
+          window.dispatchEvent(new CustomEvent<EdgeDeleteEventDetail>("copse:edge-delete", {
+            detail: { edgeId: id },
+          }));
+        }}
       />
       {shouldAnimate && <path className="copse-signal-edge-gradient" d={edgePath} stroke={`url(#${gradientId})`} />}
       {selected ? (

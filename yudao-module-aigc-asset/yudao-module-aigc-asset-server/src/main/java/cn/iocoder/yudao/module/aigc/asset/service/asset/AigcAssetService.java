@@ -26,6 +26,8 @@ public interface AigcAssetService {
 
     Long uploadAsset(Long userId, String assetType, String title, String fileName, String mimeType, byte[] content);
 
+    Long captureVideoFrame(Long userId, Long videoAssetId, String capturedAt, java.math.BigDecimal timeSec, String title);
+
     AigcAssetCreateRespDTO createAsset(AigcAssetCreateReqDTO reqDTO);
 
     void updateAsset(AigcAssetSaveReqVO reqVO);
