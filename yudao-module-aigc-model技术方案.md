@@ -107,6 +107,7 @@ yudao-module-aigc-model-server
       ├── controller
       │   ├── admin
       │   │   ├── provider
+      │   │   ├── proxy
       │   │   ├── model
       │   │   ├── param
       │   │   ├── price
@@ -121,6 +122,7 @@ yudao-module-aigc-model-server
       │           └── AigcModelWebConfiguration.java
       ├── service
       │   ├── provider
+      │   ├── proxy
       │   ├── model
       │   ├── param
       │   ├── price
@@ -130,6 +132,7 @@ yudao-module-aigc-model-server
       ├── dal
       │   ├── dataobject
       │   │   ├── AigcModelProviderDO.java
+      │   │   ├── AigcModelProxyDO.java
       │   │   ├── AigcModelDO.java
       │   │   ├── AigcModelCapabilityDO.java
       │   │   ├── AigcModelParamTemplateDO.java
@@ -139,6 +142,7 @@ yudao-module-aigc-model-server
       │   │   └── AigcModelUsageLogDO.java
       │   └── mysql
       │       ├── AigcModelProviderMapper.java
+      │       ├── AigcModelProxyMapper.java
       │       ├── AigcModelMapper.java
       │       ├── AigcModelCapabilityMapper.java
       │       ├── AigcModelParamTemplateMapper.java
@@ -236,6 +240,7 @@ yudao-module-aigc-model-server
 | 表名                        | 说明             | 当前实现 |
 | --------------------------- | ---------------- | -------- |
 | `aigc_model_provider`       | 模型渠道商       | 已实现   |
+| `aigc_model_proxy`          | 共享代理配置     | 已实现   |
 | `aigc_model`                | 模型配置         | 已实现   |
 | `aigc_model_capability`     | 模型能力         | 已实现   |
 | `aigc_model_param_template` | 模型参数模板     | 已实现   |
@@ -260,6 +265,10 @@ yudao-module-aigc-model-server
 | secret_key                                                | varchar(1024) | Secret Key，加密存储 |
 | extra_config                                              | json          | 扩展配置             |
 | timeout_seconds                                           | int           | 默认超时时间         |
+| proxy_enabled                                             | tinyint(1)    | 是否启用代理         |
+| proxy_id                                                  | bigint        | 共享代理 ID          |
+| proxy_protocol/proxy_host/proxy_port                      | 标准字段      | 旧版内联代理兼容字段 |
+| proxy_username/proxy_password                             | 标准字段      | 旧版内联代理兼容字段 |
 | rate_limit_config                                         | json          | 限流配置             |
 | health_status                                             | varchar(32)   | 健康状态             |
 | balance                                                   | decimal(18,6) | 渠道余额             |
@@ -274,7 +283,39 @@ uk_code_tenant = code + tenant_id
 idx_status = status
 ```
 
-### 5.3 aigc_model
+说明：
+
+- 新配置应优先使用 `proxy_id` 关联 `aigc_model_proxy`，不要在每个渠道商上重复填写代理主机、端口和账号。
+- `proxy_protocol`、`proxy_host`、`proxy_port`、`proxy_username`、`proxy_password` 是旧版内联代理字段，保留用于兼容已有数据和回滚，不作为新增配置的主入口。
+- 后端读取渠道商时会展开共享代理配置，供 `aigc-gen` 调用模型和 `aigc-asset` 下载生成结果文件使用。
+
+### 5.3 aigc_model_proxy
+
+共享代理配置表，管理 HTTP、SOCKS5、SOCKS5H 等代理。适合 Grok、OpenAI、Gemini 等境外模型渠道复用同一代理，避免每个渠道商重复配置。
+
+| 字段                                                      | 类型          | 说明                   |
+| --------------------------------------------------------- | ------------- | ---------------------- |
+| id                                                        | bigint        | 主键                   |
+| name                                                      | varchar(128)  | 代理名称               |
+| protocol                                                  | varchar(32)   | HTTP、SOCKS5、SOCKS5H  |
+| host                                                      | varchar(255)  | 代理主机               |
+| port                                                      | int           | 代理端口               |
+| username                                                  | varchar(255)  | 用户名，可为空         |
+| password                                                  | varchar(1024) | 密码，可为空，敏感字段 |
+| status                                                    | int           | 状态                   |
+| remark                                                    | varchar(512)  | 备注                   |
+| creator/create_time/updater/update_time/deleted/tenant_id | 标准字段      | 标准字段               |
+
+索引：
+
+```text
+idx_name = name
+idx_status = status
+```
+
+管理端页面位于 AIGC 模型管理下的“代理管理”。页面支持新增、编辑、删除、启停和测试代理。测试接口当前以 `https://api.ipify.org` 为目标，只验证代理连通性、认证和延迟，不代表每个业务目标域名都一定可访问。Grok 图片结果下载仍需要单独验证 `https://imagine-public.x.ai/...`。
+
+### 5.4 aigc_model
 
 模型配置表，管理用户可以选择或平台内部可以路由的具体模型。
 
@@ -306,7 +347,7 @@ idx_type_status = type + status
 idx_public_visible = public_visible
 ```
 
-### 5.4 aigc_model_capability
+### 5.5 aigc_model_capability
 
 模型能力表，一个模型可以支持多个能力。
 
@@ -338,7 +379,7 @@ uk_model_capability = model_id + capability
 idx_capability = capability
 ```
 
-### 5.5 aigc_model_param_template
+### 5.6 aigc_model_param_template
 
 模型参数模板表，用于配置不同模型支持的参数，避免前后端写死。
 
@@ -394,7 +435,7 @@ uk_model_capability_param = model_id + capability + param_key
 idx_model_id = model_id
 ```
 
-### 5.6 aigc_model_price
+### 5.7 aigc_model_price
 
 模型价格规则表。
 
@@ -437,7 +478,7 @@ idx_model_id = model_id
 }
 ```
 
-### 5.7 aigc_model_route
+### 5.8 aigc_model_route
 
 模型路由规则表，第一阶段可先建表但不做复杂路由。
 
@@ -461,7 +502,7 @@ idx_model_id = model_id
 - FASTEST_RESPONSE
 - ROUND_ROBIN
 
-### 5.8 aigc_model_tenant
+### 5.9 aigc_model_tenant
 
 租户模型授权表，用于控制某个租户可使用哪些平台模型，以及租户维度的展示、默认、排序和额度策略。当前生产 SQL 已建表，Server 侧已有 `AigcModelTenantDO`、`AigcModelTenantMapper`、`AigcModelTenantService` 和管理端 Controller。
 
@@ -485,7 +526,7 @@ uk_tenant_model = tenant_id + model_id
 idx_model_id = model_id
 ```
 
-### 5.9 aigc_model_usage_log
+### 5.10 aigc_model_usage_log
 
 模型调用计量日志表，用于记录模型调用结果，给后续结算、统计、审计和成本分析提供基础数据。当前已通过内部 RPC `recordUsage` 暴露记录能力。
 

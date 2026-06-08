@@ -25,6 +25,7 @@ import java.util.Map;
 public class GrokImagineProviderClient implements AigcProviderClient {
 
     private static final String PROVIDER_CODE = "grok";
+    private static final List<String> VIDEO_ALLOWED_SIZES = List.of("1024x1024", "1024x1792", "1280x720", "1792x1024");
 
     @Override
     public String getProviderCode() {
@@ -195,19 +196,46 @@ public class GrokImagineProviderClient implements AigcProviderClient {
     private String resolveVideoSize(JSONObject params, String image) {
         String size = firstNonBlank(params.getStr("size"), params.getStr("grokSize"));
         if (StrUtil.isNotBlank(size)) {
-            return size.replace("*", "x");
+            String normalizedSize = size.replace("*", "x");
+            if (VIDEO_ALLOWED_SIZES.contains(normalizedSize)) {
+                return normalizedSize;
+            }
+            String ratioFromSize = sizeToRatio(normalizedSize);
+            if (ratioFromSize != null) {
+                return grokVideoSizeForRatio(ratioFromSize);
+            }
         }
         String ratio = firstNonBlank(params.getStr("ratio"), params.getStr("aspectRatio"), params.getStr("aspect_ratio"), resolveImageRatio(image), "16:9");
-        String resolution = params.getStr("resolution", "720p");
-        int longSide = "1080p".equalsIgnoreCase(resolution) ? 1920 : 1280;
+        return grokVideoSizeForRatio(ratio);
+    }
+
+    private String grokVideoSizeForRatio(String ratio) {
         return switch (ratio) {
-            case "9:16" -> longSide == 1920 ? "1080x1920" : "720x1280";
-            case "3:4" -> longSide == 1920 ? "1440x1920" : "960x1280";
-            case "1:1" -> longSide == 1920 ? "1080x1080" : "720x720";
-            case "4:3" -> longSide == 1920 ? "1920x1440" : "1280x960";
-            case "21:9" -> longSide == 1920 ? "1920x823" : "1280x549";
-            default -> longSide == 1920 ? "1920x1080" : "1280x720";
+            case "1:1" -> "1024x1024";
+            case "9:16", "3:4", "2:3" -> "1024x1792";
+            case "4:3", "3:2", "21:9" -> "1792x1024";
+            default -> "1280x720";
         };
+    }
+
+    private String sizeToRatio(String size) {
+        if (StrUtil.isBlank(size)) {
+            return null;
+        }
+        String[] parts = size.toLowerCase().split("x");
+        if (parts.length != 2) {
+            return null;
+        }
+        try {
+            int width = Integer.parseInt(parts[0].trim());
+            int height = Integer.parseInt(parts[1].trim());
+            if (width <= 0 || height <= 0) {
+                return null;
+            }
+            return closestRatio(width, height);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private String resolveImageRatio(String image) {

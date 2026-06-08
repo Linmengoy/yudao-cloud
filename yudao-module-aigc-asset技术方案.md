@@ -564,7 +564,7 @@ aigc-asset 调用 aigc-task markSuccess，回写 outputAssetId、outputAssetType
 - 第三方 URL 不能长期作为资产主 URL 使用，必须转存到平台文件服务，避免第三方 URL 过期、鉴权失效或被替换。
 - 如果 `aigc-gen` 已经完成文件下载，`aigc-asset` 可接收本地文件、字节流或临时 URL，并统一通过 `FileApi` 上传。
 - 如果资产入库失败，任务不能标记 `SUCCESS`，应由 `aigc-gen` 或补偿任务继续重试或推进失败退款流程。
-- 文件转存已通过 `prepareFile()` 方法实现，支持通过 `HttpUtil.downloadBytes()` 下载外部文件并调用 `FileApi.createFile()` 上传到平台存储。
+- 文件转存已通过 `prepareFile()` 方法实现，支持下载外部文件并调用 `FileApi.createFile()` 上传到平台存储。普通 HTTP 下载可走 Hutool；SOCKS/SOCKS5H 代理下载优先走 `curl --socks5-hostname`，避免 JDK/Hutool SOCKS 实现在部分代理和 Cloudflare 目标上认证或连接超时。
 - 任务回写采用 `tryMarkTaskSuccess()` 方法包装，任务服务调用失败时记录日志但不回滚资产创建，保障资产入库可靠性。
 
 ### 8.2 用户上传资产流程
@@ -1120,3 +1120,111 @@ mvn -pl yudao-module-infra/yudao-module-infra-server,yudao-module-aigc-gen/yudao
 ```
 
 验证结果均为 `BUILD SUCCESS`。
+
+## 19. 境外生成结果下载代理方案
+
+本节记录 2026-06-08 已落地的境外生成结果下载方案，主要用于 Grok 等模型返回的 `https://imagine-public.x.ai/...` 图片 URL。
+
+### 19.1 背景
+
+Grok 生图链路里，`aigc-gen` 调用上游模型成功后会拿到第三方图片 URL，再调用 `aigc-asset` 创建资产。线上曾出现以下状态：
+
+```text
+provider_status = SUCCESS
+output_urls = ["https://imagine-public.x.ai/...jpg"]
+status = FAILED
+asset_ids = NULL
+fail_message = 文件下载失败 / Read timed out executing POST ...create-image-asset
+```
+
+这表示模型生成已成功，失败点在 `aigc-asset` 下载第三方图片并转存平台文件服务。
+
+### 19.2 代理配置来源
+
+代理不由用户端或画布传入。配置链路为：
+
+```text
+管理端 AIGC 模型管理 / 代理管理
+  -> model_db.aigc_model_proxy
+  -> 渠道商启用代理并选择 proxy_id
+  -> aigc-model 返回渠道配置时展开代理
+  -> aigc-gen 调用模型并把代理快照传给 aigc-asset
+  -> aigc-asset 下载 originUrl 时使用该代理
+```
+
+`aigc_model_provider` 上保留的 `proxy_protocol`、`proxy_host`、`proxy_port`、`proxy_username`、`proxy_password` 是旧版内联代理兼容字段。新增配置应使用 `proxy_id`。
+
+### 19.3 SOCKS 下载实现约定
+
+Java/Hutool 的 `basicProxyAuth` 只适合 HTTP 代理；SOCKS5 认证应使用 JDK `Authenticator`。但实测部分 SOCKS5 代理访问 `imagine-public.x.ai` 时，Java 路径会卡在：
+
+```text
+java.net.SocksSocketImpl.readSocksReply
+SocketTimeoutException: Connect timed out
+```
+
+同一台容器内使用 curl 可以成功。因此资产服务对 SOCKS/SOCKS5H 远程文件下载使用 `ProcessBuilder` 调用 curl：
+
+```text
+curl --socks5-hostname host:port --proxy-user username:password -L --max-time ...
+```
+
+注意：代码里通过 `ProcessBuilder` 传参，密码中的 `$` 不会被 shell 展开。手工在服务器 shell 里测试时，如果密码包含 `$`，必须用单引号或环境变量避免被 shell 改写。
+
+容器镜像要求：`aigc-asset` 运行镜像必须包含 `curl`。
+
+### 19.4 代理测试目标
+
+管理端“代理管理”的测试按钮当前访问：
+
+```text
+https://api.ipify.org
+```
+
+该测试只证明代理连通、认证可用，并返回延迟；不等价于业务目标域名可用。Grok 图片下载还需要验证：
+
+```text
+https://imagine-public.x.ai/
+```
+
+### 19.5 服务器排查命令
+
+检查 `aigc-asset` 下载日志：
+
+```bash
+docker logs --since 10m aigc-asset 2>&1 | grep -A80 -B20 'downloadOriginFile'
+docker logs --since 10m aigc-asset 2>&1 | grep -A80 -B20 'downloadOriginFileByCurl'
+```
+
+在容器内测试代理访问 Grok 图片域名：
+
+```bash
+docker exec aigc-asset sh -lc 'curl --socks5-hostname 代理IP:1080 --proxy-user "用户名:密码" -L -I --max-time 20 https://imagine-public.x.ai/'
+```
+
+密码包含 `$` 时使用环境变量：
+
+```bash
+docker exec -e SOCKS_PASS='N8v$Qz2!mR7#xLp9@T4w' aigc-asset sh -lc \
+  'curl --socks5-hostname 136.118.240.18:1080 --proxy-user "copseAI:$SOCKS_PASS" -L -I --max-time 20 https://imagine-public.x.ai/'
+```
+
+如果返回 `HTTP/2 403` 但不是 `timeout` 或 `authentication failed`，通常说明代理已经连通到 Cloudflare，后续真实图片 URL 可能仍可下载；应继续用生成记录里的完整 `output_urls` 测试。
+
+### 19.6 需要重跑的服务
+
+根据改动范围重跑：
+
+| 改动 | 需要重跑 |
+| ---- | -------- |
+| 代理管理页面 | `draw2video-admin` |
+| 代理表、代理测试接口、渠道商下拉选择 | `aigc-model`、`draw2video-admin` |
+| 生成时读取渠道代理并传给资产服务 | `aigc-gen` |
+| 第三方结果 URL 代理下载、curl fallback | `aigc-asset` |
+
+SQL 迁移需在生产库执行：
+
+```text
+sql/mysql/aigc_model_proxy.sql
+sql/mysql/system/aigc_model_proxy_menu.sql
+```
