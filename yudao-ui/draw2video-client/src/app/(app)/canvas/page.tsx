@@ -2739,10 +2739,10 @@ function CanvasFlow() {
           { padding: 36, stepX: 180, stepY: 150 }
         ),
         data: imageData,
-        selected: true,
+        selected: false,
       });
 
-      setNodes((nodes) => [...nodes.map((node) => ({ ...node, selected: false })), newNode]);
+      setNodes((nodes) => [...nodes, newNode]);
       canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
       if (serverProjectId && imageData.assetId) {
         canvasApi.bindNodeAsset(serverProjectId, newNode.id, {

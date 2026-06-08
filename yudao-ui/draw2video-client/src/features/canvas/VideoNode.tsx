@@ -171,6 +171,10 @@ function getVideoAssetId(data: VideoNodeData) {
   return null;
 }
 
+function stopCanvasSelection(event: React.SyntheticEvent) {
+  event.stopPropagation();
+}
+
 function getDisplaySize(data: VideoNodeData) {
   if (data.videoUrl && data.width && data.height) {
     return scaleVideoToPreview(data.width, data.height);
@@ -884,7 +888,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               </AnimatePresence>
 
               {videoSrc && !isGenerating && data.status !== "failed" && (
-                <div className="nodrag nowheel absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-charcoal/80 via-charcoal/45 to-transparent px-4 pb-3 pt-8 text-off-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div
+                  className="nodrag nowheel absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-charcoal/80 via-charcoal/45 to-transparent px-4 pb-3 pt-8 text-off-white opacity-0 transition-opacity group-hover:opacity-100"
+                  onPointerDownCapture={stopCanvasSelection}
+                  onClick={stopCanvasSelection}
+                >
                   <button
                     type="button"
                     onClick={handleTogglePlayback}
@@ -905,7 +913,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     aria-label="视频进度"
                   />
                   <span className="w-10 text-right text-xs tabular-nums">{formatTime(mediaDurationSec)}</span>
-                  <div className="group/volume flex items-center gap-1">
+                  <div className="group/volume relative flex size-8 items-center justify-center">
                     <button
                       type="button"
                       onClick={handleToggleMute}
@@ -914,16 +922,19 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     >
                       {volume === 0 ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
                     </button>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={volume}
-                      onChange={(event) => handleVolumeChange(event.target.value)}
-                      className="h-1 w-0 accent-off-white opacity-0 transition-all group-hover/volume:w-16 group-hover/volume:opacity-100"
-                      aria-label="音量"
-                    />
+                    <div className="pointer-events-none absolute bottom-full left-1/2 mb-2 flex h-24 w-8 -translate-x-1/2 items-center justify-center rounded-full bg-charcoal/90 opacity-0 shadow-xl transition-opacity group-hover/volume:pointer-events-auto group-hover/volume:opacity-100">
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={volume}
+                        onChange={(event) => handleVolumeChange(event.target.value)}
+                        className="h-20 w-1 accent-off-white [writing-mode:vertical-rl]"
+                        aria-label="音量"
+                        style={{ direction: "rtl" }}
+                      />
+                    </div>
                   </div>
                   <div ref={captureMenuRef} className="relative" onMouseLeave={() => setCaptureMenuOpen(false)}>
                     <button
