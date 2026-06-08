@@ -42,6 +42,7 @@ function getWebSocketBaseUrl() {
   return "";
 }
 
+// 创建画布WebSocket
 export function createCanvasWebSocket(onMessage: (message: CanvasRealtimeMessage) => void) {
   const token = getAccessToken();
   const baseUrl = getWebSocketBaseUrl();
