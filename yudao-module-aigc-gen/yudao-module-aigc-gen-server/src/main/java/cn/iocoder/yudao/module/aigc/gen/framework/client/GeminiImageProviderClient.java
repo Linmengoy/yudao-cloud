@@ -32,11 +32,10 @@ public class GeminiImageProviderClient implements AigcProviderClient {
             return failed("CONFIG_INVALID", "Gemini 图片渠道未配置 API 地址或 API Key");
         }
         long start = System.currentTimeMillis();
-        try (HttpResponse response = AigcProviderProxyUtils.applyProxy(HttpRequest.post(resolveEndpoint(reqDTO))
+        try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.post(resolveEndpoint(reqDTO))
                 .contentType(ContentType.JSON.getValue())
                 .body(buildRequestBody(reqDTO).toString())
-                .timeout(timeoutMillis(reqDTO)), reqDTO)
-                .execute()) {
+                .timeout(timeoutMillis(reqDTO)), reqDTO)) {
             if (!response.isOk()) {
                 return failed("HTTP_" + response.getStatus(), safeBody(response.body())).setDurationMillis(System.currentTimeMillis() - start);
             }
@@ -188,7 +187,7 @@ public class GeminiImageProviderClient implements AigcProviderClient {
 
     private String toBase64(String source, AigcProviderSubmitReqDTO reqDTO) {
         if (source.startsWith("http://") || source.startsWith("https://")) {
-            try (HttpResponse response = AigcProviderProxyUtils.applyProxy(HttpRequest.get(source).timeout(timeoutMillis(reqDTO)), reqDTO).execute()) {
+            try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.get(source).timeout(timeoutMillis(reqDTO)), reqDTO)) {
                 return Base64.getEncoder().encodeToString(response.bodyBytes());
             }
         }

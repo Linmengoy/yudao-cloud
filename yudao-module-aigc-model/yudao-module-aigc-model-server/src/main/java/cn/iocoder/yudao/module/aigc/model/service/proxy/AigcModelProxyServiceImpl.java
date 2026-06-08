@@ -18,7 +18,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.net.Authenticator;
 import java.net.InetSocketAddress;
+import java.net.PasswordAuthentication;
 import java.net.Proxy;
 import java.util.List;
 import java.util.Set;
@@ -33,6 +35,7 @@ public class AigcModelProxyServiceImpl implements AigcModelProxyService {
     private static final Set<String> SUPPORTED_PROTOCOLS = Set.of("HTTP", "HTTPS", "SOCKS5", "SOCKS5H");
     private static final String TEST_URL = "https://www.google.com/generate_204";
     private static final int TEST_TIMEOUT_MILLIS = 10_000;
+    private static final Object AUTHENTICATOR_LOCK = new Object();
 
     @Resource
     private AigcModelProxyMapper proxyMapper;
@@ -115,7 +118,7 @@ public class AigcModelProxyServiceImpl implements AigcModelProxyService {
     public Long testProxy(Long id) {
         AigcModelProxyDO proxy = validateProxyExistsAndEnable(id);
         long start = System.currentTimeMillis();
-        try (HttpResponse response = applyProxy(HttpRequest.get(TEST_URL).timeout(TEST_TIMEOUT_MILLIS), proxy).execute()) {
+        try (HttpResponse response = execute(HttpRequest.get(TEST_URL).timeout(TEST_TIMEOUT_MILLIS), proxy)) {
             int status = response.getStatus();
             if (status < 200 || status >= 400) {
                 throw exception(MODEL_PROXY_TEST_FAILED, "HTTP " + status);
@@ -150,17 +153,44 @@ public class AigcModelProxyServiceImpl implements AigcModelProxyService {
 
     private HttpRequest applyProxy(HttpRequest request, AigcModelProxyDO proxy) {
         request.setProxy(new Proxy(resolveProxyType(proxy.getProtocol()), new InetSocketAddress(proxy.getHost(), proxy.getPort())));
-        if (StrUtil.isNotBlank(proxy.getUsername()) || StrUtil.isNotBlank(proxy.getPassword())) {
+        if (!isSocks(proxy.getProtocol()) && (StrUtil.isNotBlank(proxy.getUsername()) || StrUtil.isNotBlank(proxy.getPassword()))) {
             request.basicProxyAuth(StrUtil.blankToDefault(proxy.getUsername(), ""), StrUtil.blankToDefault(proxy.getPassword(), ""));
         }
         return request;
     }
 
+    private HttpResponse execute(HttpRequest request, AigcModelProxyDO proxy) {
+        HttpRequest proxiedRequest = applyProxy(request, proxy);
+        if (!isSocks(proxy.getProtocol()) || (StrUtil.isBlank(proxy.getUsername()) && StrUtil.isBlank(proxy.getPassword()))) {
+            return proxiedRequest.execute();
+        }
+        synchronized (AUTHENTICATOR_LOCK) {
+            Authenticator previous = Authenticator.getDefault();
+            Authenticator.setDefault(new Authenticator() {
+                @Override
+                protected PasswordAuthentication getPasswordAuthentication() {
+                    return new PasswordAuthentication(
+                            StrUtil.blankToDefault(proxy.getUsername(), ""),
+                            StrUtil.blankToDefault(proxy.getPassword(), "").toCharArray());
+                }
+            });
+            try {
+                return proxiedRequest.execute();
+            } finally {
+                Authenticator.setDefault(previous);
+            }
+        }
+    }
+
     private Proxy.Type resolveProxyType(String protocol) {
-        if ("SOCKS5".equalsIgnoreCase(protocol) || "SOCKS5H".equalsIgnoreCase(protocol)) {
+        if (isSocks(protocol)) {
             return Proxy.Type.SOCKS;
         }
         return Proxy.Type.HTTP;
+    }
+
+    private boolean isSocks(String protocol) {
+        return "SOCKS5".equalsIgnoreCase(protocol) || "SOCKS5H".equalsIgnoreCase(protocol);
     }
 
 }

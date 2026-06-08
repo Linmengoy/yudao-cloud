@@ -80,12 +80,11 @@ public class GptImageProviderClient implements AigcProviderClient {
 
     private HttpResponse submitGeneration(AigcProviderSubmitReqDTO reqDTO) {
         JSONObject body = buildRequestBody(reqDTO);
-        return AigcProviderProxyUtils.applyProxy(HttpRequest.post(resolveEndpoint(reqDTO.getProviderBaseUrl(), false))
+        return AigcProviderProxyUtils.execute(HttpRequest.post(resolveEndpoint(reqDTO.getProviderBaseUrl(), false))
                 .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
                 .contentType(ContentType.JSON.getValue())
                 .body(body.toString())
-                .timeout(timeoutMillis(reqDTO)), reqDTO)
-                .execute();
+                .timeout(timeoutMillis(reqDTO)), reqDTO);
     }
 
     private HttpResponse submitEdit(AigcProviderSubmitReqDTO reqDTO) throws Exception {
@@ -113,7 +112,7 @@ public class GptImageProviderClient implements AigcProviderClient {
             if (tempFiles.isEmpty()) {
                 throw new IllegalArgumentException("图生图缺少参考图片");
             }
-            return request.execute();
+            return AigcProviderProxyUtils.execute(request, reqDTO);
         } finally {
             for (File file : tempFiles) {
                 try {
@@ -181,7 +180,7 @@ public class GptImageProviderClient implements AigcProviderClient {
 
     private byte[] readImageBytes(String source, AigcProviderSubmitReqDTO reqDTO) {
         if (source.startsWith("http://") || source.startsWith("https://")) {
-            try (HttpResponse response = AigcProviderProxyUtils.applyProxy(HttpRequest.get(source).timeout(timeoutMillis(reqDTO)), reqDTO).execute()) {
+            try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.get(source).timeout(timeoutMillis(reqDTO)), reqDTO)) {
                 return response.bodyBytes();
             }
         }
