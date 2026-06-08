@@ -973,6 +973,43 @@ WHERE p.id = 6\G
 | `inputParams` | 否 | 输入参数 JSON |
 | `sync` | 否 | 是否同步生成，文本类默认可同步 |
 
+`inputParams` 作为生成适配层的动态输入，不只承载模型参数，也承载参考图兼容字段。图片/视频参考生成应支持以下别名，便于不同供应商客户端复用：
+
+```json
+{
+  "providerModel": "provider-model-name",
+  "referenceAssetIds": [101, 102],
+  "referenceImageIds": ["101", "102"],
+  "referenceImages": [
+    "https://example.com/first.png",
+    "https://example.com/second.png"
+  ],
+  "referencePreviewUrls": [
+    "https://example.com/first.png",
+    "https://example.com/second.png"
+  ],
+  "inputImageIds": ["101", "102"],
+  "inputImageUrls": [
+    "https://example.com/first.png",
+    "https://example.com/second.png"
+  ],
+  "inputImages": [
+    {
+      "imageId": "101",
+      "fileName": "first.png",
+      "dataUrl": "https://example.com/first.png",
+      "mimeType": "image/png"
+    }
+  ]
+}
+```
+
+供应商客户端兼容规则：
+
+- GPT / Gemini 图片客户端读取 `inputImages` 和 `inputImageUrls`。
+- Grok / 兼容视频客户端读取 `referenceImages`。
+- 上游只支持单图时，取数组第一张；平台仍保留完整数组用于资产绑定、画布回显和后续多图供应商。
+
 响应字段：
 
 | 字段 | 说明 |

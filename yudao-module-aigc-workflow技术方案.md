@@ -341,6 +341,32 @@ yudao-module-aigc-workflow-server
 
 第一版建议优先支持 `START`、`TEXT_GENERATE`、`IMAGE_GENERATE`、`VIDEO_GENERATE`、`ASSET_INPUT`、`ASSET_OUTPUT`、`END`，满足当前前端画布和第一阶段生成能力接入需要。
 
+### 7.1 快速生成项目初始化
+
+用户端 `/app` 快捷生成会直接创建 canvas 项目并运行首个图片或视频生成节点。后端快速生成请求需要同时兼容旧版单图字段和新版多图字段：
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `referenceAssetId` | 旧版单张参考图资产 ID |
+| `referenceAssetIds` | 新版多张参考图资产 ID |
+| `referencePreviewUrl` | 旧版单张参考图预览 URL |
+| `referencePreviewUrls` | 新版多张参考图预览 URL |
+
+归一化规则：
+
+- `referenceAssetIds` / `referencePreviewUrls` 非空时优先使用数组字段。
+- 数组为空时回退到 `referenceAssetId` / `referencePreviewUrl`。
+- 第一张参考图继续作为项目封面和旧版单图兼容字段。
+- 多图请求仍保留完整数组，用于画布节点、资产绑定和生成请求。
+
+画布初始化规则：
+
+- 每张参考图创建一个 `image` 类型参考节点，节点数据写入 `assetId`、`previewUrl`、`fileName`、`mimeType` 等资产元信息。
+- 目标生成节点根据 `nodeType` 创建为 `image` 或 `video`。
+- 每个参考图节点通过 `signal` 边连接到目标生成节点，使 canvas 的 `ImageNode` / `VideoNode` 可以通过 incoming edges 读取参考图。
+- `runReqVO.inputParams` 接收完整归一化参数，用于真正发起生成任务。
+- 节点展示用的 `params` 应剥离请求专用字段，例如 `referenceImages`、`referenceAssetIds`、`referenceImageIds`、`inputImages`、`inputImageUrls`、`inputImageIds`，避免把参考图传输字段重复展示为模型参数。
+
 ## 8. 状态机设计
 
 ### 8.1 工作流实例状态

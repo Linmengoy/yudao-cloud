@@ -100,7 +100,7 @@ Current image generation behavior:
 
 - `/app` quick generation supports pasted, uploaded, and asset-picked reference images. References are shown immediately, cached in `localStorage`, and restored when the user returns to the page.
 - Multiple quick-generate reference images are supported. The first image is still sent through legacy single-reference fields for compatibility, while the complete list is sent through array fields.
-- Quick generation loads active model parameter templates for the selected generation mode and sends default model params with the request.
+- Quick generation filters models by the current input capability (`TEXT_TO_IMAGE` / `IMAGE_TO_IMAGE` / `TEXT_TO_VIDEO` / `IMAGE_TO_VIDEO`), opens a `DynamicParamForm` parameter popover from the sliders button, and sends the selected params with template defaults filled in.
 - New image generation creates an `ImageNode` draft placeholder.
 - Image models, model parameters, and price display come from the AIGC model APIs. Backend SELECT options/default values are normalized so saved JSON-array values render as plain values such as `1:1`.
 - Existing image nodes persist `aigcModelId`; refreshing a project should restore the node's selected model instead of falling back to the default model.
@@ -214,8 +214,6 @@ npm run build
 ```
 
 Run both before handing off canvas changes.
-
-For the `/app` reference-image flow, asset picker split, and quick-generate payload contract, see `docs/reference-images-and-assets.md`.
 
 ## Important Files
 

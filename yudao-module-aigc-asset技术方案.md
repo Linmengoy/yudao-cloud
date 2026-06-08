@@ -537,6 +537,17 @@ AigcAssetApi
 
 用户端接口必须校验资产归属：私有资产只能由 `asset.userId` 对应用户访问；公开资产需审核通过后才能访问详情和预览，下载、复用、编辑仍需结合登录态和审核状态判断。权限校验逻辑已实现于 `getAccessibleAsset()` 方法。
 
+`/aigc/asset/my-page` 支持按 `assetType` 和 `sourceType` 过滤，供用户端资产库拆分展示来源：
+
+| 资产页分组 | 查询条件 |
+| ---------- | -------- |
+| 生成图片 | `assetType=IMAGE&sourceType=GENERATE` |
+| 上传图片 | `assetType=IMAGE&sourceType=UPLOAD` |
+| 生成视频 | `assetType=VIDEO` |
+| 其它文件 | 客户端兜底分组，展示非图片、非视频资产 |
+
+上传参考图如果通过 `/aigc/asset/upload` 资产化，应写入 `sourceType=UPLOAD`。生成服务创建的图片、视频资产应写入 `sourceType=GENERATE`。前端从资产库选择参考图只会引用已有资产，不应把参考图来源类型改成生成结果来源类型。
+
 ## 8. 核心流程
 
 ### 8.1 生成结果入库流程

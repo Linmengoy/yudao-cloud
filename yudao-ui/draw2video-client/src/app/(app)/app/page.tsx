@@ -3,20 +3,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Paperclip, Plus, Send, X } from "lucide-react";
+import { Paperclip, Plus, Send, SlidersHorizontal, X } from "lucide-react";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { getMyAsset, getMyAssetPage, uploadAsset } from "@/features/assets/asset-api";
 import { getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import type { AigcAsset } from "@/features/assets/asset-types";
 import { getImageFilesFromPasteEvent } from "@/features/canvas/clipboard";
+import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import {
   getAigcModelList,
   getAigcModelParamList,
   type AigcModel,
   type AigcModelParamTemplate,
 } from "@/features/generation/model-api";
-import { createProject, listProjects, type ProjectMeta } from "@/features/projects/project-store";
+import { listProjects, type ProjectMeta } from "@/features/projects/project-store";
 
 import type Muuri from "muuri";
 
@@ -30,6 +31,15 @@ const MODEL_TYPE_LABELS: Record<number, string> = {
 
 const MODEL_TYPE_ORDER = [2, 3, 4, 1, 5];
 const REFERENCE_IMAGE_CACHE_KEY = "copse:workspace:reference-images";
+
+type QuickGenerationMode = "TEXT_TO_IMAGE" | "IMAGE_TO_IMAGE" | "TEXT_TO_VIDEO" | "IMAGE_TO_VIDEO";
+
+const QUICK_GENERATION_MODE_LABELS: Record<QuickGenerationMode, string> = {
+  TEXT_TO_IMAGE: "文生图",
+  IMAGE_TO_IMAGE: "图生图",
+  TEXT_TO_VIDEO: "文生视频",
+  IMAGE_TO_VIDEO: "图生视频",
+};
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -199,6 +209,29 @@ function buildEffectiveModelParams(
   return merged;
 }
 
+function summarizeModelParams(
+  templates: AigcModelParamTemplate[],
+  values: Record<string, unknown>,
+  loading: boolean,
+  error: string | null
+) {
+  if (loading) return "参数加载中";
+  if (error) return "参数异常";
+  if (templates.length === 0) return "默认参数";
+  const summary = templates
+    .map((template) => values[template.paramKey] ?? template.defaultValue ?? "")
+    .map((value) => Array.isArray(value) ? value.join(",") : normalizeTemplateOption(value))
+    .filter(Boolean)
+    .slice(0, 3);
+  return summary.length > 0 ? summary.join(" · ") : "模型参数";
+}
+
+function getMissingRequiredParamNames(templates: AigcModelParamTemplate[], values: Record<string, unknown>) {
+  return templates
+    .filter((template) => template.requiredStatus && !hasUsableParamValue(values[template.paramKey]))
+    .map((template) => template.paramName || template.paramKey);
+}
+
 async function loadActiveModelParamTemplates(modelId: number, capability: string) {
   const templates = await getAigcModelParamList(modelId, capability);
   return templates.filter((item) => item.status === 0).sort((a, b) => a.sort - b.sort);
@@ -340,9 +373,14 @@ export default function WorkspacePage() {
   const [prompt, setPrompt] = useState("");
   const [models, setModels] = useState<AigcModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
-  const [activeModelType, setActiveModelType] = useState<number | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [paramTemplates, setParamTemplates] = useState<AigcModelParamTemplate[]>([]);
+  const [modelParams, setModelParams] = useState<Record<string, unknown>>({});
+  const [paramsLoading, setParamsLoading] = useState(false);
+  const [paramsError, setParamsError] = useState<string | null>(null);
+  const [loadedParamKey, setLoadedParamKey] = useState<string | null>(null);
+  const [paramsOpen, setParamsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>(() => {
     if (typeof window === "undefined") return [];
@@ -358,10 +396,13 @@ export default function WorkspacePage() {
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const muuriRef = useRef<Muuri | null>(null);
   const referenceInputRef = useRef<HTMLInputElement | null>(null);
+  const paramsPanelRef = useRef<HTMLDivElement | null>(null);
+  const paramsButtonRef = useRef<HTMLButtonElement | null>(null);
   const recentProjects = useMemo(() => projects.slice(0, 7), [projects]);
+  const quickModels = useMemo(() => models.filter((model) => model.type === 2 || model.type === 3), [models]);
   const modelGroups = useMemo(() => {
     const groups = new Map<number, AigcModel[]>();
-    for (const model of models) {
+    for (const model of quickModels) {
       groups.set(model.type, [...(groups.get(model.type) ?? []), model]);
     }
     return [...groups.entries()].sort(([a], [b]) => {
@@ -372,12 +413,47 @@ export default function WorkspacePage() {
       if (bIndex === -1) return -1;
       return aIndex - bIndex;
     });
-  }, [models]);
+  }, [quickModels]);
   const selectedModel = useMemo(
-    () => models.find((model) => model.id === selectedModelId) ?? null,
-    [models, selectedModelId]
+    () => quickModels.find((model) => model.id === selectedModelId) ?? null,
+    [quickModels, selectedModelId]
   );
+  const selectedModelParamId = selectedModel?.id ?? null;
+  const selectedModelParamType = selectedModel?.type ?? null;
   const referenceImage = referenceImages[0] ?? null;
+  const hasReferenceImages = referenceImages.length > 0;
+  const imageGenerationCapability: QuickGenerationMode = hasReferenceImages ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
+  const videoGenerationCapability: QuickGenerationMode = hasReferenceImages ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO";
+  const quickGenerationMode = useMemo<QuickGenerationMode | null>(() => {
+    if (!selectedModel || (selectedModel.type !== 2 && selectedModel.type !== 3)) return null;
+    return selectedModel.type === 3 ? videoGenerationCapability : imageGenerationCapability;
+  }, [imageGenerationCapability, selectedModel, videoGenerationCapability]);
+  const isQuickGenerationModel = Boolean(quickGenerationMode);
+  const effectiveModelParams = useMemo(
+    () => selectedModel
+      ? buildEffectiveModelParams(paramTemplates, selectedModel.type, modelParams)
+      : {},
+    [modelParams, paramTemplates, selectedModel]
+  );
+  const paramSummary = useMemo(
+    () => summarizeModelParams(paramTemplates, effectiveModelParams, paramsLoading, paramsError),
+    [effectiveModelParams, paramTemplates, paramsError, paramsLoading]
+  );
+  const paramsReady = Boolean(selectedModel && quickGenerationMode && loadedParamKey === `${selectedModel.id}:${quickGenerationMode}`);
+  const submitBlockReason = useMemo(() => {
+    if (!prompt.trim()) return null;
+    if (referenceUploading) return "参考图还在上传，请稍后再提交";
+    if (modelsLoading) return "模型列表还在加载，请稍后再提交";
+    if (!selectedModel || !quickGenerationMode) return "请选择支持当前输入的图片或视频模型";
+    if (paramsLoading || !paramsReady) return "模型参数还在加载，请稍后再提交";
+    if (paramsError) return paramsError;
+    return null;
+  }, [modelsLoading, paramsError, paramsLoading, paramsReady, prompt, quickGenerationMode, referenceUploading, selectedModel]);
+  const canSubmit = Boolean(prompt.trim())
+    && !submitting
+    && isQuickGenerationModel
+    && !submitBlockReason;
+  const submitStatusMessage = submitError ?? submitBlockReason;
 
   useEffect(() => {
     writeCachedReferenceImages(referenceImages);
@@ -430,18 +506,27 @@ export default function WorkspacePage() {
     const timer = window.setTimeout(() => {
       setModelsLoading(true);
       setModelsError(null);
-      getAigcModelList()
-        .then((data) => {
+      Promise.allSettled([
+        getAigcModelList(2, imageGenerationCapability),
+        getAigcModelList(3, videoGenerationCapability),
+      ])
+        .then((results) => {
           if (ignore) return;
+          const data = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
           setModels(data);
+          if (data.length === 0) {
+            const errorResult = results.find((result) => result.status === "rejected");
+            const reason = errorResult?.status === "rejected" ? errorResult.reason : null;
+            if (reason) setModelsError(reason instanceof Error ? reason.message : "模型列表加载失败");
+            return;
+          }
           setSelectedModelId((current) => {
             if (data.some((item) => item.id === current)) return current;
-            return data.find((item) => item.defaultModel)?.id ?? data[0]?.id ?? null;
+            return data.find((item) => item.defaultModel && (item.type === 2 || item.type === 3))?.id
+              ?? data.find((item) => item.type === 2 || item.type === 3)?.id
+              ?? data[0]?.id
+              ?? null;
           });
-          setActiveModelType(null);
-        })
-        .catch((err) => {
-          if (!ignore) setModelsError(err instanceof Error ? err.message : "模型列表加载失败");
         })
         .finally(() => {
           if (!ignore) setModelsLoading(false);
@@ -451,18 +536,60 @@ export default function WorkspacePage() {
       ignore = true;
       window.clearTimeout(timer);
     };
-  }, []);
+  }, [imageGenerationCapability, videoGenerationCapability]);
 
-  async function openNewProject(name?: string) {
-    const projectName = name?.trim() || "未命名项目";
-    try {
-      const projectId = await canvasApi.createProject({ name: projectName });
-      router.push(`/canvas?projectId=${encodeURIComponent(String(projectId))}`);
-    } catch {
-      const project = createProject({ name: projectName });
-      router.push(`/canvas?projectId=${encodeURIComponent(project.id)}`);
+  useEffect(() => {
+    let ignore = false;
+    const timer = window.setTimeout(() => {
+      if (selectedModelParamId == null || selectedModelParamType == null || !quickGenerationMode) {
+        setParamTemplates([]);
+        setModelParams({});
+        setParamsLoading(false);
+        setParamsError(null);
+        setLoadedParamKey(null);
+        setParamsOpen(false);
+        return;
+      }
+
+      const paramKey = `${selectedModelParamId}:${quickGenerationMode}`;
+      setParamsLoading(true);
+      setParamsError(null);
+      setLoadedParamKey(null);
+      loadActiveModelParamTemplates(selectedModelParamId, quickGenerationMode)
+        .then((templates) => {
+          if (ignore) return;
+          setParamTemplates(templates);
+          setModelParams((current) => buildEffectiveModelParams(templates, selectedModelParamType, current));
+          setLoadedParamKey(paramKey);
+        })
+        .catch((error) => {
+          if (ignore) return;
+          setParamTemplates([]);
+          setParamsError(error instanceof Error ? error.message : "参数模板加载失败");
+          setLoadedParamKey(null);
+        })
+        .finally(() => {
+          if (!ignore) setParamsLoading(false);
+        });
+    }, 0);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [quickGenerationMode, selectedModelParamId, selectedModelParamType]);
+
+  useEffect(() => {
+    if (!paramsOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (paramsPanelRef.current?.contains(target) || paramsButtonRef.current?.contains(target)) return;
+      setParamsOpen(false);
     }
-  }
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => window.removeEventListener("mousedown", handlePointerDown);
+  }, [paramsOpen]);
 
   const uploadReferenceImages = useCallback(async (sourceFiles: File[]) => {
     if (referenceUploading || submitting) return;
@@ -533,44 +660,60 @@ export default function WorkspacePage() {
 
   async function handleSubmit() {
     if (!prompt.trim() || submitting) return;
+    if (referenceUploading) {
+      setSubmitError("参考图还在上传，请稍后再提交");
+      return;
+    }
+    if (!selectedModel || !quickGenerationMode) {
+      setSubmitError("请选择图片或视频模型后再提交");
+      return;
+    }
+    if (paramsLoading || loadedParamKey !== `${selectedModel.id}:${quickGenerationMode}`) {
+      setSubmitError("模型参数还在加载，请稍后再提交");
+      return;
+    }
+    if (paramsError) {
+      setSubmitError(paramsError);
+      setParamsOpen(true);
+      return;
+    }
+
+    const modelParamsForSubmit = buildEffectiveModelParams(paramTemplates, selectedModel.type, modelParams);
+    const missingRequiredParams = getMissingRequiredParamNames(paramTemplates, modelParamsForSubmit);
+    if (missingRequiredParams.length > 0) {
+      setSubmitError(`请先配置必填参数：${missingRequiredParams.join("、")}`);
+      setParamsOpen(true);
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
     const promptText = prompt.trim();
     const projectName = promptText.slice(0, 30) || "未命名项目";
     try {
-      if (!selectedModel || (selectedModel.type !== 2 && selectedModel.type !== 3)) {
-        await openNewProject(projectName);
-      } else {
-        const isVideo = selectedModel.type === 3;
-        const hasReferences = referenceImages.length > 0;
-        const generationMode = isVideo
-          ? hasReferences ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO"
-          : hasReferences ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
-        const templates = await loadActiveModelParamTemplates(selectedModel.id, generationMode);
-        const modelParams = buildEffectiveModelParams(templates, selectedModel.type, {});
-        const firstReferenceImage = referenceImages[0] ?? null;
-        const referencePreviewUrls = referenceImages.map((image) => image.previewUrl).filter(Boolean) as string[];
-        const result = await canvasApi.quickGenerateProject({
-          name: projectName,
-          prompt: promptText,
-          nodeType: isVideo ? "video" : "image",
-          generateType: isVideo ? "VIDEO" : "IMAGE",
-          generateMode: generationMode,
-          modelId: selectedModel.id,
-          modelName: selectedModel.name,
+      const isVideo = selectedModel.type === 3;
+      const firstReferenceImage = referenceImages[0] ?? null;
+      const referencePreviewUrls = referenceImages.map((image) => image.previewUrl).filter(Boolean) as string[];
+      const result = await canvasApi.quickGenerateProject({
+        name: projectName,
+        prompt: promptText,
+        nodeType: isVideo ? "video" : "image",
+        generateType: isVideo ? "VIDEO" : "IMAGE",
+        generateMode: quickGenerationMode,
+        modelId: selectedModel.id,
+        modelName: selectedModel.name,
+        providerModel: selectedModel.model,
+        inputParams: JSON.stringify({
+          ...modelParamsForSubmit,
           providerModel: selectedModel.model,
-          inputParams: JSON.stringify({
-            ...modelParams,
-            providerModel: selectedModel.model,
-            ...buildReferenceInputParams(referenceImages),
-          }),
-          referenceAssetId: firstReferenceImage?.assetId ?? null,
-          referenceAssetIds: referenceImages.map((image) => image.assetId),
-          referencePreviewUrl: firstReferenceImage?.previewUrl ?? null,
-          referencePreviewUrls,
-        });
-        router.push(`/canvas?projectId=${encodeURIComponent(String(result.projectId))}`);
-      }
+          ...buildReferenceInputParams(referenceImages),
+        }),
+        referenceAssetId: firstReferenceImage?.assetId ?? null,
+        referenceAssetIds: referenceImages.map((image) => image.assetId),
+        referencePreviewUrl: firstReferenceImage?.previewUrl ?? null,
+        referencePreviewUrls,
+      });
+      router.push(`/canvas?projectId=${encodeURIComponent(String(result.projectId))}`);
       setPrompt("");
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "任务提交失败，请稍后再试");
@@ -636,16 +779,17 @@ export default function WorkspacePage() {
               {!modelsLoading && modelsError && models.length === 0 && (
                 <span className="px-2 text-xs text-muted-gray">{modelsError}</span>
               )}
-              {!modelsLoading && !modelsError && models.length === 0 && (
+              {!modelsLoading && !modelsError && quickModels.length === 0 && (
                 <span className="px-2 text-xs text-muted-gray">暂无可用模型</span>
               )}
               {modelGroups.map(([type, items]) => (
                 <select
                   key={type}
-                  value={activeModelType === type && selectedModel?.type === type ? String(selectedModel.id) : ""}
+                  value={selectedModel?.type === type ? String(selectedModel.id) : ""}
                   onChange={(event) => {
                     setSelectedModelId(Number(event.target.value));
-                    setActiveModelType(type);
+                    setParamsOpen(false);
+                    setSubmitError(null);
                   }}
                   className="h-8 rounded-lg border border-border-warm bg-background px-2 text-xs text-muted-gray outline-none transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal focus:border-[rgba(28,28,28,0.55)]"
                 >
@@ -662,10 +806,60 @@ export default function WorkspacePage() {
                   {selectedModel.name}
                 </span>
               )}
+              {quickGenerationMode && (
+                <div className="relative">
+                  <button
+                    ref={paramsButtonRef}
+                    type="button"
+                    onClick={() => setParamsOpen((open) => !open)}
+                    disabled={submitting}
+                    className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-gray hover:bg-muted hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-50"
+                    title="模型参数"
+                  >
+                    <SlidersHorizontal className="size-4" />
+                    <span className="hidden max-w-32 truncate sm:inline">{paramSummary}</span>
+                  </button>
+                  {paramsOpen && (
+                    <div
+                      ref={paramsPanelRef}
+                      className="absolute bottom-full right-0 z-40 mb-2 max-h-[70vh] w-[min(420px,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border-warm bg-background p-4 shadow-[0_16px_48px_rgba(0,0,0,0.16)]"
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-muted px-3 py-2 text-xs text-muted-gray">
+                        <span>当前能力：{QUICK_GENERATION_MODE_LABELS[quickGenerationMode]}</span>
+                        {hasReferenceImages && <span>{referenceImages.length} 张参考图</span>}
+                      </div>
+                      {paramsError ? (
+                        <div className="rounded-xl border border-border-warm bg-muted px-3 py-4 text-sm text-muted-gray">
+                          {paramsError}
+                        </div>
+                      ) : paramsLoading ? (
+                        <div className="rounded-xl border border-border-warm bg-muted px-3 py-4 text-sm text-muted-gray">
+                          参数加载中...
+                        </div>
+                      ) : paramTemplates.length > 0 ? (
+                        <DynamicParamForm
+                          templates={paramTemplates}
+                          values={effectiveModelParams}
+                          disabled={submitting}
+                          onChange={(patch) => {
+                            setModelParams((current) => ({ ...current, ...patch }));
+                            setSubmitError(null);
+                          }}
+                        />
+                      ) : (
+                        <div className="rounded-xl border border-border-warm bg-muted px-3 py-4 text-sm text-muted-gray">
+                          当前模型没有可配置参数
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               <button
                 onClick={handleSubmit}
-                disabled={!prompt.trim() || submitting || referenceUploading}
-                className="flex size-8 items-center justify-center rounded-lg bg-charcoal text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80 disabled:opacity-50"
+                disabled={!canSubmit}
+                title={submitBlockReason ?? (quickGenerationMode ? QUICK_GENERATION_MODE_LABELS[quickGenerationMode] : "提交")}
+                className="flex size-8 items-center justify-center rounded-lg bg-charcoal text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Send className="size-4" />
               </button>
@@ -744,7 +938,11 @@ export default function WorkspacePage() {
               ))}
             </div>
           )}
-          {submitError && <p className="mt-2 text-xs text-red-500">{submitError}</p>}
+          {submitStatusMessage && (
+            <p className={`mt-2 text-xs ${submitError ? "text-red-500" : "text-muted-gray"}`}>
+              {submitStatusMessage}
+            </p>
+          )}
         </div>
       </div>
 

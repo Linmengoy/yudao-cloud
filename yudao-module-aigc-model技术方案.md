@@ -888,6 +888,17 @@ Controller：`AigcModelAppController`
 | POST | `/price/calculate` | 计算预计消耗 |
 | GET | `/param/list` | 获取模型参数模板 |
 
+`/list` 支持按 `type` 和 `capability` 同时过滤，用户端快捷生成和 canvas 节点必须使用当前输入形态对应的能力查询模型：
+
+| 输入形态 | type | capability |
+| -------- | ---- | ---------- |
+| 文生图   | `2`  | `TEXT_TO_IMAGE` |
+| 图生图   | `2`  | `IMAGE_TO_IMAGE` |
+| 文生视频 | `3`  | `TEXT_TO_VIDEO` |
+| 图生视频 | `3`  | `IMAGE_TO_VIDEO` |
+
+`/param/list` 必须按 `modelId + capability` 返回启用状态的参数模板。前端会把模板渲染成动态参数表单，并在提交前把用户选择值序列化到生成请求 `inputParams`。后端仍需在生成入口调用模型服务进行参数合法性校验，不能只信任前端默认值或表单校验。
+
 用户端返回模型时只返回：
 
 - 模型 ID
