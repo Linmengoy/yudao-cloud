@@ -2,6 +2,9 @@ package cn.iocoder.yudao.module.aigc.model.service.proxy;
 
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
@@ -15,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.util.List;
 import java.util.Set;
 
@@ -26,6 +31,8 @@ import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.*;
 public class AigcModelProxyServiceImpl implements AigcModelProxyService {
 
     private static final Set<String> SUPPORTED_PROTOCOLS = Set.of("HTTP", "HTTPS", "SOCKS5", "SOCKS5H");
+    private static final String TEST_URL = "https://www.google.com/generate_204";
+    private static final int TEST_TIMEOUT_MILLIS = 10_000;
 
     @Resource
     private AigcModelProxyMapper proxyMapper;
@@ -104,6 +111,24 @@ public class AigcModelProxyServiceImpl implements AigcModelProxyService {
         proxyMapper.updateById(new AigcModelProxyDO().setId(id).setStatus(status));
     }
 
+    @Override
+    public Long testProxy(Long id) {
+        AigcModelProxyDO proxy = validateProxyExistsAndEnable(id);
+        long start = System.currentTimeMillis();
+        try (HttpResponse response = applyProxy(HttpRequest.get(TEST_URL).timeout(TEST_TIMEOUT_MILLIS), proxy).execute()) {
+            int status = response.getStatus();
+            if (status < 200 || status >= 400) {
+                throw exception(MODEL_PROXY_TEST_FAILED, "HTTP " + status);
+            }
+            return System.currentTimeMillis() - start;
+        } catch (Exception e) {
+            if (e instanceof ServiceException) {
+                throw e;
+            }
+            throw exception(MODEL_PROXY_TEST_FAILED, StrUtil.blankToDefault(e.getMessage(), e.getClass().getSimpleName()));
+        }
+    }
+
     private void validateProxyNameUnique(Long id, String name) {
         AigcModelProxyDO proxy = proxyMapper.selectByName(name);
         if (proxy == null) {
@@ -121,6 +146,21 @@ public class AigcModelProxyServiceImpl implements AigcModelProxyService {
         if (reqVO.getPort() == null || reqVO.getPort() < 1 || reqVO.getPort() > 65535) {
             throw exception(MODEL_PROXY_CONFIG_INVALID);
         }
+    }
+
+    private HttpRequest applyProxy(HttpRequest request, AigcModelProxyDO proxy) {
+        request.setProxy(new Proxy(resolveProxyType(proxy.getProtocol()), new InetSocketAddress(proxy.getHost(), proxy.getPort())));
+        if (StrUtil.isNotBlank(proxy.getUsername()) || StrUtil.isNotBlank(proxy.getPassword())) {
+            request.basicProxyAuth(StrUtil.blankToDefault(proxy.getUsername(), ""), StrUtil.blankToDefault(proxy.getPassword(), ""));
+        }
+        return request;
+    }
+
+    private Proxy.Type resolveProxyType(String protocol) {
+        if ("SOCKS5".equalsIgnoreCase(protocol) || "SOCKS5H".equalsIgnoreCase(protocol)) {
+            return Proxy.Type.SOCKS;
+        }
+        return Proxy.Type.HTTP;
     }
 
 }

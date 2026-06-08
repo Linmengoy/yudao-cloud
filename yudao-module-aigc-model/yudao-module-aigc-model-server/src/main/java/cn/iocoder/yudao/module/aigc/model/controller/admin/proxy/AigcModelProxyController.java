@@ -92,6 +92,14 @@ public class AigcModelProxyController {
         return success(true);
     }
 
+    @GetMapping("/test")
+    @Operation(summary = "测试代理")
+    @Parameter(name = "id", description = "ID", required = true)
+    @PreAuthorize("@ss.hasPermission('aigc:model:proxy:query')")
+    public CommonResult<Long> testProxy(@RequestParam("id") Long id) {
+        return success(proxyService.testProxy(id));
+    }
+
     private AigcModelProxyRespDTO buildProxyRespDTO(AigcModelProxyDO proxy, boolean detail) {
         AigcModelProxyRespDTO respDTO = BeanUtils.toBean(proxy, AigcModelProxyRespDTO.class);
         respDTO.setPassword(detail ? maskSecret(proxy.getPassword()) : null);

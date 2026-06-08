@@ -30,5 +30,8 @@ export const AigcModelProxyApi = {
   },
   updateProxyStatus: async (id: number, status: number) => {
     return await request.put({ url: '/aigc/model/proxy/status', params: { id, status } })
+  },
+  testProxy: async (id: number) => {
+    return await request.get({ url: '/aigc/model/proxy/test?id=' + id })
   }
 }
