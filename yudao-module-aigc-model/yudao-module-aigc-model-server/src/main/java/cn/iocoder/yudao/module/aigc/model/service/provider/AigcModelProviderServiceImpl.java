@@ -36,6 +36,7 @@ public class AigcModelProviderServiceImpl implements AigcModelProviderService {
     @Override
     public Long createProvider(AigcModelProviderSaveReqVO reqVO) {
         validateProviderCodeUnique(null, reqVO.getCode());
+        validateProxyConfig(reqVO);
 
         AigcModelProviderDO provider = BeanUtils.toBean(reqVO, AigcModelProviderDO.class);
         providerMapper.insert(provider);
@@ -46,6 +47,7 @@ public class AigcModelProviderServiceImpl implements AigcModelProviderService {
     public void updateProvider(AigcModelProviderSaveReqVO reqVO) {
         AigcModelProviderDO provider = validateProviderExists(reqVO.getId());
         validateProviderCodeUnique(reqVO.getId(), reqVO.getCode());
+        validateProxyConfig(reqVO);
 
         AigcModelProviderDO updateObj = BeanUtils.toBean(reqVO, AigcModelProviderDO.class);
         if (StrUtil.isBlank(reqVO.getApiKey())) {
@@ -53,6 +55,9 @@ public class AigcModelProviderServiceImpl implements AigcModelProviderService {
         }
         if (StrUtil.isBlank(reqVO.getSecretKey())) {
             updateObj.setSecretKey(provider.getSecretKey());
+        }
+        if (StrUtil.isBlank(reqVO.getProxyPassword())) {
+            updateObj.setProxyPassword(provider.getProxyPassword());
         }
         providerMapper.updateById(updateObj);
     }
@@ -124,6 +129,16 @@ public class AigcModelProviderServiceImpl implements AigcModelProviderService {
         }
         if (!ObjectUtil.equal(provider.getId(), id)) {
             throw exception(MODEL_PROVIDER_CODE_DUPLICATE);
+        }
+    }
+
+    private void validateProxyConfig(AigcModelProviderSaveReqVO reqVO) {
+        if (!Boolean.TRUE.equals(reqVO.getProxyEnabled())) {
+            return;
+        }
+        if (StrUtil.isBlank(reqVO.getProxyProtocol()) || StrUtil.isBlank(reqVO.getProxyHost())
+                || reqVO.getProxyPort() == null || reqVO.getProxyPort() < 1 || reqVO.getProxyPort() > 65535) {
+            throw new ServiceException(1_041_000_004, "代理配置不完整");
         }
     }
 

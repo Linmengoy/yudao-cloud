@@ -96,6 +96,7 @@ public class AigcModelProviderController {
         AigcModelProviderRespDTO respDTO = BeanUtils.toBean(provider, AigcModelProviderRespDTO.class);
         respDTO.setApiKey(detail ? maskSecret(provider.getApiKey()) : null);
         respDTO.setSecretKey(detail ? maskSecret(provider.getSecretKey()) : null);
+        respDTO.setProxyPassword(detail ? maskSecret(provider.getProxyPassword()) : null);
         return respDTO;
     }
 

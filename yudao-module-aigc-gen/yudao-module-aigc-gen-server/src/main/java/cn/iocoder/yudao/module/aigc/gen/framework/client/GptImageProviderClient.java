@@ -5,7 +5,6 @@ import cn.hutool.http.ContentType;
 import cn.hutool.http.Header;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
-import cn.hutool.http.HttpUtil;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
@@ -81,11 +80,11 @@ public class GptImageProviderClient implements AigcProviderClient {
 
     private HttpResponse submitGeneration(AigcProviderSubmitReqDTO reqDTO) {
         JSONObject body = buildRequestBody(reqDTO);
-        return HttpRequest.post(resolveEndpoint(reqDTO.getProviderBaseUrl(), false))
+        return AigcProviderProxyUtils.applyProxy(HttpRequest.post(resolveEndpoint(reqDTO.getProviderBaseUrl(), false))
                 .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
                 .contentType(ContentType.JSON.getValue())
                 .body(body.toString())
-                .timeout(timeoutMillis(reqDTO))
+                .timeout(timeoutMillis(reqDTO)), reqDTO)
                 .execute();
     }
 
@@ -93,9 +92,9 @@ public class GptImageProviderClient implements AigcProviderClient {
         List<File> tempFiles = new ArrayList<>();
         try {
             JSONObject body = buildRequestBody(reqDTO);
-            HttpRequest request = HttpRequest.post(resolveEndpoint(reqDTO.getProviderBaseUrl(), true))
+            HttpRequest request = AigcProviderProxyUtils.applyProxy(HttpRequest.post(resolveEndpoint(reqDTO.getProviderBaseUrl(), true))
                     .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
-                    .timeout(timeoutMillis(reqDTO));
+                    .timeout(timeoutMillis(reqDTO)), reqDTO);
 
             body.forEach((key, value) -> {
                 if (value != null && !"n".equals(key)) {
@@ -107,7 +106,7 @@ public class GptImageProviderClient implements AigcProviderClient {
             }
 
             for (ImageInput image : parseInputImages(reqDTO.getInputParams())) {
-                File file = createTempImageFile(image);
+                File file = createTempImageFile(image, reqDTO);
                 tempFiles.add(file);
                 request.form("image", file);
             }
@@ -173,16 +172,18 @@ public class GptImageProviderClient implements AigcProviderClient {
         return images;
     }
 
-    private File createTempImageFile(ImageInput image) throws Exception {
-        byte[] bytes = readImageBytes(image.source());
+    private File createTempImageFile(ImageInput image, AigcProviderSubmitReqDTO reqDTO) throws Exception {
+        byte[] bytes = readImageBytes(image.source(), reqDTO);
         File file = File.createTempFile("aigc-edit-", normalizeExtension(image));
         Files.write(file.toPath(), bytes);
         return file;
     }
 
-    private byte[] readImageBytes(String source) {
+    private byte[] readImageBytes(String source, AigcProviderSubmitReqDTO reqDTO) {
         if (source.startsWith("http://") || source.startsWith("https://")) {
-            return HttpUtil.downloadBytes(source);
+            try (HttpResponse response = AigcProviderProxyUtils.applyProxy(HttpRequest.get(source).timeout(timeoutMillis(reqDTO)), reqDTO).execute()) {
+                return response.bodyBytes();
+            }
         }
         int commaIndex = source.indexOf(',');
         if (source.startsWith("data:") && commaIndex > 0) {

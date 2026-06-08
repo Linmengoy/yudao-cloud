@@ -4,7 +4,6 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.ContentType;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
-import cn.hutool.http.HttpUtil;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
@@ -33,10 +32,10 @@ public class GeminiImageProviderClient implements AigcProviderClient {
             return failed("CONFIG_INVALID", "Gemini 图片渠道未配置 API 地址或 API Key");
         }
         long start = System.currentTimeMillis();
-        try (HttpResponse response = HttpRequest.post(resolveEndpoint(reqDTO))
+        try (HttpResponse response = AigcProviderProxyUtils.applyProxy(HttpRequest.post(resolveEndpoint(reqDTO))
                 .contentType(ContentType.JSON.getValue())
                 .body(buildRequestBody(reqDTO).toString())
-                .timeout(timeoutMillis(reqDTO))
+                .timeout(timeoutMillis(reqDTO)), reqDTO)
                 .execute()) {
             if (!response.isOk()) {
                 return failed("HTTP_" + response.getStatus(), safeBody(response.body())).setDurationMillis(System.currentTimeMillis() - start);
@@ -61,7 +60,7 @@ public class GeminiImageProviderClient implements AigcProviderClient {
         JSONObject body = new JSONObject();
         JSONArray parts = new JSONArray();
         parts.add(JSONUtil.createObj().set("text", StrUtil.blankToDefault(reqDTO.getPrompt(), "")));
-        for (ImageInput image : parseInputImages(reqDTO.getInputParams())) {
+        for (ImageInput image : parseInputImages(reqDTO)) {
             parts.add(JSONUtil.createObj().set("inlineData", JSONUtil.createObj()
                     .set("mimeType", image.mimeType())
                     .set("data", image.base64Data())));
@@ -168,28 +167,30 @@ public class GeminiImageProviderClient implements AigcProviderClient {
         return array == null ? new JSONArray() : array;
     }
 
-    private java.util.List<ImageInput> parseInputImages(String inputParams) {
-        JSONObject params = parseParams(inputParams);
+    private java.util.List<ImageInput> parseInputImages(AigcProviderSubmitReqDTO reqDTO) {
+        JSONObject params = parseParams(reqDTO.getInputParams());
         java.util.List<ImageInput> images = new java.util.ArrayList<>();
         for (Object item : parseArray(params, "inputImages")) {
             JSONObject image = JSONUtil.parseObj(item);
             String source = firstNonBlank(image.getStr("dataUrl"), image.getStr("url"));
             if (StrUtil.isNotBlank(source)) {
-                images.add(new ImageInput(toBase64(source), image.getStr("mimeType", "image/png")));
+                images.add(new ImageInput(toBase64(source, reqDTO), image.getStr("mimeType", "image/png")));
             }
         }
         for (Object item : parseArray(params, "inputImageUrls")) {
             String source = String.valueOf(item);
             if (StrUtil.isNotBlank(source)) {
-                images.add(new ImageInput(toBase64(source), "image/png"));
+                images.add(new ImageInput(toBase64(source, reqDTO), "image/png"));
             }
         }
         return images;
     }
 
-    private String toBase64(String source) {
+    private String toBase64(String source, AigcProviderSubmitReqDTO reqDTO) {
         if (source.startsWith("http://") || source.startsWith("https://")) {
-            return Base64.getEncoder().encodeToString(HttpUtil.downloadBytes(source));
+            try (HttpResponse response = AigcProviderProxyUtils.applyProxy(HttpRequest.get(source).timeout(timeoutMillis(reqDTO)), reqDTO).execute()) {
+                return Base64.getEncoder().encodeToString(response.bodyBytes());
+            }
         }
         int commaIndex = source.indexOf(',');
         if (source.startsWith("data:") && commaIndex > 0) {
