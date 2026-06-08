@@ -119,7 +119,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             throw exception(ASSET_FILE_EMPTY);
         }
         validateFileSize(content.length);
-        FileCreateRespDTO file = fileApi.createFileV2(content, fileName, "aigc/asset", mimeType);
+        FileCreateRespDTO file = fileApi.createFileV2(content, uniqueAssetStorageFileName(fileName, mimeType), "aigc/asset", mimeType);
         AigcAssetSaveReqVO reqVO = new AigcAssetSaveReqVO()
                 .setUserId(userId)
                 .setAssetType(assetType)
@@ -543,7 +543,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             throw exception(ASSET_DOWNLOAD_FAILED);
         }
         validateFileSize(content.length);
-        FileCreateRespDTO file = fileApi.createFileV2(content, reqDTO.getTitle(), "aigc/asset", reqDTO.getMimeType());
+        FileCreateRespDTO file = fileApi.createFileV2(content, uniqueAssetStorageFileName(reqDTO.getTitle(), reqDTO.getMimeType()), "aigc/asset", reqDTO.getMimeType());
         reqDTO.setFileSize((long) content.length);
         return buildAssetFileDO(null, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, reqDTO.getOriginUrl(), reqDTO.getWidth(), reqDTO.getHeight(), reqDTO.getDuration());
     }
@@ -642,7 +642,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         }
         validateFileSize(content.length);
         String fileExt = StrUtil.blankToDefault(reqDTO.getFileExt(), fileExtFromMimeType(mimeType));
-        String fileName = StrUtil.blankToDefault(reqDTO.getTitle(), "aigc-asset") + "." + fileExt;
+        String fileName = uniqueAssetStorageFileName(StrUtil.blankToDefault(reqDTO.getTitle(), "aigc-asset") + "." + fileExt, mimeType);
         FileCreateRespDTO file = fileApi.createFileV2(content, fileName, "aigc/asset", mimeType);
         reqDTO.setFileSize((long) content.length);
         reqDTO.setMimeType(mimeType);
@@ -710,6 +710,21 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             return StrUtil.subAfter(mimeType, "audio/", true);
         }
         return "bin";
+    }
+
+    private String uniqueAssetStorageFileName(String fileName, String mimeType) {
+        String normalizedFileName = StrUtil.blankToDefault(fileName, "aigc-asset");
+        String fileExt = fileExtFromFileName(normalizedFileName);
+        if (StrUtil.isBlank(fileExt) && StrUtil.isNotBlank(mimeType)) {
+            fileExt = fileExtFromMimeType(mimeType);
+        }
+        String fileBaseName = normalizedFileName;
+        if (StrUtil.isNotBlank(fileExt)) {
+            fileBaseName = StrUtil.removeSuffixIgnoreCase(fileBaseName, "." + fileExt);
+        }
+        fileBaseName = StrUtil.blankToDefault(fileBaseName.replaceAll("[\\\\/:*?\"<>|\\s]+", "-"), "aigc-asset");
+        String uniqueName = fileBaseName + "-" + UUID.fastUUID().toString(true);
+        return StrUtil.isBlank(fileExt) ? uniqueName : uniqueName + "." + fileExt;
     }
 
     private String fileExtFromFileName(String fileName) {
