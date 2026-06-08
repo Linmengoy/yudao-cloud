@@ -8,6 +8,10 @@ public interface ErrorCodeConstants {
     ErrorCode MODEL_PROVIDER_DISABLED = new ErrorCode(1_041_000_001, "渠道商已禁用");
     ErrorCode MODEL_PROVIDER_CODE_DUPLICATE = new ErrorCode(1_041_000_002, "渠道商编码重复");
     ErrorCode MODEL_PROVIDER_HAS_MODEL = new ErrorCode(1_041_000_003, "渠道商下存在模型，无法删除");
+    ErrorCode MODEL_PROXY_NOT_EXISTS = new ErrorCode(1_041_000_004, "代理不存在");
+    ErrorCode MODEL_PROXY_NAME_DUPLICATE = new ErrorCode(1_041_000_005, "代理名称重复");
+    ErrorCode MODEL_PROXY_HAS_PROVIDER = new ErrorCode(1_041_000_006, "代理已被渠道商使用，无法删除");
+    ErrorCode MODEL_PROXY_CONFIG_INVALID = new ErrorCode(1_041_000_007, "代理配置不正确");
 
     ErrorCode MODEL_NOT_EXISTS = new ErrorCode(1_041_001_000, "模型不存在");
     ErrorCode MODEL_DISABLED = new ErrorCode(1_041_001_001, "模型已禁用");

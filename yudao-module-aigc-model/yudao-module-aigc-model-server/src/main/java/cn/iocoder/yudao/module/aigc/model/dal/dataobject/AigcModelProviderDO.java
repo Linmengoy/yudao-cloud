@@ -46,6 +46,11 @@ public class AigcModelProviderDO extends BaseDO {
 
     private Boolean proxyEnabled;
 
+    private Long proxyId;
+
+    @TableField(exist = false)
+    private String proxyName;
+
     private String proxyProtocol;
 
     private String proxyHost;

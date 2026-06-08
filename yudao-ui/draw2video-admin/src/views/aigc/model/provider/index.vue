@@ -30,6 +30,9 @@
       <el-table-column label="健康状态" align="center" prop="healthStatus" min-width="110">
         <template #default="scope">{{ getOptionLabel(AIGC_HEALTH_STATUSES, scope.row.healthStatus) }}</template>
       </el-table-column>
+      <el-table-column label="代理" align="center" min-width="140">
+        <template #default="scope">{{ scope.row.proxyEnabled ? scope.row.proxyName || '-' : '-' }}</template>
+      </el-table-column>
       <el-table-column label="余额" align="center" prop="balance" min-width="100" />
       <el-table-column label="状态" align="center" prop="status" min-width="90">
         <template #default="scope"><dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" /></template>

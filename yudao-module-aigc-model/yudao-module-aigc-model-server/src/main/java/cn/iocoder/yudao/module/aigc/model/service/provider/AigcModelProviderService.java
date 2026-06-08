@@ -18,6 +18,8 @@ public interface AigcModelProviderService {
 
     AigcModelProviderDO getProvider(Long id);
 
+    AigcModelProviderDO getProviderWithProxy(Long id);
+
     AigcModelProviderDO validateProviderExists(Long id);
 
     AigcModelProviderDO validateProviderExistsAndEnable(Long id);

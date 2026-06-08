@@ -59,7 +59,7 @@ public class AigcModelProviderController {
     @Parameter(name = "id", description = "ID", required = true)
     @PreAuthorize("@ss.hasPermission('aigc:model:provider:query')")
     public CommonResult<AigcModelProviderRespDTO> getProvider(@RequestParam("id") Long id) {
-        AigcModelProviderDO provider = providerService.getProvider(id);
+        AigcModelProviderDO provider = providerService.getProviderWithProxy(id);
         return success(buildProviderRespDTO(provider, true));
     }
 

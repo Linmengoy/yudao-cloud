@@ -39,6 +39,12 @@ public class AigcModelProviderRespDTO {
     @Schema(description = "是否启用代理", example = "true")
     private Boolean proxyEnabled;
 
+    @Schema(description = "代理编号", example = "1024")
+    private Long proxyId;
+
+    @Schema(description = "代理名称", example = "google_cloud")
+    private String proxyName;
+
     @Schema(description = "代理协议", example = "SOCKS5")
     private String proxyProtocol;
 
