@@ -46,9 +46,10 @@ import { cn } from "@/lib/utils";
 import { clampToViewport } from "./floating-position";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
+import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, type PromptMentionOption } from "./PromptMentionInput";
 
 type ImageNodeProps = NodeProps<Node<ImageNodeData, "image">>;
-type ConnectedImage = { edgeId: string; data: Pick<ImageNodeData | SketchNodeData, "previewUrl" | "dataUrl" | "fileName"> };
+type ConnectedImage = { edgeId: string; nodeId: string; data: Pick<ImageNodeData | SketchNodeData, "previewUrl" | "dataUrl" | "fileName"> };
 
 const PLACEHOLDER_WIDTH = 360;
 const PLACEHOLDER_HEIGHT = 260;
@@ -261,6 +262,7 @@ function getConnectedImages(nodeId: string, nodes: AppNode[], edges: AppEdge[]):
     const nodeData = node.data as ImageNodeData | SketchNodeData;
     connectedImages.push({
       edgeId: edge.id,
+      nodeId: node.id,
       data: {
         previewUrl: nodeData.previewUrl ?? null,
         dataUrl: nodeData.dataUrl ?? "",
@@ -399,6 +401,16 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     const currentEdges = getEdges() as AppEdge[];
     return getConnectedImages(id, currentNodes, currentEdges);
   }, [connectedImagesSignature, getEdges, getNodes, id]);
+  const mentionOptions = useMemo<PromptMentionOption[]>(
+    () =>
+      connectedImages.map((image, index) => ({
+        id: image.nodeId,
+        label: `图片 ${index + 1}`,
+        token: createPromptMentionToken(image.nodeId),
+        thumbnailUrl: image.data.previewUrl || image.data.dataUrl,
+      })),
+    [connectedImages]
+  );
   const generationCapability = connectedImages.length > 0 ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
   const aigcModels = useAigcModels({ type: 2, capability: generationCapability, preferredModelId: selectedAigcModelId, params });
   const storedAigcModel = aigcModels.models.find((item) => item.id === selectedAigcModelId);
@@ -691,7 +703,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   }, [id, isGenerating]);
 
   const handleGenerate = useCallback(async () => {
-    const cleanPrompt = prompt.trim();
+    const cleanPrompt = promptValueToSubmitPrompt(prompt, mentionOptions).trim();
     if (!cleanPrompt || isGenerating || aigcModels.loading || aigcModels.templateLoading) return;
 
     const startedAt = new Date().toISOString();
@@ -819,7 +831,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, effectiveParams, getEdges, getNodes, id, isGenerating, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, effectiveParams, getEdges, getNodes, id, isGenerating, mentionOptions, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen) return;
@@ -1118,12 +1130,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             </div>
 
             <div className="relative min-h-[130px]">
-              <textarea
+              <PromptMentionInput
                 value={prompt}
-                onChange={(e) => updateData({ prompt: e.target.value })}
+                onChange={(nextPrompt) => updateData({ prompt: nextPrompt })}
+                mentions={mentionOptions}
                 disabled={isGenerating}
                 placeholder="Describe anything you want to generate"
-                className="h-full min-h-[130px] w-full resize-none bg-transparent text-base leading-7 text-charcoal placeholder:text-muted-gray focus:outline-none disabled:cursor-not-allowed disabled:text-muted-gray"
+                minHeightClassName="min-h-[130px]"
               />
               {pickerActiveForThisNode && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/70 text-xs text-muted-gray">

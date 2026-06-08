@@ -33,6 +33,11 @@ export type NodeDataPatchEventDetail = {
   flush?: boolean;
 };
 
+export type NodePositionPatchEventDetail = {
+  nodeId: string;
+  position: { x: number; y: number };
+};
+
 export type NodeEditingPresenceEventDetail = {
   nodeId: string | null;
 };
