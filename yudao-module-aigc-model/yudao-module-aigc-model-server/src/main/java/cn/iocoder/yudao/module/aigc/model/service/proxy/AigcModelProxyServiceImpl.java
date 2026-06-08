@@ -33,7 +33,7 @@ import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.*;
 public class AigcModelProxyServiceImpl implements AigcModelProxyService {
 
     private static final Set<String> SUPPORTED_PROTOCOLS = Set.of("HTTP", "HTTPS", "SOCKS5", "SOCKS5H");
-    private static final String TEST_URL = "https://www.google.com/generate_204";
+    private static final String TEST_URL = "https://api.ipify.org";
     private static final int TEST_TIMEOUT_MILLIS = 10_000;
     private static final Object AUTHENTICATOR_LOCK = new Object();
 

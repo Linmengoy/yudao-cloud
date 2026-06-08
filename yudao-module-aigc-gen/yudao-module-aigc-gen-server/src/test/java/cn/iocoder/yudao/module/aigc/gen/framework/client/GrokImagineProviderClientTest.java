@@ -92,7 +92,7 @@ public class GrokImagineProviderClientTest {
 
             assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
             JSONObject body = JSONUtil.parseObj(requestBody.get());
-            assertEquals("720x1280", body.getStr("size"));
+            assertEquals("1024x1792", body.getStr("size"));
         } finally {
             server.stop(0);
         }
@@ -121,8 +121,77 @@ public class GrokImagineProviderClientTest {
 
             assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
             JSONObject body = JSONUtil.parseObj(requestBody.get());
-            assertEquals("720x1280", body.getStr("size"));
+            assertEquals("1024x1792", body.getStr("size"));
             assertFalse(body.containsKey("aspect_ratio"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_videoMapsAspectRatiosToGrokAllowedSizes() throws Exception {
+        assertVideoSize("1:1", "1024x1024");
+        assertVideoSize("16:9", "1280x720");
+        assertVideoSize("9:16", "1024x1792");
+        assertVideoSize("4:3", "1792x1024");
+        assertVideoSize("3:4", "1024x1792");
+        assertVideoSize("3:2", "1792x1024");
+        assertVideoSize("2:3", "1024x1792");
+    }
+
+    @Test
+    public void testSubmit_videoNormalizesUnsupportedSizeToGrokAllowedSize() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/videos", exchange -> handleVideoSubmit(exchange, requestBody));
+        server.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            GrokImagineProviderClient client = new GrokImagineProviderClient();
+
+            AigcProviderSubmitRespDTO respDTO = client.submit(new AigcProviderSubmitReqDTO()
+                    .setProviderBaseUrl(baseUrl)
+                    .setProviderApiKey("test-key")
+                    .setProviderModel("grok-imagine-video-1.5-preview")
+                    .setPrompt("海边散步")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("TEXT_TO_VIDEO")
+                    .setInputParams("""
+                            {"size":"720*1280","duration":"5","providerModel":"grok-imagine-video-1.5-preview"}
+                            """));
+
+            assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(requestBody.get());
+            assertEquals("1024x1792", body.getStr("size"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private void assertVideoSize(String aspectRatio, String expectedSize) throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/videos", exchange -> handleVideoSubmit(exchange, requestBody));
+        server.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            GrokImagineProviderClient client = new GrokImagineProviderClient();
+
+            AigcProviderSubmitRespDTO respDTO = client.submit(new AigcProviderSubmitReqDTO()
+                    .setProviderBaseUrl(baseUrl)
+                    .setProviderApiKey("test-key")
+                    .setProviderModel("grok-imagine-video-1.5-preview")
+                    .setPrompt("海边散步")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("TEXT_TO_VIDEO")
+                    .setInputParams("""
+                            {"aspectRatio":"%s","duration":"5","resolution":"1080p","providerModel":"grok-imagine-video-1.5-preview"}
+                            """.formatted(aspectRatio)));
+
+            assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(requestBody.get());
+            assertEquals(expectedSize, body.getStr("size"));
+            assertFalse(body.containsKey("aspectRatio"));
         } finally {
             server.stop(0);
         }

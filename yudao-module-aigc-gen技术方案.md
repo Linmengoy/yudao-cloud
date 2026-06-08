@@ -309,6 +309,8 @@ yudao-module-aigc-gen-server
 
 第一阶段已落地 `aigc_gen_record`、`aigc_gen_callback`、`aigc_gen_provider_log` 三张通用表，图片、视频、音频、文本垂直表可在对应业务复杂度上升后扩展。
 
+线上排查时注意实际表名是 `aigc_gen_record`，不是 `aigc_generate_record`。
+
 ### 5.2 aigc_gen_record
 
 `aigc_gen_record` 用于记录一次生成请求在生成服务内的执行上下文，重点保存模型、渠道、任务、计费、第三方任务、输入输出摘要和错误信息。
@@ -708,6 +710,8 @@ AigcProviderClient
 - 请求参数在进入客户端前先转换为平台统一 DTO
 - 渠道客户端只关心第三方协议，不处理钱包、任务、资产等业务逻辑
 - 渠道密钥只从模型服务或安全配置中读取，不能写入日志、回调记录或异常堆栈
+- 渠道代理只从 `aigc-model` 返回的渠道配置读取，前端不传代理主机、端口或账号密码
+- 如果渠道商启用共享代理，`aigc-model` 会通过 `proxy_id` 展开 `aigc_model_proxy` 配置，`aigc-gen` 负责把代理配置传给第三方客户端和后续资产创建请求
 - 渠道响应统一转换为平台结果对象
 - 第三方错误码需要映射为平台失败原因
 - 不同渠道的超时、重试、限流策略可独立配置
@@ -905,6 +909,49 @@ AigcProviderClient
 | `aigc_gen_record` | 通用生成记录 |
 | `aigc_gen_callback` | 第三方回调记录 |
 | `aigc_gen_provider_log` | 第三方渠道调用日志 |
+
+## 18.1.1 生成结果与资产创建排查
+
+境外图片模型常见链路是：第三方模型调用成功，返回一个公网结果 URL，然后 `aigc-gen` 调用 `aigc-asset` 把 URL 下载并转存到平台文件服务。此时“模型生成成功”和“平台资产创建成功”是两个阶段。
+
+判断口径：
+
+- `provider_status = SUCCESS` 且 `output_urls` 非空，说明第三方模型已经生成成功。
+- `status = FAILED`、`fail_reason = SUBMIT_EXCEPTION`、`asset_ids IS NULL`，通常说明资产创建或远程文件下载失败。
+- 用户端看到 `文件下载失败` 时，应优先查 `aigc-asset` 下载日志，而不是前端画布渲染逻辑。
+
+常用 SQL：
+
+```sql
+USE gen_db;
+
+SELECT id, task_id, generate_no, client_request_id, status, provider_status,
+       provider_task_id, fail_reason, fail_message, output_urls, asset_ids, update_time
+FROM aigc_gen_record
+ORDER BY id DESC
+LIMIT 5\G
+```
+
+按画布 `runId` 或 `clientRequestId` 定位：
+
+```sql
+SELECT id, task_id, generate_no, client_request_id, status, provider_status,
+       provider_task_id, fail_reason, fail_message, output_urls, asset_ids, update_time
+FROM aigc_gen_record
+WHERE client_request_id LIKE '%node_1780902555091_0z9fs6%'\G
+```
+
+检查模型渠道是否已选中共享代理：
+
+```sql
+USE model_db;
+
+SELECT p.id, p.name, p.proxy_enabled, p.proxy_id,
+       x.name AS proxy_name, x.protocol, x.host, x.port, x.username
+FROM aigc_model_provider p
+LEFT JOIN aigc_model_proxy x ON x.id = p.proxy_id
+WHERE p.id = 6\G
+```
 
 ## 18. 详细接口约定
 
