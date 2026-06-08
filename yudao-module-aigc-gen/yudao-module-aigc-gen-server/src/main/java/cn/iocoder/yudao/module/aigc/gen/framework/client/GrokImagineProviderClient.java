@@ -11,9 +11,14 @@ import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateCallbackReqDTO;
 import cn.iocoder.yudao.module.aigc.gen.framework.client.dto.AigcProviderSubmitReqDTO;
 import cn.iocoder.yudao.module.aigc.gen.framework.client.dto.AigcProviderSubmitRespDTO;
+import cn.iocoder.yudao.module.aigc.gen.framework.security.AigcGenerateFileSecurityUtils;
 import org.springframework.stereotype.Component;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -90,17 +95,21 @@ public class GrokImagineProviderClient implements AigcProviderClient {
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
-            if (value != null && !isInternalParam(key)) {
+            if (value != null && !isInternalParam(key) && (!isVideo(reqDTO) || !isVideoParam(key))) {
                 body.set(key, value);
             }
         }
         body.set("model", StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode()));
         body.set("prompt", StrUtil.blankToDefault(reqDTO.getPrompt(), ""));
         if (isVideo(reqDTO)) {
+            String providerImage = null;
             String image = firstNonBlank(params.getStr("image_url"), params.getStr("image"), firstInputImage(params));
             if (StrUtil.isNotBlank(image)) {
-                body.set("image_url", image);
+                providerImage = toProviderImage(image, reqDTO);
+                body.set("images", new JSONArray().put(providerImage).put(providerImage));
             }
+            body.set("seconds", resolveSeconds(params));
+            body.set("size", resolveVideoSize(params, providerImage));
         } else {
             body.set("n", params.getInt("n", 1));
         }
@@ -108,10 +117,32 @@ public class GrokImagineProviderClient implements AigcProviderClient {
     }
 
     private boolean isInternalParam(String key) {
-        return "inputImages".equals(key) || "inputImageIds".equals(key) || "inputImageUrls".equals(key);
+        return "providerModel".equals(key)
+                || "referenceImages".equals(key)
+                || "referenceImageIds".equals(key)
+                || "inputImages".equals(key)
+                || "inputImageIds".equals(key)
+                || "inputImageUrls".equals(key);
+    }
+
+    private boolean isVideoParam(String key) {
+        return "duration".equals(key)
+                || "seconds".equals(key)
+                || "resolution".equals(key)
+                || "ratio".equals(key)
+                || "aspectRatio".equals(key)
+                || "aspect_ratio".equals(key)
+                || "size".equals(key)
+                || "image".equals(key)
+                || "image_url".equals(key)
+                || "images".equals(key);
     }
 
     private String firstInputImage(JSONObject params) {
+        JSONArray referenceImages = params.getJSONArray("referenceImages");
+        if (referenceImages != null && !referenceImages.isEmpty()) {
+            return referenceImages.getStr(0);
+        }
         JSONArray inputImages = params.getJSONArray("inputImages");
         if (inputImages != null && !inputImages.isEmpty()) {
             JSONObject image = JSONUtil.parseObj(inputImages.get(0));
@@ -122,6 +153,103 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             return inputImageUrls.getStr(0);
         }
         return null;
+    }
+
+    private String toProviderImage(String image, AigcProviderSubmitReqDTO reqDTO) {
+        if (StrUtil.startWithIgnoreCase(image, "data:")) {
+            return image;
+        }
+        if (!AigcGenerateFileSecurityUtils.isSafeRemoteUrl(image)) {
+            throw new IllegalArgumentException("Grok 首帧图片 URL 不安全");
+        }
+        try (HttpResponse response = HttpRequest.get(image)
+                .timeout(timeoutMillis(reqDTO))
+                .execute()) {
+            if (!response.isOk()) {
+                throw new IllegalStateException("Grok 首帧图片下载失败: HTTP_" + response.getStatus());
+            }
+            byte[] content = response.bodyBytes();
+            if (content == null || content.length == 0) {
+                throw new IllegalStateException("Grok 首帧图片下载结果为空");
+            }
+            String contentType = StrUtil.blankToDefault(response.header(Header.CONTENT_TYPE.getValue()), "image/jpeg");
+            if (contentType.contains(";")) {
+                contentType = StrUtil.subBefore(contentType, ";", false);
+            }
+            return "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(content);
+        }
+    }
+
+    private String resolveSeconds(JSONObject params) {
+        String seconds = params.getStr("seconds");
+        if (seconds != null && List.of("6", "10", "15").contains(seconds)) {
+            return seconds;
+        }
+        int duration = params.getInt("duration", 6);
+        if (duration <= 6) {
+            return "6";
+        }
+        if (duration <= 10) {
+            return "10";
+        }
+        return "15";
+    }
+
+    private String resolveVideoSize(JSONObject params, String image) {
+        String size = firstNonBlank(params.getStr("size"), params.getStr("grokSize"));
+        if (StrUtil.isNotBlank(size)) {
+            return size.replace("*", "x");
+        }
+        String ratio = firstNonBlank(params.getStr("ratio"), params.getStr("aspectRatio"), params.getStr("aspect_ratio"), resolveImageRatio(image), "16:9");
+        String resolution = params.getStr("resolution", "720p");
+        int longSide = "1080p".equalsIgnoreCase(resolution) ? 1920 : 1280;
+        return switch (ratio) {
+            case "9:16" -> longSide == 1920 ? "1080x1920" : "720x1280";
+            case "3:4" -> longSide == 1920 ? "1440x1920" : "960x1280";
+            case "1:1" -> longSide == 1920 ? "1080x1080" : "720x720";
+            case "4:3" -> longSide == 1920 ? "1920x1440" : "1280x960";
+            case "21:9" -> longSide == 1920 ? "1920x823" : "1280x549";
+            default -> longSide == 1920 ? "1920x1080" : "1280x720";
+        };
+    }
+
+    private String resolveImageRatio(String image) {
+        if (StrUtil.isBlank(image) || !StrUtil.startWithIgnoreCase(image, "data:")) {
+            return null;
+        }
+        try {
+            int commaIndex = image.indexOf(',');
+            if (commaIndex < 0) {
+                return null;
+            }
+            BufferedImage bufferedImage = ImageIO.read(new ByteArrayInputStream(Base64.getDecoder().decode(image.substring(commaIndex + 1))));
+            if (bufferedImage == null || bufferedImage.getWidth() <= 0 || bufferedImage.getHeight() <= 0) {
+                return null;
+            }
+            return closestRatio(bufferedImage.getWidth(), bufferedImage.getHeight());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String closestRatio(int width, int height) {
+        double ratio = (double) width / height;
+        if (Math.abs(ratio - 1D) < 0.08D) {
+            return "1:1";
+        }
+        if (ratio < 0.68D) {
+            return "9:16";
+        }
+        if (ratio < 0.9D) {
+            return "3:4";
+        }
+        if (ratio < 1.5D) {
+            return "4:3";
+        }
+        if (ratio > 2D) {
+            return "21:9";
+        }
+        return "16:9";
     }
 
     private AigcProviderSubmitRespDTO parseImageResponse(String body) {

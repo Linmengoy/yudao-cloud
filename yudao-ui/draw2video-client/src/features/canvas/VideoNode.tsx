@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { useReactFlow, useStore, useUpdateNodeInternals } from "@xyflow/react";
 import { AnimatePresence, motion } from "motion/react";
@@ -16,8 +16,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Video,
-  Volume2,
-  VolumeX,
   X,
 } from "lucide-react";
 import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, VideoNodeData } from "./types";
@@ -26,6 +24,7 @@ import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
+import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
@@ -43,20 +42,6 @@ const PREVIEW_SLOT_HEIGHT = 420;
 const COMPOSER_WIDTH = 680;
 const SEEDANCE_MODEL_NAME = "Seedance 2.0";
 const WAN_MODEL_ID = "wan2.2-ti2v-5b";
-const RATIOS: VideoNodeData["ratio"][] = ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9"];
-const RESOLUTIONS: VideoNodeData["resolution"][] = ["480p", "720p", "1080p"];
-const DURATIONS: VideoNodeData["duration"][] = [5, 10];
-const WAN_SIZES = ["1280*704", "704*1280"] as const;
-const VIDEO_PARAM_KEYS = new Set([
-  "ratio",
-  "aspectRatio",
-  "resolution",
-  "duration",
-  "size",
-  "generateAudio",
-  "audio",
-  "watermark",
-]);
 
 function normalizeTemplateOption(option: unknown) {
   let value = String(option ?? "").trim();
@@ -72,33 +57,16 @@ function normalizeTemplateOption(option: unknown) {
   return value.replace(/\\/g, "").replace(/^"+|"+$/g, "").trim();
 }
 
-function templateOptions(template: AigcModelParamTemplate | undefined, fallback: string[]) {
-  const options = (template?.options ?? []).map(normalizeTemplateOption).filter(Boolean);
-  return options.length > 0 ? options : fallback;
-}
-
-function templateDefault(template: AigcModelParamTemplate | undefined, fallback: string) {
+function templateDefault(template: AigcModelParamTemplate | undefined, fallback = "") {
   const normalized = template?.defaultValue ? normalizeTemplateOption(template.defaultValue) : "";
-  return normalized || templateOptions(template, [fallback])[0] || fallback;
-}
-
-function findTemplate(templates: AigcModelParamTemplate[], keys: string[]) {
-  return templates.find((template) => keys.includes(template.paramKey));
+  const option = (template?.options ?? []).map(normalizeTemplateOption).find(Boolean);
+  return normalized || option || fallback;
 }
 
 function hasParamValue(params: Record<string, unknown>, key: string | undefined) {
   if (!key) return false;
   const value = params[key];
   return value !== undefined && value !== null && String(value) !== "";
-}
-
-function coerceBooleanParam(value: unknown, fallback: boolean) {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") {
-    if (value === "true" || value === "1" || value === "on") return true;
-    if (value === "false" || value === "0" || value === "off") return false;
-  }
-  return fallback;
 }
 
 function formatCost(value: number | null | undefined) {
@@ -166,40 +134,6 @@ function getDisplaySize(data: VideoNodeData) {
   return ratioToSize(data.ratio);
 }
 
-function VideoParamButton<T extends string | number>({
-  children,
-  group,
-  selected,
-  value,
-  onClick,
-  className,
-}: {
-  children: ReactNode;
-  group: string;
-  selected: boolean;
-  value: T;
-  onClick: () => void;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn("relative overflow-hidden rounded-lg px-2 py-2 text-muted-gray transition-colors", className, selected && "text-charcoal")}
-    >
-      {selected && (
-        <motion.span
-          layoutId={`video-${group}-indicator`}
-          className="absolute inset-0 rounded-lg bg-background shadow-sm"
-          transition={{ type: "spring", stiffness: 420, damping: 34 }}
-        />
-      )}
-      <span className="relative z-10">{children}</span>
-      <span className="sr-only">{String(value)}</span>
-    </button>
-  );
-}
-
 export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodeProps) {
   const { setNodes, setEdges, getNodes, getEdges } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
@@ -265,16 +199,6 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const activeAigcModelId = activeAigcModel?.id ?? data.aigcModelId;
   const activeModelName = activeAigcModel?.name ?? data.modelName ?? SEEDANCE_MODEL_NAME;
   const activeProviderModel = activeAigcModel?.model ?? data.providerModel ?? data.modelId;
-  const isWanModel = data.provider === "wan" || activeProviderModel === WAN_MODEL_ID || data.modelId === WAN_MODEL_ID;
-  const ratioTemplate = useMemo(() => findTemplate(aigcModels.templates, ["ratio", "aspectRatio"]), [aigcModels.templates]);
-  const resolutionTemplate = useMemo(() => findTemplate(aigcModels.templates, ["resolution"]), [aigcModels.templates]);
-  const durationTemplate = useMemo(() => findTemplate(aigcModels.templates, ["duration"]), [aigcModels.templates]);
-  const sizeTemplate = useMemo(() => findTemplate(aigcModels.templates, ["size"]), [aigcModels.templates]);
-  const audioTemplate = useMemo(() => findTemplate(aigcModels.templates, ["generateAudio", "audio"]), [aigcModels.templates]);
-  const ratioOptions = useMemo(() => templateOptions(ratioTemplate, RATIOS), [ratioTemplate]);
-  const resolutionOptions = useMemo(() => templateOptions(resolutionTemplate, RESOLUTIONS), [resolutionTemplate]);
-  const durationOptions = useMemo(() => templateOptions(durationTemplate, DURATIONS.map(String)), [durationTemplate]);
-  const sizeOptions = useMemo(() => templateOptions(sizeTemplate, [...WAN_SIZES]), [sizeTemplate]);
   const effectiveParams = useMemo(() => filterModelParams(rawParams, aigcModels.templates), [aigcModels.templates, rawParams]);
   const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
   const canGenerate = Boolean(data.prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && Boolean(activeAigcModelId);
@@ -373,7 +297,6 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     if (aigcModels.templateLoading || aigcModels.templates.length === 0) return;
     const patch: Record<string, unknown> = {};
     for (const template of aigcModels.templates) {
-      if (!VIDEO_PARAM_KEYS.has(template.paramKey)) continue;
       if (hasParamValue(rawParams, template.paramKey)) continue;
       const fallback = template.paramKey === "ratio" || template.paramKey === "aspectRatio"
         ? data.ratio
@@ -387,20 +310,20 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                 ? String(data.generateAudio)
                 : "";
       const nextValue = templateDefault(template, fallback);
-      if (nextValue) patch[template.paramKey] = nextValue;
+      if (nextValue !== "") patch[template.paramKey] = nextValue;
     }
     if (Object.keys(patch).length > 0) updateParams(patch);
   }, [aigcModels.templateLoading, aigcModels.templates, data.duration, data.generateAudio, data.ratio, data.resolution, data.size, rawParams, updateParams]);
 
   const summary = useMemo(() => {
-    const ratio = normalizeTemplateOption(rawParams[ratioTemplate?.paramKey ?? "ratio"] ?? data.ratio);
-    const resolution = normalizeTemplateOption(rawParams[resolutionTemplate?.paramKey ?? "resolution"] ?? data.resolution);
-    const duration = normalizeTemplateOption(rawParams[durationTemplate?.paramKey ?? "duration"] ?? data.duration);
-    const size = normalizeTemplateOption(rawParams[sizeTemplate?.paramKey ?? "size"] ?? data.size ?? "1280*704");
-    const audio = coerceBooleanParam(rawParams[audioTemplate?.paramKey ?? "generateAudio"], data.generateAudio);
-    if (sizeTemplate || isWanModel) return `Frames · ${size}`;
-    return `Frames · ${ratio} · ${resolution} · ${duration}s · ${audio ? "音频" : "静音"}`;
-  }, [audioTemplate, data.duration, data.generateAudio, data.ratio, data.resolution, data.size, durationTemplate, isWanModel, ratioTemplate, rawParams, resolutionTemplate, sizeTemplate]);
+    if (aigcModels.templateLoading) return "参数加载中";
+    if (aigcModels.templates.length === 0) return "默认参数";
+    const values = aigcModels.templates
+      .map((template) => normalizeTemplateOption(rawParams[template.paramKey] ?? template.defaultValue ?? ""))
+      .filter(Boolean)
+      .slice(0, 3);
+    return values.length > 0 ? values.join(" · ") : "模型参数";
+  }, [aigcModels.templateLoading, aigcModels.templates, rawParams]);
 
   useEffect(() => {
     function handleReferencePicker(e: Event) {
@@ -861,114 +784,20 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     transition={{ duration: 0.14, ease: "easeOut" }}
                     className="absolute bottom-full left-0 z-[260] mb-2 w-[420px] rounded-2xl border border-border-warm bg-background p-4 shadow-lg"
                   >
-                    <p className="mb-3 text-sm font-medium text-muted-gray">Generate method</p>
-                    <div className="mb-4 rounded-xl bg-muted p-1">
-                      <button type="button" className="w-full rounded-lg bg-background px-3 py-2 text-sm font-medium text-charcoal">
-                        Frames
-                      </button>
+                    <div className="mb-3 rounded-xl bg-muted px-3 py-2 text-xs text-muted-gray">
+                      当前能力：{generationCapability}
                     </div>
-
-                    {(sizeTemplate || isWanModel) ? (
-                      <>
-                        <p className="mb-2 text-sm font-medium text-muted-gray">Size</p>
-                        <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                          {sizeOptions.map((size) => (
-                            <VideoParamButton
-                              key={size}
-                              group="wan-size"
-                              value={size}
-                              selected={normalizeTemplateOption(rawParams[sizeTemplate?.paramKey ?? "size"] ?? data.size ?? "1280*704") === size}
-                              onClick={() => updateParams({ [sizeTemplate?.paramKey ?? "size"]: size })}
-                              className="text-sm"
-                            >
-                              {size}
-                            </VideoParamButton>
-                          ))}
-                        </div>
-                        <div className="rounded-xl bg-muted px-3 py-3 text-xs leading-5 text-muted-gray">
-                          <p>frame_num 121 · sample_steps 20</p>
-                          <p>无参考图走文生视频；连接 1 张图片后走图生视频。</p>
-                        </div>
-                      </>
+                    {aigcModels.templates.length > 0 ? (
+                      <DynamicParamForm
+                        templates={aigcModels.templates}
+                        values={rawParams}
+                        disabled={isGenerating}
+                        onChange={updateParams}
+                      />
                     ) : (
-                      <>
-                        <p className="mb-2 text-sm font-medium text-muted-gray">Aspect Ratio</p>
-                        <div className="mb-4 grid grid-cols-6 gap-1 rounded-xl bg-muted p-1">
-                          {ratioOptions.map((ratio) => (
-                            <VideoParamButton
-                              key={ratio}
-                              group="ratio"
-                              value={ratio}
-                              selected={normalizeTemplateOption(rawParams[ratioTemplate?.paramKey ?? "ratio"] ?? data.ratio) === ratio}
-                              onClick={() => updateParams({ [ratioTemplate?.paramKey ?? "ratio"]: ratio })}
-                              className="text-xs"
-                            >
-                              {ratio}
-                            </VideoParamButton>
-                          ))}
-                        </div>
-
-                        <p className="mb-2 text-sm font-medium text-muted-gray">Resolution</p>
-                        <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
-                          {resolutionOptions.map((resolution) => (
-                            <VideoParamButton
-                              key={resolution}
-                              group="resolution"
-                              value={resolution}
-                              selected={normalizeTemplateOption(rawParams[resolutionTemplate?.paramKey ?? "resolution"] ?? data.resolution) === resolution}
-                              onClick={() => updateParams({ [resolutionTemplate?.paramKey ?? "resolution"]: resolution })}
-                              className="text-sm"
-                            >
-                              {resolution}
-                            </VideoParamButton>
-                          ))}
-                        </div>
-
-                        <p className="mb-2 text-sm font-medium text-muted-gray">Duration</p>
-                        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                          {durationOptions.map((duration) => (
-                            <VideoParamButton
-                              key={duration}
-                              group="duration"
-                              value={duration}
-                              selected={normalizeTemplateOption(rawParams[durationTemplate?.paramKey ?? "duration"] ?? data.duration) === duration}
-                              onClick={() => updateParams({ [durationTemplate?.paramKey ?? "duration"]: duration })}
-                              className="text-sm"
-                            >
-                              {duration}s
-                            </VideoParamButton>
-                          ))}
-                        </div>
-
-                        {(!audioTemplate || audioTemplate.paramType === "BOOLEAN" || audioTemplate.paramType === "SELECT") && (
-                          <>
-                            <p className="mb-2 flex items-center gap-1 text-sm font-medium text-muted-gray">
-                              Generate Audio
-                              {coerceBooleanParam(rawParams[audioTemplate?.paramKey ?? "generateAudio"], data.generateAudio) ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
-                            </p>
-                            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                              <VideoParamButton
-                                group="audio"
-                                value="on"
-                                selected={coerceBooleanParam(rawParams[audioTemplate?.paramKey ?? "generateAudio"], data.generateAudio)}
-                                onClick={() => updateParams({ [audioTemplate?.paramKey ?? "generateAudio"]: true })}
-                                className="text-sm"
-                              >
-                                On
-                              </VideoParamButton>
-                              <VideoParamButton
-                                group="audio"
-                                value="off"
-                                selected={!coerceBooleanParam(rawParams[audioTemplate?.paramKey ?? "generateAudio"], data.generateAudio)}
-                                onClick={() => updateParams({ [audioTemplate?.paramKey ?? "generateAudio"]: false })}
-                                className="text-sm"
-                              >
-                                Off
-                              </VideoParamButton>
-                            </div>
-                          </>
-                        )}
-                      </>
+                      <div className="rounded-xl border border-border-warm bg-muted px-3 py-4 text-sm text-muted-gray">
+                        当前模型没有可配置参数
+                      </div>
                     )}
                   </motion.div>
                   )}

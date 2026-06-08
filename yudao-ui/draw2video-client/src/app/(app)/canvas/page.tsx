@@ -48,6 +48,8 @@ import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
 import { saveImage, saveVideo } from "@/features/canvas/image-store";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
+import { getMyAsset } from "@/features/assets/asset-api";
+import { getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import { useAuth } from "@/features/auth/auth-store";
 import { ThemeToggle } from "@/features/theme/ThemeToggle";
 import { NotificationBell } from "@/features/notifications/components/notification-bell";
@@ -827,6 +829,38 @@ function withCardNodeInteraction(node: AppNode): AppNode {
   };
 }
 
+function getNodeAssetId(node: AppNode) {
+  if (node.type !== "image" && node.type !== "video") return null;
+  const data = node.data as ImageNodeData | VideoNodeData;
+  return data.assetId ?? data.outputAssetId ?? null;
+}
+
+function withFreshAssetUrl(node: AppNode, url: string): AppNode {
+  if (node.type === "video") {
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        assetId: getNodeAssetId(node),
+        previewUrl: url,
+        videoUrl: url,
+      },
+    } as AppNode;
+  }
+  if (node.type === "image") {
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        assetId: getNodeAssetId(node),
+        previewUrl: url,
+        outputPreviewUrl: url,
+      },
+    } as AppNode;
+  }
+  return node;
+}
+
 function defaultNodes(): AppNode[] {
   const id = "draft_default";
   return [
@@ -955,6 +989,9 @@ function migrateNode(n: AppNode): AppNode {
         videoId: typeof d.videoId === "string" ? d.videoId : undefined,
         fileName: typeof d.fileName === "string" ? d.fileName : "Video",
         mimeType: typeof d.mimeType === "string" ? d.mimeType : "video/mp4",
+        assetId: typeof d.assetId === "number" ? d.assetId : typeof d.outputAssetId === "number" ? d.outputAssetId : null,
+        assetVersionId: typeof d.assetVersionId === "number" ? d.assetVersionId : null,
+        previewUrl: typeof d.previewUrl === "string" ? d.previewUrl : typeof d.outputPreviewUrl === "string" ? d.outputPreviewUrl : null,
         width: typeof d.width === "number" ? d.width : undefined,
         height: typeof d.height === "number" ? d.height : undefined,
         durationSec: typeof d.durationSec === "number" ? d.durationSec : undefined,
@@ -966,8 +1003,15 @@ function migrateNode(n: AppNode): AppNode {
         kind: d.kind === "uploaded" || d.kind === "generated" ? d.kind : "draft",
         status,
         taskId: typeof d.taskId === "string" ? d.taskId : null,
-        videoUrl: typeof d.videoUrl === "string" ? d.videoUrl : null,
+        videoUrl: typeof d.videoUrl === "string" ? d.videoUrl : typeof d.previewUrl === "string" ? d.previewUrl : null,
         errorMessage: typeof d.errorMessage === "string" ? d.errorMessage : null,
+        taskStatus: typeof d.taskStatus === "string" ? d.taskStatus : null,
+        progress: typeof d.progress === "number" ? d.progress : null,
+        outputAssetId: typeof d.outputAssetId === "number" ? d.outputAssetId : null,
+        outputPreviewUrl: typeof d.outputPreviewUrl === "string" ? d.outputPreviewUrl : null,
+        sourceTaskId: typeof d.sourceTaskId === "number" ? d.sourceTaskId : null,
+        safetyStatus: typeof d.safetyStatus === "string" ? d.safetyStatus : null,
+        safetyReason: typeof d.safetyReason === "string" ? d.safetyReason : null,
         ratio,
         resolution,
         duration,
@@ -1263,6 +1307,30 @@ function CanvasFlow() {
     setLatestKnownVersion(version);
   }, []);
 
+  const refreshAssetUrls = useCallback(async (nodesToRefresh: AppNode[]) => {
+    const mediaNodes = nodesToRefresh
+      .map((node) => ({ nodeId: node.id, assetId: getNodeAssetId(node) }))
+      .filter((item): item is { nodeId: string; assetId: number } => typeof item.assetId === "number");
+    if (mediaNodes.length === 0) return;
+
+    const entries = await Promise.all(mediaNodes.map(async ({ nodeId, assetId }) => {
+      try {
+        const asset = await getMyAsset(assetId);
+        const url = getAssetPreviewUrl(asset);
+        return url ? { nodeId, url } : null;
+      } catch {
+        return null;
+      }
+    }));
+    const urlByNodeId = new Map(entries.filter((entry): entry is { nodeId: string; url: string } => Boolean(entry)).map((entry) => [entry.nodeId, entry.url]));
+    if (urlByNodeId.size === 0) return;
+
+    setNodes((nds) => nds.map((node) => {
+      const url = urlByNodeId.get(node.id);
+      return url ? withFreshAssetUrl(node, url) : node;
+    }));
+  }, [setNodes]);
+
   const applyRemoteOperation = useCallback((operationType: string, payload: Record<string, unknown>) => {
     if (operationType === "NODE_MOVE" && typeof payload.nodeId === "string") {
       setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? { ...node, position: payload.position as AppNode["position"] } : node));
@@ -1296,6 +1364,15 @@ function CanvasFlow() {
           previewUrl: payload.previewUrl ?? node.data.previewUrl,
         },
       } as AppNode : node));
+      if (typeof payload.assetId === "number") {
+        getMyAsset(payload.assetId)
+          .then((asset) => {
+            const url = getAssetPreviewUrl(asset);
+            if (!url) return;
+            setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? withFreshAssetUrl(node, url) : node));
+          })
+          .catch(() => undefined);
+      }
       return;
     }
     if (operationType === "EDGE_CREATE" && payload.edge) {
@@ -1321,11 +1398,13 @@ function CanvasFlow() {
   const hydrateRemoteSnapshot = useCallback((snapshot: Parameters<typeof snapshotRecordToCanvasState>[0]) => {
     const state = snapshotRecordToCanvasState(snapshot);
     if (!state) return;
-    setNodes(state.nodes.map(migrateNode));
+    const migratedNodes = state.nodes.map(migrateNode);
+    setNodes(migratedNodes);
     setEdges(state.edges.map(migrateEdge));
     if (state.viewport) setViewport(state.viewport);
     if (typeof snapshot?.version === "number") markAppliedVersion(snapshot.version);
-  }, [markAppliedVersion, setEdges, setNodes, setViewport]);
+    refreshAssetUrls(migratedNodes);
+  }, [markAppliedVersion, refreshAssetUrls, setEdges, setNodes, setViewport]);
 
   const applyOperationRecord = useCallback((operationRecord: { clientId: string; nextVersion: number; operationType: string; operationJson: string }) => {
     setLatestKnownVersion((prev) => Math.max(prev, operationRecord.nextVersion));
@@ -1946,6 +2025,7 @@ function CanvasFlow() {
           setEdges(migratedEdges);
           setViewport(saved.viewport ?? DEFAULT_CANVAS_VIEWPORT);
           setIsHydrated(true);
+          refreshAssetUrls(migratedNodes);
         }
 
         if (currentVersion > snapshotVersion) syncFromVersion(snapshotVersion);
@@ -1960,7 +2040,7 @@ function CanvasFlow() {
 
     hydrate();
     return () => { cancelled = true; };
-  }, [activeProjectId, loadProject, markAppliedVersion, resetAppliedVersion, router, setNodes, setEdges, setViewport, syncFromVersion]);
+  }, [activeProjectId, loadProject, markAppliedVersion, refreshAssetUrls, resetAppliedVersion, router, setNodes, setEdges, setViewport, syncFromVersion]);
 
   // Debounced save — only after hydration completes
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
