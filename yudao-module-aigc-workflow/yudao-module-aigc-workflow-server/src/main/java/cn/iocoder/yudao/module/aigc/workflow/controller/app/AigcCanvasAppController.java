@@ -17,6 +17,8 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSyncRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectQuickGenerateReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectQuickGenerateRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRespVO;
@@ -82,6 +84,13 @@ public class AigcCanvasAppController {
     @Operation(summary = "创建画布项目")
     public CommonResult<Long> createProject(@Valid @RequestBody AigcCanvasProjectCreateReqVO reqVO) {
         return success(projectService.createProject(reqVO, getLoginUserId()));
+    }
+
+    @PostMapping("/projects/quick-generate")
+    @Operation(summary = "创建画布项目并生成首个节点")
+    public CommonResult<AigcCanvasProjectQuickGenerateRespVO> createProjectAndRunFirstNode(
+            @Valid @RequestBody AigcCanvasProjectQuickGenerateReqVO reqVO) {
+        return success(projectService.createProjectAndRunFirstNode(reqVO, getLoginUserId()));
     }
 
     @GetMapping("/projects/{id}")

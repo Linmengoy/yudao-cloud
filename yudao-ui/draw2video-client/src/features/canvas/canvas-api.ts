@@ -22,6 +22,29 @@ export interface CreateCanvasProjectInput {
   name: string;
 }
 
+export interface QuickGenerateCanvasProjectInput {
+  name: string;
+  prompt: string;
+  nodeType: "image" | "video";
+  generateType: "IMAGE" | "VIDEO";
+  generateMode: "TEXT_TO_IMAGE" | "IMAGE_TO_IMAGE" | "TEXT_TO_VIDEO" | "IMAGE_TO_VIDEO";
+  modelId: number;
+  modelName?: string;
+  providerModel?: string;
+  inputParams?: string;
+  referenceAssetId?: number | null;
+  referencePreviewUrl?: string | null;
+}
+
+export interface QuickGenerateCanvasProjectResult {
+  projectId: number;
+  nodeId: string;
+  taskId: number;
+  generateRecordId?: number;
+  generateNo?: string;
+  status?: string;
+}
+
 export interface UpdateCanvasProjectInput {
   name?: string;
   coverAssetId?: number | null;
@@ -142,6 +165,9 @@ export const canvasApi = {
   },
 
   createProject: (input: CreateCanvasProjectInput) => api.post<number>("/canvas/projects", input),
+
+  quickGenerateProject: (input: QuickGenerateCanvasProjectInput) =>
+    api.post<QuickGenerateCanvasProjectResult>("/canvas/projects/quick-generate", input),
 
   getProject: (projectId: string | number) => api.get<CanvasProject>(`/canvas/projects/${projectId}`),
 

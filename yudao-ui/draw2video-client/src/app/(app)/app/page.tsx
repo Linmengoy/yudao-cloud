@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderPlus, ImageIcon, Paperclip, Plus, Send } from "lucide-react";
+import { Paperclip, Plus, Send } from "lucide-react";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
+import { getMyAsset, uploadAsset } from "@/features/assets/asset-api";
+import { getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import { getAigcModelList, type AigcModel } from "@/features/generation/model-api";
 import { createProject, listProjects, type ProjectMeta } from "@/features/projects/project-store";
 
@@ -41,6 +43,13 @@ type ProjectListItem = {
   source: "server" | "local";
 };
 
+type ReferenceImage = {
+  assetId: number;
+  previewUrl: string | null;
+  fileName: string;
+  mimeType: string;
+};
+
 function toProjectListItem(project: CanvasProject): ProjectListItem {
   return {
     id: String(project.id),
@@ -66,10 +75,6 @@ function projectRoleLabel(project: ProjectListItem) {
   if (project.source === "local" || project.role === "owner") return "可管理";
   if (project.role === "viewer") return "可浏览";
   return "可编辑";
-}
-
-function ProjectIcon() {
-  return <ImageIcon className="size-5" />;
 }
 
 function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
@@ -100,8 +105,8 @@ function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: 
     );
   }
   return (
-    <div className="flex aspect-square items-center justify-center bg-muted text-muted-gray">
-      <ProjectIcon />
+    <div className="flex aspect-square items-center justify-center bg-muted px-3 text-center text-charcoal">
+      <span className="line-clamp-3 text-sm font-semibold leading-snug">{project.name}</span>
     </div>
   );
 }
@@ -115,9 +120,13 @@ export default function WorkspacePage() {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [referenceImage, setReferenceImage] = useState<ReferenceImage | null>(null);
+  const [referenceUploading, setReferenceUploading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const muuriRef = useRef<Muuri | null>(null);
+  const referenceInputRef = useRef<HTMLInputElement | null>(null);
   const recentProjects = useMemo(() => projects.slice(0, 7), [projects]);
   const modelGroups = useMemo(() => {
     const groups = new Map<number, AigcModel[]>();
@@ -219,12 +228,76 @@ export default function WorkspacePage() {
     }
   }
 
+  async function handleReferenceFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || referenceUploading) return;
+    setReferenceUploading(true);
+    setSubmitError(null);
+    try {
+      const assetId = await uploadAsset(file, "IMAGE", file.name);
+      const asset = await getMyAsset(assetId);
+      setReferenceImage({
+        assetId,
+        previewUrl: getAssetPreviewUrl(asset) || null,
+        fileName: file.name,
+        mimeType: file.type || "image/png",
+      });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "参考图上传失败");
+    } finally {
+      setReferenceUploading(false);
+    }
+  }
+
   async function handleSubmit() {
     if (!prompt.trim() || submitting) return;
     setSubmitting(true);
-    await openNewProject(prompt.trim().slice(0, 30));
-    setPrompt("");
-    setSubmitting(false);
+    setSubmitError(null);
+    const promptText = prompt.trim();
+    const projectName = promptText.slice(0, 30) || "未命名项目";
+    try {
+      if (!selectedModel || (selectedModel.type !== 2 && selectedModel.type !== 3)) {
+        await openNewProject(projectName);
+      } else {
+        const isVideo = selectedModel.type === 3;
+        const result = await canvasApi.quickGenerateProject({
+          name: projectName,
+          prompt: promptText,
+          nodeType: isVideo ? "video" : "image",
+          generateType: isVideo ? "VIDEO" : "IMAGE",
+          generateMode: isVideo
+            ? referenceImage ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO"
+            : referenceImage ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE",
+          modelId: selectedModel.id,
+          modelName: selectedModel.name,
+          providerModel: selectedModel.model,
+          inputParams: JSON.stringify({
+            providerModel: selectedModel.model,
+            ...(referenceImage?.previewUrl ? {
+              inputImageIds: [String(referenceImage.assetId)],
+              inputImageUrls: [referenceImage.previewUrl],
+              inputImages: [{
+                imageId: String(referenceImage.assetId),
+                fileName: referenceImage.fileName,
+                dataUrl: referenceImage.previewUrl,
+                mimeType: referenceImage.mimeType,
+              }],
+              referenceImages: [referenceImage.previewUrl],
+            } : {}),
+          }),
+          referenceAssetId: referenceImage?.assetId ?? null,
+          referencePreviewUrl: referenceImage?.previewUrl ?? null,
+        });
+        router.push(`/canvas?projectId=${encodeURIComponent(String(result.projectId))}`);
+      }
+      setPrompt("");
+      setReferenceImage(null);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "任务提交失败，请稍后再试");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -261,11 +334,25 @@ export default function WorkspacePage() {
               </button>
               <button
                 type="button"
+                onClick={() => referenceInputRef.current?.click()}
+                disabled={referenceUploading || submitting}
                 className="flex size-8 items-center justify-center rounded-lg text-muted-gray hover:bg-muted hover:text-charcoal"
-                title="参考图"
+                title={referenceImage ? `参考图：${referenceImage.fileName}` : "参考图"}
               >
                 <Paperclip className="size-4" />
               </button>
+              <input
+                ref={referenceInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleReferenceFileChange}
+              />
+              {referenceImage && (
+                <span className="max-w-32 truncate px-2 text-xs text-muted-gray" title={referenceImage.fileName}>
+                  已选参考图
+                </span>
+              )}
               {modelsLoading && models.length === 0 && (
                 <span className="px-2 text-xs text-muted-gray">模型加载中...</span>
               )}
@@ -300,13 +387,14 @@ export default function WorkspacePage() {
               )}
               <button
                 onClick={handleSubmit}
-                disabled={!prompt.trim() || submitting}
+                disabled={!prompt.trim() || submitting || referenceUploading}
                 className="flex size-8 items-center justify-center rounded-lg bg-charcoal text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80 disabled:opacity-50"
               >
                 <Send className="size-4" />
               </button>
             </div>
           </div>
+          {submitError && <p className="mt-2 text-xs text-red-500">{submitError}</p>}
         </div>
       </div>
 

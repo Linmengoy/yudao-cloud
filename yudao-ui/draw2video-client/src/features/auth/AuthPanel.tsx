@@ -290,9 +290,9 @@ function AuthActions({
           <button type="button" onClick={() => onSwitch("email-code")} className="auth-link">
             使用邮箱验证码登录
           </button>
-          <button type="button" onClick={() => onSwitch("phone-code")} className="auth-link">
+          {/* <button type="button" onClick={() => onSwitch("phone-code")} className="auth-link">
             使用手机验证码登录
-          </button>
+          </button> */}
         </div>
       </div>
     );

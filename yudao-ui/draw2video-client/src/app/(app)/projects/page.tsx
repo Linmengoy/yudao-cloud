@@ -68,10 +68,6 @@ function localProjectToListItem(project: ProjectMeta): ProjectListItem {
   };
 }
 
-function ProjectIcon() {
-  return <ImageIcon className="size-5" />;
-}
-
 function projectRoleLabel(project: ProjectListItem) {
   if (project.source === "local" || project.role === "owner") return "可管理";
   if (project.role === "viewer") return "可浏览";
@@ -114,9 +110,8 @@ function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: 
     );
   }
   return (
-    <div className="flex aspect-[4/3] flex-col items-center justify-center bg-muted text-muted-gray">
-      <ProjectIcon />
-      <span className="mt-2 text-xs">空白项目</span>
+    <div className="flex aspect-[4/3] items-center justify-center bg-muted px-4 text-center text-charcoal">
+      <span className="line-clamp-3 text-sm font-semibold leading-snug">{project.name}</span>
     </div>
   );
 }

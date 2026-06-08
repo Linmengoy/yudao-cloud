@@ -1,15 +1,22 @@
 package cn.iocoder.yudao.module.aigc.workflow.service.canvas;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.core.util.IdUtil;
+import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.asset.api.AigcAssetApi;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectQuickGenerateReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectQuickGenerateRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRespVO;
@@ -41,6 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +96,9 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     @Lazy
     private AigcCanvasOperationService operationService;
     @Resource
+    @Lazy
+    private AigcCanvasNodeRunService nodeRunService;
+    @Resource
     private AigcAssetApi assetApi;
 
     @Override
@@ -109,6 +120,48 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         member.setLastActiveTime(LocalDateTime.now());
         memberMapper.insert(member);
         return project.getId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigcCanvasProjectQuickGenerateRespVO createProjectAndRunFirstNode(AigcCanvasProjectQuickGenerateReqVO reqVO, Long userId) {
+        AigcCanvasProjectCreateReqVO projectReqVO = new AigcCanvasProjectCreateReqVO();
+        projectReqVO.setName(reqVO.getName());
+        Long projectId = createProject(projectReqVO, userId);
+
+        String nodeType = normalizeQuickGenerateNodeType(reqVO);
+        String nodeId = nodeType + "_" + IdUtil.fastSimpleUUID();
+        JSONObject node = buildQuickGenerateNode(projectId, nodeId, nodeType, reqVO);
+        submitServerOperation(projectId, userId, "server_quick_generate", "node_create_" + nodeId,
+                "NODE_CREATE", new JSONObject().set("node", node), 0L);
+
+        if ("video".equals(nodeType) && reqVO.getReferenceAssetId() != null) {
+            bindReferenceAssetQuietly(projectId, nodeId, reqVO.getReferenceAssetId());
+            updateProjectCover(projectId, reqVO.getReferenceAssetId());
+        }
+
+        AigcCanvasProjectDO project = projectMapper.selectById(projectId);
+        AigcCanvasNodeRunReqVO runReqVO = new AigcCanvasNodeRunReqVO();
+        runReqVO.setProjectId(projectId);
+        runReqVO.setNodeId(nodeId);
+        runReqVO.setClientId("server_quick_generate");
+        runReqVO.setBaseVersion(project.getCurrentVersion() == null ? 0L : project.getCurrentVersion());
+        runReqVO.setRunId("quick_" + nodeId);
+        runReqVO.setNodeType(nodeType);
+        runReqVO.setGenerateType(reqVO.getGenerateType());
+        runReqVO.setGenerateMode(reqVO.getGenerateMode());
+        runReqVO.setModelId(reqVO.getModelId());
+        runReqVO.setPrompt(reqVO.getPrompt());
+        runReqVO.setInputParams(normalizeQuickGenerateInputParams(reqVO));
+        runReqVO.setSync(false);
+        AigcCanvasNodeRunRespVO run = nodeRunService.runNode(runReqVO, userId);
+        return new AigcCanvasProjectQuickGenerateRespVO()
+                .setProjectId(projectId)
+                .setNodeId(nodeId)
+                .setTaskId(run.getTaskId())
+                .setGenerateRecordId(run.getGenerateRecordId())
+                .setGenerateNo(run.getGenerateNo())
+                .setStatus(run.getStatus());
     }
 
     @Override
@@ -285,15 +338,23 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     }
 
     private void fillProjectCover(AigcCanvasProjectRespVO project, Map<Long, AigcAssetRespDTO> assetMap) {
-        if (project.getCoverAssetId() == null) {
+        if (project.getCoverAssetId() != null) {
+            AigcAssetRespDTO asset = assetMap.get(project.getCoverAssetId());
+            String coverUrl = getAssetPreviewUrl(asset);
+            if (StrUtil.isNotBlank(coverUrl)) {
+                project.setCoverUrl(coverUrl);
+                return;
+            }
+        }
+        CanvasCover fallbackCover = findFirstImageNodeCover(project.getId());
+        if (fallbackCover == null) {
             return;
         }
-        AigcAssetRespDTO asset = assetMap.get(project.getCoverAssetId());
-        if (asset == null) {
-            return;
+        project.setCoverUrl(fallbackCover.coverUrl());
+        if (fallbackCover.assetId() != null) {
+            project.setCoverAssetId(fallbackCover.assetId());
+            updateProjectCover(project.getId(), fallbackCover.assetId());
         }
-        project.setCoverUrl(StrUtil.blankToDefault(asset.getThumbnailUrl(),
-                StrUtil.blankToDefault(asset.getCoverUrl(), asset.getFileUrl())));
     }
 
     @Override
@@ -414,6 +475,329 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         update.setId(project.getId());
         update.setCoverAssetId(assetId);
         projectMapper.updateById(update);
+    }
+
+    private void updateProjectCover(Long projectId, Long assetId) {
+        if (assetId == null) {
+            return;
+        }
+        AigcCanvasProjectDO update = new AigcCanvasProjectDO();
+        update.setId(projectId);
+        update.setCoverAssetId(assetId);
+        projectMapper.updateById(update);
+    }
+
+    private String normalizeQuickGenerateNodeType(AigcCanvasProjectQuickGenerateReqVO reqVO) {
+        if ("video".equals(reqVO.getNodeType()) || "VIDEO".equals(reqVO.getGenerateType())) {
+            return "video";
+        }
+        return "image";
+    }
+
+    private JSONObject buildQuickGenerateNode(Long projectId, String nodeId, String nodeType,
+                                              AigcCanvasProjectQuickGenerateReqVO reqVO) {
+        LocalDateTime now = LocalDateTime.now();
+        JSONObject data = "video".equals(nodeType)
+                ? buildQuickGenerateVideoNodeData(nodeId, reqVO, now)
+                : buildQuickGenerateImageNodeData(nodeId, reqVO, now);
+        return new JSONObject()
+                .set("id", nodeId)
+                .set("type", nodeType)
+                .set("position", new JSONObject().set("x", 250).set("y", 200))
+                .set("selected", true)
+                .set("data", data.set("projectId", projectId));
+    }
+
+    private JSONObject buildQuickGenerateImageNodeData(String nodeId, AigcCanvasProjectQuickGenerateReqVO reqVO,
+                                                       LocalDateTime now) {
+        return new JSONObject()
+                .set("imageId", nodeId)
+                .set("fileName", "Image")
+                .set("mimeType", "image/png")
+                .set("createdAt", now.toString())
+                .set("kind", "draft")
+                .set("prompt", reqVO.getPrompt())
+                .set("modelId", String.valueOf(reqVO.getModelId()))
+                .set("providerModel", reqVO.getProviderModel())
+                .set("modelName", StrUtil.blankToDefault(reqVO.getModelName(), "Image"))
+                .set("aigcModelId", reqVO.getModelId())
+                .set("params", parseInputParamsForNode(reqVO.getInputParams()))
+                .set("status", "idle")
+                .set("taskId", null)
+                .set("errorMessage", null)
+                .set("generationStartedAt", null)
+                .set("generationCompletedAt", null)
+                .set("elapsedMs", null);
+    }
+
+    private JSONObject buildQuickGenerateVideoNodeData(String nodeId, AigcCanvasProjectQuickGenerateReqVO reqVO,
+                                                       LocalDateTime now) {
+        JSONObject params = parseInputParamsForNode(reqVO.getInputParams());
+        String providerModel = StrUtil.blankToDefault(reqVO.getProviderModel(), String.valueOf(reqVO.getModelId()));
+        return new JSONObject()
+                .set("videoId", nodeId)
+                .set("fileName", "Video")
+                .set("mimeType", "video/mp4")
+                .set("prompt", reqVO.getPrompt())
+                .set("provider", inferVideoProvider(providerModel, reqVO.getModelName()))
+                .set("modelId", providerModel)
+                .set("providerModel", providerModel)
+                .set("aigcModelId", reqVO.getModelId())
+                .set("modelName", StrUtil.blankToDefault(reqVO.getModelName(), "Video"))
+                .set("params", params)
+                .set("kind", "draft")
+                .set("status", "idle")
+                .set("taskId", null)
+                .set("videoUrl", null)
+                .set("errorMessage", null)
+                .set("ratio", StrUtil.blankToDefault(params.getStr("ratio"), "16:9"))
+                .set("resolution", StrUtil.blankToDefault(params.getStr("resolution"), "1080p"))
+                .set("duration", params.getInt("duration", 5))
+                .set("size", StrUtil.blankToDefault(params.getStr("size"), "1280*704"))
+                .set("generateAudio", params.getBool("generateAudio", true))
+                .set("watermark", params.getBool("watermark", false))
+                .set("createdAt", now.toString())
+                .set("generationStartedAt", null)
+                .set("generationCompletedAt", null)
+                .set("generationRunStartedAt", null)
+                .set("elapsedMs", null)
+                .set("upstreamStatus", null);
+    }
+
+    private JSONObject parseInputParamsForNode(String inputParams) {
+        if (StrUtil.isBlank(inputParams) || !JSONUtil.isTypeJSONObject(inputParams)) {
+            return new JSONObject();
+        }
+        JSONObject params = JSONUtil.parseObj(inputParams);
+        params.remove("referenceImages");
+        params.remove("referenceAssetIds");
+        params.remove("referenceImageIds");
+        params.remove("inputImages");
+        params.remove("inputImageUrls");
+        params.remove("inputImageIds");
+        return params;
+    }
+
+    private String normalizeQuickGenerateInputParams(AigcCanvasProjectQuickGenerateReqVO reqVO) {
+        JSONObject params = StrUtil.isNotBlank(reqVO.getInputParams()) && JSONUtil.isTypeJSONObject(reqVO.getInputParams())
+                ? JSONUtil.parseObj(reqVO.getInputParams())
+                : new JSONObject();
+        if (StrUtil.isNotBlank(reqVO.getProviderModel())) {
+            params.set("providerModel", reqVO.getProviderModel());
+        }
+        if (reqVO.getReferenceAssetId() != null) {
+            params.set("referenceAssetIds", List.of(reqVO.getReferenceAssetId()));
+            params.set("referenceImageIds", List.of(String.valueOf(reqVO.getReferenceAssetId())));
+        }
+        if (StrUtil.isNotBlank(reqVO.getReferencePreviewUrl())) {
+            params.set("referenceImages", List.of(reqVO.getReferencePreviewUrl()));
+        }
+        return params.toString();
+    }
+
+    private String inferVideoProvider(String providerModel, String modelName) {
+        String value = (StrUtil.nullToEmpty(providerModel) + " " + StrUtil.nullToEmpty(modelName)).toLowerCase();
+        return value.contains("wan") ? "wan" : "seedance";
+    }
+
+    private void bindReferenceAssetQuietly(Long projectId, String nodeId, Long assetId) {
+        try {
+            if (assetRefMapper.selectByNodeAndAsset(projectId, nodeId, assetId, "reference") != null) {
+                return;
+            }
+            AigcCanvasAssetRefDO assetRef = new AigcCanvasAssetRefDO();
+            assetRef.setProjectId(projectId);
+            assetRef.setNodeId(nodeId);
+            assetRef.setAssetId(assetId);
+            assetRef.setUsageType("reference");
+            assetRefMapper.insert(assetRef);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private AigcCanvasOperationLogDO submitServerOperation(Long projectId, Long userId, String clientId, String opId,
+                                                          String operationType, JSONObject payload, Long baseVersion) {
+        AigcCanvasOperationSubmitReqVO operationReqVO = new AigcCanvasOperationSubmitReqVO();
+        operationReqVO.setProjectId(projectId);
+        operationReqVO.setClientId(clientId);
+        operationReqVO.setOpId(opId);
+        operationReqVO.setBaseVersion(baseVersion);
+        operationReqVO.setOperationType(operationType);
+        operationReqVO.setOperationJson(new JSONObject().set("type", operationType).set("payload", payload).toString());
+        AigcCanvasOperationLogDO operation = operationService.submitOperation(operationReqVO, userId);
+        roomService.broadcast(projectId, "canvas-op-applied", buildAppliedMessage(operation), null);
+        return operation;
+    }
+
+    private CanvasCover findFirstImageNodeCover(Long projectId) {
+        Map<String, JSONObject> nodes = rebuildProjectNodes(projectId);
+        for (JSONObject node : nodes.values()) {
+            String type = node.getStr("type");
+            if (!"image".equals(type) && !"sketch".equals(type)) {
+                continue;
+            }
+            JSONObject data = node.getJSONObject("data");
+            if (data == null) {
+                continue;
+            }
+            Long assetId = firstLong(data, "assetId", "outputAssetId", "previewAssetId");
+            String assetUrl = getAssetPreviewUrl(assetId);
+            if (StrUtil.isNotBlank(assetUrl)) {
+                return new CanvasCover(assetId, assetUrl);
+            }
+            String previewUrl = firstText(data, "previewUrl", "outputPreviewUrl");
+            if (isRemotePreviewUrl(previewUrl)) {
+                return new CanvasCover(null, previewUrl);
+            }
+        }
+        return findFirstImageAssetRefCover(projectId);
+    }
+
+    private CanvasCover findFirstImageAssetRefCover(Long projectId) {
+        List<AigcCanvasAssetRefDO> refs = assetRefMapper.selectListByProjectId(projectId);
+        if (refs == null || refs.isEmpty()) {
+            return null;
+        }
+        List<Long> assetIds = refs.stream().map(AigcCanvasAssetRefDO::getAssetId).filter(Objects::nonNull).distinct().toList();
+        if (assetIds.isEmpty()) {
+            return null;
+        }
+        try {
+            List<AigcAssetRespDTO> assets = assetApi.getAssets(assetIds).getCheckedData();
+            if (assets == null || assets.isEmpty()) {
+                return null;
+            }
+            Map<Long, AigcAssetRespDTO> assetMap = assets.stream()
+                    .collect(Collectors.toMap(AigcAssetRespDTO::getId, Function.identity(), (first, second) -> first));
+            for (AigcCanvasAssetRefDO ref : refs) {
+                AigcAssetRespDTO asset = assetMap.get(ref.getAssetId());
+                if (asset == null || !"IMAGE".equals(asset.getAssetType())) {
+                    continue;
+                }
+                String previewUrl = getAssetPreviewUrl(asset);
+                if (StrUtil.isNotBlank(previewUrl)) {
+                    return new CanvasCover(asset.getId(), previewUrl);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private Map<String, JSONObject> rebuildProjectNodes(Long projectId) {
+        Map<String, JSONObject> nodes = new LinkedHashMap<>();
+        long afterVersion = 0L;
+        AigcCanvasSnapshotDO snapshot = snapshotMapper.selectLatestByProjectId(projectId);
+        if (snapshot != null && StrUtil.isNotBlank(snapshot.getNodesJson()) && JSONUtil.isTypeJSONArray(snapshot.getNodesJson())) {
+            JSONArray snapshotNodes = JSONUtil.parseArray(snapshot.getNodesJson());
+            for (Object item : snapshotNodes) {
+                JSONObject node = JSONUtil.parseObj(item);
+                if (StrUtil.isNotBlank(node.getStr("id"))) {
+                    nodes.put(node.getStr("id"), node);
+                }
+            }
+            afterVersion = snapshot.getVersion() == null ? 0L : snapshot.getVersion();
+        }
+        for (AigcCanvasOperationLogDO operation : operationLogMapper.selectListAfterVersion(projectId, afterVersion)) {
+            applyOperationToNodeMap(nodes, operation);
+        }
+        return nodes;
+    }
+
+    private void applyOperationToNodeMap(Map<String, JSONObject> nodes, AigcCanvasOperationLogDO operation) {
+        if (StrUtil.isBlank(operation.getOperationJson()) || !JSONUtil.isTypeJSONObject(operation.getOperationJson())) {
+            return;
+        }
+        JSONObject operationJson = JSONUtil.parseObj(operation.getOperationJson());
+        JSONObject payload = operationJson.getJSONObject("payload");
+        if (payload == null) {
+            return;
+        }
+        switch (operation.getOperationType()) {
+            case "NODE_CREATE" -> {
+                JSONObject node = payload.getJSONObject("node");
+                if (node != null && StrUtil.isNotBlank(node.getStr("id"))) {
+                    nodes.put(node.getStr("id"), node);
+                }
+            }
+            case "NODE_DELETE" -> nodes.remove(payload.getStr("nodeId"));
+            case "NODE_UPDATE_DATA", "TASK_STATUS_PATCH", "ASSET_ATTACH" -> applyNodeMapPatch(nodes, payload);
+            case "CANVAS_CLEAR" -> nodes.clear();
+            default -> {
+            }
+        }
+    }
+
+    private void applyNodeMapPatch(Map<String, JSONObject> nodes, JSONObject payload) {
+        JSONObject node = nodes.get(payload.getStr("nodeId"));
+        if (node == null) {
+            return;
+        }
+        JSONObject data = node.getJSONObject("data");
+        if (data == null) {
+            data = new JSONObject();
+            node.set("data", data);
+        }
+        JSONObject patch = payload.getJSONObject("patch");
+        if (patch == null) {
+            patch = new JSONObject();
+            for (String key : List.of("assetId", "assetVersionId", "previewUrl", "sourceTaskId")) {
+                if (payload.containsKey(key)) {
+                    patch.set(key, payload.get(key));
+                }
+            }
+        }
+        for (String key : patch.keySet()) {
+            data.set(key, patch.get(key));
+        }
+    }
+
+    private Long firstLong(JSONObject data, String... keys) {
+        for (String key : keys) {
+            Long value = data.getLong(key);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String firstText(JSONObject data, String... keys) {
+        for (String key : keys) {
+            String value = data.getStr(key);
+            if (StrUtil.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private boolean isRemotePreviewUrl(String url) {
+        return StrUtil.isNotBlank(url)
+                && !StrUtil.startWithIgnoreCase(url, "data:")
+                && !StrUtil.startWithIgnoreCase(url, "blob:");
+    }
+
+    private String getAssetPreviewUrl(Long assetId) {
+        if (assetId == null) {
+            return null;
+        }
+        try {
+            return getAssetPreviewUrl(assetApi.getAsset(assetId).getCheckedData());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String getAssetPreviewUrl(AigcAssetRespDTO asset) {
+        if (asset == null) {
+            return null;
+        }
+        return StrUtil.blankToDefault(asset.getThumbnailUrl(),
+                StrUtil.blankToDefault(asset.getCoverUrl(), asset.getFileUrl()));
+    }
+
+    private record CanvasCover(Long assetId, String coverUrl) {
     }
 
     private AigcCanvasOperationAppliedMessage buildAppliedMessage(AigcCanvasOperationLogDO operation) {

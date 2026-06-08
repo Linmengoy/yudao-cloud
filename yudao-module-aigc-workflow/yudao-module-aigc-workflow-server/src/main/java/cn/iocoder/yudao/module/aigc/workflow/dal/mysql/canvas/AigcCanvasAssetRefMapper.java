@@ -5,6 +5,8 @@ import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasAssetRefDO;
 import org.apache.ibatis.annotations.Mapper;
 
+import java.util.List;
+
 @Mapper
 public interface AigcCanvasAssetRefMapper extends BaseMapperX<AigcCanvasAssetRefDO> {
 
@@ -14,6 +16,12 @@ public interface AigcCanvasAssetRefMapper extends BaseMapperX<AigcCanvasAssetRef
                 .eq(AigcCanvasAssetRefDO::getNodeId, nodeId)
                 .eq(AigcCanvasAssetRefDO::getAssetId, assetId)
                 .eq(AigcCanvasAssetRefDO::getUsageType, usageType));
+    }
+
+    default List<AigcCanvasAssetRefDO> selectListByProjectId(Long projectId) {
+        return selectList(new LambdaQueryWrapperX<AigcCanvasAssetRefDO>()
+                .eq(AigcCanvasAssetRefDO::getProjectId, projectId)
+                .orderByAsc(AigcCanvasAssetRefDO::getId));
     }
 
 }

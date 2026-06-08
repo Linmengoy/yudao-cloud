@@ -17,7 +17,11 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunSyncReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSubmitReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasAssetRefDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasOperationLogDO;
+import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectDO;
+import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasAssetRefMapper;
+import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasProjectMapper;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.AigcCanvasRoomService;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasOperationAppliedMessage;
 import jakarta.annotation.Resource;
@@ -51,6 +55,10 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     private AigcGenerateApi generateApi;
     @Resource
     private AigcAssetApi assetApi;
+    @Resource
+    private AigcCanvasAssetRefMapper assetRefMapper;
+    @Resource
+    private AigcCanvasProjectMapper projectMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -83,6 +91,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     public AigcCanvasNodeRunRespVO syncNodeRun(AigcCanvasNodeRunSyncReqVO reqVO, Long userId) {
         projectService.validateEditableProject(reqVO.getProjectId(), userId);
         AigcGenerateResultRespDTO result = getResultReadyForCanvas(reqVO.getTaskId());
+        applySuccessfulAssetSideEffects(reqVO, result);
         AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(), reqVO.getBaseVersion(), userId,
                 "task_result_" + reqVO.getNodeId() + "_" + reqVO.getTaskId() + "_" + result.getStatus(), buildResultPatch(reqVO.getNodeType(), result));
         roomService.broadcast(operation.getProjectId(), "canvas-op-applied", buildAppliedMessage(operation), null);
@@ -217,6 +226,37 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             return asset.getCoverUrl();
         }
         return asset.getFileUrl();
+    }
+
+    private void applySuccessfulAssetSideEffects(AigcCanvasNodeRunSyncReqVO reqVO, AigcGenerateResultRespDTO result) {
+        if (result == null || !"SUCCESS".equals(result.getStatus())) {
+            return;
+        }
+        List<Long> assetIds = parseLongList(result.getAssetIds());
+        if (assetIds.isEmpty()) {
+            return;
+        }
+        Long assetId = assetIds.get(0);
+        bindOutputAsset(reqVO, assetId, result.getTaskId());
+        if ("image".equals(reqVO.getNodeType())) {
+            AigcCanvasProjectDO update = new AigcCanvasProjectDO();
+            update.setId(reqVO.getProjectId());
+            update.setCoverAssetId(assetId);
+            projectMapper.updateById(update);
+        }
+    }
+
+    private void bindOutputAsset(AigcCanvasNodeRunSyncReqVO reqVO, Long assetId, Long taskId) {
+        if (assetRefMapper.selectByNodeAndAsset(reqVO.getProjectId(), reqVO.getNodeId(), assetId, "output") != null) {
+            return;
+        }
+        AigcCanvasAssetRefDO assetRef = new AigcCanvasAssetRefDO();
+        assetRef.setProjectId(reqVO.getProjectId());
+        assetRef.setNodeId(reqVO.getNodeId());
+        assetRef.setAssetId(assetId);
+        assetRef.setUsageType("output");
+        assetRef.setSourceTaskId(taskId);
+        assetRefMapper.insert(assetRef);
     }
 
     private List<String> parseStringList(String value) {
