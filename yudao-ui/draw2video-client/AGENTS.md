@@ -80,6 +80,17 @@ Future backend integration should use:
 
 Do not put provider API keys or model secrets in the frontend.
 
+Provider proxies are also backend/admin concerns. The client should not store or submit SOCKS/HTTP proxy credentials. For overseas providers such as Grok, the admin backend manages shared proxies under AIGC model proxy management, model providers select a configured proxy, and `aigc-gen` / `aigc-asset` use that proxy when calling providers or downloading generated result files.
+
+When the canvas shows a generated image/video task as failed with a message like `文件下载失败`, do not start by changing canvas rendering code. First check the backend chain:
+
+- `model_db.aigc_model_provider.proxy_enabled` and `proxy_id`
+- `model_db.aigc_model_proxy` proxy status and credentials
+- `gen_db.aigc_gen_record` for `provider_status`, `output_urls`, `fail_reason`, `fail_message`, and `asset_ids`
+- `aigc-asset` logs around `downloadOriginFile` / `downloadOriginFileByCurl`
+
+If `provider_status` is `SUCCESS` and `output_urls` contains a third-party URL but `asset_ids` is empty, the provider generated successfully and the failure is in asset creation or remote file download, not in the client.
+
 ## Canvas Product Model
 
 Project library:
