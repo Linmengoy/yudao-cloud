@@ -17,7 +17,7 @@ type NodeCreateHandleProps = {
 const HANDLE_EVENT = "copse:node-create-menu";
 const BUTTON_SIZE = 28;
 const BUTTON_EDGE_GAP = 10;
-const HOVER_ZONE_WIDTH = 48;
+const HOVER_ZONE_WIDTH = 72;
 const HOVER_ZONE_HEIGHT = 168;
 
 function clamp(value: number, min: number, max: number) {
@@ -43,13 +43,12 @@ function dispatchCreateMenu(
 
 export function NodeCreateHandle({ nodeId, direction, enabled = true, selected = false, showButton = true }: NodeCreateHandleProps) {
   const zoom = useStore((s) => s.transform[2] || 1);
-  const toFlowUnit = (value: number) => value / zoom;
   const isIncoming = direction === "incoming";
   const label = isIncoming ? "添加上游卡片" : "创建下游卡片";
-  const buttonSize = toFlowUnit(BUTTON_SIZE);
-  const hoverZoneWidth = toFlowUnit(HOVER_ZONE_WIDTH);
-  const hoverZoneHeight = toFlowUnit(HOVER_ZONE_HEIGHT);
-  const visualLeft = toFlowUnit(isIncoming ? -(BUTTON_SIZE + BUTTON_EDGE_GAP) : BUTTON_EDGE_GAP);
+  const buttonSize = BUTTON_SIZE;
+  const hoverZoneWidth = HOVER_ZONE_WIDTH;
+  const hoverZoneHeight = HOVER_ZONE_HEIGHT;
+  const visualLeft = isIncoming ? -(BUTTON_SIZE + BUTTON_EDGE_GAP) : BUTTON_EDGE_GAP;
   const zoneLeft = visualLeft + buttonSize / 2 - hoverZoneWidth / 2;
   const [followOffset, setFollowOffset] = useState({ x: 0, y: 0 });
   const [isFollowing, setIsFollowing] = useState(false);
@@ -97,8 +96,8 @@ export function NodeCreateHandle({ nodeId, direction, enabled = true, selected =
             const maxY = (HOVER_ZONE_HEIGHT - BUTTON_SIZE) / 2;
             setIsFollowing(true);
             setFollowOffset({
-              x: clamp(event.clientX - centerX, -maxX, maxX),
-              y: clamp(event.clientY - centerY, -maxY, maxY),
+              x: clamp((event.clientX - centerX) / zoom, -maxX, maxX),
+              y: clamp((event.clientY - centerY) / zoom, -maxY, maxY),
             });
           }}
           onPointerLeave={() => {
@@ -118,15 +117,15 @@ export function NodeCreateHandle({ nodeId, direction, enabled = true, selected =
               !isFollowing && "transition-[left,top,opacity,border-color,color] duration-200 ease-out"
             )}
             style={{
-              left: hoverZoneWidth / 2 - buttonSize / 2 + toFlowUnit(followOffset.x),
-              top: hoverZoneHeight / 2 - buttonSize / 2 + toFlowUnit(followOffset.y),
+              left: hoverZoneWidth / 2 - buttonSize / 2 + followOffset.x,
+              top: hoverZoneHeight / 2 - buttonSize / 2 + followOffset.y,
               width: buttonSize,
               height: buttonSize,
             }}
           >
             <Plus
               className="pointer-events-none"
-              style={{ width: toFlowUnit(16), height: toFlowUnit(16) }}
+              style={{ width: 16, height: 16 }}
             />
           </span>
         </span>

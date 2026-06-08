@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowUp, Loader2, Sparkles, Text, X } from "lucide-react";
-import type { NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, TextNodeData } from "./types";
+import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, SketchNodeData, TextNodeData } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
@@ -13,6 +13,7 @@ import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitC
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
+import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, type PromptMentionOption } from "./PromptMentionInput";
 
 type TextNodeProps = NodeProps<Node<TextNodeData, "text">>;
 
@@ -22,9 +23,19 @@ const DEFAULT_MODEL = "Gemini 3.1 Flash Lite";
 const COMPOSER_WIDTH = 620;
 
 export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProps) {
-  const { setNodes } = useReactFlow();
+  const { setNodes, getNodes, getEdges } = useReactFlow();
   const zoom = useStore((s) => s.transform[2] || 1);
   const selectedNodeCount = useStore((s) => s.nodes.filter((node) => node.selected).length);
+  const referenceImagesSignature = useStore((s) => (s.edges as AppEdge[])
+    .filter((edge) => edge.target === id)
+    .map((edge) => {
+      const node = (s.nodes as AppNode[]).find((item) => item.id === edge.source);
+      if (node?.type !== "image" && node?.type !== "sketch") return null;
+      const nodeData = node.data as ImageNodeData | SketchNodeData;
+      return [edge.id, edge.source, nodeData.previewUrl ?? "", nodeData.dataUrl ? nodeData.dataUrl.length : 0, nodeData.fileName].join(":");
+    })
+    .filter(Boolean)
+    .join("|"));
   const [editing, setEditing] = useState(false);
   const [draftContent, setDraftContent] = useState(data.content);
   const [resizing, setResizing] = useState(false);
@@ -40,6 +51,25 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
   const fixedUiScale = 1 / zoom;
+  const mentionOptions = useMemo<PromptMentionOption[]>(() => {
+    void referenceImagesSignature;
+    const currentNodes = getNodes() as AppNode[];
+    const currentEdges = getEdges() as AppEdge[];
+    const images: PromptMentionOption[] = [];
+    for (const edge of currentEdges) {
+      if (edge.target !== id) continue;
+      const node = currentNodes.find((item) => item.id === edge.source);
+      if (node?.type !== "image" && node?.type !== "sketch") continue;
+      const nodeData = node.data as ImageNodeData | SketchNodeData;
+      images.push({
+        id: node.id,
+        label: `图片 ${images.length + 1}`,
+        token: createPromptMentionToken(node.id),
+        thumbnailUrl: nodeData.previewUrl || nodeData.dataUrl,
+      });
+    }
+    return images;
+  }, [getEdges, getNodes, id, referenceImagesSignature]);
 
   const sendEditingPresence = useCallback((nodeId: string | null) => {
     window.dispatchEvent(new CustomEvent<NodeEditingPresenceEventDetail>("copse:node-editing-presence", {
@@ -104,7 +134,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
   }, [draftContent, sendEditingPresence, updateData]);
 
   const handleGenerate = useCallback(async () => {
-    const prompt = data.prompt.trim();
+    const prompt = promptValueToSubmitPrompt(data.prompt, mentionOptions).trim();
     if (!prompt || isGenerating) return;
 
     if (!data.aigcModelId) {
@@ -186,7 +216,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [data.aigcModelId, data.content, data.prompt, id, isGenerating, updateData, waitAndApplyServerRun]);
+  }, [data.aigcModelId, data.content, data.prompt, id, isGenerating, mentionOptions, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!resizing) return;
@@ -329,12 +359,13 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
               pointerEvents: "auto",
             }}
           >
-          <textarea
+          <PromptMentionInput
             value={data.prompt}
-            onChange={(event) => updateData({ prompt: event.target.value })}
+            onChange={(nextPrompt) => updateData({ prompt: nextPrompt })}
+            mentions={mentionOptions}
             disabled={isGenerating}
             placeholder="Describe the text you want to generate or rewrite"
-            className="min-h-[110px] w-full resize-none bg-transparent text-base leading-7 text-charcoal placeholder:text-muted-gray focus:outline-none disabled:cursor-not-allowed disabled:text-muted-gray"
+            minHeightClassName="min-h-[110px]"
           />
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-border-warm pt-3">
             <div className="flex items-center gap-2 text-sm font-medium text-charcoal">

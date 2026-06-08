@@ -29,7 +29,7 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, NodePositionPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
@@ -63,7 +63,7 @@ import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/Canv
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Boxes, ChevronRight, Folder, Globe, HelpCircle, ImagePlus, LogOut, MessageCircle, Palette, PenLine, Plus, Settings, Share2, Sparkles, Type, Video, Wallet, Map as MapIcon, Grid3X3, Scan } from "lucide-react";
+import { ArrowLeft, BookOpen, Boxes, ChevronRight, Folder, Globe, HelpCircle, ImagePlus, LogOut, MessageCircle, Palette, PenLine, Plus, Settings, Share2, Sparkles, Type, Video, Wallet, Map as MapIcon, Grid2X2, Scan } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -83,7 +83,10 @@ const CANVAS_EDGE_TYPES = {
 const CANVAS_NODE_DRAG_HANDLE = ".canvas-node-drag-handle";
 const TRANSPARENT_NODE_WRAPPER_STYLE = { pointerEvents: "none" as const };
 const GROUP_LAYOUT_PADDING = 32;
-const GROUP_LAYOUT_GAP = 48;
+const GROUP_LAYOUT_GAP = 96;
+const CANVAS_ARRANGE_COLUMN_GAP = 420;
+const CANVAS_ARRANGE_ROW_GAP = 240;
+const CANVAS_ARRANGE_COMPONENT_GAP = 360;
 
 type CreateNodeKind = "text" | "image" | "sketch" | "video";
 type LinkedCreateDirection = "incoming" | "outgoing";
@@ -183,6 +186,127 @@ function getPreviewCardFlowRect(node: AppNode, screenToFlowPosition: (position: 
     width: Math.max(1, bottomRight.x - topLeft.x),
     height: Math.max(1, bottomRight.y - topLeft.y),
   };
+}
+
+function getApproxNodeSize(node: AppNode) {
+  const data = node.data as Record<string, unknown>;
+  const width = node.measured?.width ?? (typeof data.width === "number" ? data.width : undefined);
+  const height = node.measured?.height ?? (typeof data.height === "number" ? data.height : undefined);
+  if (width && height) return { width, height };
+
+  if (node.type === "image") return { width: 420, height: 420 };
+  if (node.type === "video") return { width: 420, height: 448 };
+  if (node.type === "sketch") return { width: 300, height: 240 };
+  if (node.type === "text") return { width: 320, height: 260 };
+  if (node.type === "canvasGroup") return { width: Number(data.width) || 420, height: Number(data.height) || 320 };
+  return { width: 320, height: 280 };
+}
+
+function arrangeCanvasNodes(nodes: AppNode[], edges: AppEdge[]) {
+  const childToGroup = new Map<string, string>();
+  for (const node of nodes) {
+    if (node.type !== "canvasGroup") continue;
+    const childNodeIds = (node.data as GroupNodeData).childNodeIds ?? [];
+    for (const childId of childNodeIds) childToGroup.set(childId, node.id);
+  }
+
+  const layoutNodes = nodes.filter((node) => node.type === "canvasGroup" || !childToGroup.has(node.id));
+  if (layoutNodes.length <= 1) return null;
+
+  const nodeIds = new Set(layoutNodes.map((node) => node.id));
+  const incomingCount = new Map(layoutNodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(layoutNodes.map((node) => [node.id, [] as string[]]));
+  for (const edge of edges) {
+    const sourceId = childToGroup.get(edge.source) ?? edge.source;
+    const targetId = childToGroup.get(edge.target) ?? edge.target;
+    if (sourceId === targetId || !nodeIds.has(sourceId) || !nodeIds.has(targetId)) continue;
+    outgoing.get(sourceId)?.push(targetId);
+    incomingCount.set(targetId, (incomingCount.get(targetId) ?? 0) + 1);
+  }
+
+  const remainingIncoming = new Map(incomingCount);
+  const queue = layoutNodes
+    .filter((node) => (remainingIncoming.get(node.id) ?? 0) === 0)
+    .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+  const depth = new Map<string, number>();
+
+  for (const node of queue) depth.set(node.id, 0);
+  while (queue.length > 0) {
+    const node = queue.shift();
+    if (!node) continue;
+    const nodeDepth = depth.get(node.id) ?? 0;
+    for (const targetId of outgoing.get(node.id) ?? []) {
+      depth.set(targetId, Math.max(depth.get(targetId) ?? 0, nodeDepth + 1));
+      remainingIncoming.set(targetId, (remainingIncoming.get(targetId) ?? 1) - 1);
+      if ((remainingIncoming.get(targetId) ?? 0) <= 0) {
+        const target = layoutNodes.find((item) => item.id === targetId);
+        if (target) queue.push(target);
+      }
+    }
+  }
+
+  const unresolved = layoutNodes.filter((node) => !depth.has(node.id));
+  if (unresolved.length > 0) {
+    const fallbackDepth = Math.max(0, ...Array.from(depth.values())) + 1;
+    unresolved
+      .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)
+      .forEach((node, index) => depth.set(node.id, fallbackDepth + Math.floor(index / 4)));
+  }
+
+  const minX = Math.min(...layoutNodes.map((node) => node.position.x));
+  const minY = Math.min(...layoutNodes.map((node) => node.position.y));
+  const columns = new Map<number, AppNode[]>();
+  for (const node of layoutNodes) {
+    const column = depth.get(node.id) ?? 0;
+    columns.set(column, [...(columns.get(column) ?? []), node]);
+  }
+
+  const nextPositions = new Map<string, { x: number; y: number }>();
+  let cursorX = minX;
+  for (const column of Array.from(columns.keys()).sort((a, b) => a - b)) {
+    const columnNodes = (columns.get(column) ?? []).sort((a, b) => {
+      const aHasEdges = (incomingCount.get(a.id) ?? 0) + (outgoing.get(a.id)?.length ?? 0);
+      const bHasEdges = (incomingCount.get(b.id) ?? 0) + (outgoing.get(b.id)?.length ?? 0);
+      return bHasEdges - aHasEdges || a.position.y - b.position.y || a.position.x - b.position.x;
+    });
+    let cursorY = minY;
+    let maxWidth = 0;
+    for (const node of columnNodes) {
+      const size = getApproxNodeSize(node);
+      nextPositions.set(node.id, { x: Math.round(cursorX), y: Math.round(cursorY) });
+      cursorY += size.height + CANVAS_ARRANGE_ROW_GAP;
+      maxWidth = Math.max(maxWidth, size.width);
+    }
+    cursorX += maxWidth + (columnNodes.length > 0 && column === 0 && columns.size === 1 ? CANVAS_ARRANGE_COMPONENT_GAP : CANVAS_ARRANGE_COLUMN_GAP);
+  }
+
+  const groupDeltas = new Map<string, { x: number; y: number }>();
+  for (const node of layoutNodes) {
+    if (node.type !== "canvasGroup") continue;
+    const nextPosition = nextPositions.get(node.id);
+    if (!nextPosition) continue;
+    groupDeltas.set(node.id, {
+      x: nextPosition.x - node.position.x,
+      y: nextPosition.y - node.position.y,
+    });
+  }
+
+  return nodes.map((node) => {
+    const position = nextPositions.get(node.id);
+    if (position) return { ...node, position, selected: false };
+
+    const groupId = childToGroup.get(node.id);
+    const delta = groupId ? groupDeltas.get(groupId) : null;
+    if (!delta || (delta.x === 0 && delta.y === 0)) return { ...node, selected: false };
+    return {
+      ...node,
+      position: {
+        x: node.position.x + delta.x,
+        y: node.position.y + delta.y,
+      },
+      selected: false,
+    };
+  });
 }
 
 function getPreviewCardRects(nodes: AppNode[]) {
@@ -301,20 +425,18 @@ function CanvasConnectionLine({
 
 type CanvasViewToolbarProps = {
   showMiniMap: boolean;
-  snapToGrid: boolean;
   zoom: number;
   onToggleMiniMap: () => void;
-  onToggleSnapToGrid: () => void;
+  onArrangeCanvas: () => void;
   onResetView: () => void;
   onZoomChange: (zoom: number) => void;
 };
 
 function CanvasViewToolbar({
   showMiniMap,
-  snapToGrid,
   zoom,
   onToggleMiniMap,
-  onToggleSnapToGrid,
+  onArrangeCanvas,
   onResetView,
   onZoomChange,
 }: CanvasViewToolbarProps) {
@@ -334,12 +456,11 @@ function CanvasViewToolbar({
       </button>
       <button
         type="button"
-        aria-pressed={snapToGrid}
-        title="Snap to Grid"
-        onClick={onToggleSnapToGrid}
-        className={cn(buttonClass, snapToGrid && "bg-charcoal text-off-white hover:bg-charcoal hover:text-off-white")}
+        title="一键整理画布"
+        onClick={onArrangeCanvas}
+        className={buttonClass}
       >
-        <Grid3X3 className="size-5" strokeWidth={2} />
+        <Grid2X2 className="size-5" strokeWidth={2} />
       </button>
       <button
         type="button"
@@ -1144,7 +1265,7 @@ function CanvasFlow() {
   const [latestKnownVersion, setLatestKnownVersion] = useState(0);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
   const [showMiniMap, setShowMiniMap] = useState(false);
-  const [snapToGrid, setSnapToGrid] = useState(false);
+  const snapToGrid = false;
   const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
   const [nodeDragCommitVersion, setNodeDragCommitVersion] = useState(0);
   const [keyboardEditingNodeId, setKeyboardEditingNodeId] = useState<string | null>(null);
@@ -1559,6 +1680,21 @@ function CanvasFlow() {
   }, [canvasOperations, isReadOnly]);
 
   useEffect(() => {
+    function handleNodePositionPatch(event: Event) {
+      if (isReadOnly) return;
+      const detail = (event as CustomEvent<NodePositionPatchEventDetail>).detail;
+      if (!detail?.nodeId || !detail.position) return;
+      canvasOperations.submitOperation("NODE_MOVE", {
+        nodeId: detail.nodeId,
+        position: detail.position,
+      });
+    }
+
+    window.addEventListener("copse:node-position-patch", handleNodePositionPatch);
+    return () => window.removeEventListener("copse:node-position-patch", handleNodePositionPatch);
+  }, [canvasOperations, isReadOnly]);
+
+  useEffect(() => {
     function handleEdgeDelete(event: Event) {
       if (isReadOnly) return;
       const detail = (event as CustomEvent<EdgeDeleteEventDetail>).detail;
@@ -1659,10 +1795,9 @@ function CanvasFlow() {
     }
 
     setNodes((nds): AppNode[] => nds.map((node): AppNode => {
-      if (node.id === groupNode.id) {
+      if (node.id === groupNode.id && node.type === "canvasGroup") {
         return {
           ...node,
-          type: "canvasGroup",
           data: nextGroupData,
           selected: true,
         };
@@ -2553,6 +2688,29 @@ function CanvasFlow() {
   const handleToolbarResetView = useCallback(() => {
     fitView({ padding: 0.2, duration: 220 });
   }, [fitView]);
+  const handleArrangeCanvas = useCallback(() => {
+    if (isReadOnly) return;
+    const currentNodes = getNodes() as AppNode[];
+    const nextNodes = arrangeCanvasNodes(currentNodes, edges);
+    if (!nextNodes) return;
+
+    const movedNodes = nextNodes.filter((node) => {
+      const previous = currentNodes.find((item) => item.id === node.id);
+      return previous && (previous.position.x !== node.position.x || previous.position.y !== node.position.y);
+    });
+    if (movedNodes.length === 0) return;
+
+    setNodes(nextNodes);
+    setMultiSelectionBounds(null);
+    setMultiSelectionAction(null);
+    for (const node of movedNodes) {
+      canvasOperations.submitOperation("NODE_MOVE", {
+        nodeId: node.id,
+        position: node.position,
+      });
+    }
+    window.requestAnimationFrame(() => fitView({ padding: 0.24, duration: 260 }));
+  }, [canvasOperations, edges, fitView, getNodes, isReadOnly, setNodes]);
   const handleToolbarZoomChange = useCallback((zoom: number) => {
     const vp = getViewport();
     const flowElement = document.querySelector(".react-flow");
@@ -2948,10 +3106,9 @@ function CanvasFlow() {
 
       <CanvasViewToolbar
         showMiniMap={showMiniMap}
-        snapToGrid={snapToGrid}
         zoom={canvasZoom}
         onToggleMiniMap={() => setShowMiniMap((value) => !value)}
-        onToggleSnapToGrid={() => setSnapToGrid((value) => !value)}
+        onArrangeCanvas={handleArrangeCanvas}
         onResetView={handleToolbarResetView}
         onZoomChange={handleToolbarZoomChange}
       />

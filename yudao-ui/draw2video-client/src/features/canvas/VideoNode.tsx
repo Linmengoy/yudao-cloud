@@ -32,6 +32,7 @@ import { downloadMedia, videoNodeToMediaPreview } from "@/features/media-preview
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
+import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, type PromptMentionOption } from "./PromptMentionInput";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
 
@@ -191,6 +192,16 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     }
     return images;
   }, [getEdges, getNodes, id, referenceImagesSignature]);
+  const mentionOptions = useMemo<PromptMentionOption[]>(
+    () =>
+      referenceImages.map((image, index) => ({
+        id: image.nodeId,
+        label: `图片 ${index + 1}`,
+        token: createPromptMentionToken(image.nodeId),
+        thumbnailUrl: image.data.previewUrl || image.data.dataUrl,
+      })),
+    [referenceImages]
+  );
   const generationCapability = referenceImages.length > 0 ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO";
   const rawParams = useMemo(() => data.params ?? {}, [data.params]);
   const aigcModels = useAigcModels({ type: 3, capability: generationCapability, preferredModelId: data.aigcModelId, params: rawParams });
@@ -398,7 +409,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   }, [id, isGenerating]);
 
   const handleGenerate = useCallback(async () => {
-    const prompt = data.prompt.trim();
+    const prompt = promptValueToSubmitPrompt(data.prompt, mentionOptions).trim();
     if (!prompt || isGenerating) return;
 
     if (!activeAigcModelId) {
@@ -516,7 +527,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [activeAigcModelId, activeProviderModel, data.prompt, effectiveParams, generationCapability, id, isGenerating, referenceImages, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModelId, activeProviderModel, data.prompt, effectiveParams, generationCapability, id, isGenerating, mentionOptions, referenceImages, updateData, waitAndApplyServerRun]);
 
   return (
     <>
@@ -576,7 +587,33 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           >
             <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[inherit]">
               {videoSrc ? (
-                <video src={videoSrc} className="size-full object-contain" controls />
+                <video
+                  src={videoSrc}
+                  className="size-full object-contain"
+                  controls
+                  onLoadedMetadata={(event) => {
+                    const video = event.currentTarget;
+                    const patch: Partial<VideoNodeData> = {};
+                    if (
+                      video.videoWidth > 0 &&
+                      video.videoHeight > 0 &&
+                      (data.width !== video.videoWidth || data.height !== video.videoHeight)
+                    ) {
+                      patch.width = video.videoWidth;
+                      patch.height = video.videoHeight;
+                    }
+                    if (
+                      Number.isFinite(video.duration) &&
+                      video.duration > 0 &&
+                      data.durationSec !== video.duration
+                    ) {
+                      patch.durationSec = video.duration;
+                    }
+                    if (Object.keys(patch).length > 0) {
+                      updateData(patch, { flush: true });
+                    }
+                  }}
+                />
               ) : (
                 <Play className="size-12 text-muted-gray/40" />
               )}
@@ -684,12 +721,13 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             {isGenerating && <span className="text-xs text-muted-gray">{progressLabel}</span>}
           </div>
 
-          <textarea
+          <PromptMentionInput
             value={data.prompt}
-            onChange={(event) => updateData({ prompt: event.target.value })}
+            onChange={(nextPrompt) => updateData({ prompt: nextPrompt })}
+            mentions={mentionOptions}
             disabled={isGenerating}
             placeholder="Describe anything you want to generate"
-            className="min-h-[130px] w-full resize-none bg-transparent text-base leading-7 text-charcoal placeholder:text-muted-gray focus:outline-none disabled:cursor-not-allowed disabled:text-muted-gray"
+            minHeightClassName="min-h-[130px]"
           />
 
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-border-warm pt-3">
