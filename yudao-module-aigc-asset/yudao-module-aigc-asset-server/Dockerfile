@@ -1,5 +1,9 @@
 FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/eclipse-temurin:21-jre
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN mkdir -p /yudao-module-aigc-asset-server
 WORKDIR /yudao-module-aigc-asset-server
 COPY ./target/yudao-module-aigc-asset-server.jar app.jar

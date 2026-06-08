@@ -158,6 +158,7 @@ Current video node flow:
 - Uploaded video nodes are media-only nodes; selecting one should not open the prompt composer.
 - Uploaded videos should validate against the current Copse MVP limits: MP4/MOV, 2 seconds to 3 minutes, and no more than 200MB per file.
 - Current MVP only supports `image -> video` references. Do not add `video -> video`, `text -> video`, audio, timeline, or storyboard flows unless explicitly requested.
+- For server-backed `image -> video` generation, reference image nodes that have `assetId` must refresh the asset access URL before submit. Do not rely on a stale node `previewUrl`; it may be an expired signed OSS/S3 URL and can make the backend fail when downloading the first frame for providers such as Grok.
 
 Canvas history:
 

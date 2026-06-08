@@ -53,9 +53,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.math.RoundingMode;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
@@ -77,6 +79,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
 
     private static final int REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS = 20_000;
     private static final int REMOTE_FILE_DOWNLOAD_TIMEOUT_SECONDS = 30;
+    private static final int VIDEO_FRAME_CAPTURE_TIMEOUT_SECONDS = 45;
+    private static final BigDecimal LAST_FRAME_OFFSET_SECONDS = new BigDecimal("0.05");
     private static final String REMOTE_FILE_DOWNLOAD_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
     @Resource
@@ -126,6 +130,22 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         Long assetId = createAsset(reqVO);
         assetFileMapper.insert(buildAssetFileDO(assetId, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null, null, null, null));
         return assetId;
+    }
+
+    @Override
+    public Long captureVideoFrame(Long userId, Long videoAssetId, String capturedAt, BigDecimal timeSec, String title) {
+        AigcAssetDO videoAsset = getAccessibleAsset(videoAssetId, userId);
+        if (!AigcAssetTypeEnum.VIDEO.getCode().equals(videoAsset.getAssetType())) {
+            throw exception(ASSET_FILE_TYPE_UNSUPPORTED);
+        }
+        AigcAssetFileDO videoFile = assetFileMapper.selectByAssetIdAndRole(videoAssetId, AigcAssetFileRoleEnum.ORIGINAL.getCode());
+        if (videoFile == null) {
+            throw exception(ASSET_FILE_EMPTY);
+        }
+        AigcAssetAccessUrlRespDTO accessUrl = getAccessUrl(videoAsset, videoFile, AigcAssetAccessTypeEnum.DOWNLOAD.getCode(), userId);
+        byte[] frameContent = captureVideoFrameBytes(accessUrl.getUrl(), resolveCaptureSecond(capturedAt, timeSec, videoFile.getDuration()));
+        String frameTitle = StrUtil.blankToDefault(title, StrUtil.blankToDefault(videoAsset.getTitle(), "Video") + " 截帧.png");
+        return uploadAsset(userId, AigcAssetTypeEnum.IMAGE.getCode(), frameTitle, ensurePngFileName(frameTitle), "image/png", frameContent);
     }
 
     @Override
@@ -396,6 +416,72 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                     .setProgress(100)).checkError();
         } catch (Exception ignored) {
         }
+    }
+
+    private BigDecimal resolveCaptureSecond(String capturedAt, BigDecimal timeSec, BigDecimal duration) {
+        if ("first".equalsIgnoreCase(capturedAt)) {
+            return BigDecimal.ZERO;
+        }
+        if ("last".equalsIgnoreCase(capturedAt) && duration != null && duration.compareTo(BigDecimal.ZERO) > 0) {
+            return duration.subtract(LAST_FRAME_OFFSET_SECONDS).max(BigDecimal.ZERO);
+        }
+        if (timeSec == null || timeSec.compareTo(BigDecimal.ZERO) < 0) {
+            return BigDecimal.ZERO;
+        }
+        if (duration != null && duration.compareTo(BigDecimal.ZERO) > 0) {
+            return timeSec.min(duration.subtract(LAST_FRAME_OFFSET_SECONDS).max(BigDecimal.ZERO));
+        }
+        return timeSec;
+    }
+
+    private byte[] captureVideoFrameBytes(String videoUrl, BigDecimal second) {
+        Path outputFile = null;
+        try {
+            outputFile = Files.createTempFile("aigc-video-frame-", ".png");
+            ProcessBuilder processBuilder = new ProcessBuilder(
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel", "error",
+                    "-y",
+                    "-ss", second.setScale(3, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString(),
+                    "-i", videoUrl,
+                    "-frames:v", "1",
+                    "-f", "image2",
+                    outputFile.toString());
+            Process process = processBuilder.start();
+            boolean finished = process.waitFor(VIDEO_FRAME_CAPTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            if (!finished) {
+                process.destroyForcibly();
+                log.warn("[captureVideoFrameBytes][videoUrl({}) second({}) ffmpeg 截帧超时]", videoUrl, second);
+                throw exception(ASSET_DOWNLOAD_FAILED);
+            }
+            if (process.exitValue() != 0) {
+                log.warn("[captureVideoFrameBytes][videoUrl({}) second({}) ffmpeg 截帧失败 exit({}) error({})]",
+                        videoUrl, second, process.exitValue(), StrUtil.maxLength(stderr, 512));
+                throw exception(ASSET_DOWNLOAD_FAILED);
+            }
+            byte[] content = Files.readAllBytes(outputFile);
+            if (content.length == 0) {
+                throw exception(ASSET_DOWNLOAD_FAILED);
+            }
+            return content;
+        } catch (Exception ex) {
+            log.warn("[captureVideoFrameBytes][videoUrl({}) second({}) 截帧异常]", videoUrl, second, ex);
+            throw exception(ASSET_DOWNLOAD_FAILED);
+        } finally {
+            if (outputFile != null) {
+                try {
+                    Files.deleteIfExists(outputFile);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private String ensurePngFileName(String title) {
+        String fileName = StrUtil.blankToDefault(title, "video-frame.png");
+        return StrUtil.endWithIgnoreCase(fileName, ".png") ? fileName : fileName + ".png";
     }
 
     private void validateUserPermission(AigcAssetDO asset, Long userId) {

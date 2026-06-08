@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.aigc.asset.controller.app;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.AigcAssetVideoFrameCaptureReqVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetPageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
@@ -75,6 +76,13 @@ public class AigcAssetAppController {
                                           @RequestParam(value = "title", required = false) String title) throws IOException {
         return success(assetService.uploadAsset(getLoginUserId(), assetType, title, file.getOriginalFilename(),
                 file.getContentType(), file.getBytes()));
+    }
+
+    @PostMapping("/capture-video-frame")
+    @Operation(summary = "截取视频帧并创建图片资产")
+    public CommonResult<Long> captureVideoFrame(@Valid @RequestBody AigcAssetVideoFrameCaptureReqVO reqVO) {
+        return success(assetService.captureVideoFrame(getLoginUserId(), reqVO.getAssetId(),
+                reqVO.getCapturedAt(), reqVO.getTimeSec(), reqVO.getTitle()));
     }
 
     @PutMapping("/update")

@@ -7,18 +7,22 @@ import { useReactFlow, useStore, useUpdateNodeInternals } from "@xyflow/react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowUp,
+  Camera,
   Check,
   Gem,
   ImageIcon,
   Loader2,
+  Pause,
   Play,
   Plus,
   SlidersHorizontal,
   Sparkles,
   Video,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
-import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, VideoNodeData } from "./types";
+import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, VideoFrameCaptureEventDetail, VideoNodeData } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
@@ -26,6 +30,8 @@ import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { captureVideoFrameAsset, getMyAsset } from "@/features/assets/asset-api";
+import { getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { downloadMedia, videoNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
@@ -43,6 +49,7 @@ const PREVIEW_SLOT_HEIGHT = 420;
 const COMPOSER_WIDTH = 680;
 const SEEDANCE_MODEL_NAME = "Seedance 2.0";
 const WAN_MODEL_ID = "wan2.2-ti2v-5b";
+const FRAME_CAPTURE_EPSILON_SEC = 0.05;
 
 function normalizeTemplateOption(option: unknown) {
   let value = String(option ?? "").trim();
@@ -80,6 +87,28 @@ function filterModelParams(params: Record<string, unknown>, templates: AigcModel
   return Object.fromEntries(
     Object.entries(params).filter(([key, value]) => keys.has(key) && value !== undefined && value !== null && value !== "")
   );
+}
+
+function getReferenceAssetId(data: ImageNodeData | SketchNodeData) {
+  if ("assetId" in data && typeof data.assetId === "number") return data.assetId;
+  if ("outputAssetId" in data && typeof data.outputAssetId === "number") return data.outputAssetId;
+  return null;
+}
+
+async function resolveReferenceImagesForSubmit(images: { data: ImageNodeData | SketchNodeData }[]) {
+  return Promise.all(images.map(async ({ data }) => {
+    const assetId = getReferenceAssetId(data);
+    if (assetId) {
+      try {
+        const asset = await getMyAsset(assetId);
+        const url = getAssetPreviewUrl(asset) || asset.fileUrl;
+        if (url) return url;
+      } catch {
+        // Fall back to the node snapshot below; generation should still work for local data URLs.
+      }
+    }
+    return data.dataUrl || data.previewUrl || "";
+  }));
 }
 
 function formatElapsed(ms: number | null | undefined) {
@@ -125,6 +154,23 @@ function scaleVideoToPreview(width: number, height: number) {
   };
 }
 
+function formatTime(seconds: number | null | undefined) {
+  if (!seconds || !Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const total = Math.floor(seconds);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function dataUrlToMimeType(dataUrl: string) {
+  const match = dataUrl.match(/^data:([^;]+);/);
+  return match?.[1] || "image/png";
+}
+
+function getVideoAssetId(data: VideoNodeData) {
+  if (typeof data.assetId === "number") return data.assetId;
+  if (typeof data.outputAssetId === "number") return data.outputAssetId;
+  return null;
+}
+
 function getDisplaySize(data: VideoNodeData) {
   if (data.videoUrl && data.width && data.height) {
     return scaleVideoToPreview(data.width, data.height);
@@ -163,6 +209,14 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const modelRef = useRef<HTMLDivElement>(null);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
   const activeRunPollRef = useRef<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const captureMenuRef = useRef<HTMLDivElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [durationSec, setDurationSec] = useState(data.durationSec ?? 0);
+  const [volume, setVolume] = useState(1);
+  const [captureMenuOpen, setCaptureMenuOpen] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
 
   const isGenerating = data.status === "pending";
   const kind = data.kind ?? "draft";
@@ -178,6 +232,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
   const videoSrc = data.videoUrl || data.previewUrl;
+  const videoAssetId = getVideoAssetId(data);
   const fixedUiScale = 1 / zoom;
   const referenceImages = useMemo(() => {
     void referenceImagesSignature;
@@ -213,6 +268,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const effectiveParams = useMemo(() => filterModelParams(rawParams, aigcModels.templates), [aigcModels.templates, rawParams]);
   const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
   const canGenerate = Boolean(data.prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && Boolean(activeAigcModelId);
+  const mediaDurationSec = durationSec || data.durationSec || 0;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
@@ -396,6 +452,25 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     };
   }, [modelOpen, paramsOpen]);
 
+  useEffect(() => {
+    if (!captureMenuOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (captureMenuRef.current?.contains(event.target as HTMLElement)) return;
+      setCaptureMenuOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setCaptureMenuOpen(false);
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [captureMenuOpen]);
+
   const removeReference = useCallback(
     (edgeId: string) => setEdges((eds) => eds.filter((edge) => edge.id !== edgeId)),
     [setEdges]
@@ -407,6 +482,149 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
       detail: { promptId: id },
     }));
   }, [id, isGenerating]);
+
+  const handleTogglePlayback = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      video.play().catch(() => undefined);
+    } else {
+      video.pause();
+    }
+  }, []);
+
+  const handleSeek = useCallback((value: string) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const nextTime = Number(value);
+    if (!Number.isFinite(nextTime)) return;
+    video.currentTime = nextTime;
+    setCurrentTime(nextTime);
+  }, []);
+
+  const handleVolumeChange = useCallback((value: string) => {
+    const video = videoRef.current;
+    const nextVolume = Math.min(1, Math.max(0, Number(value)));
+    if (!Number.isFinite(nextVolume)) return;
+    setVolume(nextVolume);
+    if (video) {
+      video.volume = nextVolume;
+      video.muted = nextVolume === 0;
+    }
+  }, []);
+
+  const handleToggleMute = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.muted || video.volume === 0) {
+      const nextVolume = volume > 0 ? volume : 1;
+      video.muted = false;
+      video.volume = nextVolume;
+      setVolume(nextVolume);
+      return;
+    }
+    video.muted = true;
+    setVolume(0);
+  }, [volume]);
+
+  const captureFrame = useCallback(async (capturedAt: VideoFrameCaptureEventDetail["capturedAt"]) => {
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    if (!video.videoWidth || !video.videoHeight) {
+      setCaptureError("视频还未加载完成");
+      return;
+    }
+
+    setCaptureError(null);
+    setCaptureMenuOpen(false);
+
+    const previousTime = video.currentTime;
+    const wasPaused = video.paused;
+    const targetTime = capturedAt === "first"
+      ? 0
+      : capturedAt === "last"
+        ? Math.max(0, (video.duration || mediaDurationSec || previousTime) - FRAME_CAPTURE_EPSILON_SEC)
+        : previousTime;
+    const fileName = `${data.fileName || "Video"} ${capturedAt === "first" ? "首帧" : capturedAt === "last" ? "尾帧" : "当前帧"}.png`;
+
+    try {
+      if (videoAssetId) {
+        const assetId = await captureVideoFrameAsset({
+          assetId: videoAssetId,
+          capturedAt,
+          timeSec: targetTime,
+          title: fileName,
+        });
+        const asset = await getMyAsset(assetId);
+        window.dispatchEvent(new CustomEvent<VideoFrameCaptureEventDetail>("copse:video-frame-capture", {
+          detail: {
+            sourceNodeId: id,
+            assetId,
+            previewUrl: getAssetPreviewUrl(asset) || asset.fileUrl,
+            width: asset.width,
+            height: asset.height,
+            mimeType: asset.mimeType || "image/png",
+            fileName,
+            capturedAt,
+          },
+        }));
+        return;
+      }
+
+      if (capturedAt !== "current" && Math.abs(video.currentTime - targetTime) > 0.01) {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            cleanup();
+            reject(new Error("视频定位超时"));
+          }, 3000);
+          const cleanup = () => {
+            window.clearTimeout(timeout);
+            video.removeEventListener("seeked", handleSeeked);
+            video.removeEventListener("error", handleError);
+          };
+          const handleSeeked = () => {
+            cleanup();
+            resolve();
+          };
+          const handleError = () => {
+            cleanup();
+            reject(new Error("视频定位失败"));
+          };
+          video.addEventListener("seeked", handleSeeked, { once: true });
+          video.addEventListener("error", handleError, { once: true });
+          video.currentTime = targetTime;
+        });
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("浏览器不支持截帧");
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/png");
+      window.dispatchEvent(new CustomEvent<VideoFrameCaptureEventDetail>("copse:video-frame-capture", {
+        detail: {
+          sourceNodeId: id,
+          dataUrl,
+          width: canvas.width,
+          height: canvas.height,
+          mimeType: dataUrlToMimeType(dataUrl),
+          fileName,
+          capturedAt,
+        },
+      }));
+    } catch (error) {
+      setCaptureError(error instanceof Error ? `截帧失败：${error.message}` : "截帧失败");
+    } finally {
+      if (capturedAt !== "current") {
+        video.currentTime = previousTime;
+      }
+      if (!wasPaused) {
+        video.play().catch(() => undefined);
+      }
+    }
+  }, [data.fileName, id, mediaDurationSec, videoAssetId, videoSrc]);
 
   const handleGenerate = useCallback(async () => {
     const prompt = promptValueToSubmitPrompt(data.prompt, mentionOptions).trim();
@@ -436,6 +654,8 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     if (isServerCanvasProjectId(projectId)) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
+        const resolvedReferenceImages = (await resolveReferenceImagesForSubmit(referenceImages)).filter(Boolean);
+        const referenceAssetIds = referenceImages.map((image) => getReferenceAssetId(image.data)).filter((assetId): assetId is number => typeof assetId === "number");
         const run = await canvasNodeRunApi.runNode(projectId, id, {
           clientId,
           baseVersion: 0,
@@ -449,7 +669,8 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             ...effectiveParams,
             providerModel: activeProviderModel,
             referenceImageIds: referenceImages.map((image) => image.nodeId),
-            referenceImages: referenceImages.map((image) => image.data.dataUrl || image.data.previewUrl).filter(Boolean),
+            referenceAssetIds,
+            referenceImages: resolvedReferenceImages,
           }),
           sync: false,
         });
@@ -473,6 +694,8 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     }
 
     try {
+      const resolvedReferenceImages = (await resolveReferenceImagesForSubmit(referenceImages)).filter(Boolean);
+      const referenceAssetIds = referenceImages.map((image) => getReferenceAssetId(image.data)).filter((assetId): assetId is number => typeof assetId === "number");
       const submit = await generationApi.submit({
         generateType: "VIDEO",
         generateMode: generationCapability,
@@ -481,7 +704,8 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
         inputParams: JSON.stringify({
           ...effectiveParams,
           providerModel: activeProviderModel,
-          referenceImages: referenceImages.map((image) => image.data.dataUrl || image.data.previewUrl).filter(Boolean),
+          referenceAssetIds,
+          referenceImages: resolvedReferenceImages,
         }),
         sync: false,
       });
@@ -588,11 +812,17 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[inherit]">
               {videoSrc ? (
                 <video
+                  ref={videoRef}
                   src={videoSrc}
                   className="size-full object-contain"
-                  controls
+                  playsInline
+                  onClick={handleTogglePlayback}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
                   onLoadedMetadata={(event) => {
                     const video = event.currentTarget;
+                    setDurationSec(Number.isFinite(video.duration) ? video.duration : 0);
                     const patch: Partial<VideoNodeData> = {};
                     if (
                       video.videoWidth > 0 &&
@@ -649,6 +879,103 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 px-4 text-center text-destructive"
                   >
                     <span className="text-xs">{data.errorMessage ?? "视频任务提交失败"}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {videoSrc && !isGenerating && data.status !== "failed" && (
+                <div className="nodrag nowheel absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-charcoal/80 via-charcoal/45 to-transparent px-4 pb-3 pt-8 text-off-white opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={handleTogglePlayback}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-off-white/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-off-white"
+                    aria-label={isPlaying ? "暂停" : "播放"}
+                  >
+                    {isPlaying ? <Pause className="size-5" /> : <Play className="size-5 fill-current" />}
+                  </button>
+                  <span className="w-10 text-xs tabular-nums">{formatTime(currentTime)}</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(0.01, mediaDurationSec)}
+                    step={0.01}
+                    value={Math.min(currentTime, Math.max(0.01, mediaDurationSec))}
+                    onChange={(event) => handleSeek(event.target.value)}
+                    className="h-1 min-w-0 flex-1 accent-off-white"
+                    aria-label="视频进度"
+                  />
+                  <span className="w-10 text-right text-xs tabular-nums">{formatTime(mediaDurationSec)}</span>
+                  <div className="group/volume flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleToggleMute}
+                      className="flex size-8 items-center justify-center rounded-full hover:bg-off-white/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-off-white"
+                      aria-label={volume === 0 ? "取消静音" : "静音"}
+                    >
+                      {volume === 0 ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+                    </button>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={volume}
+                      onChange={(event) => handleVolumeChange(event.target.value)}
+                      className="h-1 w-0 accent-off-white opacity-0 transition-all group-hover/volume:w-16 group-hover/volume:opacity-100"
+                      aria-label="音量"
+                    />
+                  </div>
+                  <div ref={captureMenuRef} className="relative" onMouseLeave={() => setCaptureMenuOpen(false)}>
+                    <button
+                      type="button"
+                      onClick={() => captureFrame("current")}
+                      onMouseEnter={() => setCaptureMenuOpen(true)}
+                      className="flex size-8 items-center justify-center rounded-full hover:bg-off-white/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-off-white"
+                      aria-label="截取当前帧"
+                    >
+                      <Camera className="size-4" />
+                    </button>
+                    <AnimatePresence>
+                      {captureMenuOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                          transition={{ duration: 0.14, ease: "easeOut" }}
+                          onMouseEnter={() => setCaptureMenuOpen(true)}
+                          className="absolute bottom-full right-0 z-[280] mb-2 w-32 overflow-hidden rounded-xl border border-off-white/10 bg-charcoal/95 py-1 text-sm text-off-white shadow-xl"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => captureFrame("first")}
+                            className="block w-full px-3 py-2 text-left hover:bg-off-white/10"
+                          >
+                            截取首帧
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => captureFrame("last")}
+                            className="block w-full px-3 py-2 text-left hover:bg-off-white/10"
+                          >
+                            截取尾帧
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              )}
+
+              <AnimatePresence>
+                {captureError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.14, ease: "easeOut" }}
+                    className="absolute bottom-14 left-4 rounded-lg bg-charcoal/85 px-3 py-2 text-xs text-off-white"
+                  >
+                    {captureError}
                   </motion.div>
                 )}
               </AnimatePresence>

@@ -29,7 +29,7 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, NodePositionPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, NodePositionPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoFrameCaptureEventDetail, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
@@ -202,6 +202,137 @@ function getApproxNodeSize(node: AppNode) {
   return { width: 320, height: 280 };
 }
 
+async function dataUrlToFile(dataUrl: string, fileName: string, fallbackMimeType: string) {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: blob.type || fallbackMimeType });
+}
+
+type ArrangeUnit = {
+  id: string;
+  node: AppNode;
+  size: { width: number; height: number };
+};
+
+function getConnectedArrangeComponents(units: ArrangeUnit[], edges: AppEdge[], childToGroup: Map<string, string>) {
+  const unitIds = new Set(units.map((unit) => unit.id));
+  const adjacency = new Map(units.map((unit) => [unit.id, new Set<string>()]));
+
+  for (const edge of edges) {
+    const sourceId = childToGroup.get(edge.source) ?? edge.source;
+    const targetId = childToGroup.get(edge.target) ?? edge.target;
+    if (sourceId === targetId || !unitIds.has(sourceId) || !unitIds.has(targetId)) continue;
+    adjacency.get(sourceId)?.add(targetId);
+    adjacency.get(targetId)?.add(sourceId);
+  }
+
+  const visited = new Set<string>();
+  const components: ArrangeUnit[][] = [];
+  const byId = new Map(units.map((unit) => [unit.id, unit]));
+
+  for (const unit of units) {
+    if (visited.has(unit.id)) continue;
+    const queue = [unit.id];
+    visited.add(unit.id);
+    const component: ArrangeUnit[] = [];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      const item = byId.get(id);
+      if (item) component.push(item);
+      for (const nextId of adjacency.get(id) ?? []) {
+        if (visited.has(nextId)) continue;
+        visited.add(nextId);
+        queue.push(nextId);
+      }
+    }
+    components.push(component);
+  }
+
+  return components.sort((a, b) => {
+    const aTop = Math.min(...a.map((unit) => unit.node.position.y));
+    const bTop = Math.min(...b.map((unit) => unit.node.position.y));
+    const aLeft = Math.min(...a.map((unit) => unit.node.position.x));
+    const bLeft = Math.min(...b.map((unit) => unit.node.position.x));
+    return aTop - bTop || aLeft - bLeft;
+  });
+}
+
+function layoutArrangeComponent(component: ArrangeUnit[], edges: AppEdge[], childToGroup: Map<string, string>, origin: { x: number; y: number }) {
+  const componentIds = new Set(component.map((unit) => unit.id));
+  const incomingCount = new Map(component.map((unit) => [unit.id, 0]));
+  const outgoing = new Map(component.map((unit) => [unit.id, [] as string[]]));
+  const byId = new Map(component.map((unit) => [unit.id, unit]));
+
+  for (const edge of edges) {
+    const sourceId = childToGroup.get(edge.source) ?? edge.source;
+    const targetId = childToGroup.get(edge.target) ?? edge.target;
+    if (sourceId === targetId || !componentIds.has(sourceId) || !componentIds.has(targetId)) continue;
+    outgoing.get(sourceId)?.push(targetId);
+    incomingCount.set(targetId, (incomingCount.get(targetId) ?? 0) + 1);
+  }
+
+  const remainingIncoming = new Map(incomingCount);
+  const queue = component
+    .filter((unit) => (remainingIncoming.get(unit.id) ?? 0) === 0)
+    .sort((a, b) => a.node.position.y - b.node.position.y || a.node.position.x - b.node.position.x);
+  const depth = new Map<string, number>();
+
+  for (const unit of queue) depth.set(unit.id, 0);
+  while (queue.length > 0) {
+    const unit = queue.shift();
+    if (!unit) continue;
+    const unitDepth = depth.get(unit.id) ?? 0;
+    for (const targetId of outgoing.get(unit.id) ?? []) {
+      depth.set(targetId, Math.max(depth.get(targetId) ?? 0, unitDepth + 1));
+      remainingIncoming.set(targetId, (remainingIncoming.get(targetId) ?? 1) - 1);
+      if ((remainingIncoming.get(targetId) ?? 0) <= 0) {
+        const target = byId.get(targetId);
+        if (target) queue.push(target);
+      }
+    }
+  }
+
+  const unresolved = component.filter((unit) => !depth.has(unit.id));
+  if (unresolved.length > 0) {
+    const fallbackDepth = Math.max(0, ...Array.from(depth.values())) + 1;
+    unresolved
+      .sort((a, b) => a.node.position.y - b.node.position.y || a.node.position.x - b.node.position.x)
+      .forEach((unit, index) => depth.set(unit.id, fallbackDepth + Math.floor(index / 4)));
+  }
+
+  const columns = new Map<number, ArrangeUnit[]>();
+  for (const unit of component) {
+    const column = depth.get(unit.id) ?? 0;
+    columns.set(column, [...(columns.get(column) ?? []), unit]);
+  }
+
+  const positions = new Map<string, { x: number; y: number }>();
+  let cursorX = origin.x;
+  let componentBottom = origin.y;
+  for (const column of Array.from(columns.keys()).sort((a, b) => a - b)) {
+    const columnUnits = (columns.get(column) ?? []).sort((a, b) => {
+      const aEdgeCount = (incomingCount.get(a.id) ?? 0) + (outgoing.get(a.id)?.length ?? 0);
+      const bEdgeCount = (incomingCount.get(b.id) ?? 0) + (outgoing.get(b.id)?.length ?? 0);
+      return bEdgeCount - aEdgeCount || a.node.position.y - b.node.position.y || a.node.position.x - b.node.position.x;
+    });
+    let cursorY = origin.y;
+    let maxWidth = 0;
+    for (const unit of columnUnits) {
+      positions.set(unit.id, { x: Math.round(cursorX), y: Math.round(cursorY) });
+      cursorY += unit.size.height + CANVAS_ARRANGE_ROW_GAP;
+      componentBottom = Math.max(componentBottom, cursorY - CANVAS_ARRANGE_ROW_GAP);
+      maxWidth = Math.max(maxWidth, unit.size.width);
+    }
+    cursorX += maxWidth + CANVAS_ARRANGE_COLUMN_GAP;
+  }
+
+  return {
+    positions,
+    width: Math.max(1, cursorX - origin.x - CANVAS_ARRANGE_COLUMN_GAP),
+    height: Math.max(1, componentBottom - origin.y),
+  };
+}
+
 function arrangeCanvasNodes(nodes: AppNode[], edges: AppEdge[]) {
   const childToGroup = new Map<string, string>();
   for (const node of nodes) {
@@ -213,71 +344,16 @@ function arrangeCanvasNodes(nodes: AppNode[], edges: AppEdge[]) {
   const layoutNodes = nodes.filter((node) => node.type === "canvasGroup" || !childToGroup.has(node.id));
   if (layoutNodes.length <= 1) return null;
 
-  const nodeIds = new Set(layoutNodes.map((node) => node.id));
-  const incomingCount = new Map(layoutNodes.map((node) => [node.id, 0]));
-  const outgoing = new Map(layoutNodes.map((node) => [node.id, [] as string[]]));
-  for (const edge of edges) {
-    const sourceId = childToGroup.get(edge.source) ?? edge.source;
-    const targetId = childToGroup.get(edge.target) ?? edge.target;
-    if (sourceId === targetId || !nodeIds.has(sourceId) || !nodeIds.has(targetId)) continue;
-    outgoing.get(sourceId)?.push(targetId);
-    incomingCount.set(targetId, (incomingCount.get(targetId) ?? 0) + 1);
-  }
-
-  const remainingIncoming = new Map(incomingCount);
-  const queue = layoutNodes
-    .filter((node) => (remainingIncoming.get(node.id) ?? 0) === 0)
-    .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
-  const depth = new Map<string, number>();
-
-  for (const node of queue) depth.set(node.id, 0);
-  while (queue.length > 0) {
-    const node = queue.shift();
-    if (!node) continue;
-    const nodeDepth = depth.get(node.id) ?? 0;
-    for (const targetId of outgoing.get(node.id) ?? []) {
-      depth.set(targetId, Math.max(depth.get(targetId) ?? 0, nodeDepth + 1));
-      remainingIncoming.set(targetId, (remainingIncoming.get(targetId) ?? 1) - 1);
-      if ((remainingIncoming.get(targetId) ?? 0) <= 0) {
-        const target = layoutNodes.find((item) => item.id === targetId);
-        if (target) queue.push(target);
-      }
-    }
-  }
-
-  const unresolved = layoutNodes.filter((node) => !depth.has(node.id));
-  if (unresolved.length > 0) {
-    const fallbackDepth = Math.max(0, ...Array.from(depth.values())) + 1;
-    unresolved
-      .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)
-      .forEach((node, index) => depth.set(node.id, fallbackDepth + Math.floor(index / 4)));
-  }
-
   const minX = Math.min(...layoutNodes.map((node) => node.position.x));
   const minY = Math.min(...layoutNodes.map((node) => node.position.y));
-  const columns = new Map<number, AppNode[]>();
-  for (const node of layoutNodes) {
-    const column = depth.get(node.id) ?? 0;
-    columns.set(column, [...(columns.get(column) ?? []), node]);
-  }
-
+  const units = layoutNodes.map((node) => ({ id: node.id, node, size: getApproxNodeSize(node) }));
+  const components = getConnectedArrangeComponents(units, edges, childToGroup);
   const nextPositions = new Map<string, { x: number; y: number }>();
-  let cursorX = minX;
-  for (const column of Array.from(columns.keys()).sort((a, b) => a - b)) {
-    const columnNodes = (columns.get(column) ?? []).sort((a, b) => {
-      const aHasEdges = (incomingCount.get(a.id) ?? 0) + (outgoing.get(a.id)?.length ?? 0);
-      const bHasEdges = (incomingCount.get(b.id) ?? 0) + (outgoing.get(b.id)?.length ?? 0);
-      return bHasEdges - aHasEdges || a.position.y - b.position.y || a.position.x - b.position.x;
-    });
-    let cursorY = minY;
-    let maxWidth = 0;
-    for (const node of columnNodes) {
-      const size = getApproxNodeSize(node);
-      nextPositions.set(node.id, { x: Math.round(cursorX), y: Math.round(cursorY) });
-      cursorY += size.height + CANVAS_ARRANGE_ROW_GAP;
-      maxWidth = Math.max(maxWidth, size.width);
-    }
-    cursorX += maxWidth + (columnNodes.length > 0 && column === 0 && columns.size === 1 ? CANVAS_ARRANGE_COMPONENT_GAP : CANVAS_ARRANGE_COLUMN_GAP);
+  let cursorY = minY;
+  for (const component of components) {
+    const result = layoutArrangeComponent(component, edges, childToGroup, { x: minX, y: cursorY });
+    for (const [id, position] of result.positions) nextPositions.set(id, position);
+    cursorY += result.height + CANVAS_ARRANGE_COMPONENT_GAP;
   }
 
   const groupDeltas = new Map<string, { x: number; y: number }>();
@@ -2606,6 +2682,81 @@ function CanvasFlow() {
     },
     [handleFiles]
   );
+
+  useEffect(() => {
+    async function handleVideoFrameCapture(event: Event) {
+      if (isReadOnly) return;
+      const detail = (event as CustomEvent<VideoFrameCaptureEventDetail>).detail;
+      if (!detail?.sourceNodeId || (!detail.dataUrl && !detail.assetId && !detail.previewUrl)) return;
+
+      const currentNodes = getNodes() as AppNode[];
+      const sourceNode = currentNodes.find((node) => node.id === detail.sourceNodeId);
+      if (!sourceNode) return;
+
+      const sourceSize = getApproxNodeSize(sourceNode);
+      const imageId = `frame_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      let imageData: ImageNodeData = {
+        imageId,
+        fileName: detail.fileName || "Video frame.png",
+        dataUrl: detail.dataUrl ?? "",
+        assetId: detail.assetId ?? null,
+        assetVersionId: detail.assetVersionId ?? null,
+        previewUrl: detail.previewUrl ?? null,
+        mimeType: detail.mimeType || "image/png",
+        width: detail.width,
+        height: detail.height,
+        createdAt: now,
+        kind: "uploaded",
+        prompt: "",
+        modelId: DEFAULT_PROMPT_DATA.modelId,
+        params: { ...DEFAULT_PROMPT_DATA.params },
+        status: "idle",
+        taskId: null,
+        errorMessage: null,
+      };
+
+      try {
+        if (!detail.dataUrl) throw new Error("server asset frame");
+        const file = await dataUrlToFile(detail.dataUrl, imageData.fileName, imageData.mimeType);
+        imageData = await attachImageAsset(file, imageData);
+      } catch {
+        // Keep the local frame usable even if the asset upload path is unavailable.
+      }
+
+      await saveImage(imageData);
+
+      const newNode: AppNode = withCardNodeInteraction({
+        id: imageId,
+        type: "image",
+        position: findOpenNodePosition(
+          {
+            x: sourceNode.position.x + sourceSize.width + 96,
+            y: sourceNode.position.y,
+          },
+          { width: 360, height: 340 },
+          currentNodes,
+          { padding: 36, stepX: 180, stepY: 150 }
+        ),
+        data: imageData,
+        selected: true,
+      });
+
+      setNodes((nodes) => [...nodes.map((node) => ({ ...node, selected: false })), newNode]);
+      canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
+      if (serverProjectId && imageData.assetId) {
+        canvasApi.bindNodeAsset(serverProjectId, newNode.id, {
+          assetId: imageData.assetId,
+          assetVersionId: imageData.assetVersionId ?? null,
+          previewUrl: imageData.previewUrl ?? null,
+          usageType: "source",
+        }).catch(() => undefined);
+      }
+    }
+
+    window.addEventListener("copse:video-frame-capture", handleVideoFrameCapture);
+    return () => window.removeEventListener("copse:video-frame-capture", handleVideoFrameCapture);
+  }, [canvasOperations, getNodes, isReadOnly, serverProjectId, setNodes]);
 
   // --- Drag & Drop ---
   const [isDragOver, setIsDragOver] = useState(false);
