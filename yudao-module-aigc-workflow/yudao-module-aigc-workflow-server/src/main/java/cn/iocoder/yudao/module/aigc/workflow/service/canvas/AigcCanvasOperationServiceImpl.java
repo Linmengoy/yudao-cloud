@@ -42,15 +42,17 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
             "NODE_CREATE", "NODE_DELETE", "NODE_MOVE", "NODE_RESIZE", "NODE_UPDATE_DATA",
             "EDGE_CREATE", "EDGE_DELETE", "ASSET_ATTACH", "ASSET_DETACH", "TASK_STATUS_PATCH", "CANVAS_CLEAR"));
     private static final Set<String> SYNCABLE_NODE_DATA_KEYS = new HashSet<>(Arrays.asList(
-            "imageId", "sketchId", "videoId", "projectId", "assetId", "assetVersionId", "previewUrl", "background", "fileName", "mimeType",
+            "imageId", "sketchId", "videoId", "projectId", "assetId", "assetVersionId", "background", "fileName", "mimeType",
             "width", "height", "durationSec", "sizeBytes", "kind", "prompt", "content", "modelId",
             "provider", "providerModel", "modelName", "aigcModelId", "params", "status", "taskId",
-            "errorMessage", "taskStatus", "progress", "outputAssetId", "outputPreviewUrl", "sourceTaskId", "videoUrl",
+            "errorMessage", "taskStatus", "progress", "outputAssetId", "sourceTaskId",
             "safetyStatus", "safetyReason", "generationStartedAt", "generationCompletedAt",
             "generationRunStartedAt", "elapsedMs", "upstreamStatus", "ratio", "resolution", "duration",
             "size", "generateAudio", "watermark", "createdAt", "updatedAt"));
     private static final Set<String> BLOCKED_NODE_DATA_KEYS = new HashSet<>(Arrays.asList(
             "dataUrl", "blobUrl", "objectUrl", "localUrl", "inputImages", "imageUrls"));
+    private static final Set<String> RUNTIME_ASSET_URL_NODE_DATA_KEYS = new HashSet<>(Arrays.asList(
+            "previewUrl", "outputPreviewUrl", "videoUrl", "assetUrlExpireTime"));
 
     @Resource
     private AigcCanvasProjectService projectService;
@@ -419,13 +421,16 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
         JSONObject patch = payload.getJSONObject("patch");
         if (patch == null) {
             patch = new JSONObject();
-            for (String key : Arrays.asList("assetId", "assetVersionId", "previewUrl", "usageType", "sourceTaskId")) {
+            for (String key : Arrays.asList("assetId", "assetVersionId", "usageType", "sourceTaskId")) {
                 if (payload.containsKey(key)) {
                     patch.set(key, payload.get(key));
                 }
             }
         }
         for (String key : patch.keySet()) {
+            if (RUNTIME_ASSET_URL_NODE_DATA_KEYS.contains(key)) {
+                continue;
+            }
             data.set(key, patch.get(key));
         }
     }

@@ -80,6 +80,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     private static final int REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS = 20_000;
     private static final int REMOTE_FILE_DOWNLOAD_TIMEOUT_SECONDS = 30;
     private static final int VIDEO_FRAME_CAPTURE_TIMEOUT_SECONDS = 45;
+    private static final int ACCESS_URL_CACHE_TTL_SAFETY_SECONDS = 60;
     private static final BigDecimal LAST_FRAME_OFFSET_SECONDS = new BigDecimal("0.05");
     private static final String REMOTE_FILE_DOWNLOAD_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
@@ -811,14 +812,21 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                     return cachedAgain.setCacheHit(true);
                 }
                 AigcAssetAccessUrlRespDTO generated = generateAccessUrl(asset, file, accessType);
-                accessUrlRedisDAO.set(key, generated, generated.getExpireSeconds());
+                cacheAccessUrl(key, generated);
                 return generated;
             });
         } catch (Exception ex) {
             AigcAssetAccessUrlRespDTO generated = generateAccessUrl(asset, file, accessType);
-            accessUrlRedisDAO.set(key, generated, generated.getExpireSeconds());
+            cacheAccessUrl(key, generated);
             return generated;
         }
+    }
+
+    private void cacheAccessUrl(String key, AigcAssetAccessUrlRespDTO accessUrl) {
+        int ttl = Math.max(1, accessUrl.getExpireSeconds() == null
+                ? AigcAssetAccessTypeEnum.PREVIEW.getExpireSeconds()
+                : accessUrl.getExpireSeconds() - ACCESS_URL_CACHE_TTL_SAFETY_SECONDS);
+        accessUrlRedisDAO.set(key, accessUrl, ttl);
     }
 
     private AigcAssetAccessUrlRespDTO generateAccessUrl(AigcAssetDO asset, AigcAssetFileDO file, String accessType) {

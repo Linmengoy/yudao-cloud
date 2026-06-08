@@ -55,6 +55,23 @@ export interface AigcAsset {
   createTime?: string;
   localProjectId?: string;
   localNodeId?: string;
+  files?: AigcAssetFile[];
+}
+
+export interface AigcAssetFile {
+  assetFileId: number;
+  fileRole: string;
+  fileName?: string;
+  fileExt?: string;
+  mimeType?: string;
+  fileSize?: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  accessUrl?: string;
+  expireSeconds?: number;
+  expireTime?: string;
+  publicAccess?: boolean;
 }
 
 export interface AigcAssetPageParams {

@@ -1,4 +1,5 @@
 import type { CanvasState, AppNode } from "./types";
+import { sanitizeCanvasStateForPersistence } from "@/features/canvas/canvas-syncable-data";
 
 const STORAGE_KEY = "copse_canvas_draft";
 
@@ -48,10 +49,11 @@ export function loadCanvas(projectId?: string | null): CanvasState | null {
 }
 
 export function saveCanvas(state: CanvasState, projectId?: string | null): void {
+  const sanitized = sanitizeCanvasStateForPersistence(state);
   const lightweight = {
-    ...state,
+    ...sanitized,
     projectId: projectId ?? null,
-    nodes: stripDataUrlFromNodes(state.nodes),
+    nodes: stripDataUrlFromNodes(sanitized.nodes),
   };
   localStorage.setItem(storageKey(projectId), JSON.stringify(lightweight));
 }

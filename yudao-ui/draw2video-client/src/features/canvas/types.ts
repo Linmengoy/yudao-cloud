@@ -61,6 +61,7 @@ export type VideoFrameCaptureEventDetail = {
   assetId?: number | null;
   assetVersionId?: number | null;
   previewUrl?: string | null;
+  assetUrlExpireTime?: string | null;
   width?: number;
   height?: number;
   mimeType: string;
@@ -99,6 +100,7 @@ export interface ResultNodeData {
   inputImageIds: string[];
   status: ResultStatus;
   imageUrls: string[];
+  assetIdList?: number[];
   errorMessage: string | null;
   createdAt: string;
   completedAt: string | null;
@@ -136,6 +138,7 @@ export interface ImageNodeData {
   progress?: number | null;
   outputAssetId?: number | null;
   outputPreviewUrl?: string | null;
+  assetUrlExpireTime?: string | null;
   sourceTaskId?: number | null;
   safetyStatus?: string | null;
   safetyReason?: string | null;
@@ -184,6 +187,7 @@ export interface TextNodeData {
   progress?: number | null;
   outputAssetId?: number | null;
   outputPreviewUrl?: string | null;
+  assetUrlExpireTime?: string | null;
   sourceTaskId?: number | null;
   safetyStatus?: string | null;
   safetyReason?: string | null;
@@ -228,6 +232,7 @@ export interface VideoNodeData {
   progress?: number | null;
   outputAssetId?: number | null;
   outputPreviewUrl?: string | null;
+  assetUrlExpireTime?: string | null;
   sourceTaskId?: number | null;
   safetyStatus?: string | null;
   safetyReason?: string | null;
@@ -274,7 +279,6 @@ export const SYNCABLE_NODE_DATA_KEYS = [
   "projectId",
   "assetId",
   "assetVersionId",
-  "previewUrl",
   "background",
   "fileName",
   "mimeType",
@@ -297,7 +301,6 @@ export const SYNCABLE_NODE_DATA_KEYS = [
   "taskStatus",
   "progress",
   "outputAssetId",
-  "outputPreviewUrl",
   "sourceTaskId",
   "safetyStatus",
   "safetyReason",
