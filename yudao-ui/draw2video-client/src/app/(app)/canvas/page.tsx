@@ -1220,17 +1220,29 @@ function CanvasFlow() {
   const projectCreationRef = useRef(false);
   const ignoreNextPaneClickRef = useRef(false);
   const [clientId] = useState(() => `canvas_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+
+  // 初始化服务器存储
   const { createProject: createServerProject, loadProject, saveSnapshot } = useCanvasServerStorage();
+  // 初始化实时操作
   const canvasRealtime = useCanvasRealtime(serverProjectId, clientId, lastAppliedVersion);
+  // 初始化操作操作
   const canvasOperations = useCanvasOperations(serverProjectId, clientId, latestKnownVersion, setLatestKnownVersion, canvasRealtime.sendOperation, canvasRealtime.isConnected);
+  // 初始化实时消息计数
   const processedRealtimeMessageCountRef = useRef(0);
+  // 初始化画布缩放
   const canvasZoomRef = useRef(DEFAULT_CANVAS_VIEWPORT.zoom);
+  // 初始化远程存在
   const [remotePresences, setRemotePresences] = useState<Record<string, RemoteCanvasPresence>>({});
+  // 初始化最后发送存在时间
   const lastPresenceSentAtRef = useRef(0);
-  const editingNodeIdRef = useRef<string | null>(null);
+  // 初始化编辑编辑节点ID
+   const editingNodeIdRef = useRef<string | null>(null);
+  // 初始化节点数据补丁定时器
   const nodeDataPatchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // 初始化最后应用版本
   const lastAppliedVersionRef = useRef(0);
 
+  // 初始化同步状态
   const syncState: CanvasSyncState = saveError
     ? "error"
     : !canvasRealtime.isConnected && serverProjectId
