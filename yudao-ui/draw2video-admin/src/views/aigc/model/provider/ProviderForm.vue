@@ -58,6 +58,28 @@
           </el-form-item>
         </el-col>
       </el-row>
+      <el-form-item label="启用代理" prop="proxyEnabled">
+        <el-switch v-model="formData.proxyEnabled" />
+      </el-form-item>
+      <template v-if="formData.proxyEnabled">
+        <el-form-item label="代理" prop="proxyId">
+          <el-select
+            v-model="formData.proxyId"
+            class="!w-1/1"
+            clearable
+            filterable
+            placeholder="请选择已配置代理"
+            :loading="proxyLoading"
+          >
+            <el-option
+              v-for="item in proxyList"
+              :key="item.id"
+              :label="`${item.name}（${getOptionLabel(AIGC_PROXY_PROTOCOLS, item.protocol)} ${item.host}:${item.port}）`"
+              :value="item.id!"
+            />
+          </el-select>
+        </el-form-item>
+      </template>
       <el-form-item label="扩展配置" prop="extraConfig">
         <el-input v-model="formData.extraConfig" type="textarea" :rows="3" placeholder="请输入 JSON 扩展配置" />
       </el-form-item>
@@ -78,7 +100,9 @@
 import { CommonStatusEnum } from '@/utils/constants'
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { AigcModelProviderApi, AigcModelProviderSaveReqVO } from '@/api/aigc/model/provider'
-import { AIGC_HEALTH_STATUSES, AIGC_PROVIDER_AUTH_TYPES } from '../constants'
+import { AigcModelProxyApi } from '@/api/aigc/model/proxy'
+import type { AigcModelProxyRespVO } from '@/api/aigc/model/types'
+import { AIGC_HEALTH_STATUSES, AIGC_PROVIDER_AUTH_TYPES, AIGC_PROXY_PROTOCOLS, getOptionLabel } from '../constants'
 
 defineOptions({ name: 'AigcModelProviderForm' })
 
@@ -89,6 +113,8 @@ const dialogTitle = ref('')
 const formLoading = ref(false)
 const formType = ref('')
 const formRef = ref()
+const proxyLoading = ref(false)
+const proxyList = ref<AigcModelProxyRespVO[]>([])
 const formData = ref<AigcModelProviderSaveReqVO>({
   id: undefined,
   code: undefined,
@@ -99,6 +125,8 @@ const formData = ref<AigcModelProviderSaveReqVO>({
   secretKey: undefined,
   extraConfig: undefined,
   timeoutSeconds: 60,
+  proxyEnabled: false,
+  proxyId: undefined,
   rateLimitConfig: undefined,
   healthStatus: 'UNKNOWN',
   status: CommonStatusEnum.ENABLE,
@@ -109,20 +137,32 @@ const formRules = reactive({
   name: [{ required: true, message: '渠道名称不能为空', trigger: 'blur' }],
   apiBaseUrl: [{ required: true, message: 'API 地址不能为空', trigger: 'blur' }],
   authType: [{ required: true, message: '鉴权方式不能为空', trigger: 'change' }],
+  proxyId: [{ required: true, message: '代理不能为空', trigger: 'change' }],
   status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
 })
+
+const loadProxyList = async () => {
+  proxyLoading.value = true
+  try {
+    proxyList.value = await AigcModelProxyApi.getSimpleProxyList()
+  } finally {
+    proxyLoading.value = false
+  }
+}
 
 const open = async (type: string, id?: number) => {
   dialogVisible.value = true
   dialogTitle.value = t('action.' + type)
   formType.value = type
   resetForm()
+  await loadProxyList()
   if (id) {
     formLoading.value = true
     try {
       formData.value = await AigcModelProviderApi.getProvider(id)
       formData.value.apiKey = undefined
       formData.value.secretKey = undefined
+      formData.value.proxyEnabled = Boolean(formData.value.proxyEnabled)
     } finally {
       formLoading.value = false
     }
@@ -151,6 +191,9 @@ const submitForm = async () => {
   formLoading.value = true
   try {
     const data = { ...formData.value }
+    if (!data.proxyEnabled) {
+      data.proxyId = undefined
+    }
     if (formType.value === 'update') {
       removeEmptySecret(data)
     }
@@ -179,6 +222,8 @@ const resetForm = () => {
     secretKey: undefined,
     extraConfig: undefined,
     timeoutSeconds: 60,
+    proxyEnabled: false,
+    proxyId: undefined,
     rateLimitConfig: undefined,
     healthStatus: 'UNKNOWN',
     status: CommonStatusEnum.ENABLE,
@@ -186,4 +231,13 @@ const resetForm = () => {
   }
   formRef.value?.resetFields()
 }
+
+watch(
+  () => formData.value.proxyEnabled,
+  (enabled) => {
+    if (!enabled) {
+      formData.value.proxyId = undefined
+    }
+  }
+)
 </script>

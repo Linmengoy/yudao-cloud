@@ -40,6 +40,24 @@ public class AigcAssetCreateReqDTO {
     @Schema(description = "渠道商编号", example = "2048")
     private Long providerId;
 
+    @Schema(description = "是否启用代理", example = "true")
+    private Boolean proxyEnabled;
+
+    @Schema(description = "代理协议", example = "SOCKS5")
+    private String proxyProtocol;
+
+    @Schema(description = "代理主机", example = "127.0.0.1")
+    private String proxyHost;
+
+    @Schema(description = "代理端口", example = "1080")
+    private Integer proxyPort;
+
+    @Schema(description = "代理用户名")
+    private String proxyUsername;
+
+    @Schema(description = "代理密码")
+    private String proxyPassword;
+
     @Schema(description = "资产标题", example = "AI 生成图片")
     private String title;
 

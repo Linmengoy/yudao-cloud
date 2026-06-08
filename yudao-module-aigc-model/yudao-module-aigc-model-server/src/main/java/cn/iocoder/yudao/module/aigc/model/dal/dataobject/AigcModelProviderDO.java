@@ -44,6 +44,24 @@ public class AigcModelProviderDO extends BaseDO {
 
     private Integer timeoutSeconds;
 
+    private Boolean proxyEnabled;
+
+    private Long proxyId;
+
+    @TableField(exist = false)
+    private String proxyName;
+
+    private String proxyProtocol;
+
+    private String proxyHost;
+
+    private Integer proxyPort;
+
+    private String proxyUsername;
+
+    @TableField(typeHandler = EncryptTypeHandler.class)
+    private String proxyPassword;
+
     private String rateLimitConfig;
 
     private String healthStatus;

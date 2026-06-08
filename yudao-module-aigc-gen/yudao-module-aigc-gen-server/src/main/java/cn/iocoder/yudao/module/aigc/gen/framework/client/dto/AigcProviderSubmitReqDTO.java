@@ -21,6 +21,12 @@ public class AigcProviderSubmitReqDTO {
     private String providerSecretKey;
     private String providerExtraConfig;
     private Integer providerTimeoutSeconds;
+    private Boolean proxyEnabled;
+    private String proxyProtocol;
+    private String proxyHost;
+    private Integer proxyPort;
+    private String proxyUsername;
+    private String proxyPassword;
     private String generateType;
     private String generateMode;
     private String prompt;

@@ -63,7 +63,7 @@ import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/Canv
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Boxes, ChevronRight, Folder, Globe, HelpCircle, ImagePlus, LogOut, MessageCircle, Palette, PenLine, Plus, Settings, Share2, Sparkles, Type, Video, Wallet, Map as MapIcon, Grid2X2, Scan } from "lucide-react";
+import { ArrowLeft, BookOpen, Boxes, ChevronRight, Folder, Globe, HelpCircle, ImagePlus, LogOut, MessageCircle, Palette, PenLine, Plus, Settings, Share2, Sparkles, Type, Video, Wallet, Map as MapIcon, Grid2X2, Grid3X3, Scan } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -425,8 +425,10 @@ function CanvasConnectionLine({
 
 type CanvasViewToolbarProps = {
   showMiniMap: boolean;
+  snapToGrid: boolean;
   zoom: number;
   onToggleMiniMap: () => void;
+  onToggleSnapToGrid: () => void;
   onArrangeCanvas: () => void;
   onResetView: () => void;
   onZoomChange: (zoom: number) => void;
@@ -434,8 +436,10 @@ type CanvasViewToolbarProps = {
 
 function CanvasViewToolbar({
   showMiniMap,
+  snapToGrid,
   zoom,
   onToggleMiniMap,
+  onToggleSnapToGrid,
   onArrangeCanvas,
   onResetView,
   onZoomChange,
@@ -461,6 +465,15 @@ function CanvasViewToolbar({
         className={buttonClass}
       >
         <Grid2X2 className="size-5" strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        aria-pressed={snapToGrid}
+        title={snapToGrid ? "关闭吸附网格" : "开启吸附网格"}
+        onClick={onToggleSnapToGrid}
+        className={cn(buttonClass, snapToGrid && "bg-charcoal text-off-white hover:bg-charcoal hover:text-off-white")}
+      >
+        <Grid3X3 className="size-5" strokeWidth={2} />
       </button>
       <button
         type="button"
@@ -1265,7 +1278,7 @@ function CanvasFlow() {
   const [latestKnownVersion, setLatestKnownVersion] = useState(0);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
   const [showMiniMap, setShowMiniMap] = useState(false);
-  const snapToGrid = false;
+  const [snapToGrid, setSnapToGrid] = useState(false);
   const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
   const [nodeDragCommitVersion, setNodeDragCommitVersion] = useState(0);
   const [keyboardEditingNodeId, setKeyboardEditingNodeId] = useState<string | null>(null);
@@ -1752,20 +1765,20 @@ function CanvasFlow() {
       .filter((item): item is { node: AppNode; rect: SelectionRectSnapshot } => Boolean(item.rect));
     if (childRects.length === 0) return;
 
-    const maxContentWidth = mode === "grid"
-      ? Math.max(220, groupData.width - GROUP_LAYOUT_PADDING * 2)
-      : Number.POSITIVE_INFINITY;
+    const gridColumnCount = mode === "grid" ? Math.max(1, Math.ceil(Math.sqrt(childRects.length))) : Number.POSITIVE_INFINITY;
     let cursorX = 0;
     let cursorY = 0;
     let rowHeight = 0;
+    let rowItemCount = 0;
     let contentWidth = 0;
     const layout = new Map<string, { x: number; y: number; width: number; height: number }>();
 
     for (const { node, rect } of childRects) {
-      if (mode === "grid" && cursorX > 0 && cursorX + rect.width > maxContentWidth) {
+      if (mode === "grid" && rowItemCount >= gridColumnCount) {
         cursorX = 0;
         cursorY += rowHeight + GROUP_LAYOUT_GAP;
         rowHeight = 0;
+        rowItemCount = 0;
       }
       layout.set(node.id, {
         x: cursorX,
@@ -1776,6 +1789,7 @@ function CanvasFlow() {
       contentWidth = Math.max(contentWidth, cursorX + rect.width);
       rowHeight = Math.max(rowHeight, rect.height);
       cursorX += rect.width + GROUP_LAYOUT_GAP;
+      rowItemCount += 1;
     }
 
     const contentHeight = cursorY + rowHeight;
@@ -3107,8 +3121,10 @@ function CanvasFlow() {
 
       <CanvasViewToolbar
         showMiniMap={showMiniMap}
+        snapToGrid={snapToGrid}
         zoom={canvasZoom}
         onToggleMiniMap={() => setShowMiniMap((value) => !value)}
+        onToggleSnapToGrid={() => setSnapToGrid((value) => !value)}
         onArrangeCanvas={handleArrangeCanvas}
         onResetView={handleToolbarResetView}
         onZoomChange={handleToolbarZoomChange}

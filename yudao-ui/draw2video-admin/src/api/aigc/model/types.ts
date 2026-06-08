@@ -33,9 +33,30 @@ export interface AigcModelProviderRespVO {
   secretKey?: string | null
   extraConfig?: string
   timeoutSeconds?: number
+  proxyEnabled?: boolean
+  proxyId?: number
+  proxyName?: string
+  proxyProtocol?: string
+  proxyHost?: string
+  proxyPort?: number
+  proxyUsername?: string | null
+  proxyPassword?: string | null
   rateLimitConfig?: string
   healthStatus?: string
   balance?: number
+  status?: number
+  remark?: string
+  createTime?: Date
+}
+
+export interface AigcModelProxyRespVO {
+  id?: number
+  name?: string
+  protocol?: string
+  host?: string
+  port?: number
+  username?: string | null
+  password?: string | null
   status?: number
   remark?: string
   createTime?: Date
@@ -124,4 +145,3 @@ export interface AigcModelUsageLogRespVO {
   errorMessage?: string
   createTime?: Date
 }
-

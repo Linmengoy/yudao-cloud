@@ -37,12 +37,11 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             return failed("CONFIG_INVALID", "Grok 渠道未配置 API 地址或 API Key");
         }
         long start = System.currentTimeMillis();
-        try (HttpResponse response = HttpRequest.post(resolveSubmitEndpoint(reqDTO))
+        try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.post(resolveSubmitEndpoint(reqDTO))
                 .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
                 .contentType(ContentType.JSON.getValue())
                 .body(buildSubmitBody(reqDTO).toString())
-                .timeout(timeoutMillis(reqDTO))
-                .execute()) {
+                .timeout(timeoutMillis(reqDTO)), reqDTO)) {
             if (!response.isOk()) {
                 return failed("HTTP_" + response.getStatus(), safeBody(response.body())).setDurationMillis(System.currentTimeMillis() - start);
             }
@@ -69,10 +68,9 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             return failed("TASK_ID_EMPTY", "Grok 视频查询缺少任务编号");
         }
         long start = System.currentTimeMillis();
-        try (HttpResponse response = HttpRequest.get(resolveVideoTaskEndpoint(reqDTO, false))
+        try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.get(resolveVideoTaskEndpoint(reqDTO, false))
                 .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
-                .timeout(timeoutMillis(reqDTO))
-                .execute()) {
+                .timeout(timeoutMillis(reqDTO)), reqDTO)) {
             if (!response.isOk()) {
                 return failed("HTTP_" + response.getStatus(), safeBody(response.body())).setDurationMillis(System.currentTimeMillis() - start);
             }
@@ -162,9 +160,8 @@ public class GrokImagineProviderClient implements AigcProviderClient {
         if (!AigcGenerateFileSecurityUtils.isSafeRemoteUrl(image)) {
             throw new IllegalArgumentException("Grok 首帧图片 URL 不安全");
         }
-        try (HttpResponse response = HttpRequest.get(image)
-                .timeout(timeoutMillis(reqDTO))
-                .execute()) {
+        try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.get(image)
+                .timeout(timeoutMillis(reqDTO)), reqDTO)) {
             if (!response.isOk()) {
                 throw new IllegalStateException("Grok 首帧图片下载失败: HTTP_" + response.getStatus());
             }
@@ -320,10 +317,9 @@ public class GrokImagineProviderClient implements AigcProviderClient {
     }
 
     private String downloadVideoAsDataUrl(AigcProviderSubmitReqDTO reqDTO) {
-        try (HttpResponse response = HttpRequest.get(resolveVideoTaskEndpoint(reqDTO, true))
+        try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.get(resolveVideoTaskEndpoint(reqDTO, true))
                 .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
-                .timeout(timeoutMillis(reqDTO))
-                .execute()) {
+                .timeout(timeoutMillis(reqDTO)), reqDTO)) {
             if (!response.isOk()) {
                 throw new IllegalStateException("Grok 视频下载失败: HTTP_" + response.getStatus());
             }
