@@ -27,4 +27,6 @@ public interface AigcModelProxyService {
 
     void updateProxyStatus(Long id, Integer status);
 
+    Long testProxy(Long id);
+
 }

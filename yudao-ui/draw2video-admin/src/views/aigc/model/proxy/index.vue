@@ -37,9 +37,10 @@
         <template #default="scope"><dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" /></template>
       </el-table-column>
       <el-table-column label="创建时间" align="center" prop="createTime" :formatter="dateFormatter" width="180" />
-      <el-table-column label="操作" align="center" width="160" fixed="right">
+      <el-table-column label="操作" align="center" width="210" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="openForm('update', scope.row.id)" v-hasPermi="['aigc:model:proxy:update']">编辑</el-button>
+          <el-button link type="success" :loading="testingId === scope.row.id" @click="handleTest(scope.row.id)" v-hasPermi="['aigc:model:proxy:query']">测试</el-button>
           <el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['aigc:model:proxy:delete']">删除</el-button>
         </template>
       </el-table-column>
@@ -64,6 +65,7 @@ const loading = ref(true)
 const list = ref<AigcModelProxyRespVO[]>([])
 const total = ref(0)
 const queryFormRef = ref()
+const testingId = ref<number>()
 const queryParams = reactive({ pageNo: 1, pageSize: 10, name: undefined, protocol: undefined, status: undefined })
 
 const getList = async () => {
@@ -93,6 +95,15 @@ const handleDelete = async (id: number) => {
     message.success(t('common.delSuccess'))
     await getList()
   } catch {}
+}
+const handleTest = async (id: number) => {
+  testingId.value = id
+  try {
+    const durationMillis = await AigcModelProxyApi.testProxy(id)
+    message.success(`代理可用，延迟 ${durationMillis} ms`)
+  } finally {
+    testingId.value = undefined
+  }
 }
 
 onMounted(() => getList())

@@ -12,6 +12,7 @@ public interface ErrorCodeConstants {
     ErrorCode MODEL_PROXY_NAME_DUPLICATE = new ErrorCode(1_041_000_005, "代理名称重复");
     ErrorCode MODEL_PROXY_HAS_PROVIDER = new ErrorCode(1_041_000_006, "代理已被渠道商使用，无法删除");
     ErrorCode MODEL_PROXY_CONFIG_INVALID = new ErrorCode(1_041_000_007, "代理配置不正确");
+    ErrorCode MODEL_PROXY_TEST_FAILED = new ErrorCode(1_041_000_008, "代理测试失败：{}");
 
     ErrorCode MODEL_NOT_EXISTS = new ErrorCode(1_041_001_000, "模型不存在");
     ErrorCode MODEL_DISABLED = new ErrorCode(1_041_001_001, "模型已禁用");
