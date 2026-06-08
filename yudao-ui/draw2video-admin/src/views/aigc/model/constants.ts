@@ -56,6 +56,13 @@ export const AIGC_HEALTH_STATUSES = [
   { label: '余额不足', value: 'BALANCE_LOW' }
 ]
 
+export const AIGC_PROXY_PROTOCOLS = [
+  { label: 'HTTP', value: 'HTTP' },
+  { label: 'HTTPS', value: 'HTTPS' },
+  { label: 'SOCKS5', value: 'SOCKS5' },
+  { label: 'SOCKS5H（远程 DNS）', value: 'SOCKS5H' }
+]
+
 export const AIGC_USAGE_STATUSES = [
   { label: '成功', value: 0 },
   { label: '失败', value: 1 }

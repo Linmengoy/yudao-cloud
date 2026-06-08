@@ -18,6 +18,10 @@ public interface AigcModelProviderMapper extends BaseMapperX<AigcModelProviderDO
         return selectCount(AigcModelProviderDO::getTenantId, tenantId);
     }
 
+    default Long selectCountByProxyId(Long proxyId) {
+        return selectCount(AigcModelProviderDO::getProxyId, proxyId);
+    }
+
     default PageResult<AigcModelProviderDO> selectPage(AigcModelProviderPageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcModelProviderDO>()
                 .likeIfPresent(AigcModelProviderDO::getCode, reqVO.getCode())

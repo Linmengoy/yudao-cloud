@@ -74,6 +74,32 @@ INSERT INTO `system_menu` (
 ('渠道商修改', 'aigc:model:provider:update', 3, 3, @modelProviderMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
 ('渠道商删除', 'aigc:model:provider:delete', 3, 4, @modelProviderMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
 
+-- 代理管理
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '代理管理', 'aigc:model:proxy:query', 2, 3, @aigcModelParentId,
+    'proxy', 'ep:link', 'aigc/model/proxy/index', 'AigcModelProxy',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @modelProxyMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('代理查询', 'aigc:model:proxy:query', 3, 1, @modelProxyMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('代理新增', 'aigc:model:proxy:create', 3, 2, @modelProxyMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('代理修改', 'aigc:model:proxy:update', 3, 3, @modelProxyMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('代理删除', 'aigc:model:proxy:delete', 3, 4, @modelProxyMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
 -- 模型参数模板
 INSERT INTO `system_menu` (
     `name`, `permission`, `type`, `sort`, `parent_id`,

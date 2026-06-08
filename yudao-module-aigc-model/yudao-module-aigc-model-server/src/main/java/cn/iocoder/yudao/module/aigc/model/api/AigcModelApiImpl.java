@@ -54,7 +54,7 @@ public class AigcModelApiImpl implements AigcModelApi {
 
     @Override
     public CommonResult<AigcModelProviderRespDTO> getProvider(Long providerId) {
-        AigcModelProviderDO provider = providerService.validateProviderExists(providerId);
+        AigcModelProviderDO provider = providerService.getProviderWithProxy(providerId);
         return success(BeanUtils.toBean(provider, AigcModelProviderRespDTO.class));
     }
 
