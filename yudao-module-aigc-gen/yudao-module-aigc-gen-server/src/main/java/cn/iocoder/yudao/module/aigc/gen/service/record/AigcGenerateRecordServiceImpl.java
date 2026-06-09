@@ -136,7 +136,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         String inputParamsSnapshot = sanitizeInputParamsSnapshot(reqDTO.getInputParams());
         modelApi.validateParams(new AigcModelValidateReqDTO().setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setParams(inputParams)).getCheckedData();
         AigcModelPriceCalculateRespDTO price = modelApi.calculatePrice(new AigcModelPriceCalculateReqDTO()
-                .setModelId(executionModelId).setCapability(reqDTO.getGenerateMode()).setTaskType(reqDTO.getGenerateType()).setParams(inputParams)).getCheckedData();
+                .setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setTaskType(reqDTO.getGenerateType()).setParams(inputParams)).getCheckedData();
         AigcBillingFreezeRespDTO freeze = billingApi.freeze(new AigcBillingFreezeReqDTO()
                 .setUserId(reqDTO.getUserId()).setBizType("AIGC_GENERATE").setBizId(reqDTO.getClientRequestId() == null ? generateGenerateNo() : reqDTO.getClientRequestId())
                 .setAmount(price.getSalePrice()).setTitle(reqDTO.getGenerateType() + "生成冻结").setPriceSnapshot(JsonUtils.toJsonString(price))).getCheckedData();

@@ -4,7 +4,7 @@
       <el-form-item label="规则名称" prop="name"><el-input v-model="formData.name" placeholder="请输入规则名称" /></el-form-item>
       <el-row :gutter="20">
         <el-col :span="12"><el-form-item label="展示模型编码" prop="taskType"><el-input v-model="formData.taskType" placeholder="请输入展示模型编码" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="能力" prop="capability"><el-select v-model="formData.capability" class="!w-1/1" clearable placeholder="请选择能力"><el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></el-col>
+        <el-col :span="12"><el-form-item label="能力" prop="capability"><el-select v-model="formData.capability" class="!w-1/1" :multiple="formType === 'create'" collapse-tags collapse-tags-tooltip clearable placeholder="请选择能力"><el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
         <el-col :span="12"><el-form-item label="路由策略" prop="strategy"><el-select v-model="formData.strategy" class="!w-1/1" placeholder="请选择路由策略"><el-option v-for="item in AIGC_ROUTE_STRATEGIES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></el-col>
@@ -33,6 +33,8 @@ import { AIGC_MODEL_CAPABILITIES, AIGC_ROUTE_STRATEGIES } from '../constants'
 
 defineOptions({ name: 'AigcModelRouteForm' })
 
+type RouteFormData = Omit<AigcModelRouteSaveReqVO, 'capability'> & { capability?: string | string[] }
+
 const { t } = useI18n()
 const message = useMessage()
 const dialogVisible = ref(false)
@@ -42,7 +44,7 @@ const formType = ref('')
 const formRef = ref()
 const selectedModelIds = ref<number[]>([])
 const modelList = ref<AigcModelRespVO[]>([])
-const formData = ref<AigcModelRouteSaveReqVO>({ id: undefined, name: undefined, taskType: undefined, capability: undefined, strategy: 'FIXED_MODEL', modelIds: undefined, userLevel: undefined, status: CommonStatusEnum.ENABLE })
+const formData = ref<RouteFormData>({ id: undefined, name: undefined, taskType: undefined, capability: undefined, strategy: 'FIXED_MODEL', modelIds: undefined, userLevel: undefined, status: CommonStatusEnum.ENABLE })
 const formRules = reactive({ name: [{ required: true, message: '规则名称不能为空', trigger: 'blur' }], strategy: [{ required: true, message: '路由策略不能为空', trigger: 'change' }], status: [{ required: true, message: '状态不能为空', trigger: 'change' }] })
 
 const open = async (type: string, id?: number) => {
@@ -94,10 +96,10 @@ const submitForm = async () => {
   try {
     const data = { ...formData.value, modelIds: JSON.stringify(selectedModelIds.value) }
     if (formType.value === 'create') {
-      await AigcModelRouteApi.createRoute(data)
+      await Promise.all(getSelectedCapabilities().map((capability) => AigcModelRouteApi.createRoute({ ...data, capability })))
       message.success(t('common.createSuccess'))
     } else {
-      await AigcModelRouteApi.updateRoute(data)
+      await AigcModelRouteApi.updateRoute({ ...data, capability: getSelectedCapabilities()[0] })
       message.success(t('common.updateSuccess'))
     }
     dialogVisible.value = false
@@ -108,8 +110,13 @@ const submitForm = async () => {
 }
 
 const resetForm = () => {
-  formData.value = { id: undefined, name: undefined, taskType: undefined, capability: undefined, strategy: 'FIXED_MODEL', modelIds: undefined, userLevel: undefined, status: CommonStatusEnum.ENABLE }
+  formData.value = { id: undefined, name: undefined, taskType: undefined, capability: [], strategy: 'FIXED_MODEL', modelIds: undefined, userLevel: undefined, status: CommonStatusEnum.ENABLE }
   selectedModelIds.value = []
   formRef.value?.resetFields()
+}
+
+const getSelectedCapabilities = () => {
+  const capability = formData.value.capability
+  return Array.isArray(capability) ? capability : capability ? [capability] : []
 }
 </script>
