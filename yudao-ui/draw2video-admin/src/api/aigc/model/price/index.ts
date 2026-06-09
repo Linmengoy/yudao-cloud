@@ -1,10 +1,12 @@
 import request from '@/config/axios'
 import type { AigcModelPriceRespVO } from '@/api/aigc/model/types'
 
-export type AigcModelPriceSaveReqVO = AigcModelPriceRespVO
+export type AigcModelPriceSaveReqVO = Omit<AigcModelPriceRespVO, 'capability'> & {
+  capability?: string | string[]
+}
 
 export const AigcModelPriceApi = {
-  getPriceList: async (params: { modelId: number; capability: string }) => {
+  getPriceList: async (params: { modelId?: number; capability?: string }) => {
     return await request.get({ url: '/aigc/model/price/list', params })
   },
   getPrice: async (id: number) => {

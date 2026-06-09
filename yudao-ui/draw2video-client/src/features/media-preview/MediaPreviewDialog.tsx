@@ -4,10 +4,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { Download, X } from "lucide-react";
+import Link from "next/link";
+import { Download, Save, Trash2, X } from "lucide-react";
+import {
+  getAssetAuditStatusLabel,
+  getAssetVisibilityLabel,
+} from "@/features/assets/asset-dictionaries";
 import { cn } from "@/lib/utils";
 import type { MediaPreviewItem } from "./types";
 import { compactInfo, downloadMedia } from "./media-preview-utils";
+import { PreviewVideoPlayer } from "./PreviewVideoPlayer";
 
 type MediaPreviewDialogProps = {
   item: MediaPreviewItem | null;
@@ -18,6 +24,7 @@ type MediaPreviewDialogProps = {
 export function MediaPreviewDialog({ item, open, onClose }: MediaPreviewDialogProps) {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const information = useMemo(() => compactInfo(item?.information ?? []), [item?.information]);
+  const editableAsset = item?.editableAsset;
 
   const handleClose = useCallback(() => {
     setCopyState("idle");
@@ -71,7 +78,7 @@ export function MediaPreviewDialog({ item, open, onClose }: MediaPreviewDialogPr
             <div className="min-h-[46vh] bg-charcoal p-3 dark:bg-[#11100e] sm:p-4 lg:min-h-0">
               <div className="flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl bg-black/20 dark:bg-black">
                 {item.kind === "video" ? (
-                  <video src={item.url} className="max-h-full max-w-full object-contain" controls />
+                  <PreviewVideoPlayer src={item.url} />
                 ) : (
                   <img src={item.url} alt={item.title ?? item.fileName ?? ""} className="max-h-full max-w-full object-contain" draggable={false} />
                 )}
@@ -95,7 +102,82 @@ export function MediaPreviewDialog({ item, open, onClose }: MediaPreviewDialogPr
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-                {item.prompt && (
+                {editableAsset && (
+                  <section>
+                    <div className="grid gap-3">
+                      <label className="text-sm font-medium text-charcoal dark:text-[#f4efe6]">
+                        标题
+                        <input
+                          value={editableAsset.title}
+                      onChange={(event) => editableAsset.onChange({ title: event.target.value })}
+                      className="input-base mt-1"
+                      disabled={!editableAsset.canEdit}
+                    />
+                      </label>
+                      <label className="text-sm font-medium text-charcoal dark:text-[#f4efe6]">
+                        标签
+                        <input
+                          value={editableAsset.tags}
+                          onChange={(event) => editableAsset.onChange({ tags: event.target.value })}
+                      className="input-base mt-1"
+                      placeholder="用逗号分隔"
+                      disabled={!editableAsset.canEdit}
+                    />
+                      </label>
+                      <label className="text-sm font-medium text-charcoal dark:text-[#f4efe6]">
+                        描述
+                        <textarea
+                          value={editableAsset.description}
+                      onChange={(event) => editableAsset.onChange({ description: event.target.value })}
+                      className="input-base mt-1 min-h-24 resize-y"
+                      disabled={!editableAsset.canEdit}
+                    />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => editableAsset.onSave()}
+                      disabled={editableAsset.saving || !editableAsset.canEdit}
+                      className="mt-4 inline-flex items-center gap-2 rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80 disabled:opacity-50 dark:bg-[#1c1c1c] dark:text-[#fcfbf8]"
+                    >
+                      <Save className="size-4" />
+                      保存
+                    </button>
+                  </section>
+                )}
+
+                {editableAsset && (
+                  <section className="mt-7">
+                    <h2 className="mb-3 text-sm font-semibold text-muted-gray dark:text-[#a7a096]">状态</h2>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="inline-flex rounded-full border border-border-warm bg-background px-2 py-1 text-xs text-muted-gray dark:border-white/10 dark:bg-white/6 dark:text-[#a7a096]">
+                        {getAssetAuditStatusLabel(editableAsset.auditStatus)}
+                      </span>
+                      <span className="inline-flex rounded-full border border-border-warm bg-muted px-2 py-1 text-xs text-muted-gray dark:border-white/10 dark:bg-white/6 dark:text-[#a7a096]">
+                        {getAssetVisibilityLabel(editableAsset.visibility)}
+                      </span>
+                    </div>
+                    {editableAsset.auditReason && <p className="mt-2 text-xs text-destructive">{editableAsset.auditReason}</p>}
+                    {editableAsset.onVisibilityChange && (
+                      <label className="mt-4 block text-sm text-charcoal dark:text-[#f4efe6]">
+                        可见性
+                        <select
+                          value={editableAsset.visibility || "PRIVATE"}
+                          onChange={(event) => editableAsset.onVisibilityChange?.(event.target.value)}
+                          className="input-base mt-1"
+                          disabled={!editableAsset.canEdit}
+                        >
+                          {(["PRIVATE", "PUBLIC", "LINK", "TENANT"] as const).map((visibility) => (
+                            <option key={visibility} value={visibility}>{getAssetVisibilityLabel(visibility)}</option>
+                          ))}
+                        </select>
+                        {!editableAsset.canPublish && <span className="mt-1 block text-xs text-muted-gray">审核通过且状态正常后才能公开资产。</span>}
+                      </label>
+                    )}
+                  </section>
+                )}
+
+                {item.prompt && !editableAsset && (
                   <section>
                     <div className="mb-2 flex items-center gap-2">
                       <h2 className="text-sm font-semibold text-muted-gray dark:text-[#a7a096]">Prompt</h2>
@@ -131,17 +213,37 @@ export function MediaPreviewDialog({ item, open, onClose }: MediaPreviewDialogPr
                     </dl>
                   </section>
                 )}
+
+                {editableAsset?.taskId && (
+                  <Link href={`/tasks/${editableAsset.taskId}`} className="mt-5 inline-flex text-sm text-charcoal underline underline-offset-4 dark:text-[#f4efe6]">
+                    查看来源任务
+                  </Link>
+                )}
               </div>
 
               <div className="border-t border-border-warm p-5 dark:border-white/12">
-                <button
-                  type="button"
-                  onClick={() => downloadMedia(item)}
-                  className="flex w-full items-center justify-center gap-2 rounded-md bg-charcoal px-4 py-2.5 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] transition-opacity active:opacity-80 dark:border dark:border-white/14 dark:bg-[#1f1d19] dark:text-[#f4efe6] dark:shadow-[rgba(255,255,255,0.08)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.45)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.24)_0px_1px_2px_0px] dark:hover:bg-[#27241f]"
-                >
-                  <Download className="size-4" />
-                  Download
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => editableAsset?.onDownload ? editableAsset.onDownload() : downloadMedia(item)}
+                    disabled={editableAsset ? !editableAsset.canDownload : false}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-md bg-charcoal px-4 py-2.5 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] transition-opacity active:opacity-80 disabled:opacity-50 dark:border dark:border-white/14 dark:bg-[#1f1d19] dark:text-[#f4efe6] dark:shadow-[rgba(255,255,255,0.08)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.45)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.24)_0px_1px_2px_0px] dark:hover:bg-[#27241f]"
+                  >
+                    <Download className="size-4" />
+                    下载
+                  </button>
+                  {editableAsset?.onDelete && (
+                    <button
+                      type="button"
+                      onClick={() => editableAsset.onDelete?.()}
+                      disabled={!editableAsset.canDelete}
+                      className="flex items-center justify-center gap-2 rounded-md border border-border-warm px-4 py-2.5 text-sm text-destructive hover:bg-muted active:opacity-80 disabled:opacity-50 dark:border-white/12 dark:hover:bg-white/8"
+                    >
+                      <Trash2 className="size-4" />
+                      删除
+                    </button>
+                  )}
+                </div>
               </div>
             </aside>
           </motion.div>

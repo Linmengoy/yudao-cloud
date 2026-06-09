@@ -66,12 +66,12 @@ public class AigcModelParamController {
 
     @GetMapping("/list")
     @Operation(summary = "获取参数模板列表")
-    @Parameter(name = "modelId", description = "模型ID", required = true)
-    @Parameter(name = "capability", description = "能力", required = true)
+    @Parameter(name = "modelId", description = "模型ID")
+    @Parameter(name = "capability", description = "能力")
     @PreAuthorize("@ss.hasPermission('aigc:model:param:query')")
     public CommonResult<List<AigcModelParamTemplateRespDTO>> getParamTemplateList(
-            @RequestParam("modelId") Long modelId,
-            @RequestParam("capability") String capability) {
+            @RequestParam(value = "modelId", required = false) Long modelId,
+            @RequestParam(value = "capability", required = false) String capability) {
         List<AigcModelParamTemplateDO> templates = paramService.getParamTemplateList(modelId, capability);
         return success(templates.stream()
                 .map(this::convertParamTemplate)

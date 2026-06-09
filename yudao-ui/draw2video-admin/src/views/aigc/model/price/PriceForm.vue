@@ -2,8 +2,8 @@
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="760px">
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="110px" v-loading="formLoading">
       <el-row :gutter="20">
-        <el-col :span="12"><el-form-item label="模型 ID" prop="modelId"><el-input-number v-model="formData.modelId" class="!w-1/1" :min="1" controls-position="right" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="能力" prop="capability"><el-select v-model="formData.capability" class="!w-1/1" placeholder="请选择能力"><el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></el-col>
+        <el-col :span="12"><el-form-item label="模型" prop="modelId"><el-select v-model="formData.modelId" class="!w-1/1" filterable placeholder="请选择模型"><el-option v-for="item in modelList" :key="item.id" :label="formatModelLabel(item)" :value="getModelOptionValue(item)" /></el-select></el-form-item></el-col>
+        <el-col :span="12"><el-form-item label="能力" prop="capability"><el-select v-model="formData.capability" class="!w-1/1" :multiple="formType === 'create'" collapse-tags collapse-tags-tooltip placeholder="请选择能力"><el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
         <el-col :span="12"><el-form-item label="计费单位" prop="billingUnit"><el-select v-model="formData.billingUnit" class="!w-1/1" placeholder="请选择计费单位"><el-option v-for="item in AIGC_BILLING_UNITS" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></el-col>
@@ -29,7 +29,9 @@
 <script setup lang="ts">
 import { CommonStatusEnum } from '@/utils/constants'
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
+import { AigcModelApi } from '@/api/aigc/model/model'
 import { AigcModelPriceApi, type AigcModelPriceSaveReqVO } from '@/api/aigc/model/price'
+import type { AigcModelRespVO } from '@/api/aigc/model/types'
 import { AIGC_BILLING_UNITS, AIGC_MODEL_CAPABILITIES } from '../constants'
 
 defineOptions({ name: 'AigcModelPriceForm' })
@@ -41,14 +43,16 @@ const dialogTitle = ref('')
 const formLoading = ref(false)
 const formType = ref('')
 const formRef = ref()
+const modelList = ref<AigcModelRespVO[]>([])
 const formData = ref<AigcModelPriceSaveReqVO>({ id: undefined, modelId: undefined, capability: undefined, billingUnit: undefined, costPrice: 0, salePrice: 0, currencyType: 'POINT', priceConfig: undefined, effectiveStartTime: undefined, effectiveEndTime: undefined, status: CommonStatusEnum.ENABLE })
-const formRules = reactive({ modelId: [{ required: true, message: '模型 ID 不能为空', trigger: 'blur' }], capability: [{ required: true, message: '能力不能为空', trigger: 'change' }], billingUnit: [{ required: true, message: '计费单位不能为空', trigger: 'change' }], salePrice: [{ required: true, message: '销售价不能为空', trigger: 'blur' }], currencyType: [{ required: true, message: '币种不能为空', trigger: 'blur' }], status: [{ required: true, message: '状态不能为空', trigger: 'change' }] })
+const formRules = reactive({ modelId: [{ required: true, message: '模型不能为空', trigger: 'change' }], capability: [{ required: true, message: '能力不能为空', trigger: 'change' }], billingUnit: [{ required: true, message: '计费单位不能为空', trigger: 'change' }], salePrice: [{ required: true, message: '销售价不能为空', trigger: 'blur' }], currencyType: [{ required: true, message: '币种不能为空', trigger: 'blur' }], status: [{ required: true, message: '状态不能为空', trigger: 'change' }] })
 
 const open = async (type: string, id?: number) => {
   dialogVisible.value = true
   dialogTitle.value = t('action.' + type)
   formType.value = type
   resetForm()
+  await loadModelList()
   if (id) {
     formLoading.value = true
     try {
@@ -60,13 +64,24 @@ const open = async (type: string, id?: number) => {
 }
 defineExpose({ open })
 
+const loadModelList = async () => {
+  const data = await AigcModelApi.getModelPage({ pageNo: 1, pageSize: 100 })
+  modelList.value = data.list || []
+}
+
+const formatModelLabel = (model: AigcModelRespVO) => {
+  return [model.name, model.model].filter(Boolean).join(' / ') || `模型 ${model.id}`
+}
+
+const getModelOptionValue = (model: AigcModelRespVO) => Number(model.id)
+
 const emit = defineEmits(['success'])
 const submitForm = async () => {
   await formRef.value.validate()
   formLoading.value = true
   try {
     if (formType.value === 'create') {
-      await AigcModelPriceApi.createPrice(formData.value)
+      await Promise.all(getSelectedCapabilities().map((capability) => AigcModelPriceApi.createPrice({ ...formData.value, capability })))
       message.success(t('common.createSuccess'))
     } else {
       await AigcModelPriceApi.updatePrice(formData.value)
@@ -80,7 +95,12 @@ const submitForm = async () => {
 }
 
 const resetForm = () => {
-  formData.value = { id: undefined, modelId: undefined, capability: undefined, billingUnit: undefined, costPrice: 0, salePrice: 0, currencyType: 'POINT', priceConfig: undefined, effectiveStartTime: undefined, effectiveEndTime: undefined, status: CommonStatusEnum.ENABLE }
+  formData.value = { id: undefined, modelId: undefined, capability: [], billingUnit: undefined, costPrice: 0, salePrice: 0, currencyType: 'POINT', priceConfig: undefined, effectiveStartTime: undefined, effectiveEndTime: undefined, status: CommonStatusEnum.ENABLE }
   formRef.value?.resetFields()
+}
+
+const getSelectedCapabilities = () => {
+  const capability = formData.value.capability
+  return Array.isArray(capability) ? capability : capability ? [capability] : []
 }
 </script>
