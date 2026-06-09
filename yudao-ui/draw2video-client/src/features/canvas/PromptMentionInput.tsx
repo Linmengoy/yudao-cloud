@@ -19,6 +19,7 @@ type PromptMentionInputProps = {
   disabled?: boolean;
   placeholder?: string;
   minHeightClassName?: string;
+  onSubmit?: () => void;
 };
 
 const LEGACY_TOKEN_PATTERN = /^\{\{Image\s+(\d+)}}$/;
@@ -33,6 +34,53 @@ export function promptValueToSubmitPrompt(value: string, mentions: PromptMention
     (prompt, mention, index) => prompt.split(mention.token).join(`{{Image ${index + 1}}}`),
     value
   );
+}
+
+export function handleComposerWheelPan(
+  event: WheelEvent,
+  getViewport: () => { x: number; y: number; zoom: number },
+  setViewport: (viewport: { x: number; y: number; zoom: number }) => void
+) {
+  const target = event.target;
+  const isPromptScrollArea = target instanceof Element && Boolean(target.closest("[data-prompt-scroll-area='true']"));
+  const isLocalWheelArea = target instanceof Element && Boolean(target.closest("[data-composer-local-wheel='true']"));
+  if (isPromptScrollArea && Math.abs(event.deltaY) >= Math.abs(event.deltaX)) return;
+  if (isLocalWheelArea) {
+    if (Math.abs(event.deltaY) >= Math.abs(event.deltaX)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  const viewport = getViewport();
+  setViewport({
+    ...viewport,
+    x: viewport.x - event.deltaX,
+    y: viewport.y - event.deltaY,
+  });
+}
+
+export function useComposerWheelPan<T extends HTMLElement>(
+  getViewport: () => { x: number; y: number; zoom: number },
+  setViewport: (viewport: { x: number; y: number; zoom: number }) => void
+) {
+  const [element, setElement] = useState<T | null>(null);
+  const ref = useCallback((nextElement: T | null) => {
+    setElement(nextElement);
+  }, []);
+
+  useEffect(() => {
+    if (!element) return;
+    const handleWheel = (event: WheelEvent) => handleComposerWheelPan(event, getViewport, setViewport);
+    element.addEventListener("wheel", handleWheel, { capture: true, passive: false });
+    return () => {
+      element.removeEventListener("wheel", handleWheel, { capture: true });
+    };
+  }, [element, getViewport, setViewport]);
+
+  return ref;
 }
 
 function removeMissingMentionTokens(value: string, mentions: PromptMentionOption[]) {
@@ -126,6 +174,7 @@ export function PromptMentionInput({
   disabled,
   placeholder = "Describe anything you want to generate",
   minHeightClassName = "min-h-[130px]",
+  onSubmit,
 }: PromptMentionInputProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(false);
@@ -189,10 +238,20 @@ export function PromptMentionInput({
       insertMention(filteredMentions[0]);
       return;
     }
+    if (event.key === "Enter" && query != null) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey && onSubmit) {
+      event.preventDefault();
+      syncValue();
+      onSubmit();
+      return;
+    }
     if (event.key === "@" && mentions.length > 0) {
       setQuery("");
     }
-  }, [disabled, filteredMentions, insertMention, mentions.length, query]);
+  }, [disabled, filteredMentions, insertMention, mentions.length, onSubmit, query, syncValue]);
 
   return (
     <div className="relative">
@@ -210,9 +269,10 @@ export function PromptMentionInput({
         }}
         onInput={syncValue}
         onKeyDown={handleKeyDown}
+        data-prompt-scroll-area="true"
         className={cn(
           minHeightClassName,
-          "w-full cursor-text whitespace-pre-wrap break-words bg-transparent text-base leading-7 text-charcoal focus:outline-none",
+          "max-h-[240px] w-full cursor-text overflow-y-auto overscroll-contain whitespace-pre-wrap break-words bg-transparent pr-1 text-base leading-7 text-charcoal focus:outline-none",
           disabled && "cursor-not-allowed text-muted-gray"
         )}
         role="textbox"
