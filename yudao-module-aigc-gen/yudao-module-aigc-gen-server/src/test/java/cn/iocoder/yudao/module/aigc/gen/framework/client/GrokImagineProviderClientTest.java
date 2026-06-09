@@ -26,10 +26,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class GrokImagineProviderClientTest {
 
     @Test
-    public void testSubmit_imageToImageUsesInputImage() throws Exception {
+    public void testSubmit_openAICompatibleImageToImageUsesMultipartInputImage() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
+        AtomicReference<String> requestPath = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/v1/images/edits", exchange -> handleImageSubmit(exchange, requestBody));
+        server.createContext("/v1/images/edits", exchange -> handleImageSubmit(exchange, requestBody, requestPath));
         server.start();
         try {
             String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
@@ -48,23 +49,25 @@ public class GrokImagineProviderClientTest {
                             """.formatted(imageUrl, imageUrl)));
 
             assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
-            JSONObject body = JSONUtil.parseObj(requestBody.get());
-            assertEquals("gpt-image-2", body.getStr("model"));
-            assertEquals("{{Image 1}} 帮我给她穿上红色的晚礼服", body.getStr("prompt"));
-            assertEquals(imageUrl, body.getJSONObject("image").getStr("url"));
-            assertEquals(1, body.getInt("n"));
-            assertFalse(body.containsKey("inputImages"));
-            assertFalse(body.containsKey("inputImageUrls"));
+            String body = requestBody.get();
+            assertEquals("/v1/images/edits", requestPath.get());
+            assertTrue(body.contains("name=\"model\""));
+            assertTrue(body.contains("gpt-image-2"));
+            assertTrue(body.contains("name=\"prompt\""));
+            assertTrue(body.contains("name=\"image\""));
+            assertFalse(body.contains("inputImages"));
+            assertFalse(body.contains("inputImageUrls"));
         } finally {
             server.stop(0);
         }
     }
 
     @Test
-    public void testSubmit_imageToImageUsesMultipleInputImages() throws Exception {
+    public void testSubmit_grokImagineImageUsesJsonImageArray() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
+        AtomicReference<String> requestPath = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/v1/images/edits", exchange -> handleImageSubmit(exchange, requestBody));
+        server.createContext("/v1/images/generations", exchange -> handleImageSubmit(exchange, requestBody, requestPath));
         server.start();
         try {
             String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/images/generations";
@@ -82,13 +85,16 @@ public class GrokImagineProviderClientTest {
                             """));
 
             assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
+            assertEquals("/v1/images/generations", requestPath.get());
             JSONObject body = JSONUtil.parseObj(requestBody.get());
-            assertFalse(body.containsKey("image"));
-            assertEquals(3, body.getJSONArray("images").size());
-            assertEquals("data:image/png;base64,aW1hZ2Ux", body.getJSONArray("images").getJSONObject(0).getStr("url"));
-            assertEquals("data:image/png;base64,aW1hZ2Uy", body.getJSONArray("images").getJSONObject(1).getStr("url"));
-            assertEquals("data:image/png;base64,aW1hZ2Uz", body.getJSONArray("images").getJSONObject(2).getStr("url"));
+            assertEquals("grok-imagine-image", body.getStr("model"));
+            assertEquals("把三张参考图中的主体合成到同一个画面", body.getStr("prompt"));
+            assertEquals(3, body.getJSONArray("image").size());
+            assertEquals("data:image/png;base64,aW1hZ2Ux", body.getJSONArray("image").getStr(0));
+            assertEquals("data:image/png;base64,aW1hZ2Uy", body.getJSONArray("image").getStr(1));
+            assertEquals("data:image/png;base64,aW1hZ2Uz", body.getJSONArray("image").getStr(2));
             assertEquals("3:2", body.getStr("aspect_ratio"));
+            assertFalse(body.containsKey("images"));
             assertFalse(body.containsKey("inputImages"));
             assertFalse(body.containsKey("inputImageUrls"));
         } finally {
@@ -97,11 +103,12 @@ public class GrokImagineProviderClientTest {
     }
 
     @Test
-    public void testSubmit_imageToImageCompressesLargeInputImage() throws Exception {
+    public void testSubmit_grokImagineImageCompressesLargeInputImage() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
+        AtomicReference<String> requestPath = new AtomicReference<>();
         byte[] largeImage = createLargeImageBytes(1600, 2200);
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/v1/images/edits", exchange -> handleImageSubmit(exchange, requestBody));
+        server.createContext("/v1/images/generations", exchange -> handleImageSubmit(exchange, requestBody, requestPath));
         server.start();
         try {
             String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
@@ -120,7 +127,8 @@ public class GrokImagineProviderClientTest {
                             """.formatted(imageUrl)));
 
             assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
-            String providerImage = JSONUtil.parseObj(requestBody.get()).getJSONObject("image").getStr("url");
+            assertEquals("/v1/images/generations", requestPath.get());
+            String providerImage = JSONUtil.parseObj(requestBody.get()).getStr("image");
             assertTrue(providerImage.startsWith("data:image/jpeg;base64,"));
             assertTrue(providerImage.getBytes(StandardCharsets.UTF_8).length <= 960 * 1024);
         } finally {
@@ -310,8 +318,12 @@ public class GrokImagineProviderClientTest {
         }
     }
 
-    private void handleImageSubmit(HttpExchange exchange, AtomicReference<String> requestBody) throws IOException {
-        requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+    private void handleImageSubmit(HttpExchange exchange, AtomicReference<String> requestBody,
+                                   AtomicReference<String> requestPath) throws IOException {
+        requestPath.set(exchange.getRequestURI().getPath());
+        String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+        requestBody.set(new String(exchange.getRequestBody().readAllBytes(),
+                contentType != null && contentType.contains("multipart/form-data") ? StandardCharsets.ISO_8859_1 : StandardCharsets.UTF_8));
         byte[] response = "{\"id\":\"image-task-1\",\"data\":[{\"url\":\"https://example.com/result.png\"}]}".getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, response.length);
