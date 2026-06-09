@@ -10,6 +10,7 @@ import type { AigcAsset } from "@/features/assets/asset-types";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { clearCanvas } from "@/features/canvas/use-canvas-storage";
+import { useAuth } from "@/features/auth/auth-store";
 import {
   createProject,
   deleteProject,
@@ -192,6 +193,7 @@ function CoverAssetPager({
 }
 
 export default function ProjectsPage() {
+  const { user } = useAuth();
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [query, setQuery] = useState("");
@@ -240,7 +242,7 @@ export default function ProjectsPage() {
       setStatusMessage("");
     } catch {
       const keyword = search.trim().toLowerCase();
-      const localProjects = listProjects()
+      const localProjects = listProjects(user?.id)
         .filter((project) => !keyword || project.name.toLowerCase().includes(keyword))
         .map(localProjectToListItem);
       const nextPageCount = Math.max(1, Math.ceil(localProjects.length / PAGE_SIZE));
@@ -254,7 +256,7 @@ export default function ProjectsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [debouncedQuery, pageNo]);
+  }, [debouncedQuery, pageNo, user?.id]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query), 350);
@@ -372,7 +374,7 @@ export default function ProjectsPage() {
       const projectId = await canvasApi.createProject({ name: "未命名项目" });
       router.push(`/canvas?projectId=${encodeURIComponent(String(projectId))}`);
     } catch {
-      const project = createProject({ name: "未命名项目" });
+      const project = createProject({ name: "未命名项目" }, user?.id);
       setStatusMessage("项目服务暂不可用，已创建本机草稿。");
       router.push(`/canvas?projectId=${encodeURIComponent(project.id)}`);
     } finally {
@@ -390,8 +392,8 @@ export default function ProjectsPage() {
     if (!confirmed) return;
     setDeletingProjectId(project.id);
     if (project.source === "local") {
-      deleteProject(project.id);
-      clearCanvas(project.id);
+      deleteProject(project.id, user?.id);
+      clearCanvas(project.id, user?.id);
       await refreshProjects();
       setDeletingProjectId(null);
       return;

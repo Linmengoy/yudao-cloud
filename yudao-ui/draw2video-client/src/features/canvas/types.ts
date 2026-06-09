@@ -207,6 +207,7 @@ export type TextNode = Node<TextNodeData, "text">;
 export interface VideoNodeData {
   [key: string]: unknown;
   videoId?: string;
+  projectId?: string | number | null;
   assetId?: number | null;
   assetVersionId?: number | null;
   previewUrl?: string | null;

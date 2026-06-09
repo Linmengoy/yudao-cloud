@@ -65,6 +65,12 @@ function applyLoginToken(token: LoginToken) {
   setTokens(token.accessToken, token.refreshToken);
 }
 
+function clearCanvasLocalMedia() {
+  import("@/features/canvas/image-store")
+    .then(({ clearCanvasMediaStore }) => clearCanvasMediaStore())
+    .catch(() => undefined);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -95,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearAuthState = useCallback((reason: AuthReason = null) => {
     clearTokens();
+    clearCanvasLocalMedia();
     queryClient.clear();
     setState({ user: null, wallet: null, loading: false, loggedIn: false, authReason: reason });
   }, [queryClient]);

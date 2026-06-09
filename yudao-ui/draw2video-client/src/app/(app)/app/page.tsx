@@ -18,6 +18,7 @@ import {
   type AigcModelParamTemplate,
 } from "@/features/generation/model-api";
 import { listProjects, type ProjectMeta } from "@/features/projects/project-store";
+import { useAuth } from "@/features/auth/auth-store";
 
 import type Muuri from "muuri";
 
@@ -270,9 +271,13 @@ function assetToReferenceImage(asset: AigcAsset): ReferenceImage | null {
   };
 }
 
-function readCachedReferenceImages() {
+function referenceImageCacheKey(ownerKey?: string | number | null) {
+  return ownerKey == null ? REFERENCE_IMAGE_CACHE_KEY : `${REFERENCE_IMAGE_CACHE_KEY}:${ownerKey}`;
+}
+
+function readCachedReferenceImages(ownerKey?: string | number | null) {
   try {
-    const raw = window.localStorage.getItem(REFERENCE_IMAGE_CACHE_KEY);
+    const raw = window.localStorage.getItem(referenceImageCacheKey(ownerKey));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as ReferenceImage[];
     return Array.isArray(parsed)
@@ -283,13 +288,13 @@ function readCachedReferenceImages() {
   }
 }
 
-function writeCachedReferenceImages(images: ReferenceImage[]) {
+function writeCachedReferenceImages(images: ReferenceImage[], ownerKey?: string | number | null) {
   try {
     if (images.length === 0) {
-      window.localStorage.removeItem(REFERENCE_IMAGE_CACHE_KEY);
+      window.localStorage.removeItem(referenceImageCacheKey(ownerKey));
       return;
     }
-    window.localStorage.setItem(REFERENCE_IMAGE_CACHE_KEY, JSON.stringify(images));
+    window.localStorage.setItem(referenceImageCacheKey(ownerKey), JSON.stringify(images));
   } catch {
     // Cache is best-effort; generation should not depend on localStorage.
   }
@@ -370,6 +375,7 @@ function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: 
 
 export default function WorkspacePage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [models, setModels] = useState<AigcModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
@@ -456,22 +462,28 @@ export default function WorkspacePage() {
   const submitStatusMessage = submitError ?? submitBlockReason;
 
   useEffect(() => {
-    writeCachedReferenceImages(referenceImages);
-  }, [referenceImages]);
+    writeCachedReferenceImages(referenceImages, user?.id);
+  }, [referenceImages, user?.id]);
 
-  async function refreshProjects() {
+  useEffect(() => {
+    if (!user?.id) return;
+    const timer = window.setTimeout(() => setReferenceImages(readCachedReferenceImages(user.id)), 0);
+    return () => window.clearTimeout(timer);
+  }, [user?.id]);
+
+  const refreshProjects = useCallback(async () => {
     try {
       const page = await canvasApi.listProjects({ pageNo: 1, pageSize: 12 });
       setProjects(page.list.map(toProjectListItem));
     } catch {
-      setProjects(listProjects().map(localProjectToListItem));
+      setProjects(listProjects(user?.id).map(localProjectToListItem));
     }
-  }
+  }, [user?.id]);
 
   useEffect(() => {
     const timer = window.setTimeout(refreshProjects, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [refreshProjects]);
 
   useEffect(() => {
     if (recentProjects.length === 0 || !gridElementRef.current) return;

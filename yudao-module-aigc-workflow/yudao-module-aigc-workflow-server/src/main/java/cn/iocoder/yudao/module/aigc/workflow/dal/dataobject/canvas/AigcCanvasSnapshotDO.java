@@ -19,6 +19,12 @@ public class AigcCanvasSnapshotDO extends TenantBaseDO {
     private Long id;
     private Long projectId;
     private Long version;
+    private String storageType;
+    private Long storageConfigId;
+    private String bucket;
+    private String snapshotObjectKey;
+    private Long snapshotSize;
+    private String snapshotHash;
     private String nodesJson;
     private String edgesJson;
     private String viewportJson;

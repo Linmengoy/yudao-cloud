@@ -1,5 +1,6 @@
 import { api } from "@/lib/api-client";
 import type { AigcAsset } from "@/features/assets/asset-types";
+import { sanitizeNodesForCanvasSnapshot } from "@/features/canvas/canvas-syncable-data";
 import type {
   AppEdge,
   AppNode,
@@ -144,7 +145,7 @@ function parseViewport(value: string | null | undefined): CanvasState["viewport"
 export function snapshotRecordToCanvasState(snapshot: CanvasSnapshotRecord | null | undefined): CanvasState | null {
   if (!snapshot) return null;
   return {
-    nodes: parseJsonArray<AppNode>(snapshot.nodesJson),
+    nodes: sanitizeNodesForCanvasSnapshot(parseJsonArray<AppNode>(snapshot.nodesJson)),
     edges: parseJsonArray<AppEdge>(snapshot.edgesJson),
     viewport: parseViewport(snapshot.viewportJson),
   };

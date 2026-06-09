@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -20,16 +21,22 @@ public class AigcCanvasRoomService {
     private WebSocketMessageSender webSocketMessageSender;
 
     public void join(Long projectId, String sessionId) {
+        Long previousProjectId = sessionProjects.put(sessionId, projectId);
+        if (previousProjectId != null && !Objects.equals(previousProjectId, projectId)) {
+            removeSessionFromProject(previousProjectId, sessionId);
+        }
         projectSessions.computeIfAbsent(projectId, key -> ConcurrentHashMap.newKeySet()).add(sessionId);
-        sessionProjects.put(sessionId, projectId);
     }
 
     public void leave(Long projectId, String sessionId) {
-        Set<String> sessions = projectSessions.get(projectId);
-        if (sessions != null) {
-            sessions.remove(sessionId);
+        removeSessionFromProject(projectId, sessionId);
+        if (Objects.equals(sessionProjects.get(sessionId), projectId)) {
+            sessionProjects.remove(sessionId);
         }
-        sessionProjects.remove(sessionId);
+    }
+
+    public boolean isJoined(Long projectId, String sessionId) {
+        return Objects.equals(sessionProjects.get(sessionId), projectId);
     }
 
     public Set<String> getSessionIds(Long projectId) {
@@ -41,6 +48,10 @@ public class AigcCanvasRoomService {
             return;
         }
         for (String sessionId : getSessionIds(projectId)) {
+            if (!isJoined(projectId, sessionId)) {
+                removeSessionFromProject(projectId, sessionId);
+                continue;
+            }
             if (sessionId.equals(excludeSessionId)) {
                 continue;
             }
@@ -57,6 +68,17 @@ public class AigcCanvasRoomService {
 
     public void broadcastMemberEvent(Long projectId, AigcCanvasMemberMessage message, String excludeSessionId) {
         broadcast(projectId, "canvas-member-updated", message, excludeSessionId);
+    }
+
+    private void removeSessionFromProject(Long projectId, String sessionId) {
+        Set<String> sessions = projectSessions.get(projectId);
+        if (sessions == null) {
+            return;
+        }
+        sessions.remove(sessionId);
+        if (sessions.isEmpty()) {
+            projectSessions.remove(projectId, sessions);
+        }
     }
 
 }

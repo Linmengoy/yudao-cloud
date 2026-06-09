@@ -85,6 +85,7 @@ Project model:
 - `/assets` is the asset library. The sidebar asset icon should land here and show generated image/video assets in a compact masonry wall.
 - `/canvas?projectId=...` opens one project's canvas. `/create/image` is kept only as a compatibility redirect.
 - Canvas drafts are scoped by `projectId`; creating or opening a project updates its last-opened time and lightweight summary.
+- Project cards expose a cover-image icon next to delete. It opens a two-column paged picker: project image assets on the left and all user image assets on the right. Saving updates `coverAssetId` only; signed cover URLs remain runtime display data.
 
 Asset library:
 
@@ -103,6 +104,7 @@ Current image generation behavior:
 - `/app` quick generation supports pasted, uploaded, and asset-picked reference images. References are shown immediately, cached in `localStorage`, and restored when the user returns to the page. The cache is keyed by stable asset metadata; signed preview URLs are refreshed from the asset API instead of being trusted as permanent links.
 - Multiple quick-generate reference images are supported. The first image is still sent through legacy single-reference fields for compatibility, while the complete list is sent through array fields.
 - Quick generation filters models by the current input capability (`TEXT_TO_IMAGE` / `IMAGE_TO_IMAGE` / `TEXT_TO_VIDEO` / `IMAGE_TO_VIDEO`), opens a `DynamicParamForm` parameter popover from the sliders button, and sends the selected params with template defaults filled in.
+- When `/app` creates a canvas project from text plus reference images, each reference image should become a canvas image node and be connected to the target generation node. Multi-image requests use all references for node creation and request arrays; single-image providers or legacy fields use the first reference image.
 - New image generation creates an `ImageNode` draft placeholder.
 - Image models, model parameters, and price display come from the AIGC model APIs. Backend SELECT options/default values are normalized so saved JSON-array values render as plain values such as `1:1`.
 - Existing image nodes persist `aigcModelId`; refreshing a project should restore the node's selected model instead of falling back to the default model.
@@ -191,6 +193,14 @@ Canvas persistence is split:
 Large image `dataUrl` values are stripped before saving the canvas graph to `localStorage`.
 Uploaded video `data:` URLs are also stripped before saving; generated remote video URLs can stay in the graph.
 Opening `/canvas` without a saved snapshot should show an empty canvas. The app should not auto-create a default image node unless the user explicitly creates, pastes, uploads, drags, or quick-generates content.
+
+Server persistence target:
+
+- MySQL stores `canvas_project`, `canvas_snapshot` metadata, `canvas_operation_log`, and `canvas_asset_ref`. Frontend payloads should keep stable IDs and lightweight node data so these tables stay queryable.
+- OSS / MinIO stores large snapshot JSON bodies and historical snapshot packages. The frontend must not assume a snapshot body always comes from MySQL inline JSON.
+- Snapshot storage is threshold based: after runtime URLs and large local media are stripped, bodies up to 512KB with up to 200 nodes, 500 edges, and 64KB per node data may stay inline in MySQL; anything larger should be stored in OSS / MinIO with MySQL metadata only. Bodies at or above 2MB are always object-store snapshots.
+- Redis stores collaboration room hot state, pending operation state, and presence. A successful realtime accept may mean the operation is accepted into the hot path, not necessarily persisted to MySQL yet.
+- Runtime asset URLs from private OSS/S3 expire. Canvas, project covers, and asset pickers should refresh previews from asset APIs by `assetId` / `outputAssetId`, not reuse saved signed URLs.
 
 ## Auth, Theme, And Email Code UI
 
