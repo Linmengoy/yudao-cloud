@@ -50,6 +50,11 @@ public class MemberUserApiImpl implements MemberUserApi {
     }
 
     @Override
+    public CommonResult<MemberUserRespDTO> getUserByEmail(String email) {
+        return success(MemberUserConvert.INSTANCE.convert2(userService.getUserByEmail(email)));
+    }
+
+    @Override
     public CommonResult<Boolean> validateUser(Long id) {
         MemberUserDO user = userService.getUser(id);
         if (user == null) {

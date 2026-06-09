@@ -80,6 +80,21 @@ const CANVAS_EDGE_TYPES = {
   signal: CanvasSignalEdge,
 } satisfies EdgeTypes;
 
+type AssetUrlEntry = { assetId: number; url: string; expireTime: string | null };
+
+const assetUrlMemoryCache = new Map<string, AssetUrlEntry>();
+
+function assetUrlCacheKey(projectId: string | null, assetId: number) {
+  return `${projectId ?? "global"}:${assetId}`;
+}
+
+function isUsableAssetUrlEntry(entry: AssetUrlEntry | undefined): entry is AssetUrlEntry {
+  if (!entry?.url) return false;
+  if (!entry.expireTime) return true;
+  const expireAt = new Date(entry.expireTime).getTime();
+  return Number.isFinite(expireAt) && expireAt - Date.now() > 120_000;
+}
+
 const CANVAS_NODE_DRAG_HANDLE = ".canvas-node-drag-handle";
 const TRANSPARENT_NODE_WRAPPER_STYLE = { pointerEvents: "none" as const };
 const GROUP_LAYOUT_PADDING = 32;
@@ -87,6 +102,7 @@ const GROUP_LAYOUT_GAP = 96;
 const CANVAS_ARRANGE_COLUMN_GAP = 420;
 const CANVAS_ARRANGE_ROW_GAP = 240;
 const CANVAS_ARRANGE_COMPONENT_GAP = 360;
+const CANVAS_ASSET_PREFETCH_SCREEN_PADDING = 720;
 
 type CreateNodeKind = "text" | "image" | "sketch" | "video";
 type LinkedCreateDirection = "incoming" | "outgoing";
@@ -200,6 +216,60 @@ function getApproxNodeSize(node: AppNode) {
   if (node.type === "text") return { width: 320, height: 260 };
   if (node.type === "canvasGroup") return { width: Number(data.width) || 420, height: Number(data.height) || 320 };
   return { width: 320, height: 280 };
+}
+
+function getNodeAbsolutePosition(node: AppNode) {
+  const candidate = (
+    node as AppNode & {
+      positionAbsolute?: { x: number; y: number };
+      internals?: { positionAbsolute?: { x: number; y: number } };
+    }
+  ).positionAbsolute ?? (
+    node as AppNode & {
+      internals?: { positionAbsolute?: { x: number; y: number } };
+    }
+  ).internals?.positionAbsolute;
+  if (typeof candidate?.x === "number" && typeof candidate.y === "number") {
+    return candidate;
+  }
+  return node.position;
+}
+
+function getNodeFlowRect(node: AppNode): SelectionRectSnapshot {
+  const size = getApproxNodeSize(node);
+  const position = getNodeAbsolutePosition(node);
+  return { x: position.x, y: position.y, width: size.width, height: size.height };
+}
+
+function getExpandedCanvasViewportFlowRect(
+  screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number }
+): SelectionRectSnapshot | null {
+  const flowElement = document.querySelector<HTMLElement>(".react-flow");
+  if (!flowElement) return null;
+  const rect = flowElement.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const topLeft = screenToFlowPosition({
+    x: rect.left - CANVAS_ASSET_PREFETCH_SCREEN_PADDING,
+    y: rect.top - CANVAS_ASSET_PREFETCH_SCREEN_PADDING,
+  });
+  const bottomRight = screenToFlowPosition({
+    x: rect.right + CANVAS_ASSET_PREFETCH_SCREEN_PADDING,
+    y: rect.bottom + CANVAS_ASSET_PREFETCH_SCREEN_PADDING,
+  });
+  const left = Math.min(topLeft.x, bottomRight.x);
+  const top = Math.min(topLeft.y, bottomRight.y);
+  const right = Math.max(topLeft.x, bottomRight.x);
+  const bottom = Math.max(topLeft.y, bottomRight.y);
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function filterNodesInExpandedCanvasViewport(
+  nodes: AppNode[],
+  screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number }
+) {
+  const viewportRect = getExpandedCanvasViewportFlowRect(screenToFlowPosition);
+  if (!viewportRect) return [];
+  return nodes.filter((node) => rectsIntersect(viewportRect, getNodeFlowRect(node)));
 }
 
 async function dataUrlToFile(dataUrl: string, fileName: string, fallbackMimeType: string) {
@@ -1049,16 +1119,16 @@ function getNodeAssetAccessRequest(node: AppNode, assetId: number) {
   if (node.type === "video") {
     return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
   }
-  return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
+  return { assetId, fileRole: "THUMBNAIL", accessType: "THUMBNAIL" };
 }
 
-function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | null): AppNode {
+function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | null, assetId = getNodeAssetId(node)): AppNode {
   if (node.type === "video") {
     return {
       ...node,
       data: {
         ...node.data,
-        assetId: getNodeAssetId(node),
+        assetId,
         previewUrl: url,
         videoUrl: url,
         assetUrlExpireTime: expireTime ?? null,
@@ -1070,7 +1140,7 @@ function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | nul
       ...node,
       data: {
         ...node.data,
-        assetId: getNodeAssetId(node),
+        assetId,
         previewUrl: url,
         outputPreviewUrl: url,
         assetUrlExpireTime: expireTime ?? null,
@@ -1521,6 +1591,7 @@ function CanvasFlow() {
   const nodeDataPatchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // 初始化最后应用版本
   const lastAppliedVersionRef = useRef(0);
+  const viewportAssetRefreshTimerRef = useRef<number | null>(null);
 
   // 初始化同步状态
   const syncState: CanvasSyncState = saveError
@@ -1548,6 +1619,7 @@ function CanvasFlow() {
       .map((node) => ({ nodeId: node.id, node, assetId: getNodeAssetId(node) }))
       .filter((item): item is { nodeId: string; node: AppNode; assetId: number } => typeof item.assetId === "number");
     if (mediaNodes.length === 0) return;
+    const assetIdByNodeId = new Map(mediaNodes.map((item) => [item.nodeId, item.assetId]));
 
     const requestsByAssetId = new Map<number, ReturnType<typeof getNodeAssetAccessRequest>>();
     mediaNodes.forEach(({ node, assetId }) => {
@@ -1556,45 +1628,104 @@ function CanvasFlow() {
       }
     });
 
-    type AssetUrlEntry = { nodeId: string; url: string; expireTime: string | null };
-    const entries: AssetUrlEntry[] = await getAssetAccessUrls([...requestsByAssetId.values()])
-      .then((responses) => {
-        const urlByAssetId = new Map(responses
-          .filter((response) => response?.url)
-          .map((response) => [response.assetId, { url: response.url, expireTime: response.expireTime ?? null }]));
-        return mediaNodes
-          .map(({ nodeId, assetId }) => {
-            const entry = urlByAssetId.get(assetId);
-            return entry ? { nodeId, ...entry } : null;
-          })
-          .filter((entry): entry is AssetUrlEntry => Boolean(entry));
-      })
-      .catch(async () => {
-        const fallbackEntries = await Promise.all(mediaNodes.map(async ({ nodeId, assetId }) => {
+    const projectIdForAccess = serverProjectId;
+    const entriesByAssetId = new Map<number, AssetUrlEntry>();
+    requestsByAssetId.forEach((_, assetId) => {
+      const cached = assetUrlMemoryCache.get(assetUrlCacheKey(projectIdForAccess, assetId))
+        ?? assetUrlMemoryCache.get(assetUrlCacheKey(null, assetId));
+      if (isUsableAssetUrlEntry(cached)) {
+        entriesByAssetId.set(assetId, cached);
+      }
+    });
+
+    if (entriesByAssetId.size > 0) {
+      setNodes((nds) => nds.map((node) => {
+        const assetId = assetIdByNodeId.get(node.id) ?? getNodeAssetId(node);
+        const entry = typeof assetId === "number" ? entriesByAssetId.get(assetId) : undefined;
+        return entry ? withFreshAssetUrl(node, entry.url, entry.expireTime, assetId) : node;
+      }));
+    }
+
+    const pendingRequests = [...requestsByAssetId.values()].filter((request) => !entriesByAssetId.has(Number(request.assetId)));
+    if (pendingRequests.length === 0) return;
+
+    type AssetUrlResponse = { assetId: number | string; url?: string | null; expireTime?: string | null };
+    const fetchPersonalAssetUrlEntries = async (requests: typeof pendingRequests): Promise<AssetUrlResponse[]> => {
+      const fallbackEntries = await Promise.all(requests.map(async ({ assetId }) => {
           try {
             const asset = await getMyAsset(assetId);
             const url = getAssetPreviewUrl(asset);
-            return url ? { nodeId, url, expireTime: getAssetPreviewExpireTime(asset) ?? null } : null;
+            return url ? { assetId: Number(assetId), url, expireTime: getAssetPreviewExpireTime(asset) ?? null } : null;
           } catch {
             return null;
           }
         }));
-        return fallbackEntries.filter((entry): entry is AssetUrlEntry => Boolean(entry));
-      });
-    const urlByNodeId = new Map(entries.map((entry) => [entry.nodeId, entry]));
-    if (urlByNodeId.size === 0) return;
+      return fallbackEntries.filter((entry): entry is AssetUrlEntry => Boolean(entry));
+    };
+
+    const rememberAssetUrlEntries = (responses: AssetUrlResponse[]) => responses.forEach((entry) => {
+      if (!entry?.url) return;
+      const assetId = Number(entry.assetId);
+      if (!Number.isFinite(assetId)) return;
+      const normalizedEntry = { assetId, url: entry.url, expireTime: entry.expireTime ?? null };
+      entriesByAssetId.set(normalizedEntry.assetId, normalizedEntry);
+      assetUrlMemoryCache.set(assetUrlCacheKey(projectIdForAccess, normalizedEntry.assetId), normalizedEntry);
+    });
+
+    try {
+      const responses = projectIdForAccess
+        ? await canvasApi.getProjectAssetAccessUrls(projectIdForAccess, pendingRequests)
+        : await getAssetAccessUrls(pendingRequests);
+      rememberAssetUrlEntries(responses);
+    } catch {
+      rememberAssetUrlEntries(await fetchPersonalAssetUrlEntries(pendingRequests));
+    }
+
+    if (projectIdForAccess) {
+      const missingRequests = pendingRequests.filter((request) => !entriesByAssetId.has(Number(request.assetId)));
+      if (missingRequests.length > 0) {
+        rememberAssetUrlEntries(await fetchPersonalAssetUrlEntries(missingRequests));
+      }
+    }
+
+    if (entriesByAssetId.size === 0) return;
 
     setNodes((nds) => nds.map((node) => {
-      const entry = urlByNodeId.get(node.id);
-      return entry ? withFreshAssetUrl(node, entry.url, entry.expireTime) : node;
+      const assetId = assetIdByNodeId.get(node.id) ?? getNodeAssetId(node);
+      const entry = typeof assetId === "number" ? entriesByAssetId.get(assetId) : undefined;
+      return entry ? withFreshAssetUrl(node, entry.url, entry.expireTime, assetId) : node;
     }));
-  }, [setNodes]);
+  }, [serverProjectId, setNodes]);
+
+  const refreshVisibleAssetUrls = useCallback((nodesToRefresh?: AppNode[]) => {
+    const visibleNodes = filterNodesInExpandedCanvasViewport(nodesToRefresh ?? getNodes() as AppNode[], screenToFlowPosition);
+    if (visibleNodes.length > 0) {
+      refreshAssetUrls(visibleNodes);
+    }
+  }, [getNodes, refreshAssetUrls, screenToFlowPosition]);
+
+  const scheduleVisibleAssetRefresh = useCallback(() => {
+    if (viewportAssetRefreshTimerRef.current) {
+      window.clearTimeout(viewportAssetRefreshTimerRef.current);
+    }
+    viewportAssetRefreshTimerRef.current = window.setTimeout(() => {
+      viewportAssetRefreshTimerRef.current = null;
+      refreshVisibleAssetUrls();
+    }, 120);
+  }, [refreshVisibleAssetUrls]);
+
+  useEffect(() => () => {
+    if (viewportAssetRefreshTimerRef.current) {
+      window.clearTimeout(viewportAssetRefreshTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isHydrated) return;
     const refreshExpiringAssetUrls = () => {
       const now = Date.now();
-      const expiringNodes = (getNodes() as AppNode[]).filter((node) => {
+      const visibleNodes = filterNodesInExpandedCanvasViewport(getNodes() as AppNode[], screenToFlowPosition);
+      const expiringNodes = visibleNodes.filter((node) => {
         if (node.type !== "image" && node.type !== "video") return false;
         if (!getNodeAssetId(node)) return false;
         const data = node.data as ImageNodeData | VideoNodeData;
@@ -1609,7 +1740,7 @@ function CanvasFlow() {
     refreshExpiringAssetUrls();
     const timer = window.setInterval(refreshExpiringAssetUrls, 60_000);
     return () => window.clearInterval(timer);
-  }, [getNodes, isHydrated, refreshAssetUrls]);
+  }, [getNodes, isHydrated, refreshAssetUrls, screenToFlowPosition]);
 
   const applyRemoteOperation = useCallback((operationType: string, payload: Record<string, unknown>) => {
     if (operationType === "NODE_MOVE" && typeof payload.nodeId === "string") {
@@ -1645,13 +1776,10 @@ function CanvasFlow() {
         },
       } as AppNode : node));
       if (typeof payload.assetId === "number") {
-        getMyAsset(payload.assetId)
-          .then((asset) => {
-            const url = getAssetPreviewUrl(asset);
-            if (!url) return;
-            setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? withFreshAssetUrl(node, url, getAssetPreviewExpireTime(asset) ?? null) : node));
-          })
-          .catch(() => undefined);
+        const node = (getNodes() as AppNode[]).find((item) => item.id === payload.nodeId);
+        if (node) {
+          refreshAssetUrls([{ ...node, data: { ...node.data, assetId: payload.assetId } } as AppNode]);
+        }
       }
       return;
     }
@@ -1673,7 +1801,7 @@ function CanvasFlow() {
       setNodes(defaultNodes());
       setEdges([]);
     }
-  }, [getNodes, setEdges, setNodes]);
+  }, [getNodes, refreshAssetUrls, setEdges, setNodes]);
 
   const hydrateRemoteSnapshot = useCallback((snapshot: Parameters<typeof snapshotRecordToCanvasState>[0]) => {
     const state = snapshotRecordToCanvasState(snapshot);
@@ -1683,8 +1811,8 @@ function CanvasFlow() {
     setEdges(state.edges.map(migrateEdge));
     if (state.viewport) setViewport(state.viewport);
     if (typeof snapshot?.version === "number") markAppliedVersion(snapshot.version);
-    refreshAssetUrls(migratedNodes);
-  }, [markAppliedVersion, refreshAssetUrls, setEdges, setNodes, setViewport]);
+    window.requestAnimationFrame(() => refreshVisibleAssetUrls(migratedNodes));
+  }, [markAppliedVersion, refreshVisibleAssetUrls, setEdges, setNodes, setViewport]);
 
   const applyOperationRecord = useCallback((operationRecord: { clientId: string; nextVersion: number; operationType: string; operationJson: string }) => {
     setLatestKnownVersion((prev) => Math.max(prev, operationRecord.nextVersion));
@@ -2326,7 +2454,7 @@ function CanvasFlow() {
           setEdges(migratedEdges);
           setViewport(saved.viewport ?? DEFAULT_CANVAS_VIEWPORT);
           setIsHydrated(true);
-          refreshAssetUrls(migratedNodes);
+          window.requestAnimationFrame(() => refreshVisibleAssetUrls(migratedNodes));
         }
 
         if (currentVersion > snapshotVersion) syncFromVersion(snapshotVersion);
@@ -2341,7 +2469,7 @@ function CanvasFlow() {
 
     hydrate();
     return () => { cancelled = true; };
-  }, [activeProjectId, loadProject, markAppliedVersion, refreshAssetUrls, resetAppliedVersion, router, setNodes, setEdges, setViewport, syncFromVersion]);
+  }, [activeProjectId, loadProject, markAppliedVersion, refreshVisibleAssetUrls, resetAppliedVersion, router, setNodes, setEdges, setViewport, syncFromVersion]);
 
   // Debounced save — only after hydration completes
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -3301,6 +3429,7 @@ function CanvasFlow() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onConnect={onConnect}
+        onMoveEnd={scheduleVisibleAssetRefresh}
         onMoveStart={() => { closeContextMenu(); closeCreateMenu(); window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
         onPaneClick={() => {
           if (ignoreNextPaneClickRef.current) {

@@ -134,14 +134,22 @@ java -jar .\yudao-module-aigc-workflow\yudao-module-aigc-workflow-server\target\
 
 前端
 
-```JSON
+```powershell
 ./script/deploy-frontend-images.ps1 -Server manman
 ```
 
-```JSON
+```powershell
 ./script/deploy-frontend-images.ps1 -Server manman -Target admin
 ```
 
-```JSON
+```powershell
 ./script/deploy-frontend-images.ps1 -Server manman -Target client
 ```
+
+前端发布策略：
+
+- 本地 Docker Desktop 完成 `docker buildx build --load` 和 `docker save`。
+- 上传镜像包到 `manman:/opt/code`，服务器只执行 `docker load` 和 `docker compose up -d --no-build --force-recreate`。
+- `script/docker/docker-compose.frontend.yml` 会随发布脚本同步到 `manman:/opt/code/docker-compose.frontend.yml`。
+- 用户访问链路为 `PC -> ucould(Caddy) -> manman(draw2video-client/admin) -> manman(yudao-gateway)`。
+- `draw2video-client` 容器内的 Next `/app-api` 代理通过 `host.docker.internal:48080` 访问 manman 宿主机网关，避免容器内访问 `111.228.39.103:48080` 超时。

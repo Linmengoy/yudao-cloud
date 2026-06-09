@@ -15,6 +15,16 @@ public class AigcCanvasMemberRespVO {
     private Long projectId;
     @Schema(description = "用户编号")
     private Long userId;
+    @Schema(description = "用户昵称")
+    private String nickname;
+    @Schema(description = "用户头像")
+    private String avatar;
+    @Schema(description = "用户手机号")
+    private String mobile;
+    @Schema(description = "用户邮箱")
+    private String email;
+    @Schema(description = "用户状态")
+    private Integer userStatus;
     @Schema(description = "成员角色")
     private String role;
     @Schema(description = "邀请人用户编号")

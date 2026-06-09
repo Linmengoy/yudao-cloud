@@ -2,6 +2,8 @@ package cn.iocoder.yudao.module.aigc.workflow.service.canvas;
 
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberCandidateRespVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectAssetPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
@@ -12,6 +14,8 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRecycleBinRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectUpdateReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectAssetAccessUrlReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectAssetAccessUrlRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSketchSaveReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasSnapshotSaveReqVO;
@@ -42,7 +46,9 @@ public interface AigcCanvasProjectService {
 
     AigcCanvasMemberDO getProjectMember(Long id, Long userId);
 
-    List<AigcCanvasMemberDO> getProjectMembers(Long id, Long userId);
+    List<AigcCanvasMemberRespVO> getProjectMembers(Long id, Long userId);
+
+    List<AigcCanvasMemberCandidateRespVO> searchProjectMemberCandidates(Long id, String keyword, Long userId);
 
     void inviteProjectMember(Long id, AigcCanvasMemberInviteReqVO reqVO, Long userId);
 
@@ -55,6 +61,10 @@ public interface AigcCanvasProjectService {
     PageResult<AigcCanvasProjectRecycleBinRespVO> getProjectRecycleBinPage(AigcCanvasProjectRecycleBinPageReqVO reqVO, Long userId);
 
     PageResult<AigcAssetRespDTO> getProjectAssetPage(Long projectId, AigcCanvasProjectAssetPageReqVO reqVO, Long userId);
+
+    List<AigcCanvasProjectAssetAccessUrlRespVO> getProjectAssetAccessUrls(Long projectId,
+                                                                          List<AigcCanvasProjectAssetAccessUrlReqVO> reqVOs,
+                                                                          Long userId);
 
     AigcCanvasSnapshotDO getLatestSnapshot(Long projectId, Long userId);
 

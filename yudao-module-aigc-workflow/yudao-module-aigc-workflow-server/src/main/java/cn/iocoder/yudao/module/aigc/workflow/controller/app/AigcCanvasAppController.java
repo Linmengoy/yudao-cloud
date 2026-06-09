@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasAssetBindReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberCandidateRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
@@ -13,6 +14,8 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSubmitReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSyncRespVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectAssetAccessUrlReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectAssetAccessUrlRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectAssetPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
@@ -104,10 +107,25 @@ public class AigcCanvasAppController {
         return success(projectService.getProjectAssetPage(id, reqVO, getLoginUserId()));
     }
 
+    @PostMapping("/projects/{id}/asset-access-urls")
+    @Operation(summary = "批量获取画布项目资源访问 URL")
+    public CommonResult<List<AigcCanvasProjectAssetAccessUrlRespVO>> getProjectAssetAccessUrls(
+            @PathVariable("id") Long id,
+            @Valid @RequestBody List<AigcCanvasProjectAssetAccessUrlReqVO> reqVOs) {
+        return success(projectService.getProjectAssetAccessUrls(id, reqVOs, getLoginUserId()));
+    }
+
     @GetMapping("/projects/{id}/members")
     @Operation(summary = "画布项目成员列表")
     public CommonResult<List<AigcCanvasMemberRespVO>> getProjectMembers(@PathVariable("id") Long id) {
-        return success(BeanUtils.toBean(projectService.getProjectMembers(id, getLoginUserId()), AigcCanvasMemberRespVO.class));
+        return success(projectService.getProjectMembers(id, getLoginUserId()));
+    }
+
+    @GetMapping("/projects/{id}/member-candidates")
+    @Operation(summary = "搜索画布项目可邀请成员")
+    public CommonResult<List<AigcCanvasMemberCandidateRespVO>> searchProjectMemberCandidates(@PathVariable("id") Long id,
+                                                                                            @RequestParam("keyword") String keyword) {
+        return success(projectService.searchProjectMemberCandidates(id, keyword, getLoginUserId()));
     }
 
     @PostMapping("/projects/{id}/members")

@@ -379,10 +379,25 @@ export interface CanvasMember {
   id: number;
   projectId: number;
   userId: number;
+  nickname?: string | null;
+  avatar?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  userStatus?: number | null;
   role: CanvasProjectRole;
   inviteUserId?: number | null;
   joinedTime?: string;
   lastActiveTime?: string;
+}
+
+export interface CanvasMemberCandidate {
+  userId: number;
+  nickname?: string | null;
+  avatar?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  status?: number | null;
+  alreadyMember?: boolean | null;
 }
 
 export interface InviteCanvasMemberRequest {

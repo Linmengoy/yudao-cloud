@@ -1,5 +1,5 @@
 import { api } from "@/lib/api-client";
-import type { AigcAsset } from "@/features/assets/asset-types";
+import type { AigcAsset, AigcAssetAccessUrlReq, AigcAssetAccessUrlResp } from "@/features/assets/asset-types";
 import { sanitizeNodesForCanvasSnapshot } from "@/features/canvas/canvas-syncable-data";
 import type {
   AppEdge,
@@ -8,6 +8,7 @@ import type {
   CanvasOperationSyncResult,
   InviteCanvasMemberRequest,
   CanvasMember,
+  CanvasMemberCandidate,
   CanvasProject,
   CanvasProjectRecycleBinRecord,
   CanvasSnapshotRecord,
@@ -181,6 +182,11 @@ export const canvasApi = {
 
   getProjectMembers: (projectId: string | number) => api.get<CanvasMember[]>(`/canvas/projects/${projectId}/members`),
 
+  searchProjectMemberCandidates: (projectId: string | number, keyword: string) =>
+    api.get<CanvasMemberCandidate[]>(
+      `/canvas/projects/${projectId}/member-candidates?keyword=${encodeURIComponent(keyword)}`
+    ),
+
   inviteProjectMember: (projectId: string | number, input: InviteCanvasMemberRequest) =>
     api.post<boolean>(`/canvas/projects/${projectId}/members`, input),
 
@@ -203,6 +209,9 @@ export const canvasApi = {
     if (params.assetType) query.set("assetType", params.assetType);
     return api.get<PageResult<AigcAsset>>(`/canvas/projects/${projectId}/assets?${query.toString()}`);
   },
+
+  getProjectAssetAccessUrls: (projectId: string | number, requests: AigcAssetAccessUrlReq[]) =>
+    api.post<AigcAssetAccessUrlResp[]>(`/canvas/projects/${projectId}/asset-access-urls`, requests),
 
   getSnapshot: (projectId: string | number) => api.get<CanvasSnapshotRecord | null>(`/canvas/projects/${projectId}/snapshot`),
 

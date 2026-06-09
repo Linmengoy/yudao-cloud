@@ -35,4 +35,9 @@ public interface ErrorCodeConstants {
     ErrorCode CANVAS_OWNER_CAN_NOT_CHANGE = new ErrorCode(1_046_000_110, "画布项目拥有者不能被修改或移除");
     ErrorCode CANVAS_PROJECT_RECYCLE_BIN_NOT_EXISTS = new ErrorCode(1_046_000_111, "画布项目回收站记录不存在");
 
+    ErrorCode CANVAS_INVITE_USER_NOT_EXISTS = new ErrorCode(1_046_000_112, "被邀请用户不存在");
+    ErrorCode CANVAS_INVITE_USER_DISABLED = new ErrorCode(1_046_000_113, "被邀请用户已禁用");
+    ErrorCode CANVAS_INVITE_SELF_NOT_ALLOWED = new ErrorCode(1_046_000_114, "不能邀请自己加入画布项目");
+    ErrorCode CANVAS_MEMBER_SEARCH_KEYWORD_REQUIRED = new ErrorCode(1_046_000_115, "请输入要搜索的用户信息");
+
 }

@@ -293,7 +293,7 @@ function AssetWallPreview({ asset, onLoad }: { asset: AigcAsset; onLoad: (ratio?
         className="w-full bg-charcoal"
         videoClassName="block h-auto w-full max-w-none"
         onLoadedMetadata={(video) => onLoad(video.videoWidth / video.videoHeight)}
-        playOnHover
+        playOnHover={false}
         clickToToggle={false}
         controlsInteractive={false}
       />
@@ -490,8 +490,7 @@ export default function AssetsPage() {
       muuriRef.current = new MuuriGrid(element, {
         items: ".asset-grid-item",
         layout: assetWallLayout,
-        layoutDuration: 180,
-        layoutEasing: "ease",
+        layoutDuration: 0,
       });
       requestAnimationFrame(() => muuriRef.current?.refreshItems().layout());
     });
@@ -663,7 +662,7 @@ export default function AssetsPage() {
     <div className="mx-auto flex max-w-[1180px] flex-col px-6 py-10" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
       <div className="flex justify-center overflow-hidden text-xs text-muted-gray" style={{ height: pullDistance }}>
         <div className="flex items-center gap-2">
-          <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw className="size-3.5" />
           {pullDistance >= 64 ? "松开刷新" : "下拉刷新"}
         </div>
       </div>
@@ -673,7 +672,7 @@ export default function AssetsPage() {
           <p className="mt-1 text-sm text-muted-gray">集中查看生成图片、上传图片、生成视频和其它文件型结果。</p>
         </div>
         <button type="button" onClick={() => loadAssets(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-[rgba(28,28,28,0.4)] px-3 py-2 text-sm text-charcoal hover:bg-muted active:opacity-80 disabled:opacity-50" aria-label="刷新资产列表" title="刷新资产列表">
-          <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw className="size-4" />
           刷新
         </button>
       </div>
@@ -681,7 +680,7 @@ export default function AssetsPage() {
       <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="inline-flex w-fit rounded-full bg-muted p-1">
           {(["ALL", "GENERATED_IMAGE", "UPLOADED_IMAGE", "VIDEO", "OTHER"] as AssetTab[]).map((item) => (
-            <button key={item} type="button" onClick={() => setTab(item)} className={`rounded-full px-4 py-2 text-sm transition-colors ${tab === item ? "bg-background text-charcoal shadow-sm" : "text-muted-gray hover:text-charcoal"}`}>
+            <button key={item} type="button" onClick={() => setTab(item)} className={`rounded-full px-4 py-2 text-sm ${tab === item ? "bg-background text-charcoal shadow-sm" : "text-muted-gray hover:text-charcoal"}`}>
               {getAssetTabLabel(item)}
               <span className="ml-2 text-xs text-muted-gray">{counts[item]}</span>
             </button>
@@ -698,7 +697,7 @@ export default function AssetsPage() {
 
       {loading && !assets.length ? (
         <div className="mt-16 flex items-center justify-center text-sm text-muted-gray">
-          <Loader2 className="mr-2 size-4 animate-spin" />
+          <Loader2 className="mr-2 size-4" />
           加载资产列表...
         </div>
       ) : filteredAssets.length === 0 ? (
@@ -729,7 +728,7 @@ export default function AssetsPage() {
           </div>
           <div ref={loadMoreElementRef} className="mt-8 flex justify-center py-4 text-xs text-muted-gray">
             {loadingMore ? (
-              <span className="inline-flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" />加载更多...</span>
+              <span className="inline-flex items-center gap-2"><Loader2 className="size-3.5" />加载更多...</span>
             ) : hasMore ? (
               <span>继续下滑加载更多</span>
             ) : total > 0 ? (

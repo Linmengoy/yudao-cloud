@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, Copy, Link2, Trash2, UserPlus, X } from "lucide-react";
+import { Check, Copy, Link2, Search, Trash2, UserPlus, X } from "lucide-react";
 import { canvasApi } from "@/features/canvas/canvas-api";
-import type { CanvasMember, CanvasProjectRole } from "@/features/canvas/types";
+import type { CanvasMember, CanvasMemberCandidate, CanvasProjectRole } from "@/features/canvas/types";
 
 interface CanvasShareDialogProps {
   open: boolean;
@@ -21,6 +21,32 @@ function isEditableRole(value: string): value is EditableRole {
   return value === "editor" || value === "viewer";
 }
 
+function displayName(user: Pick<CanvasMember, "userId" | "nickname" | "email" | "mobile">) {
+  return user.nickname || user.email || user.mobile || `用户 ${user.userId}`;
+}
+
+function userInitial(user: Pick<CanvasMember, "userId" | "nickname" | "email" | "mobile">) {
+  const name = displayName(user).trim();
+  return name ? name.slice(0, 1).toUpperCase() : String(user.userId).slice(-2);
+}
+
+function maskMobile(mobile?: string | null) {
+  if (!mobile) return "";
+  return mobile.replace(/^(\d{3})\d+(\d{4})$/, "$1****$2");
+}
+
+function maskEmail(email?: string | null) {
+  if (!email) return "";
+  const [name, domain] = email.split("@");
+  if (!domain) return email;
+  const prefix = name.length <= 2 ? name : `${name.slice(0, 2)}***`;
+  return `${prefix}@${domain}`;
+}
+
+function userMeta(user: Pick<CanvasMember, "userId" | "email" | "mobile">) {
+  return [maskEmail(user.email), maskMobile(user.mobile), `ID ${user.userId}`].filter(Boolean).join(" · ");
+}
+
 export function CanvasShareDialog({
   open,
   projectId,
@@ -29,10 +55,13 @@ export function CanvasShareDialog({
   onOpenChange,
   onMembersChange,
 }: CanvasShareDialogProps) {
-  const [inviteUserId, setInviteUserId] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [candidateResults, setCandidateResults] = useState<CanvasMemberCandidate[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<CanvasMemberCandidate | null>(null);
   const [inviteRole, setInviteRole] = useState<EditableRole>("editor");
   const [statusText, setStatusText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const canManageMembers = projectRole === "owner";
@@ -68,6 +97,11 @@ export function CanvasShareDialog({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, openChanged]);
 
+  function resetInviteSelection() {
+    setCandidateResults([]);
+    setSelectedCandidate(null);
+  }
+
   async function copyShareUrl() {
     await navigator.clipboard.writeText(shareUrl);
     setCopied(true);
@@ -75,17 +109,45 @@ export function CanvasShareDialog({
     window.setTimeout(() => setCopied(false), 1600);
   }
 
+  async function searchCandidates() {
+    const keyword = searchKeyword.trim();
+    if (!keyword) {
+      setStatusText("请输入邮箱、手机号、昵称或用户 ID 后再搜索");
+      resetInviteSelection();
+      return;
+    }
+    setSearching(true);
+    setStatusText("");
+    setSelectedCandidate(null);
+    try {
+      const candidates = await canvasApi.searchProjectMemberCandidates(projectId, keyword);
+      setCandidateResults(candidates);
+      if (candidates.length === 0) {
+        setStatusText("没有找到可邀请的用户");
+      }
+    } catch (error) {
+      setCandidateResults([]);
+      setStatusText(error instanceof Error ? error.message : "用户搜索失败");
+    } finally {
+      setSearching(false);
+    }
+  }
+
   async function inviteMember() {
-    const userId = Number(inviteUserId);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      setStatusText("请输入有效的用户 ID");
+    if (!selectedCandidate) {
+      setStatusText("请先搜索并选择一个用户");
+      return;
+    }
+    if (selectedCandidate.alreadyMember) {
+      setStatusText("该用户已经是当前项目成员");
       return;
     }
     setLoading(true);
     setStatusText("");
     try {
-      await canvasApi.inviteProjectMember(projectId, { userId, role: inviteRole });
-      setInviteUserId("");
+      await canvasApi.inviteProjectMember(projectId, { userId: selectedCandidate.userId, role: inviteRole });
+      setSearchKeyword("");
+      resetInviteSelection();
       await refreshMembers();
       setStatusText("成员已邀请");
     } catch (error) {
@@ -138,7 +200,7 @@ export function CanvasShareDialog({
           }}
         >
           <motion.div
-            className="w-full max-w-[520px] rounded-2xl border border-border-warm bg-background p-4 shadow-[0_24px_80px_rgba(28,28,28,0.18)]"
+            className="w-full max-w-[560px] rounded-lg border border-border-warm bg-background p-4 shadow-[0_24px_80px_rgba(28,28,28,0.18)]"
             initial={{ opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -147,7 +209,7 @@ export function CanvasShareDialog({
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-charcoal">共享画布</h2>
-                <p className="mt-1 text-xs text-muted-gray">复制链接或邀请成员加入当前协作项目。</p>
+                <p className="mt-1 text-xs text-muted-gray">复制链接或邀请指定成员加入当前协作项目。</p>
               </div>
               <button
                 type="button"
@@ -166,11 +228,7 @@ export function CanvasShareDialog({
                   协作链接
                 </div>
                 <div className="flex gap-2">
-                  <input
-                    value={shareUrl}
-                    readOnly
-                    className="input-base h-9 flex-1 truncate px-3 text-xs"
-                  />
+                  <input value={shareUrl} readOnly className="input-base h-9 flex-1 truncate px-3 text-xs" />
                   <button
                     type="button"
                     onClick={copyShareUrl}
@@ -190,12 +248,61 @@ export function CanvasShareDialog({
                 </div>
                 <div className="flex gap-2">
                   <input
-                    value={inviteUserId}
-                    onChange={(event) => setInviteUserId(event.target.value.replace(/\D/g, ""))}
+                    value={searchKeyword}
+                    onChange={(event) => {
+                      setSearchKeyword(event.target.value);
+                      resetInviteSelection();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void searchCandidates();
+                      }
+                    }}
                     disabled={!canManageMembers || loading}
-                    placeholder="输入用户 ID"
+                    placeholder="搜索邮箱、手机号、昵称或用户 ID"
                     className="input-base h-9 flex-1 px-3 text-xs"
                   />
+                  <button
+                    type="button"
+                    onClick={searchCandidates}
+                    disabled={!canManageMembers || loading || searching}
+                    className="flex h-9 items-center gap-1.5 rounded-md border border-border-warm px-3 text-xs text-charcoal hover:bg-muted disabled:opacity-50"
+                  >
+                    <Search className="size-3.5" />
+                    {searching ? "搜索中" : "搜索"}
+                  </button>
+                </div>
+
+                {candidateResults.length > 0 && (
+                  <div className="mt-2 max-h-36 overflow-auto rounded-md border border-border-warm">
+                    {candidateResults.map((candidate) => {
+                      const selected = selectedCandidate?.userId === candidate.userId;
+                      return (
+                        <button
+                          key={candidate.userId}
+                          type="button"
+                          onClick={() => setSelectedCandidate(candidate)}
+                          disabled={candidate.alreadyMember || loading}
+                          className={`flex w-full items-center gap-3 border-b border-border-warm px-3 py-2 text-left last:border-b-0 hover:bg-muted disabled:opacity-50 ${
+                            selected ? "bg-muted" : ""
+                          }`}
+                        >
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-charcoal">
+                            {userInitial(candidate)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs font-medium text-charcoal">{displayName(candidate)}</div>
+                            <div className="truncate text-[11px] text-muted-gray">{userMeta(candidate)}</div>
+                          </div>
+                          {candidate.alreadyMember && <span className="text-[11px] text-muted-gray">已加入</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="mt-2 flex items-center gap-2">
                   <select
                     value={inviteRole}
                     onChange={(event) => setInviteRole(event.target.value as EditableRole)}
@@ -208,18 +315,23 @@ export function CanvasShareDialog({
                   <button
                     type="button"
                     onClick={inviteMember}
-                    disabled={!canManageMembers || loading}
+                    disabled={!canManageMembers || loading || !selectedCandidate || Boolean(selectedCandidate.alreadyMember)}
                     className="h-9 rounded-md bg-charcoal px-3 text-xs text-off-white disabled:opacity-50"
                   >
-                    邀请
+                    邀请选中用户
                   </button>
+                  {selectedCandidate && (
+                    <span className="min-w-0 truncate text-xs text-muted-gray">
+                      已选择 {displayName(selectedCandidate)}
+                    </span>
+                  )}
                 </div>
                 {!canManageMembers && <p className="mt-1.5 text-[11px] text-muted-gray">只有 owner 可以邀请和管理成员。</p>}
               </section>
 
               <section>
                 <div className="mb-2 text-xs font-medium text-charcoal">当前成员</div>
-                <div className="max-h-64 overflow-auto rounded-xl border border-border-warm">
+                <div className="max-h-64 overflow-auto rounded-md border border-border-warm">
                   {members.length === 0 ? (
                     <div className="px-3 py-6 text-center text-xs text-muted-gray">暂无成员</div>
                   ) : (
@@ -228,11 +340,11 @@ export function CanvasShareDialog({
                       return (
                         <div key={member.id} className="flex items-center gap-3 border-b border-border-warm px-3 py-2 last:border-b-0">
                           <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-charcoal">
-                            {String(member.userId).slice(-2)}
+                            {userInitial(member)}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-xs font-medium text-charcoal">用户 {member.userId}</div>
-                            <div className="text-[11px] text-muted-gray">{member.joinedTime ? `加入于 ${member.joinedTime}` : "项目成员"}</div>
+                            <div className="truncate text-xs font-medium text-charcoal">{displayName(member)}</div>
+                            <div className="truncate text-[11px] text-muted-gray">{userMeta(member)}</div>
                           </div>
                           <select
                             value={member.role}
@@ -249,7 +361,7 @@ export function CanvasShareDialog({
                             onClick={() => removeMember(member)}
                             disabled={locked || loading}
                             className="rounded-md p-1.5 text-muted-gray hover:bg-muted hover:text-destructive disabled:opacity-40"
-                            aria-label={`移除用户 ${member.userId}`}
+                            aria-label={`移除用户 ${displayName(member)}`}
                           >
                             <Trash2 className="size-3.5" />
                           </button>
