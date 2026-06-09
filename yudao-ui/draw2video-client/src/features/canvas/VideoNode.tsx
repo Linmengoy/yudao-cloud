@@ -160,6 +160,11 @@ function formatTime(seconds: number | null | undefined) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
+function getRangeProgress(current: number, duration: number) {
+  if (!Number.isFinite(current) || !Number.isFinite(duration) || duration <= 0) return "0%";
+  return `${Math.min(100, Math.max(0, (current / duration) * 100))}%`;
+}
+
 function dataUrlToMimeType(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;]+);/);
   return match?.[1] || "image/png";
@@ -169,6 +174,10 @@ function getVideoAssetId(data: VideoNodeData) {
   if (typeof data.assetId === "number") return data.assetId;
   if (typeof data.outputAssetId === "number") return data.outputAssetId;
   return null;
+}
+
+function stopCanvasSelection(event: React.SyntheticEvent) {
+  event.stopPropagation();
 }
 
 function getDisplaySize(data: VideoNodeData) {
@@ -899,11 +908,15 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               </AnimatePresence>
 
               {videoSrc && !isGenerating && data.status !== "failed" && (
-                <div className="nodrag nowheel absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-charcoal/80 via-charcoal/45 to-transparent px-4 pb-3 pt-8 text-off-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div
+                  className="nodrag nowheel absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-[#1c1c1c]/80 via-[#1c1c1c]/45 to-transparent px-4 pb-3 pt-8 text-[#fcfbf8] opacity-0 transition-opacity group-hover:opacity-100"
+                  onPointerDownCapture={stopCanvasSelection}
+                  onClick={stopCanvasSelection}
+                >
                   <button
                     type="button"
                     onClick={handleTogglePlayback}
-                    className="flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-off-white/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-off-white"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-[#fcfbf8]/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#fcfbf8]"
                     aria-label={isPlaying ? "暂停" : "播放"}
                   >
                     {isPlaying ? <Pause className="size-5" /> : <Play className="size-5 fill-current" />}
@@ -916,29 +929,33 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     step={0.01}
                     value={Math.min(currentTime, Math.max(0.01, mediaDurationSec))}
                     onChange={(event) => handleSeek(event.target.value)}
-                    className="h-1 min-w-0 flex-1 accent-off-white"
+                    className="video-control-range h-1 min-w-0 flex-1"
+                    style={{ "--video-range-progress": getRangeProgress(currentTime, mediaDurationSec) } as React.CSSProperties}
                     aria-label="视频进度"
                   />
                   <span className="w-10 text-right text-xs tabular-nums">{formatTime(mediaDurationSec)}</span>
-                  <div className="group/volume flex items-center gap-1">
+                  <div className="group/volume relative flex size-8 items-center justify-center">
                     <button
                       type="button"
                       onClick={handleToggleMute}
-                      className="flex size-8 items-center justify-center rounded-full hover:bg-off-white/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-off-white"
+                      className="flex size-8 items-center justify-center rounded-full hover:bg-[#fcfbf8]/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#fcfbf8]"
                       aria-label={volume === 0 ? "取消静音" : "静音"}
                     >
                       {volume === 0 ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
                     </button>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={volume}
-                      onChange={(event) => handleVolumeChange(event.target.value)}
-                      className="h-1 w-0 accent-off-white opacity-0 transition-all group-hover/volume:w-16 group-hover/volume:opacity-100"
-                      aria-label="音量"
-                    />
+                    <div className="pointer-events-none absolute bottom-full left-1/2 mb-2 flex h-24 w-8 -translate-x-1/2 items-center justify-center rounded-full bg-[#1c1c1c]/90 opacity-0 shadow-xl transition-opacity group-hover/volume:pointer-events-auto group-hover/volume:opacity-100">
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={volume}
+                        onChange={(event) => handleVolumeChange(event.target.value)}
+                        className="video-control-range h-20 w-1 [writing-mode:vertical-rl]"
+                        aria-label="音量"
+                        style={{ direction: "rtl" }}
+                      />
+                    </div>
                   </div>
                   <div ref={captureMenuRef} className="relative" onMouseLeave={() => setCaptureMenuOpen(false)}>
                     <button

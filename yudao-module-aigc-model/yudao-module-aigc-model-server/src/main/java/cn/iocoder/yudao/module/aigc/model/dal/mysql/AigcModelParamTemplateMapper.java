@@ -21,9 +21,11 @@ public interface AigcModelParamTemplateMapper extends BaseMapperX<AigcModelParam
 
     default List<AigcModelParamTemplateDO> selectListByModelIdAndCapability(Long modelId, String capability) {
         return selectList(new LambdaQueryWrapperX<AigcModelParamTemplateDO>()
-                .eq(AigcModelParamTemplateDO::getModelId, modelId)
-                .eq(AigcModelParamTemplateDO::getCapability, capability)
+                .eqIfPresent(AigcModelParamTemplateDO::getModelId, modelId)
+                .eqIfPresent(AigcModelParamTemplateDO::getCapability, capability)
                 .eq(AigcModelParamTemplateDO::getStatus, CommonStatusEnum.ENABLE.getStatus())
+                .orderByAsc(AigcModelParamTemplateDO::getModelId)
+                .orderByAsc(AigcModelParamTemplateDO::getCapability)
                 .orderByAsc(AigcModelParamTemplateDO::getSort));
     }
 

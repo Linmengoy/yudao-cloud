@@ -3,15 +3,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import Link from "next/link";
 import { Loader2, RefreshCw, Search } from "lucide-react";
-import { getMyAssetCategoryCounts, getMyAssetPage } from "@/features/assets/asset-api";
+import { deleteMyAsset, downloadMyAsset, getMyAssetCategoryCounts, getMyAssetPage, updateMyAsset, updateMyAssetVisibility } from "@/features/assets/asset-api";
 import { getAccessToken } from "@/lib/api-client";
 import {
+  canDownloadAsset,
+  canPublishAsset,
+  formatDateTime,
+  formatDuration,
+  formatFileSize,
   getAssetPreviewUrl,
   getAssetTypeLabel,
+  getAssetVisibilityLabel,
 } from "@/features/assets/asset-dictionaries";
 import type { AigcAsset } from "@/features/assets/asset-types";
 import { listGeneratedAssets, type GeneratedAsset } from "@/features/assets/asset-library";
 import { useAuth } from "@/features/auth/auth-store";
+import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
+import { PreviewVideoPlayer } from "@/features/media-preview/PreviewVideoPlayer";
+import type { MediaPreviewItem } from "@/features/media-preview/types";
 import type Muuri from "muuri";
 import type { Item, LayoutFunctionCallback } from "muuri";
 
@@ -113,6 +122,69 @@ function getAssetKey(asset: AigcAsset) {
   return String(asset.assetNo || asset.id);
 }
 
+function isMediaAsset(asset: AigcAsset) {
+  return Boolean(getFullAssetPreviewUrl(asset) && (asset.assetType === "IMAGE" || asset.assetType === "VIDEO"));
+}
+
+type AssetDraft = {
+  id: number | string;
+  assetKey: string;
+  title: string;
+  description: string;
+  tags: string;
+  saving: boolean;
+};
+
+function assetToMediaPreview(
+  asset: AigcAsset,
+  draft: AssetDraft | null,
+  actions: {
+    onChange: (patch: Partial<Pick<AssetDraft, "title" | "description" | "tags">>) => void;
+    onSave: () => void | Promise<void>;
+    onVisibilityChange: (visibility: string) => void | Promise<void>;
+    onDownload: () => void | Promise<void>;
+    onDelete: () => void | Promise<void>;
+  }
+): MediaPreviewItem | null {
+  const url = getFullAssetPreviewUrl(asset);
+  if (!url) return null;
+  if (asset.assetType !== "IMAGE" && asset.assetType !== "VIDEO") return null;
+  const currentDraft = draft?.assetKey === getAssetKey(asset) ? draft : null;
+  return {
+    kind: asset.assetType === "VIDEO" ? "video" : "image",
+    url,
+    title: currentDraft?.title || asset.title || asset.assetNo || "Asset",
+    fileName: currentDraft?.title || asset.title || asset.assetNo,
+    createdAt: asset.createTime,
+    information: [
+      { label: "资产编号", value: asset.assetNo || "-" },
+      { label: "文件大小", value: formatFileSize(asset.fileSize) },
+      { label: "文件格式", value: asset.fileExt || asset.mimeType || "-" },
+      { label: "尺寸", value: asset.width && asset.height ? `${asset.width} x ${asset.height}` : "-" },
+      { label: "时长", value: formatDuration(asset.duration) },
+      { label: "下载次数", value: String(asset.downloadCount ?? 0) },
+      { label: "使用次数", value: String(asset.useCount ?? 0) },
+      { label: "创建时间", value: formatDateTime(asset.createTime) },
+    ],
+    editableAsset: {
+      title: currentDraft?.title ?? asset.title ?? "",
+      description: currentDraft?.description ?? asset.description ?? "",
+      tags: currentDraft?.tags ?? asset.tags ?? "",
+      visibility: asset.visibility,
+      auditStatus: asset.auditStatus,
+      status: asset.status,
+      auditReason: asset.auditReason,
+      taskId: asset.taskId,
+      saving: currentDraft?.saving ?? false,
+      canEdit: Number.isFinite(asset.id),
+      canDownload: canDownloadAsset(asset),
+      canDelete: Number.isFinite(asset.id),
+      canPublish: canPublishAsset(asset),
+      ...actions,
+    },
+  };
+}
+
 function getAssetSpan(asset: AigcAsset, measuredRatio?: number) {
   const ratio = measuredRatio || (asset.width && asset.height ? asset.width / asset.height : 1);
   if (ratio >= 1.45) return 2;
@@ -171,7 +243,18 @@ function AssetWallPreview({ asset, onLoad }: { asset: AigcAsset; onLoad: (ratio?
     return <img src={previewUrl} alt={asset.title || "图片资产预览"} className="block h-auto w-full" loading="lazy" onLoad={(event) => onLoad(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)} />;
   }
   if (asset.assetType === "VIDEO" && asset.fileUrl) {
-    return <video src={asset.fileUrl} poster={asset.coverUrl || asset.thumbnailUrl} controls className="block h-auto w-full" onLoadedMetadata={(event) => onLoad(event.currentTarget.videoWidth / event.currentTarget.videoHeight)} />;
+    return (
+      <PreviewVideoPlayer
+        src={asset.fileUrl}
+        poster={asset.coverUrl || asset.thumbnailUrl}
+        className="w-full bg-charcoal"
+        videoClassName="block h-auto w-full max-w-none"
+        onLoadedMetadata={(video) => onLoad(video.videoWidth / video.videoHeight)}
+        playOnHover
+        clickToToggle={false}
+        controlsInteractive={false}
+      />
+    );
   }
   return (
     <div className="flex min-h-[180px] w-full items-center justify-center bg-muted text-sm text-muted-gray">
@@ -205,6 +288,8 @@ export default function AssetsPage() {
   const [pullDistance, setPullDistance] = useState(0);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<AssetTabCounts>(EMPTY_COUNTS);
+  const [previewAssetKey, setPreviewAssetKey] = useState<string | null>(null);
+  const [assetDraft, setAssetDraft] = useState<AssetDraft | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const loadMoreElementRef = useRef<HTMLDivElement | null>(null);
@@ -341,6 +426,99 @@ export default function AssetsPage() {
     requestAnimationFrame(() => muuriRef.current?.refreshItems().layout());
   }, []);
 
+  const previewAsset = useMemo(() => assets.find((asset) => getAssetKey(asset) === previewAssetKey) ?? null, [assets, previewAssetKey]);
+
+  const refreshPreviewAsset = useCallback((nextAsset: AigcAsset) => {
+    setAssets((items) => items.map((asset) => getAssetKey(asset) === getAssetKey(nextAsset) ? nextAsset : asset));
+    setAssetDraft((draft) => draft?.assetKey === getAssetKey(nextAsset) ? {
+      id: nextAsset.id,
+      assetKey: getAssetKey(nextAsset),
+      title: nextAsset.title || "",
+      description: nextAsset.description || "",
+      tags: nextAsset.tags || "",
+      saving: false,
+    } : draft);
+  }, []);
+
+  const openAssetPreview = useCallback((asset: AigcAsset) => {
+    const assetKey = getAssetKey(asset);
+    setPreviewAssetKey(assetKey);
+    setAssetDraft({
+      id: asset.id,
+      assetKey,
+      title: asset.title || "",
+      description: asset.description || "",
+      tags: asset.tags || "",
+      saving: false,
+    });
+  }, []);
+
+  const handleAssetDraftChange = useCallback((patch: Partial<Pick<AssetDraft, "title" | "description" | "tags">>) => {
+    setAssetDraft((draft) => draft ? { ...draft, ...patch } : draft);
+  }, []);
+
+  const handleAssetSave = useCallback(async () => {
+    if (!assetDraft || !Number.isFinite(Number(assetDraft.id))) return;
+    setAssetDraft((draft) => draft ? { ...draft, saving: true } : draft);
+    try {
+      await updateMyAsset({
+        id: assetDraft.id,
+        title: assetDraft.title,
+        description: assetDraft.description,
+        tags: assetDraft.tags,
+      });
+      setAssets((items) => items.map((asset) => getAssetKey(asset) === assetDraft.assetKey ? {
+        ...asset,
+        title: assetDraft.title,
+        description: assetDraft.description,
+        tags: assetDraft.tags,
+      } : asset));
+    } finally {
+      setAssetDraft((draft) => draft ? { ...draft, saving: false } : draft);
+    }
+  }, [assetDraft]);
+
+  const handleAssetVisibilityChange = useCallback(async (visibility: string) => {
+    if (!previewAsset || !Number.isFinite(previewAsset.id)) return;
+    const currentVisibility = previewAsset.visibility || "PRIVATE";
+    if (visibility !== "PRIVATE" && !canPublishAsset(previewAsset)) return;
+    const isExpanding = currentVisibility === "PRIVATE" && visibility !== "PRIVATE";
+    if (isExpanding && !window.confirm(`确认将资产设置为「${getAssetVisibilityLabel(visibility)}」吗？`)) return;
+    await updateMyAssetVisibility({ id: previewAsset.id, visibility });
+    refreshPreviewAsset({ ...previewAsset, visibility });
+  }, [previewAsset, refreshPreviewAsset]);
+
+  const handleAssetDownload = useCallback(async () => {
+    if (!previewAsset || !canDownloadAsset(previewAsset)) return;
+    if (Number.isFinite(previewAsset.id)) {
+      const url = await downloadMyAsset({ assetId: previewAsset.id });
+      window.open(url || previewAsset.fileUrl, "_blank", "noopener,noreferrer");
+      refreshPreviewAsset({ ...previewAsset, downloadCount: (previewAsset.downloadCount ?? 0) + 1 });
+      return;
+    }
+    window.open(previewAsset.fileUrl, "_blank", "noopener,noreferrer");
+  }, [previewAsset, refreshPreviewAsset]);
+
+  const handleAssetDelete = useCallback(async () => {
+    if (!previewAsset || !Number.isFinite(previewAsset.id)) return;
+    if (!window.confirm("确认删除这个资产吗？")) return;
+    await deleteMyAsset(previewAsset.id);
+    setAssets((items) => items.filter((asset) => getAssetKey(asset) !== getAssetKey(previewAsset)));
+    setPreviewAssetKey(null);
+    setAssetDraft(null);
+  }, [previewAsset]);
+
+  const previewItem = useMemo(() => {
+    if (!previewAsset) return null;
+    return assetToMediaPreview(previewAsset, assetDraft, {
+      onChange: handleAssetDraftChange,
+      onSave: handleAssetSave,
+      onVisibilityChange: handleAssetVisibilityChange,
+      onDownload: handleAssetDownload,
+      onDelete: handleAssetDelete,
+    });
+  }, [assetDraft, handleAssetDelete, handleAssetDownload, handleAssetDraftChange, handleAssetSave, handleAssetVisibilityChange, previewAsset]);
+
   useEffect(() => {
     const element = loadMoreElementRef.current;
     if (!element || loading || loadingMore || !hasMore) return;
@@ -418,13 +596,26 @@ export default function AssetsPage() {
       ) : (
         <>
           <div ref={gridElementRef} className="relative mt-6 -m-0.5">
-            {filteredAssets.map((asset) => (
+            {filteredAssets.map((asset) => {
+              return (
               <div key={getAssetKey(asset)} data-span={getAssetSpan(asset, measuredRatios[getAssetKey(asset)])} className="asset-grid-item absolute p-0.5">
-                <Link href={getAssetHref(asset)} className="block" aria-label={`查看资产 ${asset.title || asset.assetNo || asset.id}`}>
-                  <AssetWallPreview asset={asset} onLoad={(ratio) => handlePreviewLoad(asset, ratio)} />
-                </Link>
+                {isMediaAsset(asset) ? (
+                  <button
+                    type="button"
+                    onClick={() => openAssetPreview(asset)}
+                    className="block w-full cursor-pointer overflow-hidden text-left"
+                    aria-label={`预览资产 ${asset.title || asset.assetNo || asset.id}`}
+                  >
+                    <AssetWallPreview asset={asset} onLoad={(ratio) => handlePreviewLoad(asset, ratio)} />
+                  </button>
+                ) : (
+                  <Link href={getAssetHref(asset)} className="block" aria-label={`查看资产 ${asset.title || asset.assetNo || asset.id}`}>
+                    <AssetWallPreview asset={asset} onLoad={(ratio) => handlePreviewLoad(asset, ratio)} />
+                  </Link>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
           <div ref={loadMoreElementRef} className="mt-8 flex justify-center py-4 text-xs text-muted-gray">
             {loadingMore ? (
@@ -437,6 +628,14 @@ export default function AssetsPage() {
           </div>
         </>
       )}
+      <MediaPreviewDialog
+        item={previewItem}
+        open={Boolean(previewItem)}
+        onClose={() => {
+          setPreviewAssetKey(null);
+          setAssetDraft(null);
+        }}
+      />
     </div>
   );
 }
