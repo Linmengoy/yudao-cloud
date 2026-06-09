@@ -38,7 +38,7 @@ import { downloadMedia, videoNodeToMediaPreview } from "@/features/media-preview
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
-import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, type PromptMentionOption } from "./PromptMentionInput";
+import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, useComposerWheelPan, type PromptMentionOption } from "./PromptMentionInput";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
 
@@ -191,7 +191,9 @@ function getDisplaySize(data: VideoNodeData) {
 }
 
 export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodeProps) {
-  const { setNodes, setEdges, getNodes, getEdges } = useReactFlow();
+  const { setNodes, setEdges, getNodes, getEdges, getViewport, setViewport } = useReactFlow();
+  const composerWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
+  const toolbarWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
   const updateNodeInternals = useUpdateNodeInternals();
   const zoom = useStore((s) => s.transform[2] || 1);
   const selectedNodeCount = useStore((s) => s.nodes.reduce((count, node) => count + (node.selected ? 1 : 0), 0));
@@ -788,6 +790,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               onDownload={handlePreviewDownload}
               onOpenPreview={() => setPreviewOpen(true)}
               uiScale={fixedUiScale}
+              wheelRef={toolbarWheelRef}
               style={{
                 left: displaySize.width / 2,
                 top: -54,
@@ -1025,6 +1028,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
             exit={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
             transition={{ duration: 0.18, ease: "easeOut" }}
+            ref={composerWheelRef}
             className="nodrag nowheel absolute rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
             style={{
               width: COMPOSER_WIDTH,
@@ -1087,6 +1091,9 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             disabled={isGenerating}
             placeholder="Describe anything you want to generate"
             minHeightClassName="min-h-[130px]"
+            onSubmit={() => {
+              if (canGenerate) void handleGenerate();
+            }}
           />
 
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-border-warm pt-3">
@@ -1109,6 +1116,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                   {modelOpen && (
                   <motion.div
                     ref={modelRef}
+                    data-composer-local-wheel="true"
                     initial={{ opacity: 0, y: 4, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, scale: 0.98 }}
@@ -1175,6 +1183,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                   {paramsOpen && (
                   <motion.div
                     ref={paramsRef}
+                    data-composer-local-wheel="true"
                     initial={{ opacity: 0, y: 4, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, scale: 0.98 }}

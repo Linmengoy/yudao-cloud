@@ -48,7 +48,7 @@ import { cn } from "@/lib/utils";
 import { clampToViewport } from "./floating-position";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
-import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, type PromptMentionOption } from "./PromptMentionInput";
+import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, useComposerWheelPan, type PromptMentionOption } from "./PromptMentionInput";
 
 type ImageNodeProps = NodeProps<Node<ImageNodeData, "image">>;
 type ConnectedImage = { edgeId: string; nodeId: string; data: Pick<ImageNodeData | SketchNodeData, "previewUrl" | "dataUrl" | "fileName"> };
@@ -358,7 +358,9 @@ function ParamSegmented<T extends string>({
 }
 
 export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodeProps) {
-  const { setNodes, setEdges, getNode, getNodes, getEdges } = useReactFlow();
+  const { setNodes, setEdges, getNode, getNodes, getEdges, getViewport, setViewport } = useReactFlow();
+  const composerWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
+  const toolbarWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
   const updateNodeInternals = useUpdateNodeInternals();
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
   const zoom = useStore((s) => s.transform[2] || 1);
@@ -964,6 +966,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 onDownload={handlePreviewDownload}
                 onOpenPreview={() => setPreviewOpen(true)}
                 uiScale={fixedUiScale}
+                wheelRef={toolbarWheelRef}
                 style={{
                   left: displaySize.width / 2,
                   top: -54,
@@ -1091,9 +1094,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
               initial={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
               animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
               exit={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-              className="nodrag nowheel absolute rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
-              style={{
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            ref={composerWheelRef}
+            className="nodrag nowheel absolute rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
+            style={{
                 width: COMPOSER_WIDTH,
                 left: (displaySize.width - COMPOSER_WIDTH) / 2,
                 top: displaySize.height + 12 * fixedUiScale,
@@ -1155,6 +1159,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 disabled={isGenerating}
                 placeholder="Describe anything you want to generate"
                 minHeightClassName="min-h-[130px]"
+                onSubmit={() => {
+                  if (canGenerate) void handleGenerate();
+                }}
               />
               {pickerActiveForThisNode && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/70 text-xs text-muted-gray">
@@ -1183,6 +1190,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     {modelPopoverOpen && (
                     <motion.div
                       ref={modelPopoverRef}
+                      data-composer-local-wheel="true"
                       initial={{ opacity: 0, y: 4, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 4, scale: 0.98 }}
@@ -1238,6 +1246,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     {paramsPopoverOpen && (
                     <motion.div
                       ref={paramsPopoverRef}
+                      data-composer-local-wheel="true"
                       initial={{ opacity: 0, y: 4, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 4, scale: 0.98 }}
