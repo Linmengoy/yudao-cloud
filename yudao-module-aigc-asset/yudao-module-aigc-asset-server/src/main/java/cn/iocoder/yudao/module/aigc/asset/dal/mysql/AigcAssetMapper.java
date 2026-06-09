@@ -14,6 +14,8 @@ import java.util.List;
 @Mapper
 public interface AigcAssetMapper extends BaseMapperX<AigcAssetDO> {
 
+    List<String> MEDIA_ASSET_TYPES = List.of("IMAGE", "VIDEO");
+
     default AigcAssetDO selectByAssetNo(String assetNo) {
         return selectOne(AigcAssetDO::getAssetNo, assetNo);
     }
@@ -31,27 +33,30 @@ public interface AigcAssetMapper extends BaseMapperX<AigcAssetDO> {
     }
 
     default PageResult<AigcAssetDO> selectPage(AigcAssetPageReqVO reqVO) {
-        return selectPage(reqVO, new LambdaQueryWrapperX<AigcAssetDO>()
-                .eqIfPresent(AigcAssetDO::getUserId, reqVO.getUserId())
-                .eqIfPresent(AigcAssetDO::getAssetType, reqVO.getAssetType())
-                .eqIfPresent(AigcAssetDO::getSourceType, reqVO.getSourceType())
-                .eqIfPresent(AigcAssetDO::getAuditStatus, reqVO.getAuditStatus())
-                .eqIfPresent(AigcAssetDO::getVisibility, reqVO.getVisibility())
-                .eqIfPresent(AigcAssetDO::getStatus, reqVO.getStatus())
-                .likeIfPresent(AigcAssetDO::getTitle, reqVO.getTitle())
-                .orderByDesc(AigcAssetDO::getId));
+        return selectPage(reqVO, buildPageWrapper(reqVO).orderByDesc(AigcAssetDO::getId));
     }
 
     default List<AigcAssetDO> selectList(AigcAssetPageReqVO reqVO) {
-        return selectList(new LambdaQueryWrapperX<AigcAssetDO>()
+        return selectList(buildPageWrapper(reqVO).orderByDesc(AigcAssetDO::getId));
+    }
+
+    default Long selectCount(AigcAssetPageReqVO reqVO) {
+        return selectCount(buildPageWrapper(reqVO));
+    }
+
+    default LambdaQueryWrapperX<AigcAssetDO> buildPageWrapper(AigcAssetPageReqVO reqVO) {
+        LambdaQueryWrapperX<AigcAssetDO> wrapper = new LambdaQueryWrapperX<AigcAssetDO>()
                 .eqIfPresent(AigcAssetDO::getUserId, reqVO.getUserId())
                 .eqIfPresent(AigcAssetDO::getAssetType, reqVO.getAssetType())
                 .eqIfPresent(AigcAssetDO::getSourceType, reqVO.getSourceType())
                 .eqIfPresent(AigcAssetDO::getAuditStatus, reqVO.getAuditStatus())
                 .eqIfPresent(AigcAssetDO::getVisibility, reqVO.getVisibility())
                 .eqIfPresent(AigcAssetDO::getStatus, reqVO.getStatus())
-                .likeIfPresent(AigcAssetDO::getTitle, reqVO.getTitle())
-                .orderByDesc(AigcAssetDO::getId));
+                .likeIfPresent(AigcAssetDO::getTitle, reqVO.getTitle());
+        if ("OTHER".equals(reqVO.getCategory())) {
+            wrapper.notIn(AigcAssetDO::getAssetType, MEDIA_ASSET_TYPES);
+        }
+        return wrapper;
     }
 
     default PageResult<AigcAssetDO> selectPage(AigcAssetPageReqDTO reqDTO) {

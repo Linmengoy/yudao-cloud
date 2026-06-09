@@ -31,7 +31,7 @@ import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { captureVideoFrameAsset, getMyAsset } from "@/features/assets/asset-api";
-import { getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
+import { getAssetPreviewExpireTime, getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { downloadMedia, videoNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
@@ -565,6 +565,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             sourceNodeId: id,
             assetId,
             previewUrl: getAssetPreviewUrl(asset) || asset.fileUrl,
+            assetUrlExpireTime: getAssetPreviewExpireTime(asset) ?? null,
             width: asset.width,
             height: asset.height,
             mimeType: asset.mimeType || "image/png",
@@ -722,14 +723,28 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
 
       const result = await waitGenerationResult(submit.taskId);
       const completedAt = result.finishTime ?? new Date().toISOString();
-      const videoUrl = result.outputUrlList[0];
+      const outputAssetId = result.assetIdList[0] ?? null;
+      let videoUrl = result.outputUrlList[0];
+      let assetUrlExpireTime: string | null = null;
+      if (outputAssetId) {
+        try {
+          const asset = await getMyAsset(outputAssetId);
+          videoUrl = getAssetPreviewUrl(asset) || videoUrl;
+          assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
+        } catch {
+        }
+      }
 
       if (result.status === "SUCCESS" && videoUrl) {
         updateData({
           status: "complete",
           kind: "generated",
           taskId: String(submit.taskId),
+          assetId: outputAssetId,
+          outputAssetId,
           videoUrl,
+          previewUrl: videoUrl,
+          assetUrlExpireTime,
           errorMessage: null,
           upstreamStatus: result.status,
           generationCompletedAt: completedAt,

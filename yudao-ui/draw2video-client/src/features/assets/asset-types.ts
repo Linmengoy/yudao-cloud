@@ -55,13 +55,58 @@ export interface AigcAsset {
   createTime?: string;
   localProjectId?: string;
   localNodeId?: string;
+  files?: AigcAssetFile[];
+}
+
+export interface AigcAssetFile {
+  assetFileId: number;
+  fileRole: string;
+  fileName?: string;
+  fileExt?: string;
+  mimeType?: string;
+  fileSize?: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  accessUrl?: string;
+  expireSeconds?: number;
+  expireTime?: string;
+  publicAccess?: boolean;
 }
 
 export interface AigcAssetPageParams {
   pageNo: number;
   pageSize: number;
   assetType?: string;
+  category?: string;
+  sourceType?: string;
   title?: string;
+}
+
+export interface AigcAssetCategoryCounts {
+  allCount: number;
+  generatedImageCount: number;
+  uploadedImageCount: number;
+  videoCount: number;
+  otherCount: number;
+}
+
+export interface AigcAssetAccessUrlReq {
+  assetId: number | string;
+  fileRole: string;
+  accessType: string;
+}
+
+export interface AigcAssetAccessUrlResp {
+  assetId: number;
+  assetFileId?: number;
+  fileRole: string;
+  accessType: string;
+  url: string;
+  expireSeconds?: number;
+  expireTime?: string;
+  publicAccess?: boolean;
+  cacheHit?: boolean;
 }
 
 export interface AigcAssetUpdateReq {

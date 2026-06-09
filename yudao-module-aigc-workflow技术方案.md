@@ -341,6 +341,50 @@ yudao-module-aigc-workflow-server
 
 第一版建议优先支持 `START`、`TEXT_GENERATE`、`IMAGE_GENERATE`、`VIDEO_GENERATE`、`ASSET_INPUT`、`ASSET_OUTPUT`、`END`，满足当前前端画布和第一阶段生成能力接入需要。
 
+### 7.1 快速生成项目初始化
+
+用户端 `/app` 快捷生成会直接创建 canvas 项目并运行首个图片或视频生成节点。后端快速生成请求需要同时兼容旧版单图字段和新版多图字段：
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `referenceAssetId` | 旧版单张参考图资产 ID |
+| `referenceAssetIds` | 新版多张参考图资产 ID |
+| `referencePreviewUrl` | 旧版单张参考图预览 URL |
+| `referencePreviewUrls` | 新版多张参考图预览 URL |
+
+说明：`referencePreviewUrl` / `referencePreviewUrls` 仅作为旧版请求兼容和本次提交时的临时预览输入。私有 OSS/S3 下这些 URL 可能是有时效的签名 URL，不能写入 canvas snapshot、operation log 或节点持久数据作为长期展示地址。
+
+归一化规则：
+
+- `referenceAssetIds` / `referencePreviewUrls` 非空时优先使用数组字段。
+- 数组为空时回退到 `referenceAssetId` / `referencePreviewUrl`。
+- 第一张参考图继续作为项目封面和旧版单图兼容字段，并写入项目 `coverAssetId`。
+- 多图请求仍保留完整数组，用于画布节点、资产绑定和生成请求。
+
+画布初始化规则：
+
+- 每张参考图创建一个 `image` 类型参考节点，节点持久数据只写入 `assetId`、`fileName`、`mimeType` 等稳定资产元信息，不写入 `previewUrl`。
+- 目标生成节点根据 `nodeType` 创建为 `image` 或 `video`。
+- 每个参考图节点通过 `signal` 边连接到目标生成节点，使 canvas 的 `ImageNode` / `VideoNode` 可以通过 incoming edges 读取参考图。
+- `runReqVO.inputParams` 接收完整归一化参数，用于真正发起生成任务。
+- 节点展示用的 `params` 应剥离请求专用字段，例如 `referenceImages`、`referenceAssetIds`、`referenceImageIds`、`inputImages`、`inputImageUrls`、`inputImageIds`，避免把参考图传输字段重复展示为模型参数。
+- 普通打开 `/canvas` 或新建空项目时，不应自动生成默认节点；只有 `/app` 快速生成、用户显式创建、上传、粘贴或从资产库拖入时才创建节点。
+
+Canvas 持久化约束：
+
+- 图片、视频节点的长期资源身份是 `assetId`、`outputAssetId` 和后续的 `assetVersionId`，不是访问 URL。
+- `previewUrl`、`outputPreviewUrl`、`videoUrl`、`assetUrlExpireTime` 属于前端运行时展示字段，服务端保存 snapshot、处理 `NODE_UPDATE_DATA`、`TASK_STATUS_PATCH`、`ASSET_ATTACH` 时必须过滤。
+- 生成节点完成后，operation patch 只写回 `assetId` / `outputAssetId` 等稳定字段；客户端根据资产详情或访问 URL 接口刷新当前可用的预览/播放 URL。
+- 历史 operation 中如包含运行时 URL，回放时应忽略这些字段，避免旧签名 URL 覆盖前端刚刷新的有效 URL。
+
+项目封面资产约束：
+
+- `aigc_canvas_project.cover_asset_id` 是项目封面的稳定资产身份，优先级高于临时 `coverUrl`。
+- 创建快捷生成项目时，如果存在参考图资产，第一张参考图资产 ID 必须写入 `coverAssetId`。
+- 读取项目详情或项目分页时，如果 `coverAssetId` 为空，但能从 image/sketch 节点数据或 `aigc_canvas_asset_ref` 推导到首个图片资产 ID，应立即按 `id + cover_asset_id is null` 条件回写项目表。
+- 推导到资产 ID 后即使本次私有 OSS/S3 预览 URL 获取失败，也应先补齐 `coverAssetId`；URL 只影响本次响应展示，不影响稳定字段收敛。
+- 一旦 `coverAssetId` 已存在，不再从节点和资产引用反复推导封面，避免后续链路到处写多分支判断。
+
 ## 8. 状态机设计
 
 ### 8.1 工作流实例状态

@@ -21,7 +21,9 @@
 - `/assets` 已改为分页增量加载：首屏只请求一页，滚动接近底部后自动加载下一页，末尾显示“已加载全部”，避免一次性拉取全部资产造成性能压力。
 - `/assets` 图片墙使用 Muuri 紧凑瀑布流展示，按真实图片/视频比例决定跨列宽度，并随容器宽度自动切换列数；列表卡片外框、元数据信息和圆角已移除，突出原图内容。
 - `/assets` 搜索输入已增加防抖，查询参数优先走分页接口服务端过滤，不再对全量资产做前端一次性检索。
+- `/assets` 已按图片来源拆分生成图和上传图：生成图片请求 `assetType=IMAGE&sourceType=GENERATE`，上传图片请求 `assetType=IMAGE&sourceType=UPLOAD`。
 - `/assets/[id]` 已支持资产预览、下载、删除、标题/描述/标签编辑、可见性调整、审核状态展示和来源任务跳转。
+- 私有 OSS/S3 资产的 `fileUrl`、`coverUrl`、`thumbnailUrl` 和 `files[].accessUrl` 都按运行时访问 URL 处理，列表、详情、canvas 和 `/app` 只缓存 `assetId` 等稳定身份，页面切换或 URL 接近过期时重新读取资产详情刷新。
 - 已补齐真实接口不可用时的本地画布生成资产兜底，兜底资产会从 IndexedDB 回查图片和视频大媒体。
 - 已统一审核和资产状态规则：仅 `PASS` 且非 `DELETED/DISABLED` 的资产允许下载，只有 `NORMAL + PASS` 的资产允许公开化。
 - 已修复图片生成异常时节点永久 pending 的问题，生成异常会回写 `failed`、错误信息、完成时间和耗时。
@@ -231,7 +233,11 @@
 ### 5.2 我的资产列表
 
 - 默认按创建时间倒序分页展示当前用户资产，禁止一次性拉取全部资产。
-- 顶部提供紧凑筛选胶囊：全部、生成图片、生成视频、其它文件；不使用顶部大 Tab。
+- 顶部提供紧凑筛选胶囊：全部、生成图片、上传图片、生成视频、其它文件；不使用顶部大 Tab。
+- 图片资产不再把上传图和生成图混在一起。生成图片使用 `assetType=IMAGE&sourceType=GENERATE`；上传图片使用 `assetType=IMAGE&sourceType=UPLOAD`。
+- 分类胶囊右侧数量必须来自后端 `GET /aigc/asset/my-category-counts`，统计口径与当前搜索 `title` 等公共过滤条件一致；切换分类只改变分页列表条件，不能用当前页列表反推其它分类总数。
+- 加号资产选择弹窗可从生成图片或上传图片中选择参考图，选中后只作为当前生成请求的参考输入，不改变生成结果资产类型。
+- 列表和选择弹窗展示图片时优先使用资产响应中的当前访问 URL；若后端返回 `files[].expireTime`，前端需把它视为刷新提示，不能把 URL 当作长期持久字段写入项目或节点。Canvas 打开已有项目时应通过 `POST /aigc/asset/access-urls` 批量刷新节点资产 URL，避免逐个调用详情接口导致图片很久才显示。
 - 搜索输入需要防抖，优先通过分页接口的标题参数请求服务端过滤；不要为了搜索把全部资产预加载到前端。
 - 列表采用 Muuri 紧凑瀑布流图片墙，按容器宽度动态计算列数，窗口变窄时自然降为多列、两列或单列。
 - 图片和视频使用全尺寸可见预览，不裁剪、不套外层卡片、不显示圆角边和元数据信息；点击媒体进入资产详情。
@@ -277,15 +283,18 @@
 - 当前图片画布节点一次只承载一张生成图，因此前端将图片生成数量限制为 `1`，避免后端返回多张但只落第一张造成资产丢失。
 - `ImageNode` 调用生成接口异常时会写回失败状态，避免节点永久显示生成中。
 - 生成服务把 provider 返回的 `data:` URL 转存为文件资产时，文件名必须唯一，至少包含 `generateNo`、`taskId` 或雪花 ID。禁止所有生成图共用 `IMAGE生成资产.png` 这类固定文件名，否则不同 `assetId` 会拥有相同 `fileUrl` 并在文件服务中互相覆盖。
-- 同一 sketch 连接多个 ImageNode 且 prompt 不同时，应创建不同生成记录、不同资产 ID 和不同 `fileUrl`；前端展示结果以 `previewUrl/outputPreviewUrl` 为准，不应复用旧节点 URL。
+- 同一 sketch 连接多个 ImageNode 且 prompt 不同时，应创建不同生成记录、不同资产 ID 和不同底层文件引用；前端展示结果以 `assetId/outputAssetId` 刷新的运行时 URL 为准，不应复用旧节点 URL。
+- Canvas 节点中的 `previewUrl`、`outputPreviewUrl`、`videoUrl`、`assetUrlExpireTime` 只用于当前页面显示，保存 snapshot、operation、本地项目缓存前都要剥离；刷新或协作回放时通过 `assetId/outputAssetId` 重新获取有效 URL。
 
 ### 5.6 用户端接口
 
 | 能力 | 方法 | 接口 | 说明 |
 | ---- | ---- | ---- | ---- |
-| 我的资产分页 | GET | `/aigc/asset/my-page?pageNo={pageNo}&pageSize={pageSize}` | 查询当前登录用户资产分页 |
+| 我的资产分页 | GET | `/aigc/asset/my-page?pageNo={pageNo}&pageSize={pageSize}&assetType=&sourceType=` | 查询当前登录用户资产分页 |
 | 我的资产详情 | GET | `/aigc/asset/my-get?id={id}` | 查询当前登录用户有权访问的资产详情 |
+| 我的资产分类数量 | GET | `/aigc/asset/my-category-counts?title=` | 按资产库胶囊分组返回当前用户资产总数 |
 | 上传资产 | POST | `/aigc/asset/upload` | 创建当前用户上传资产元数据 |
+| 批量访问 URL | POST | `/aigc/asset/access-urls` | 根据 `assetId + fileRole + accessType` 批量获取运行时签名 URL |
 | 更新资产 | PUT | `/aigc/asset/update` | 更新标题、描述和标签 |
 | 更新可见性 | PUT | `/aigc/asset/visibility` | 更新当前用户资产可见性 |
 | 删除资产 | DELETE | `/aigc/asset/delete?id={id}` | 删除当前用户自己的资产 |

@@ -9,6 +9,7 @@ import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDownloadLogDO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAuditUpdateReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCategoryCountRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
@@ -61,6 +62,8 @@ public interface AigcAssetService {
     PageResult<AigcAssetDO> getUserAssetPage(AigcAssetPageReqVO reqVO, Long userId);
 
     List<AigcAssetDO> getUserAssetList(AigcAssetPageReqVO reqVO, Long userId);
+
+    AigcAssetCategoryCountRespDTO getUserAssetCategoryCounts(AigcAssetPageReqVO reqVO, Long userId);
 
     void updateAuditStatus(AigcAssetAuditUpdateReqDTO reqDTO);
 

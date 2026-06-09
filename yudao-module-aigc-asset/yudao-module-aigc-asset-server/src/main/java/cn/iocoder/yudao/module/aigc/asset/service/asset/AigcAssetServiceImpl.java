@@ -24,6 +24,7 @@ import cn.iocoder.yudao.module.aigc.asset.dal.redis.AigcAssetAccessUrlRedisDAO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAuditUpdateReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCategoryCountRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
@@ -80,6 +81,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     private static final int REMOTE_FILE_DOWNLOAD_TIMEOUT_MILLIS = 20_000;
     private static final int REMOTE_FILE_DOWNLOAD_TIMEOUT_SECONDS = 30;
     private static final int VIDEO_FRAME_CAPTURE_TIMEOUT_SECONDS = 45;
+    private static final int ACCESS_URL_CACHE_TTL_SAFETY_SECONDS = 60;
     private static final BigDecimal LAST_FRAME_OFFSET_SECONDS = new BigDecimal("0.05");
     private static final String REMOTE_FILE_DOWNLOAD_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
@@ -119,7 +121,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             throw exception(ASSET_FILE_EMPTY);
         }
         validateFileSize(content.length);
-        FileCreateRespDTO file = fileApi.createFileV2(content, fileName, "aigc/asset", mimeType);
+        FileCreateRespDTO file = fileApi.createFileV2(content, uniqueAssetStorageFileName(fileName, mimeType), "aigc/asset", mimeType);
         AigcAssetSaveReqVO reqVO = new AigcAssetSaveReqVO()
                 .setUserId(userId)
                 .setAssetType(assetType)
@@ -305,6 +307,33 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         reqVO.setUserId(userId);
         reqVO.setStatus(AigcAssetStatusEnum.NORMAL.getCode());
         return assetMapper.selectList(reqVO);
+    }
+
+    @Override
+    public AigcAssetCategoryCountRespDTO getUserAssetCategoryCounts(AigcAssetPageReqVO reqVO, Long userId) {
+        AigcAssetPageReqVO baseReqVO = buildUserAssetCountReqVO(reqVO, userId);
+        return new AigcAssetCategoryCountRespDTO()
+                .setAllCount(assetMapper.selectCount(baseReqVO))
+                .setGeneratedImageCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
+                        .setAssetType(AigcAssetTypeEnum.IMAGE.getCode())
+                        .setSourceType(AigcAssetSourceTypeEnum.GENERATE.getCode())))
+                .setUploadedImageCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
+                        .setAssetType(AigcAssetTypeEnum.IMAGE.getCode())
+                        .setSourceType(AigcAssetSourceTypeEnum.UPLOAD.getCode())))
+                .setVideoCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
+                        .setAssetType(AigcAssetTypeEnum.VIDEO.getCode())))
+                .setOtherCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
+                        .setCategory("OTHER")));
+    }
+
+    private AigcAssetPageReqVO buildUserAssetCountReqVO(AigcAssetPageReqVO reqVO, Long userId) {
+        AigcAssetPageReqVO countReqVO = new AigcAssetPageReqVO();
+        countReqVO.setUserId(userId);
+        countReqVO.setStatus(AigcAssetStatusEnum.NORMAL.getCode());
+        countReqVO.setAuditStatus(reqVO.getAuditStatus());
+        countReqVO.setVisibility(reqVO.getVisibility());
+        countReqVO.setTitle(reqVO.getTitle());
+        return countReqVO;
     }
 
     @Override
@@ -543,7 +572,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             throw exception(ASSET_DOWNLOAD_FAILED);
         }
         validateFileSize(content.length);
-        FileCreateRespDTO file = fileApi.createFileV2(content, reqDTO.getTitle(), "aigc/asset", reqDTO.getMimeType());
+        FileCreateRespDTO file = fileApi.createFileV2(content, uniqueAssetStorageFileName(reqDTO.getTitle(), reqDTO.getMimeType()), "aigc/asset", reqDTO.getMimeType());
         reqDTO.setFileSize((long) content.length);
         return buildAssetFileDO(null, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, reqDTO.getOriginUrl(), reqDTO.getWidth(), reqDTO.getHeight(), reqDTO.getDuration());
     }
@@ -642,7 +671,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         }
         validateFileSize(content.length);
         String fileExt = StrUtil.blankToDefault(reqDTO.getFileExt(), fileExtFromMimeType(mimeType));
-        String fileName = StrUtil.blankToDefault(reqDTO.getTitle(), "aigc-asset") + "." + fileExt;
+        String fileName = uniqueAssetStorageFileName(StrUtil.blankToDefault(reqDTO.getTitle(), "aigc-asset") + "." + fileExt, mimeType);
         FileCreateRespDTO file = fileApi.createFileV2(content, fileName, "aigc/asset", mimeType);
         reqDTO.setFileSize((long) content.length);
         reqDTO.setMimeType(mimeType);
@@ -710,6 +739,21 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             return StrUtil.subAfter(mimeType, "audio/", true);
         }
         return "bin";
+    }
+
+    private String uniqueAssetStorageFileName(String fileName, String mimeType) {
+        String normalizedFileName = StrUtil.blankToDefault(fileName, "aigc-asset");
+        String fileExt = fileExtFromFileName(normalizedFileName);
+        if (StrUtil.isBlank(fileExt) && StrUtil.isNotBlank(mimeType)) {
+            fileExt = fileExtFromMimeType(mimeType);
+        }
+        String fileBaseName = normalizedFileName;
+        if (StrUtil.isNotBlank(fileExt)) {
+            fileBaseName = StrUtil.removeSuffixIgnoreCase(fileBaseName, "." + fileExt);
+        }
+        fileBaseName = StrUtil.blankToDefault(fileBaseName.replaceAll("[\\\\/:*?\"<>|\\s]+", "-"), "aigc-asset");
+        String uniqueName = fileBaseName + "-" + UUID.fastUUID().toString(true);
+        return StrUtil.isBlank(fileExt) ? uniqueName : uniqueName + "." + fileExt;
     }
 
     private String fileExtFromFileName(String fileName) {
@@ -796,14 +840,21 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                     return cachedAgain.setCacheHit(true);
                 }
                 AigcAssetAccessUrlRespDTO generated = generateAccessUrl(asset, file, accessType);
-                accessUrlRedisDAO.set(key, generated, generated.getExpireSeconds());
+                cacheAccessUrl(key, generated);
                 return generated;
             });
         } catch (Exception ex) {
             AigcAssetAccessUrlRespDTO generated = generateAccessUrl(asset, file, accessType);
-            accessUrlRedisDAO.set(key, generated, generated.getExpireSeconds());
+            cacheAccessUrl(key, generated);
             return generated;
         }
+    }
+
+    private void cacheAccessUrl(String key, AigcAssetAccessUrlRespDTO accessUrl) {
+        int ttl = Math.max(1, accessUrl.getExpireSeconds() == null
+                ? AigcAssetAccessTypeEnum.PREVIEW.getExpireSeconds()
+                : accessUrl.getExpireSeconds() - ACCESS_URL_CACHE_TTL_SAFETY_SECONDS);
+        accessUrlRedisDAO.set(key, accessUrl, ttl);
     }
 
     private AigcAssetAccessUrlRespDTO generateAccessUrl(AigcAssetDO asset, AigcAssetFileDO file, String accessType) {

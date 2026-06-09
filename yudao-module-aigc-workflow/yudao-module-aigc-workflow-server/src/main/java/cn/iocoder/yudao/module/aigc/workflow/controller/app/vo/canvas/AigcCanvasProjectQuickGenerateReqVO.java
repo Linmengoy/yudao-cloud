@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.util.List;
+
 @Schema(description = "用户端 - AIGC 画布项目快速生成 Request VO")
 @Data
 public class AigcCanvasProjectQuickGenerateReqVO {
@@ -45,7 +47,13 @@ public class AigcCanvasProjectQuickGenerateReqVO {
     @Schema(description = "参考图资产编号")
     private Long referenceAssetId;
 
+    @Schema(description = "参考图资产编号列表")
+    private List<Long> referenceAssetIds;
+
     @Schema(description = "参考图预览地址")
     private String referencePreviewUrl;
+
+    @Schema(description = "参考图预览地址列表")
+    private List<String> referencePreviewUrls;
 
 }

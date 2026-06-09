@@ -685,6 +685,8 @@ CREATE TABLE canvas_invite_link (
 - localStorage 可缓存最近打开项目 ID、最近一次 snapshot、用户偏好。
 - IndexedDB 可缓存媒体预览和离线草稿，但必须能从服务端资产重新恢复。
 - 项目列表、项目名称、节点数量、资产数量应来自服务端 API。
+- 空项目或无 snapshot 的画布保持空画布，不自动创建默认节点；节点只能来自服务端 snapshot、用户操作或 `/app` 快速生成初始化。
+- 恢复 canvas 中图片/视频节点时，长期身份以 `assetId/outputAssetId` 为准，展示 URL 通过资产服务批量访问接口刷新；历史 snapshot 或 operation 中的临时签名 URL 不作为恢复事实源。
 
 ### 10.5 项目 ID 边界
 
@@ -716,6 +718,13 @@ CREATE TABLE canvas_invite_link (
 | DELETE | `/app-api/canvas/projects/{id}/members/{memberId}` | 移除成员 |
 | POST | `/app-api/canvas/projects/{id}/assets` | 上传或绑定资产 |
 | POST | `/app-api/canvas/projects/{id}/nodes/{nodeId}/run` | 执行节点生成任务 |
+
+项目详情和项目分页的封面处理规则：
+
+- 响应优先使用 `cover_asset_id` 查询当前可用封面访问 URL。
+- 如果项目历史数据缺少 `cover_asset_id`，服务端会从最新 snapshot + 后续 operation 重建的 image/sketch 节点，或 `aigc_canvas_asset_ref` 资产引用中推导首个图片资产 ID。
+- 推导到资产 ID 后，服务端按 `project_id + cover_asset_id is null` 条件回写 `aigc_canvas_project.cover_asset_id`；后续读取直接使用项目字段，避免每次进入项目都重复走节点/资产引用兜底分支。
+- 私有 OSS/S3 场景下，封面 URL 只作为本次响应的运行时访问地址，`cover_asset_id` 才是长期持久字段。
 
 ### 11.1.1 项目回收站
 
@@ -795,8 +804,9 @@ CREATE TABLE canvas_invite_link (
 - `progress`
 - `errorMessage`
 - `outputAssetId`
-- `outputPreviewUrl`
 - `updatedAt`
+
+`outputPreviewUrl`、`previewUrl`、`videoUrl`、`assetUrlExpireTime` 只作为客户端运行时显示字段，不写入 operation log 或 snapshot。任务完成后服务端 patch 持久化 `assetId` / `outputAssetId`，客户端再通过资产详情或访问 URL 接口刷新当前可用的预览/播放 URL。
 
 任务状态更新也按统一 operation 提交流程处理，默认路径由服务端系统用户写入 MySQL operation log；启用 Redis 热日志后先写 Redis 热日志并广播，再由 Worker 落盘，`actorUserId` 可为空或使用 system 标识。
 
@@ -944,7 +954,7 @@ CREATE TABLE canvas_invite_link (
 开发内容：
 
 - 复用 `yudao-module-aigc-asset`，将画布上传图片、视频统一写入资产服务。
-- 画布节点只保存 `assetId`、`assetVersionId`、`previewUrl`、`mimeType`、`width`、`height`、`sourceTaskId`。
+- 画布节点持久化只保存 `assetId`、`assetVersionId`、`mimeType`、`width`、`height`、`sourceTaskId` 等稳定字段；`previewUrl`、`outputPreviewUrl`、`videoUrl`、`assetUrlExpireTime` 只留在前端运行时状态。
 - IndexedDB 降级为本机缓存，不能作为协作主数据源。
 - 新增或复用画布节点资产绑定关系，例如 `canvas_asset_ref` 或 `ASSET_ATTACH` operation。
 
@@ -1062,7 +1072,7 @@ CREATE TABLE canvas_invite_link (
 
 验收标准：
 
-- prompt、params、content、status、taskId、assetId、previewUrl 等字段可同步。
+- prompt、params、content、status、taskId、assetId 等稳定字段可同步；私有 OSS/S3 访问 URL 相关字段不可同步。
 - 弹窗开关、hover、临时拖拽状态不会写入 operation log。
 
 #### P2：节点生成任务服务端编排
@@ -1147,14 +1157,14 @@ CREATE TABLE canvas_invite_link (
 - 后端新增或复用资产上传 API。
 - 后端新增画布节点资产绑定 API：`POST /canvas/projects/{id}/nodes/{nodeId}/assets`。
 - 前端上传图片后调用资产上传 API。
-- `ImageNodeData` 增加 `assetId?: number`、`assetVersionId?: number`、`previewUrl?: string`。
+- `ImageNodeData` 增加 `assetId?: number`、`assetVersionId?: number` 等稳定资产字段；`previewUrl` 仅用于当前渲染态。
 - `dataUrl` 仅作为本机缓存字段，不作为协作主字段。
 
 #### 任务 B：视频资产中心化
 
 - 视频上传后进入资产服务。
-- `VideoNodeData` 增加 `assetId?: number`、`assetVersionId?: number`、`previewUrl?: string`。
-- 远端用户通过 `videoUrl` 或 `previewUrl` 访问视频。
+- `VideoNodeData` 增加 `assetId?: number`、`assetVersionId?: number` 等稳定资产字段；`videoUrl` / `previewUrl` 仅用于当前渲染态。
+- 远端用户通过 `assetId` 拉取新的运行时访问 URL 后访问视频。
 - IndexedDB 仅做本机缓存。
 
 #### 任务 C：差量同步兜底
@@ -1239,6 +1249,7 @@ CREATE TABLE canvas_invite_link (
 - 后端已增加当前图状态重建能力，基于最新 snapshot 和后续 operation log 校验节点/边是否存在、重复边、删除后编辑、给不存在节点连线等语义。
 - 后端已为当前图状态增加项目级内存缓存，普通 operation 成功后可增量更新缓存，snapshot 保存和资产绑定会触发缓存失效。
 - 图片、视频上传后已接入资产上传与节点资产绑定，后端绑定资产时会写入 `ASSET_ATTACH` operation log 并广播给画布房间。
+- 项目封面已收敛为 `cover_asset_id` 稳定字段；历史项目读取时可从节点或资产引用兜底推导首个图片资产 ID，并回写项目表，后续不再重复分支判断。
 
 ### 19.3 主要缺口
 

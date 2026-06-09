@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectDO;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.apache.ibatis.annotations.Mapper;
 
 import java.util.Collection;
@@ -27,6 +28,20 @@ public interface AigcCanvasProjectMapper extends BaseMapperX<AigcCanvasProjectDO
 
     default AigcCanvasProjectDO selectByIdForUpdate(Long id) {
         return selectOneForUpdate(AigcCanvasProjectDO::getId, id);
+    }
+
+    default int updateCoverAssetIfAbsent(Long id, Long coverAssetId) {
+        return update(null, new LambdaUpdateWrapper<AigcCanvasProjectDO>()
+                .eq(AigcCanvasProjectDO::getId, id)
+                .isNull(AigcCanvasProjectDO::getCoverAssetId)
+                .set(AigcCanvasProjectDO::getCoverAssetId, coverAssetId));
+    }
+
+    default int updateStatistics(Long id, Integer nodeCount, Integer assetCount) {
+        return update(null, new LambdaUpdateWrapper<AigcCanvasProjectDO>()
+                .eq(AigcCanvasProjectDO::getId, id)
+                .set(AigcCanvasProjectDO::getNodeCount, nodeCount)
+                .set(AigcCanvasProjectDO::getAssetCount, assetCount));
     }
 
 }

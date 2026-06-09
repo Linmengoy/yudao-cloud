@@ -8,6 +8,7 @@ import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetPageReqVO
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlRespDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCategoryCountRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetUpdateReqDTO;
@@ -67,6 +68,12 @@ public class AigcAssetAppController {
     public CommonResult<List<AigcAssetRespDTO>> getMyAssetList(@Valid AigcAssetPageReqVO reqVO) {
         List<AigcAssetDO> list = assetService.getUserAssetList(reqVO, getLoginUserId());
         return success(assetService.getAssetRespList(list.stream().map(AigcAssetDO::getId).toList(), getLoginUserId()));
+    }
+
+    @GetMapping("/my-category-counts")
+    @Operation(summary = "鑾峰彇鎴戠殑璧勪骇鍒嗙被鏁伴噺")
+    public CommonResult<AigcAssetCategoryCountRespDTO> getMyAssetCategoryCounts(@Valid AigcAssetPageReqVO reqVO) {
+        return success(assetService.getUserAssetCategoryCounts(reqVO, getLoginUserId()));
     }
 
     @PostMapping("/upload")

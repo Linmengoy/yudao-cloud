@@ -33,7 +33,9 @@ export interface QuickGenerateCanvasProjectInput {
   providerModel?: string;
   inputParams?: string;
   referenceAssetId?: number | null;
+  referenceAssetIds?: number[];
   referencePreviewUrl?: string | null;
+  referencePreviewUrls?: string[];
 }
 
 export interface QuickGenerateCanvasProjectResult {

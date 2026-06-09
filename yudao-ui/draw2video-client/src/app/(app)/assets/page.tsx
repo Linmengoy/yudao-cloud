@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import Link from "next/link";
 import { Loader2, RefreshCw, Search } from "lucide-react";
-import { getMyAssetPage } from "@/features/assets/asset-api";
+import { getMyAssetCategoryCounts, getMyAssetPage } from "@/features/assets/asset-api";
 import { getAccessToken } from "@/lib/api-client";
 import {
   getAssetPreviewUrl,
@@ -14,10 +14,18 @@ import { listGeneratedAssets, type GeneratedAsset } from "@/features/assets/asse
 import type Muuri from "muuri";
 import type { Item, LayoutFunctionCallback } from "muuri";
 
-type AssetTab = "ALL" | "IMAGE" | "VIDEO" | "OTHER";
+type AssetTab = "ALL" | "GENERATED_IMAGE" | "UPLOADED_IMAGE" | "VIDEO" | "OTHER";
+type AssetTabCounts = Record<AssetTab, number>;
 
 const MIN_ASSET_COLUMN_WIDTH = 220;
 const PAGE_SIZE = 30;
+const EMPTY_COUNTS: AssetTabCounts = {
+  ALL: 0,
+  GENERATED_IMAGE: 0,
+  UPLOADED_IMAGE: 0,
+  VIDEO: 0,
+  OTHER: 0,
+};
 
 function localToAsset(asset: GeneratedAsset): AigcAsset {
   return {
@@ -45,10 +53,47 @@ function getAssetHref(asset: AigcAsset) {
   return "/projects";
 }
 
+function isGeneratedImage(asset: AigcAsset) {
+  return asset.assetType === "IMAGE" && asset.sourceType === "GENERATE";
+}
+
+function isUploadedImage(asset: AigcAsset) {
+  return asset.assetType === "IMAGE" && asset.sourceType === "UPLOAD";
+}
+
 function matchesTab(asset: AigcAsset, tab: AssetTab) {
   if (tab === "ALL") return true;
+  if (tab === "GENERATED_IMAGE") return isGeneratedImage(asset);
+  if (tab === "UPLOADED_IMAGE") return isUploadedImage(asset);
   if (tab === "OTHER") return asset.assetType !== "IMAGE" && asset.assetType !== "VIDEO";
   return asset.assetType === tab;
+}
+
+function buildLocalAssetCounts(assets: AigcAsset[], query: string): AssetTabCounts {
+  const matchedAssets = assets.filter((asset) => matchesQuery(asset, query));
+  return {
+    ALL: matchedAssets.length,
+    GENERATED_IMAGE: matchedAssets.filter(isGeneratedImage).length,
+    UPLOADED_IMAGE: matchedAssets.filter(isUploadedImage).length,
+    VIDEO: matchedAssets.filter((asset) => asset.assetType === "VIDEO").length,
+    OTHER: matchedAssets.filter((asset) => asset.assetType !== "IMAGE" && asset.assetType !== "VIDEO").length,
+  };
+}
+
+function getAssetTabQuery(tab: AssetTab) {
+  if (tab === "GENERATED_IMAGE") return { assetType: "IMAGE", sourceType: "GENERATE" };
+  if (tab === "UPLOADED_IMAGE") return { assetType: "IMAGE", sourceType: "UPLOAD" };
+  if (tab === "VIDEO") return { assetType: "VIDEO", sourceType: undefined, category: undefined };
+  if (tab === "OTHER") return { assetType: undefined, sourceType: undefined, category: "OTHER" };
+  return { assetType: undefined, sourceType: undefined, category: undefined };
+}
+
+function getAssetTabLabel(tab: AssetTab) {
+  if (tab === "ALL") return "全部";
+  if (tab === "GENERATED_IMAGE") return "生成图片";
+  if (tab === "UPLOADED_IMAGE") return "上传图片";
+  if (tab === "VIDEO") return "生成视频";
+  return "其它";
 }
 
 function matchesQuery(asset: AigcAsset, query: string) {
@@ -137,8 +182,8 @@ function AssetWallPreview({ asset, onLoad }: { asset: AigcAsset; onLoad: (ratio?
 function EmptyState({ tab }: { tab: AssetTab }) {
   return (
     <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-border-warm bg-background/70 px-6 py-16 text-center">
-      <p className="text-sm font-medium text-charcoal">暂时没有{tab === "VIDEO" ? "生成视频" : tab === "IMAGE" ? "生成图片" : "资产"}</p>
-      <p className="mt-1 text-xs text-muted-gray">在画布中生成完成后，会自动出现在这里。</p>
+      <p className="text-sm font-medium text-charcoal">暂时没有{tab === "ALL" ? "资产" : getAssetTabLabel(tab)}</p>
+      <p className="mt-1 text-xs text-muted-gray">在画布中生成或上传完成后，会自动出现在这里。</p>
       <Link href="/projects" className="mt-5 rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80">
         去项目库
       </Link>
@@ -157,6 +202,7 @@ export default function AssetsPage() {
   const [measuredRatios, setMeasuredRatios] = useState<Record<string, number>>({});
   const [pullDistance, setPullDistance] = useState(0);
   const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<AssetTabCounts>(EMPTY_COUNTS);
   const [hasMore, setHasMore] = useState(true);
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const loadMoreElementRef = useRef<HTMLDivElement | null>(null);
@@ -182,20 +228,38 @@ export default function AssetsPage() {
       setAssets([]);
       setMeasuredRatios({});
       setTotal(0);
+      setCounts(EMPTY_COUNTS);
       setHasMore(true);
     }
     try {
-      const data = await getMyAssetPage({
-        pageNo: nextPageNo,
-        pageSize: PAGE_SIZE,
-        assetType: tab === "IMAGE" || tab === "VIDEO" ? tab : undefined,
-        title: debouncedQuery.trim() || undefined,
-      });
+      const tabQuery = getAssetTabQuery(tab);
+      const [data, categoryCounts] = await Promise.all([
+        getMyAssetPage({
+          pageNo: nextPageNo,
+          pageSize: PAGE_SIZE,
+          assetType: tabQuery.assetType,
+          category: tabQuery.category,
+          sourceType: tabQuery.sourceType,
+          title: debouncedQuery.trim() || undefined,
+        }),
+        reset
+          ? getMyAssetCategoryCounts({ title: debouncedQuery.trim() || undefined })
+          : Promise.resolve(null),
+      ]);
       const nextList = data.list ?? [];
       const nextTotal = data.total ?? 0;
       const currentLength = reset ? 0 : assetsLengthRef.current;
       const mergedLength = currentLength + nextList.length;
       setAssets((items) => reset ? nextList : [...items, ...nextList]);
+      if (categoryCounts) {
+        setCounts({
+          ALL: categoryCounts.allCount ?? 0,
+          GENERATED_IMAGE: categoryCounts.generatedImageCount ?? 0,
+          UPLOADED_IMAGE: categoryCounts.uploadedImageCount ?? 0,
+          VIDEO: categoryCounts.videoCount ?? 0,
+          OTHER: categoryCounts.otherCount ?? 0,
+        });
+      }
       setTotal(nextTotal);
       pageNoRef.current = nextPageNo + 1;
       assetsLengthRef.current = mergedLength;
@@ -205,6 +269,7 @@ export default function AssetsPage() {
       if (!getAccessToken()) {
         setAssets([]);
         setTotal(0);
+        setCounts(EMPTY_COUNTS);
         setHasMore(false);
         hasMoreRef.current = false;
         assetsLengthRef.current = 0;
@@ -212,8 +277,10 @@ export default function AssetsPage() {
         return;
       }
       const localAssets = (await listGeneratedAssets()).map(localToAsset);
+      const localCounts = buildLocalAssetCounts(localAssets, debouncedQuery);
       setAssets(localAssets);
       setTotal(localAssets.length);
+      setCounts(localCounts);
       setHasMore(false);
       hasMoreRef.current = false;
       assetsLengthRef.current = localAssets.length;
@@ -238,12 +305,6 @@ export default function AssetsPage() {
 
   const filteredAssets = useMemo(() => assets.filter((asset) => matchesTab(asset, tab) && matchesQuery(asset, debouncedQuery)), [assets, debouncedQuery, tab]);
   const assetLayoutKey = useMemo(() => filteredAssets.map((asset) => getAssetKey(asset)).join("|"), [filteredAssets]);
-  const counts = useMemo(() => ({
-    ALL: assets.length,
-    IMAGE: assets.filter((asset) => asset.assetType === "IMAGE").length,
-    VIDEO: assets.filter((asset) => asset.assetType === "VIDEO").length,
-    OTHER: assets.filter((asset) => asset.assetType !== "IMAGE" && asset.assetType !== "VIDEO").length,
-  }), [assets]);
 
   useEffect(() => {
     if (loading || !assetLayoutKey || !gridElementRef.current) return;
@@ -319,7 +380,7 @@ export default function AssetsPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-charcoal">资产库</h1>
-          <p className="mt-1 text-sm text-muted-gray">集中查看生成图片、生成视频和其它文件型结果。</p>
+          <p className="mt-1 text-sm text-muted-gray">集中查看生成图片、上传图片、生成视频和其它文件型结果。</p>
         </div>
         <button type="button" onClick={() => loadAssets(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-[rgba(28,28,28,0.4)] px-3 py-2 text-sm text-charcoal hover:bg-muted active:opacity-80 disabled:opacity-50" aria-label="刷新资产列表" title="刷新资产列表">
           <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
@@ -329,9 +390,9 @@ export default function AssetsPage() {
 
       <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="inline-flex w-fit rounded-full bg-muted p-1">
-          {(["ALL", "IMAGE", "VIDEO", "OTHER"] as AssetTab[]).map((item) => (
+          {(["ALL", "GENERATED_IMAGE", "UPLOADED_IMAGE", "VIDEO", "OTHER"] as AssetTab[]).map((item) => (
             <button key={item} type="button" onClick={() => setTab(item)} className={`rounded-full px-4 py-2 text-sm transition-colors ${tab === item ? "bg-background text-charcoal shadow-sm" : "text-muted-gray hover:text-charcoal"}`}>
-              {item === "ALL" ? "全部" : item === "IMAGE" ? "生成图片" : item === "VIDEO" ? "生成视频" : "其它"}
+              {getAssetTabLabel(item)}
               <span className="ml-2 text-xs text-muted-gray">{counts[item]}</span>
             </button>
           ))}

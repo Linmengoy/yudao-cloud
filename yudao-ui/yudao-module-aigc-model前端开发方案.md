@@ -485,7 +485,7 @@ draw2video-client/src/features/generation
 `model-api.ts` 已封装：
 
 ```ts
-getAigcModelList(type?: number)
+getAigcModelList(type?: number, capability?: string)
 getAigcModelDetail(id: number)
 getAigcModelParamList(modelId: number, capability: string)
 calculateAigcModelPrice(data: AigcModelPriceCalculateReq)
@@ -563,11 +563,15 @@ draw2video-client/src/features/generation
 
 ### 7.1 `/app` 创作首页
 
-- 展示文本生成入口。
-- 默认加载文本模型列表：`GET /app-api/aigc/model/list?type=1`。
-- 用户选择模型后加载参数模板。
-- 调用价格预估接口展示预计消耗。
-- 与后续 `aigc-gen` 文本生成接口联动。
+- 展示快捷图片/视频生成入口，并兼容项目库入口。
+- 无参考图时分别加载 `TEXT_TO_IMAGE` / `TEXT_TO_VIDEO` 能力模型。
+- 有参考图时分别加载 `IMAGE_TO_IMAGE` / `IMAGE_TO_VIDEO` 能力模型。
+- 图片模型请求：`GET /app-api/aigc/model/list?type=2&capability=TEXT_TO_IMAGE|IMAGE_TO_IMAGE`。
+- 视频模型请求：`GET /app-api/aigc/model/list?type=3&capability=TEXT_TO_VIDEO|IMAGE_TO_VIDEO`。
+- 用户选择模型或参考图数量变化后，按 `modelId + capability` 重新加载参数模板。
+- 右侧滑杆按钮打开模型参数弹窗，表单复用 `DynamicParamForm`，与 canvas 图片/视频节点保持一致。
+- 提交前要求参数模板加载完成；模板加载失败或必填参数缺失时，页面展示原因并打开参数弹窗。
+- `inputParams` 使用用户在弹窗中选择的参数，未配置字段由模板默认值和前端保守兜底值补齐。
 
 ### 7.2 `/create/image` 图片画布
 

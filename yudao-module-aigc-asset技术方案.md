@@ -528,7 +528,10 @@ AigcAssetApi
 | ---- | ---- | ---- |
 | GET | `/aigc/asset/my-page` | 我的资产分页 |
 | GET | `/aigc/asset/my-get` | 我的资产详情 |
+| GET | `/aigc/asset/my-category-counts` | 我的资产分类数量 |
 | POST | `/aigc/asset/upload` | 上传资产（支持 MultipartFile） |
+| POST | `/aigc/asset/access-url` | 获取单个资产文件运行时访问 URL |
+| POST | `/aigc/asset/access-urls` | 批量获取资产文件运行时访问 URL |
 | PUT | `/aigc/asset/update` | 修改我的资产信息 |
 | PUT | `/aigc/asset/visibility` | 修改我的资产可见性 |
 | DELETE | `/aigc/asset/delete` | 删除我的资产 |
@@ -536,6 +539,29 @@ AigcAssetApi
 | POST | `/aigc/asset/use` | 标记资产被使用 |
 
 用户端接口必须校验资产归属：私有资产只能由 `asset.userId` 对应用户访问；公开资产需审核通过后才能访问详情和预览，下载、复用、编辑仍需结合登录态和审核状态判断。权限校验逻辑已实现于 `getAccessibleAsset()` 方法。
+
+`/aigc/asset/my-page` 支持按 `assetType` 和 `sourceType` 过滤，供用户端资产库拆分展示来源：
+
+| 资产页分组 | 查询条件 |
+| ---------- | -------- |
+| 生成图片 | `assetType=IMAGE&sourceType=GENERATE` |
+| 上传图片 | `assetType=IMAGE&sourceType=UPLOAD` |
+| 生成视频 | `assetType=VIDEO` |
+| 其它文件 | 客户端兜底分组，展示非图片、非视频资产 |
+
+上传参考图如果通过 `/aigc/asset/upload` 资产化，应写入 `sourceType=UPLOAD`。生成服务创建的图片、视频资产应写入 `sourceType=GENERATE`。前端从资产库选择参考图只会引用已有资产，不应把参考图来源类型改成生成结果来源类型。
+
+`/aigc/asset/my-category-counts` 与 `/my-page` 使用同一套用户归属、状态、标题搜索等公共过滤条件，但会分别返回以下计数字段：
+
+| 字段 | 统计口径 |
+| ---- | ---- |
+| `allCount` | 当前用户全部未删除资产 |
+| `generatedImageCount` | `assetType=IMAGE&sourceType=GENERATE` |
+| `uploadedImageCount` | `assetType=IMAGE&sourceType=UPLOAD` |
+| `videoCount` | `assetType=VIDEO` |
+| `otherCount` | 非图片、非视频资产 |
+
+资产库分类胶囊上的数量必须使用该接口，不能从当前分页结果推导。否则切换分类或分页加载不完整时，分类总数会随着当前页数据变化而不一致。
 
 ## 8. 核心流程
 
@@ -1017,13 +1043,15 @@ V2 上传不再只返回 URL，而是返回稳定文件引用。`infra_file.url`
 ```text
 1. 用户上传、第三方 URL 或 Data URL 进入资产服务
 2. 资产服务下载/解码文件内容
-3. 调用 FileApi.createFileV2 上传到平台文件服务
+3. 生成唯一存储文件名后调用 FileApi.createFileV2 上传到平台文件服务
 4. aigc_asset 写业务主记录
 5. aigc_asset_file 写 ORIGINAL 文件引用
 6. 接口返回资产 ID、资产文件 ID 和运行时访问 URL
 ```
 
 `origin_url` 只写入 `aigc_asset_file.origin_url` 用于溯源，不作为展示、预览、下载地址。
+
+资产服务在调用文件服务前统一生成服务端存储文件名，用户上传文件名、资产标题和生成标题只作为展示元数据。用户上传、第三方 URL 转存、Data URL 解码入库都必须走同一套唯一命名逻辑，避免同一天同路径下 `IMAGE生成资产.png`、`image.png` 这类固定名称互相覆盖，导致多个不同 `assetId` 指向同一个底层对象。
 
 ### 18.4 访问 URL 与 Redis 缓存
 
@@ -1082,6 +1110,8 @@ POST /aigc/asset/download
 
 下载接口现在返回 `AigcAssetAccessUrlRespDTO`，不再直接返回数据库中的 `fileUrl` 字符串。下载接口每次调用仍增加下载次数，但下载日志不保存完整签名 URL。
 
+`POST /aigc/asset/access-urls` 接收多个 `assetId + fileRole + accessType` 请求，批量返回 `AigcAssetAccessUrlRespDTO`。Canvas 打开项目、恢复 snapshot 或 URL 接近过期时应优先调用批量接口刷新图片/视频节点展示地址；单个详情接口 `/my-get` 只作为兼容兜底，避免大量节点逐个请求导致首屏图片显示很慢。
+
 ### 18.6 响应兼容
 
 `AigcAssetRespDTO` 新增 `files` 文件列表，包含每个文件角色的访问 URL 和过期信息。
@@ -1112,7 +1142,16 @@ fileSize
 - Redis 可短期保存签名 URL，但 TTL 必须小于签名 URL 有效期。
 - 画布 JSON、项目封面、生成记录不得长期保存带签名参数的访问 URL。
 
-### 18.9 已验证命令
+### 18.9 上传/转存文件命名防覆盖
+
+当前实现约束：
+
+- `/aigc/asset/upload` 用户上传资产时，即使原始文件名相同，也必须创建新的底层存储对象。
+- `createImageAsset`、`createVideoAsset`、`createFromRemoteUrl`、`createFromDataUrl` 等生成结果资产化入口，不能直接使用固定标题或第三方文件名作为对象存储 Key。
+- 原始 `fileName`、`title`、`mimeType`、宽高、大小等信息继续保存为资产展示和检索元数据，不参与对象存储唯一性判断。
+- Canvas 上传、`/app` 参考图上传和生成结果资产化都依赖资产服务这一层防覆盖逻辑，前端不应通过相同文件名覆盖旧资产。
+
+### 18.10 已验证命令
 
 ```text
 mvn -pl yudao-module-aigc-asset/yudao-module-aigc-asset-server -am -DskipTests compile

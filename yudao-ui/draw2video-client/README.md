@@ -89,14 +89,20 @@ Project model:
 Asset library:
 
 - Generated images and videos are loaded from the backend asset page API incrementally instead of fetching the entire asset set at once.
-- Uploaded media is not listed as a generated asset.
+- Uploaded image assets are listed separately from generated image assets by `sourceType`.
+- Asset category counts come from `GET /aigc/asset/my-category-counts` with the same search filters as the list. Do not recalculate cross-category totals from the current loaded page.
 - The asset wall uses a compact Muuri layout: media keeps its natural ratio, wide items may span multiple columns, and column count adapts to the container width.
 - Scrolling near the bottom loads the next page; when there are no more records the page shows an “已加载全部” state.
 - Asset search is debounced and should be sent through paged backend filtering rather than filtering a preloaded full dataset.
 - Each asset item links to its asset detail or source project canvas when only a local fallback exists.
+- The `/app` plus button opens an image asset picker. Selected generated or uploaded images become quick-generate reference images.
+- Private OSS/S3 asset URLs are treated as runtime access tickets. UI state may hold `fileUrl`, `thumbnailUrl`, `previewUrl`, `videoUrl`, or `files[].accessUrl` for display, but persisted canvas/project data should keep stable `assetId` / `outputAssetId` values and refresh URLs from the asset detail/access-url APIs when the page opens or a URL is close to expiring. Canvas should prefer the batch `POST /aigc/asset/access-urls` API when refreshing many node previews.
 
 Current image generation behavior:
 
+- `/app` quick generation supports pasted, uploaded, and asset-picked reference images. References are shown immediately, cached in `localStorage`, and restored when the user returns to the page. The cache is keyed by stable asset metadata; signed preview URLs are refreshed from the asset API instead of being trusted as permanent links.
+- Multiple quick-generate reference images are supported. The first image is still sent through legacy single-reference fields for compatibility, while the complete list is sent through array fields.
+- Quick generation filters models by the current input capability (`TEXT_TO_IMAGE` / `IMAGE_TO_IMAGE` / `TEXT_TO_VIDEO` / `IMAGE_TO_VIDEO`), opens a `DynamicParamForm` parameter popover from the sliders button, and sends the selected params with template defaults filled in.
 - New image generation creates an `ImageNode` draft placeholder.
 - Image models, model parameters, and price display come from the AIGC model APIs. Backend SELECT options/default values are normalized so saved JSON-array values render as plain values such as `1:1`.
 - Existing image nodes persist `aigcModelId`; refreshing a project should restore the node's selected model instead of falling back to the default model.
@@ -104,6 +110,7 @@ Current image generation behavior:
 - Reference images are connected to the selected image node and shown as thumbnails in the composer toolbar.
 - Generation updates the same image node in place instead of creating a separate result node.
 - Server-backed node runs apply the final `TASK_STATUS_PATCH` from `operation.operationJson.payload.patch` immediately after `run/sync` succeeds. Do not rely only on realtime/sync echo for the node that initiated the run.
+- Image and video generation patches persist output asset IDs, not signed output URLs. Runtime keys such as `previewUrl`, `outputPreviewUrl`, `videoUrl`, and `assetUrlExpireTime` are stripped from snapshots, operation payloads, and local project persistence, then repopulated from current asset responses for display.
 - Uploaded images are media-only nodes; selecting one does not open a prompt composer.
 - Empty draft images render inside a fixed preview slot, and the placeholder card changes aspect ratio when image size params change.
 - Real images and sketch previews display at their natural aspect ratio, scaled down to a bounded max size with the full image visible. They should not show an extra card border or black letterbox around the media.
@@ -131,6 +138,7 @@ Current sketch behavior:
 
 Current video behavior:
 
+- `/app` quick video generation uses the same reference-image cache and multi-image payload. Providers that only support one image use the first reference image.
 - New video nodes are draft placeholders.
 - Video generation should use AIGC model capability lists and parameter templates for `TEXT_TO_VIDEO` / `IMAGE_TO_VIDEO` instead of relying on hardcoded frontend model buttons.
 - Selecting a draft/generated video opens a composer below the fixed preview slot.
@@ -182,6 +190,7 @@ Canvas persistence is split:
 
 Large image `dataUrl` values are stripped before saving the canvas graph to `localStorage`.
 Uploaded video `data:` URLs are also stripped before saving; generated remote video URLs can stay in the graph.
+Opening `/canvas` without a saved snapshot should show an empty canvas. The app should not auto-create a default image node unless the user explicitly creates, pastes, uploads, drags, or quick-generates content.
 
 ## Auth, Theme, And Email Code UI
 

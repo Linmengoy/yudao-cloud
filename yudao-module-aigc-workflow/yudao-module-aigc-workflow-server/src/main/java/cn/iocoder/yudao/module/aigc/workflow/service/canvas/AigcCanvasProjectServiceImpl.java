@@ -49,6 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Collections;
 import java.util.List;
@@ -71,6 +72,8 @@ import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CAN
 @Service
 @Validated
 public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
+
+    private static final Set<String> RUNTIME_ASSET_URL_NODE_DATA_KEYS = Set.of("previewUrl", "outputPreviewUrl", "videoUrl", "assetUrlExpireTime");
 
     private static final String PROJECT_STATUS_NORMAL = "NORMAL";
     private static final String MEMBER_ROLE_OWNER = "owner";
@@ -132,13 +135,24 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
 
         String nodeType = normalizeQuickGenerateNodeType(reqVO);
         String nodeId = nodeType + "_" + IdUtil.fastSimpleUUID();
+        List<QuickGenerateReferenceNode> referenceNodes = buildQuickGenerateReferenceNodes(reqVO);
+        for (QuickGenerateReferenceNode referenceNode : referenceNodes) {
+            submitServerOperation(projectId, userId, "server_quick_generate", "node_create_" + referenceNode.nodeId(),
+                    "NODE_CREATE", new JSONObject().set("node", referenceNode.node()), projectCurrentVersion(projectId));
+        }
         JSONObject node = buildQuickGenerateNode(projectId, nodeId, nodeType, reqVO);
         submitServerOperation(projectId, userId, "server_quick_generate", "node_create_" + nodeId,
-                "NODE_CREATE", new JSONObject().set("node", node), 0L);
+                "NODE_CREATE", new JSONObject().set("node", node), projectCurrentVersion(projectId));
+        for (QuickGenerateReferenceNode referenceNode : referenceNodes) {
+            submitServerOperation(projectId, userId, "server_quick_generate", "edge_create_" + referenceNode.nodeId() + "_" + nodeId,
+                    "EDGE_CREATE", new JSONObject().set("edge", buildQuickGenerateReferenceEdge(referenceNode.nodeId(), nodeId)),
+                    projectCurrentVersion(projectId));
+        }
 
-        if ("video".equals(nodeType) && reqVO.getReferenceAssetId() != null) {
-            bindReferenceAssetQuietly(projectId, nodeId, reqVO.getReferenceAssetId());
-            updateProjectCover(projectId, reqVO.getReferenceAssetId());
+        List<Long> referenceAssetIds = quickGenerateReferenceAssetIds(reqVO);
+        if (!referenceAssetIds.isEmpty()) {
+            referenceAssetIds.forEach(assetId -> bindReferenceAssetQuietly(projectId, nodeId, assetId));
+            updateProjectCover(projectId, referenceAssetIds.get(0));
         }
 
         AigcCanvasProjectDO project = projectMapper.selectById(projectId);
@@ -168,13 +182,20 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     @Override
     public void updateProject(AigcCanvasProjectUpdateReqVO reqVO, Long userId) {
         validateEditableProject(reqVO.getId(), userId);
-        projectMapper.updateById(BeanUtils.toBean(reqVO, AigcCanvasProjectDO.class));
+        AigcCanvasProjectDO update = new AigcCanvasProjectDO();
+        update.setId(reqVO.getId());
+        update.setName(reqVO.getName());
+        update.setCoverAssetId(reqVO.getCoverAssetId());
+        if (reqVO.getName() != null || reqVO.getCoverAssetId() != null) {
+            projectMapper.updateById(update);
+        }
+        refreshProjectStatistics(reqVO.getId());
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteProject(Long id, Long userId) {
-        AigcCanvasProjectDO project = validateOwnerProject(id, userId);
+        AigcCanvasProjectDO project = refreshProjectStatistics(validateOwnerProject(id, userId));
         AigcCanvasProjectRecycleBinDO recycleBin = new AigcCanvasProjectRecycleBinDO();
         recycleBin.setProjectId(project.getId());
         recycleBin.setOwnerUserId(project.getOwnerUserId());
@@ -208,9 +229,24 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     }
 
     @Override
+    public AigcCanvasProjectRespVO getProjectDetail(Long id, Long userId) {
+        AigcCanvasProjectDO project = validateReadableProject(id, userId);
+        project = refreshProjectStatistics(project);
+        AigcCanvasMemberDO member = getProjectMember(project, userId);
+        Map<Long, AigcAssetRespDTO> assetMap = project.getCoverAssetId() == null
+                ? Collections.emptyMap()
+                : getAssetMapByIds(List.of(project.getCoverAssetId()));
+        return buildProjectResp(project, userId, member, assetMap);
+    }
+
+    @Override
     public AigcCanvasMemberDO getProjectMember(Long id, Long userId) {
         AigcCanvasProjectDO project = validateReadableProject(id, userId);
-        AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndUserId(id, userId);
+        return getProjectMember(project, userId);
+    }
+
+    private AigcCanvasMemberDO getProjectMember(AigcCanvasProjectDO project, Long userId) {
+        AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndUserId(project.getId(), userId);
         if (member == null && isProjectOwner(project, userId)) {
             return buildOwnerMember(project, userId);
         }
@@ -284,6 +320,7 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         }
 
         List<AigcCanvasProjectDO> projects = pageResult.getList();
+        projects = projects.stream().map(this::refreshProjectStatistics).toList();
         Set<Long> projectIds = projects.stream().map(AigcCanvasProjectDO::getId).collect(Collectors.toSet());
         Map<Long, AigcCanvasMemberDO> memberMap = members.stream()
                 .filter(member -> projectIds.contains(member.getProjectId()))
@@ -344,17 +381,19 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
             String coverUrl = getAssetPreviewUrl(asset);
             if (StrUtil.isNotBlank(coverUrl)) {
                 project.setCoverUrl(coverUrl);
-                return;
             }
+            return;
         }
         CanvasCover fallbackCover = findFirstImageNodeCover(project.getId());
         if (fallbackCover == null) {
             return;
         }
-        project.setCoverUrl(fallbackCover.coverUrl());
         if (fallbackCover.assetId() != null) {
             project.setCoverAssetId(fallbackCover.assetId());
-            updateProjectCover(project.getId(), fallbackCover.assetId());
+            updateProjectCoverIfAbsent(project.getId(), fallbackCover.assetId());
+        }
+        if (StrUtil.isNotBlank(fallbackCover.coverUrl())) {
+            project.setCoverUrl(fallbackCover.coverUrl());
         }
     }
 
@@ -373,6 +412,7 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
             throw exception(CANVAS_SNAPSHOT_VERSION_CONFLICT);
         }
         long nextVersion = project.getCurrentVersion() == null ? 1L : project.getCurrentVersion() + 1;
+        reqVO.setNodesJson(sanitizeSnapshotNodesJson(reqVO.getNodesJson()));
         AigcCanvasSnapshotDO snapshot = BeanUtils.toBean(reqVO, AigcCanvasSnapshotDO.class);
         snapshot.setVersion(nextVersion);
         snapshot.setCreatedBy(userId);
@@ -382,8 +422,9 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         update.setId(project.getId());
         update.setCurrentVersion(nextVersion);
         update.setLatestSnapshotId(snapshot.getId());
-        update.setNodeCount(reqVO.getNodeCount());
-        update.setAssetCount(reqVO.getAssetCount());
+        CanvasProjectStatistics statistics = summarizeProjectNodes(project.getId(), snapshot.getNodesJson());
+        update.setNodeCount(statistics.nodeCount());
+        update.setAssetCount(statistics.assetCount());
         projectMapper.updateById(update);
         operationService.invalidateGraphState(project.getId());
         return snapshot;
@@ -421,6 +462,7 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         AigcCanvasAssetRefDO existed = assetRefMapper.selectByNodeAndAsset(reqVO.getProjectId(), reqVO.getNodeId(), reqVO.getAssetId(), usageType);
         if (existed != null) {
             updateProjectCoverIfAbsent(project, reqVO.getAssetId());
+            refreshProjectStatistics(project.getId());
             return existed.getId();
         }
         AigcCanvasAssetRefDO assetRef = BeanUtils.toBean(reqVO, AigcCanvasAssetRefDO.class);
@@ -430,6 +472,7 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         AigcCanvasOperationLogDO operation = createAssetAttachOperation(reqVO, project, usageType, userId);
         operationService.invalidateGraphState(project.getId());
         roomService.broadcast(project.getId(), "canvas-op-applied", buildAppliedMessage(operation), null);
+        refreshProjectStatistics(project.getId());
         return assetRef.getId();
     }
 
@@ -440,7 +483,6 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
                 .set("nodeId", reqVO.getNodeId())
                 .set("assetId", reqVO.getAssetId())
                 .set("assetVersionId", reqVO.getAssetVersionId())
-                .set("previewUrl", reqVO.getPreviewUrl())
                 .set("usageType", usageType)
                 .set("sourceTaskId", reqVO.getSourceTaskId());
         JSONObject operationJson = new JSONObject()
@@ -460,7 +502,6 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         AigcCanvasProjectDO update = new AigcCanvasProjectDO();
         update.setId(project.getId());
         update.setCurrentVersion(nextVersion);
-        update.setAssetCount(project.getAssetCount() == null ? 1 : project.getAssetCount() + 1);
         if (project.getCoverAssetId() == null) {
             update.setCoverAssetId(reqVO.getAssetId());
         }
@@ -468,14 +509,126 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         return operation;
     }
 
+    @Override
+    public void refreshProjectStatistics(Long projectId) {
+        if (projectId == null) {
+            return;
+        }
+        AigcCanvasProjectDO project = projectMapper.selectById(projectId);
+        if (project == null) {
+            return;
+        }
+        refreshProjectStatistics(project);
+    }
+
+    private AigcCanvasProjectDO refreshProjectStatistics(AigcCanvasProjectDO project) {
+        if (project == null || project.getId() == null) {
+            return project;
+        }
+        CanvasProjectStatistics statistics = summarizeProject(project.getId());
+        if (Objects.equals(project.getNodeCount(), statistics.nodeCount())
+                && Objects.equals(project.getAssetCount(), statistics.assetCount())) {
+            return project;
+        }
+        projectMapper.updateStatistics(project.getId(), statistics.nodeCount(), statistics.assetCount());
+        project.setNodeCount(statistics.nodeCount());
+        project.setAssetCount(statistics.assetCount());
+        return project;
+    }
+
+    private CanvasProjectStatistics summarizeProject(Long projectId) {
+        return summarizeProjectNodes(projectId, rebuildProjectNodes(projectId));
+    }
+
+    private CanvasProjectStatistics summarizeProjectNodes(Long projectId, String nodesJson) {
+        Map<String, JSONObject> nodes = new LinkedHashMap<>();
+        if (StrUtil.isNotBlank(nodesJson) && JSONUtil.isTypeJSONArray(nodesJson)) {
+            JSONArray snapshotNodes = JSONUtil.parseArray(nodesJson);
+            for (Object item : snapshotNodes) {
+                JSONObject node = JSONUtil.parseObj(item);
+                if (StrUtil.isNotBlank(node.getStr("id"))) {
+                    nodes.put(node.getStr("id"), node);
+                }
+            }
+        }
+        return summarizeProjectNodes(projectId, nodes);
+    }
+
+    private CanvasProjectStatistics summarizeProjectNodes(Long projectId, Map<String, JSONObject> nodes) {
+        Set<Long> assetIds = new HashSet<>();
+        for (JSONObject node : nodes.values()) {
+            collectNodeAssetIds(assetIds, node.getJSONObject("data"));
+        }
+        if (!nodes.isEmpty()) {
+            Set<String> currentNodeIds = nodes.keySet();
+            List<AigcCanvasAssetRefDO> refs = assetRefMapper.selectListByProjectId(projectId);
+            for (AigcCanvasAssetRefDO ref : refs) {
+                if (ref.getAssetId() != null && currentNodeIds.contains(ref.getNodeId())) {
+                    assetIds.add(ref.getAssetId());
+                }
+            }
+        }
+        return new CanvasProjectStatistics(nodes.size(), assetIds.size());
+    }
+
+    private void collectNodeAssetIds(Set<Long> assetIds, JSONObject data) {
+        if (data == null) {
+            return;
+        }
+        addAssetId(assetIds, data.get("assetId"));
+        addAssetId(assetIds, data.get("outputAssetId"));
+        addAssetId(assetIds, data.get("previewAssetId"));
+        addAssetId(assetIds, data.get("assetIdList"));
+        addAssetId(assetIds, data.get("assetIds"));
+    }
+
+    private void addAssetId(Set<Long> assetIds, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Number number) {
+            long assetId = number.longValue();
+            if (assetId > 0) {
+                assetIds.add(assetId);
+            }
+            return;
+        }
+        if (value instanceof CharSequence text) {
+            try {
+                long assetId = Long.parseLong(text.toString());
+                if (assetId > 0) {
+                    assetIds.add(assetId);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+            return;
+        }
+        if (value instanceof JSONArray array) {
+            for (Object item : array) {
+                addAssetId(assetIds, item);
+            }
+            return;
+        }
+        if (value instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                addAssetId(assetIds, item);
+            }
+        }
+    }
+
     private void updateProjectCoverIfAbsent(AigcCanvasProjectDO project, Long assetId) {
         if (project.getCoverAssetId() != null || assetId == null) {
             return;
         }
-        AigcCanvasProjectDO update = new AigcCanvasProjectDO();
-        update.setId(project.getId());
-        update.setCoverAssetId(assetId);
-        projectMapper.updateById(update);
+        updateProjectCoverIfAbsent(project.getId(), assetId);
+        project.setCoverAssetId(assetId);
+    }
+
+    private void updateProjectCoverIfAbsent(Long projectId, Long assetId) {
+        if (assetId == null) {
+            return;
+        }
+        projectMapper.updateCoverAssetIfAbsent(projectId, assetId);
     }
 
     private void updateProjectCover(Long projectId, Long assetId) {
@@ -507,6 +660,77 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
                 .set("position", new JSONObject().set("x", 250).set("y", 200))
                 .set("selected", true)
                 .set("data", data.set("projectId", projectId));
+    }
+
+    private List<QuickGenerateReferenceNode> buildQuickGenerateReferenceNodes(AigcCanvasProjectQuickGenerateReqVO reqVO) {
+        List<Long> referenceAssetIds = quickGenerateReferenceAssetIds(reqVO);
+        if (referenceAssetIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, AigcAssetRespDTO> assetMap = getAssetMapByIds(referenceAssetIds);
+        LocalDateTime now = LocalDateTime.now();
+        return java.util.stream.IntStream.range(0, referenceAssetIds.size())
+                .mapToObj(index -> buildQuickGenerateReferenceNode(referenceAssetIds.get(index),
+                        index, assetMap.get(referenceAssetIds.get(index)), now))
+                .toList();
+    }
+
+    private QuickGenerateReferenceNode buildQuickGenerateReferenceNode(Long assetId, int index,
+                                                                        AigcAssetRespDTO asset, LocalDateTime now) {
+        String nodeId = "image_ref_" + assetId + "_" + IdUtil.fastSimpleUUID();
+        JSONObject data = new JSONObject()
+                .set("imageId", nodeId)
+                .set("assetId", assetId)
+                .set("dataUrl", "")
+                .set("fileName", quickGenerateReferenceFileName(asset, index))
+                .set("mimeType", StrUtil.blankToDefault(asset == null ? null : asset.getMimeType(), "image/png"))
+                .set("width", asset == null ? null : asset.getWidth())
+                .set("height", asset == null ? null : asset.getHeight())
+                .set("createdAt", now.toString())
+                .set("kind", "uploaded")
+                .set("status", "idle")
+                .set("taskId", null)
+                .set("errorMessage", null);
+        JSONObject node = new JSONObject()
+                .set("id", nodeId)
+                .set("type", "image")
+                .set("position", new JSONObject().set("x", -190).set("y", 120 + index * 180))
+                .set("selected", false)
+                .set("data", data);
+        return new QuickGenerateReferenceNode(nodeId, node);
+    }
+
+    private String quickGenerateReferenceFileName(AigcAssetRespDTO asset, int index) {
+        if (asset != null && StrUtil.isNotBlank(asset.getTitle())) {
+            return asset.getTitle();
+        }
+        if (asset != null && StrUtil.isNotBlank(asset.getAssetNo())) {
+            return asset.getAssetNo();
+        }
+        return "Reference " + (index + 1);
+    }
+
+    private JSONObject buildQuickGenerateReferenceEdge(String sourceNodeId, String targetNodeId) {
+        return new JSONObject()
+                .set("id", "e-" + sourceNodeId + "-" + targetNodeId + "-" + IdUtil.fastSimpleUUID())
+                .set("source", sourceNodeId)
+                .set("target", targetNodeId)
+                .set("type", "signal");
+    }
+
+    private Map<Long, AigcAssetRespDTO> getAssetMapByIds(List<Long> assetIds) {
+        if (assetIds == null || assetIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            List<AigcAssetRespDTO> assets = assetApi.getAssets(assetIds).getCheckedData();
+            if (assets == null || assets.isEmpty()) {
+                return Collections.emptyMap();
+            }
+            return assets.stream().collect(Collectors.toMap(AigcAssetRespDTO::getId, Function.identity(), (first, second) -> first));
+        } catch (Exception ignored) {
+            return Collections.emptyMap();
+        }
     }
 
     private JSONObject buildQuickGenerateImageNodeData(String nodeId, AigcCanvasProjectQuickGenerateReqVO reqVO,
@@ -586,14 +810,43 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         if (StrUtil.isNotBlank(reqVO.getProviderModel())) {
             params.set("providerModel", reqVO.getProviderModel());
         }
-        if (reqVO.getReferenceAssetId() != null) {
-            params.set("referenceAssetIds", List.of(reqVO.getReferenceAssetId()));
-            params.set("referenceImageIds", List.of(String.valueOf(reqVO.getReferenceAssetId())));
+        List<Long> referenceAssetIds = quickGenerateReferenceAssetIds(reqVO);
+        if (!referenceAssetIds.isEmpty() && !hasJsonArrayValue(params, "referenceAssetIds")) {
+            params.set("referenceAssetIds", referenceAssetIds);
         }
-        if (StrUtil.isNotBlank(reqVO.getReferencePreviewUrl())) {
-            params.set("referenceImages", List.of(reqVO.getReferencePreviewUrl()));
+        if (!referenceAssetIds.isEmpty() && !hasJsonArrayValue(params, "referenceImageIds")) {
+            params.set("referenceImageIds", referenceAssetIds.stream().map(String::valueOf).toList());
+        }
+        List<String> referencePreviewUrls = quickGenerateReferencePreviewUrls(reqVO);
+        if (!referencePreviewUrls.isEmpty() && !hasJsonArrayValue(params, "referenceImages")) {
+            params.set("referenceImages", referencePreviewUrls);
         }
         return params.toString();
+    }
+
+    private List<Long> quickGenerateReferenceAssetIds(AigcCanvasProjectQuickGenerateReqVO reqVO) {
+        if (reqVO.getReferenceAssetIds() != null && !reqVO.getReferenceAssetIds().isEmpty()) {
+            return reqVO.getReferenceAssetIds().stream().filter(Objects::nonNull).distinct().toList();
+        }
+        return reqVO.getReferenceAssetId() == null ? Collections.emptyList() : List.of(reqVO.getReferenceAssetId());
+    }
+
+    private List<String> quickGenerateReferencePreviewUrls(AigcCanvasProjectQuickGenerateReqVO reqVO) {
+        if (reqVO.getReferencePreviewUrls() != null && !reqVO.getReferencePreviewUrls().isEmpty()) {
+            return reqVO.getReferencePreviewUrls().stream().filter(StrUtil::isNotBlank).distinct().toList();
+        }
+        return StrUtil.isBlank(reqVO.getReferencePreviewUrl()) ? Collections.emptyList() : List.of(reqVO.getReferencePreviewUrl());
+    }
+
+    private boolean hasJsonArrayValue(JSONObject params, String key) {
+        Object value = params.get(key);
+        if (value instanceof JSONArray array) {
+            return !array.isEmpty();
+        }
+        if (value instanceof List<?> list) {
+            return !list.isEmpty();
+        }
+        return false;
     }
 
     private String inferVideoProvider(String providerModel, String modelName) {
@@ -614,6 +867,11 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
             assetRefMapper.insert(assetRef);
         } catch (Exception ignored) {
         }
+    }
+
+    private Long projectCurrentVersion(Long projectId) {
+        AigcCanvasProjectDO project = projectMapper.selectById(projectId);
+        return project == null || project.getCurrentVersion() == null ? 0L : project.getCurrentVersion();
     }
 
     private AigcCanvasOperationLogDO submitServerOperation(Long projectId, Long userId, String clientId, String opId,
@@ -642,8 +900,8 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
                 continue;
             }
             Long assetId = firstLong(data, "assetId", "outputAssetId", "previewAssetId");
-            String assetUrl = getAssetPreviewUrl(assetId);
-            if (StrUtil.isNotBlank(assetUrl)) {
+            if (assetId != null) {
+                String assetUrl = getAssetPreviewUrl(assetId);
                 return new CanvasCover(assetId, assetUrl);
             }
             String previewUrl = firstText(data, "previewUrl", "outputPreviewUrl");
@@ -676,9 +934,7 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
                     continue;
                 }
                 String previewUrl = getAssetPreviewUrl(asset);
-                if (StrUtil.isNotBlank(previewUrl)) {
-                    return new CanvasCover(asset.getId(), previewUrl);
-                }
+                return new CanvasCover(asset.getId(), previewUrl);
             }
         } catch (Exception ignored) {
         }
@@ -703,6 +959,21 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
             applyOperationToNodeMap(nodes, operation);
         }
         return nodes;
+    }
+
+    private String sanitizeSnapshotNodesJson(String nodesJson) {
+        if (StrUtil.isBlank(nodesJson) || !JSONUtil.isTypeJSONArray(nodesJson)) {
+            return nodesJson;
+        }
+        JSONArray nodes = JSONUtil.parseArray(nodesJson);
+        for (Object item : nodes) {
+            JSONObject node = JSONUtil.parseObj(item);
+            JSONObject data = node.getJSONObject("data");
+            if (data != null && ("image".equals(node.getStr("type")) || "video".equals(node.getStr("type")))) {
+                RUNTIME_ASSET_URL_NODE_DATA_KEYS.forEach(data::remove);
+            }
+        }
+        return nodes.toString();
     }
 
     private void applyOperationToNodeMap(Map<String, JSONObject> nodes, AigcCanvasOperationLogDO operation) {
@@ -742,13 +1013,16 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         JSONObject patch = payload.getJSONObject("patch");
         if (patch == null) {
             patch = new JSONObject();
-            for (String key : List.of("assetId", "assetVersionId", "previewUrl", "sourceTaskId")) {
+            for (String key : List.of("assetId", "assetVersionId", "sourceTaskId")) {
                 if (payload.containsKey(key)) {
                     patch.set(key, payload.get(key));
                 }
             }
         }
         for (String key : patch.keySet()) {
+            if (RUNTIME_ASSET_URL_NODE_DATA_KEYS.contains(key)) {
+                continue;
+            }
             data.set(key, patch.get(key));
         }
     }
@@ -799,6 +1073,12 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     }
 
     private record CanvasCover(Long assetId, String coverUrl) {
+    }
+
+    private record CanvasProjectStatistics(Integer nodeCount, Integer assetCount) {
+    }
+
+    private record QuickGenerateReferenceNode(String nodeId, JSONObject node) {
     }
 
     private AigcCanvasOperationAppliedMessage buildAppliedMessage(AigcCanvasOperationLogDO operation) {

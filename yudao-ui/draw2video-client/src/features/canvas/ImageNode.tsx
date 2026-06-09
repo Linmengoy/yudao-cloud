@@ -36,6 +36,8 @@ import { getGenerationStatusLabel } from "@/features/generation/generation-statu
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { getMyAsset } from "@/features/assets/asset-api";
+import { getAssetPreviewExpireTime, getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
@@ -817,8 +819,24 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     };
 
     if (updates.status === "complete" && updates.imageUrls?.[0]) {
+      const outputAssetId = updates.assetIdList?.[0] ?? null;
+      let previewUrl = updates.imageUrls[0];
+      let assetUrlExpireTime: string | null = null;
+      if (outputAssetId) {
+        try {
+          const asset = await getMyAsset(outputAssetId);
+          previewUrl = getAssetPreviewUrl(asset) || previewUrl;
+          assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
+        } catch {
+        }
+      }
       nextData.kind = "generated";
-      nextData.dataUrl = updates.imageUrls[0];
+      nextData.assetId = outputAssetId;
+      nextData.outputAssetId = outputAssetId;
+      nextData.previewUrl = previewUrl;
+      nextData.outputPreviewUrl = previewUrl;
+      nextData.assetUrlExpireTime = assetUrlExpireTime;
+      nextData.dataUrl = "";
       nextData.fileName = "generated-image.png";
       nextData.mimeType = effectiveParams.output_format === "jpeg" ? "image/jpeg" : `image/${effectiveParams.output_format}`;
     }

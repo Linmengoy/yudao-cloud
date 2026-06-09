@@ -39,7 +39,20 @@ export function getAssetAuditStatusLabel(status?: string) {
 }
 
 export function getAssetPreviewUrl(asset: AigcAsset) {
-  return asset.thumbnailUrl || asset.coverUrl || asset.fileUrl || "";
+  return asset.thumbnailUrl || asset.coverUrl || asset.fileUrl || getAssetPreviewFile(asset)?.accessUrl || "";
+}
+
+export function getAssetPreviewExpireTime(asset: AigcAsset) {
+  return getAssetPreviewFile(asset)?.expireTime;
+}
+
+function getAssetPreviewFile(asset: AigcAsset) {
+  const files = asset.files ?? [];
+  return files.find((file) => file.fileRole === "THUMBNAIL")
+    ?? files.find((file) => file.fileRole === "COVER")
+    ?? files.find((file) => file.fileRole === "PREVIEW")
+    ?? files.find((file) => file.fileRole === "ORIGINAL")
+    ?? files[0];
 }
 
 export function formatFileSize(size?: number) {
