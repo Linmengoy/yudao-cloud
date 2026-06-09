@@ -7,7 +7,7 @@
 | 端 | 状态 | 说明 |
 | -- | ---- | ---- |
 | 用户端 `draw2video-client` | 已落地 | 已接入真实 `/app-api/aigc/task/*` 接口，替换原 `/tasks` mock 页面 |
-| 管理端 `draw2video-admin` | 已落地 | 已新增任务、日志、回调、重试、统计 API 与页面 |
+| 管理端 `draw2video-admin` | 已落地 | 已新增任务、日志、回调、重试、统计 API 与页面，统计页展示 P95 耗时和重试任务数 |
 | 设计规范 | 已调整 | 已参考 `draw2video-client/design/DESIGN.md` 与 `draw2video-client/AGENTS.md` 调整任务页为安静、紧凑、工作区风格 |
 | 评审修复 | 已完成 | 已修复轮询 Hook 依赖整个 `task` 对象导致 interval 重建，以及刷新按钮冗余 `setTask(task)` 调用 |
 | 校验 | 部分完成 | 新增/修改关键文件编辑器诊断无问题；完整 `pnpm` 校验受 `ERR_PNPM_IGNORED_BUILDS` 限制，需先处理 `pnpm approve-builds` |
@@ -98,6 +98,7 @@ draw2video-admin/src/views/aigc/task/
 | `providerId` | 供应商 ID | 仅管理端展示 |
 | `status` | 任务状态 | 进度、按钮、轮询和终态判断 |
 | `progress` | 进度 | 进度条展示 |
+| `estimatedDurationMillis` | 预计耗时毫秒 | 前端平滑进度条估算 |
 | `freezeId` | 冻结记录 ID | 管理端排查扣费冻结链路 |
 | `salePrice` | 销售价 | 用户端展示本次消耗 |
 | `costPrice` | 成本价 | 仅管理端展示 |
@@ -110,6 +111,8 @@ draw2video-admin/src/views/aigc/task/
 | `failCode` | 内部失败码 | 仅管理端展示 |
 | `failReason` | 失败原因 | 用户端友好提示、管理端排障 |
 | `createTime` | 创建时间 | 列表排序和展示 |
+| `submitTime` | 提交时间 | 与预计耗时共同计算本地展示进度 |
+| `startTime` | 开始执行时间 | 缺少提交时间时作为进度起点兜底 |
 | `finishTime` | 完成时间 | 耗时和结果展示 |
 
 ## 3. 管理端方案
@@ -123,7 +126,7 @@ draw2video-admin/src/views/aigc/task/
 | 任务日志 | `/aigc/task/log` | 查询任务状态流转日志，用于排查状态机推进过程 |
 | 回调记录 | `/aigc/task/callback` | 查询第三方回调记录，支持查看原始回调、处理结果和失败原因 |
 | 重试记录 | `/aigc/task/retry` | 查询自动或人工重试记录，支持取消待执行重试和人工触发重试 |
-| 任务统计 | `/aigc/task/statistics` | 展示总任务数、成功数、失败数、退款中、积压、超时、成功率、失败率和平均耗时 |
+| 任务统计 | `/aigc/task/statistics` | 展示总任务数、成功数、失败数、退款中、积压、超时、重试任务数、成功率、失败率、平均耗时和 P95 耗时 |
 
 管理端列表建议放在 `yudao-ui` 管理端项目的 `src/views/aigc/task` 目录下，接口封装放在 `src/api/aigc/task`。接口地址不在前端硬编码 `/admin-api` 前缀，由已有请求封装统一处理。
 
@@ -195,6 +198,9 @@ draw2video-admin/src/views/aigc/task/
 - 生成提交成功后保存任务 ID，并展示进度卡片。
 - 用户可继续留在当前创作页，也可进入任务详情页查看进度。
 - 进行中任务轮询 `/aigc/task/progress`，终态 `SUCCESS`、`FAILED`、`CANCELLED`、`REFUNDED` 停止轮询。
+- 进度条已复用后端 `estimatedDurationMillis`：以 `submitTime + estimatedDurationMillis` 做前端平滑进度，最高只推进到 95% 左右；后端返回 `SUCCESS` 时直接到 100%，返回失败/取消/退款终态时停止。
+- `estimatedDurationMillis` 由后端基于 `providerId + modelId + capability` 的最近成功任务平均耗时计算，前端不展示供应商信息，也不能根据预计耗时自行判定失败。
+- 前端本地平滑进度只作用于 `CREATED`、`PRICE_CALCULATED`、`FROZEN`、`QUEUED`、`RUNNING`、`SUBMITTED`、`CALLBACK_WAITING`、`DOWNLOADING`、`ASSET_CREATING`、`AUDITING` 等生成链路状态；`REFUNDING` 等非生成执行状态只展示后端进度。
 - 状态为 `CREATED`、`PRICE_CALCULATED`、`FROZEN`、`QUEUED` 时展示取消按钮，其余状态隐藏取消入口。
 - `SUCCESS` 状态下优先展示 `outputText`、格式化后的 `outputData` 或资产入口。
 - 存在 `outputAssetId` 时提供“查看资产”和“下载/预览”入口。
@@ -259,6 +265,7 @@ src/features/tasks/
   ├── task-api.ts
   ├── task-types.ts
   ├── task-status.ts
+  ├── task-progress-value.ts
   ├── components/task-card.tsx
   ├── components/task-status-badge.tsx
   ├── components/task-progress.tsx

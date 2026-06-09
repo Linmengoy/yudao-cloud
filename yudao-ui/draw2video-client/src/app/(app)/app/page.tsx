@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Paperclip, Plus, Send, SlidersHorizontal, X } from "lucide-react";
@@ -19,6 +19,7 @@ import {
 } from "@/features/generation/model-api";
 import { listProjects, type ProjectMeta } from "@/features/projects/project-store";
 import { useAuth } from "@/features/auth/auth-store";
+import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache";
 
 import type Muuri from "muuri";
 
@@ -32,6 +33,7 @@ const MODEL_TYPE_LABELS: Record<number, string> = {
 
 const MODEL_TYPE_ORDER = [2, 3, 4, 1, 5];
 const REFERENCE_IMAGE_CACHE_KEY = "copse:workspace:reference-images";
+const REFERENCE_IMAGE_DRAG_DATA_TYPE = "application/x-copse-reference-image-index";
 
 type QuickGenerationMode = "TEXT_TO_IMAGE" | "IMAGE_TO_IMAGE" | "TEXT_TO_VIDEO" | "IMAGE_TO_VIDEO";
 
@@ -60,6 +62,14 @@ type ProjectListItem = {
   coverUrl?: string | null;
   role?: string | null;
   source: "server" | "local";
+};
+
+type WorkspaceProjectsCache = {
+  projects: ProjectListItem[];
+};
+
+type WorkspaceModelsCache = {
+  models: AigcModel[];
 };
 
 type ReferenceImage = {
@@ -300,6 +310,38 @@ function writeCachedReferenceImages(images: ReferenceImage[], ownerKey?: string 
   }
 }
 
+function workspaceProjectsCacheKey(ownerKey: string | number | null | undefined) {
+  return `workspace:projects:${ownerKey ?? "current"}`;
+}
+
+function workspaceModelsCacheKey(imageCapability: QuickGenerationMode, videoCapability: QuickGenerationMode) {
+  return `workspace:models:${imageCapability}:${videoCapability}`;
+}
+
+function getProjectKey(project: ProjectListItem) {
+  return `${project.source}:${project.id}`;
+}
+
+function getModelKey(model: AigcModel) {
+  return model.id;
+}
+
+function pickDefaultModelId(models: AigcModel[]) {
+  return models.find((item) => item.defaultModel && (item.type === 2 || item.type === 3))?.id
+    ?? models.find((item) => item.type === 2 || item.type === 3)?.id
+    ?? models[0]?.id
+    ?? null;
+}
+
+function reorderItems<T>(items: T[], fromIndex: number, toIndex: number) {
+  if (fromIndex === toIndex) return items;
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) return items;
+  const nextItems = [...items];
+  const [moved] = nextItems.splice(fromIndex, 1);
+  nextItems.splice(toIndex, 0, moved);
+  return nextItems;
+}
+
 async function uploadReferenceFile(sourceFile: File): Promise<ReferenceImage> {
   const file = normalizeReferenceFile(sourceFile);
   const assetId = await uploadAsset(file, "IMAGE", file.name);
@@ -376,10 +418,24 @@ function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: 
 export default function WorkspacePage() {
   const router = useRouter();
   const { user } = useAuth();
+  const initialProjectsCache = useMemo(
+    () => readPageCache<WorkspaceProjectsCache>(workspaceProjectsCacheKey(user?.id)),
+    [user?.id]
+  );
+  const initialReferenceImages = useMemo(() => {
+    if (typeof window === "undefined") return [];
+    return readCachedReferenceImages(user?.id);
+  }, [user?.id]);
+  const initialImageGenerationCapability: QuickGenerationMode = initialReferenceImages.length > 0 ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
+  const initialVideoGenerationCapability: QuickGenerationMode = initialReferenceImages.length > 0 ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO";
+  const initialModelsCache = useMemo(
+    () => readPageCache<WorkspaceModelsCache>(workspaceModelsCacheKey(initialImageGenerationCapability, initialVideoGenerationCapability)),
+    [initialImageGenerationCapability, initialVideoGenerationCapability]
+  );
   const [prompt, setPrompt] = useState("");
-  const [models, setModels] = useState<AigcModel[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
-  const [modelsLoading, setModelsLoading] = useState(false);
+  const [models, setModels] = useState<AigcModel[]>(() => initialModelsCache?.models ?? []);
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(() => pickDefaultModelId(initialModelsCache?.models ?? []));
+  const [modelsLoading, setModelsLoading] = useState(() => !initialModelsCache);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [paramTemplates, setParamTemplates] = useState<AigcModelParamTemplate[]>([]);
   const [modelParams, setModelParams] = useState<Record<string, unknown>>({});
@@ -388,13 +444,11 @@ export default function WorkspacePage() {
   const [loadedParamKey, setLoadedParamKey] = useState<string | null>(null);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>(() => {
-    if (typeof window === "undefined") return [];
-    return readCachedReferenceImages();
-  });
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>(() => initialReferenceImages);
   const [referenceUploading, setReferenceUploading] = useState(false);
+  const [draggingReferenceIndex, setDraggingReferenceIndex] = useState<number | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [projects, setProjects] = useState<ProjectListItem[]>(() => initialProjectsCache?.projects ?? []);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [assetPickerAssets, setAssetPickerAssets] = useState<AigcAsset[]>([]);
   const [assetPickerLoading, setAssetPickerLoading] = useState(false);
@@ -472,11 +526,20 @@ export default function WorkspacePage() {
   }, [user?.id]);
 
   const refreshProjects = useCallback(async () => {
+    const cacheKey = workspaceProjectsCacheKey(user?.id);
+    const cached = readPageCache<WorkspaceProjectsCache>(cacheKey);
+    if (cached) {
+      setProjects((items) => mergeStableList(items, cached.projects, getProjectKey));
+    }
     try {
       const page = await canvasApi.listProjects({ pageNo: 1, pageSize: 12 });
-      setProjects(page.list.map(toProjectListItem));
+      const nextProjects = page.list.map(toProjectListItem);
+      writePageCache<WorkspaceProjectsCache>(cacheKey, { projects: nextProjects });
+      setProjects((items) => mergeStableList(items, nextProjects, getProjectKey));
     } catch {
-      setProjects(listProjects(user?.id).map(localProjectToListItem));
+      const nextProjects = listProjects(user?.id).map(localProjectToListItem);
+      writePageCache<WorkspaceProjectsCache>(cacheKey, { projects: nextProjects });
+      setProjects((items) => mergeStableList(items, nextProjects, getProjectKey));
     }
   }, [user?.id]);
 
@@ -516,7 +579,18 @@ export default function WorkspacePage() {
   useEffect(() => {
     let ignore = false;
     const timer = window.setTimeout(() => {
-      setModelsLoading(true);
+      const cacheKey = workspaceModelsCacheKey(imageGenerationCapability, videoGenerationCapability);
+      const cached = readPageCache<WorkspaceModelsCache>(cacheKey);
+      if (cached) {
+        setModels((items) => mergeStableList(items, cached.models, getModelKey));
+        setSelectedModelId((current) => {
+          if (cached.models.some((item) => item.id === current)) return current;
+          return pickDefaultModelId(cached.models);
+        });
+        setModelsLoading(false);
+      } else {
+        setModelsLoading(true);
+      }
       setModelsError(null);
       Promise.allSettled([
         getAigcModelList(2, imageGenerationCapability),
@@ -525,7 +599,8 @@ export default function WorkspacePage() {
         .then((results) => {
           if (ignore) return;
           const data = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-          setModels(data);
+          writePageCache<WorkspaceModelsCache>(cacheKey, { models: data });
+          setModels((items) => mergeStableList(items, data, getModelKey));
           if (data.length === 0) {
             const errorResult = results.find((result) => result.status === "rejected");
             const reason = errorResult?.status === "rejected" ? errorResult.reason : null;
@@ -534,10 +609,7 @@ export default function WorkspacePage() {
           }
           setSelectedModelId((current) => {
             if (data.some((item) => item.id === current)) return current;
-            return data.find((item) => item.defaultModel && (item.type === 2 || item.type === 3))?.id
-              ?? data.find((item) => item.type === 2 || item.type === 3)?.id
-              ?? data[0]?.id
-              ?? null;
+            return pickDefaultModelId(data);
           });
         })
         .finally(() => {
@@ -650,6 +722,33 @@ export default function WorkspacePage() {
     setReferenceImages((current) => current.some((item) => item.assetId === reference.assetId)
       ? current
       : [...current, reference]);
+  }, []);
+
+  const handleReferenceDragStart = useCallback((event: DragEvent<HTMLDivElement>, index: number) => {
+    if (submitting || referenceUploading) return;
+    setDraggingReferenceIndex(index);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(REFERENCE_IMAGE_DRAG_DATA_TYPE, String(index));
+  }, [referenceUploading, submitting]);
+
+  const handleReferenceDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (submitting || referenceUploading) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, [referenceUploading, submitting]);
+
+  const handleReferenceDrop = useCallback((event: DragEvent<HTMLDivElement>, toIndex: number) => {
+    event.preventDefault();
+    if (submitting || referenceUploading) return;
+    const rawIndex = event.dataTransfer.getData(REFERENCE_IMAGE_DRAG_DATA_TYPE);
+    const fromIndex = Number(rawIndex || draggingReferenceIndex);
+    if (!Number.isInteger(fromIndex)) return;
+    setReferenceImages((current) => reorderItems(current, fromIndex, toIndex));
+    setDraggingReferenceIndex(null);
+  }, [draggingReferenceIndex, referenceUploading, submitting]);
+
+  const handleReferenceDragEnd = useCallback(() => {
+    setDraggingReferenceIndex(null);
   }, []);
 
   async function handleReferenceFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -834,7 +933,7 @@ export default function WorkspacePage() {
                   {paramsOpen && (
                     <div
                       ref={paramsPanelRef}
-                      className="absolute bottom-full right-0 z-40 mb-2 max-h-[70vh] w-[min(420px,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border-warm bg-background p-4 shadow-[0_16px_48px_rgba(0,0,0,0.16)]"
+                      className="absolute right-0 top-full z-40 mt-2 max-h-[70vh] w-[min(420px,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border-warm bg-background p-4 shadow-[0_16px_48px_rgba(0,0,0,0.16)]"
                     >
                       <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-muted px-3 py-2 text-xs text-muted-gray">
                         <span>当前能力：{QUICK_GENERATION_MODE_LABELS[quickGenerationMode]}</span>
@@ -916,7 +1015,14 @@ export default function WorkspacePage() {
               {referenceImages.map((image, index) => (
                 <div
                   key={`${image.assetId}-${index}`}
-                  className="group relative size-14 shrink-0 overflow-hidden rounded-md bg-muted"
+                  draggable={!submitting && !referenceUploading}
+                  onDragStart={(event) => handleReferenceDragStart(event, index)}
+                  onDragOver={handleReferenceDragOver}
+                  onDrop={(event) => handleReferenceDrop(event, index)}
+                  onDragEnd={handleReferenceDragEnd}
+                  className={`group relative size-14 shrink-0 cursor-grab overflow-hidden rounded-md bg-muted active:cursor-grabbing ${
+                    draggingReferenceIndex === index ? "opacity-50" : ""
+                  }`}
                   title={image.fileName}
                 >
                   {image.previewUrl ? (
@@ -993,8 +1099,14 @@ export default function WorkspacePage() {
         </div>
       </div>
       {assetPickerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
-          <div className="w-full max-w-[720px] rounded-xl border border-border-warm bg-background p-4 shadow-[0_16px_48px_rgba(0,0,0,0.18)]">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+          onMouseDown={() => setAssetPickerOpen(false)}
+        >
+          <div
+            className="w-full max-w-[720px] rounded-xl border border-border-warm bg-background p-4 shadow-[0_16px_48px_rgba(0,0,0,0.18)]"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold text-charcoal">选择资产图片</h3>
@@ -1041,9 +1153,6 @@ export default function WorkspacePage() {
                       ) : (
                         <div className="flex size-full items-center justify-center bg-muted text-xs text-muted-gray">图片</div>
                       )}
-                      <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-2 py-1 text-[11px] text-white">
-                        {asset.sourceType === "UPLOAD" ? "上传" : "生成"} · {asset.title || asset.assetNo || asset.id}
-                      </span>
                       {selected && (
                         <span className="absolute right-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
                           已选

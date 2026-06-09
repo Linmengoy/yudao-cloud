@@ -21,6 +21,7 @@ import { useAuth } from "@/features/auth/auth-store";
 import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
 import { PreviewVideoPlayer } from "@/features/media-preview/PreviewVideoPlayer";
 import type { MediaPreviewItem } from "@/features/media-preview/types";
+import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache";
 import type Muuri from "muuri";
 import type { Item, LayoutFunctionCallback } from "muuri";
 
@@ -36,6 +37,37 @@ const EMPTY_COUNTS: AssetTabCounts = {
   VIDEO: 0,
   OTHER: 0,
 };
+
+type AssetsPageCache = {
+  assets: AigcAsset[];
+  total: number;
+  counts: AssetTabCounts;
+  hasMore: boolean;
+  nextPageNo: number;
+};
+
+function assetsPageCacheKey(ownerKey: string | number | null | undefined, tab: AssetTab, query: string) {
+  return `assets:${ownerKey ?? "current"}:${tab}:${query.trim()}`;
+}
+
+function writeAssetsPageCache(
+  ownerKey: string | number | null | undefined,
+  tab: AssetTab,
+  query: string,
+  assets: AigcAsset[],
+  total: number,
+  counts: AssetTabCounts,
+  hasMore: boolean,
+  nextPageNo: number
+) {
+  writePageCache<AssetsPageCache>(assetsPageCacheKey(ownerKey, tab, query), {
+    assets,
+    total,
+    counts,
+    hasMore,
+    nextPageNo,
+  });
+}
 
 function localToAsset(asset: GeneratedAsset): AigcAsset {
   return {
@@ -90,6 +122,20 @@ function buildLocalAssetCounts(assets: AigcAsset[], query: string): AssetTabCoun
   };
 }
 
+function decrementAssetCounts(counts: AssetTabCounts, asset: AigcAsset): AssetTabCounts {
+  const nextCounts = { ...counts, ALL: Math.max(0, counts.ALL - 1) };
+  if (isGeneratedImage(asset)) {
+    nextCounts.GENERATED_IMAGE = Math.max(0, nextCounts.GENERATED_IMAGE - 1);
+  } else if (isUploadedImage(asset)) {
+    nextCounts.UPLOADED_IMAGE = Math.max(0, nextCounts.UPLOADED_IMAGE - 1);
+  } else if (asset.assetType === "VIDEO") {
+    nextCounts.VIDEO = Math.max(0, nextCounts.VIDEO - 1);
+  } else {
+    nextCounts.OTHER = Math.max(0, nextCounts.OTHER - 1);
+  }
+  return nextCounts;
+}
+
 function getAssetTabQuery(tab: AssetTab) {
   if (tab === "GENERATED_IMAGE") return { assetType: "IMAGE", sourceType: "GENERATE" };
   if (tab === "UPLOADED_IMAGE") return { assetType: "IMAGE", sourceType: "UPLOAD" };
@@ -137,14 +183,7 @@ type AssetDraft = {
 
 function assetToMediaPreview(
   asset: AigcAsset,
-  draft: AssetDraft | null,
-  actions: {
-    onChange: (patch: Partial<Pick<AssetDraft, "title" | "description" | "tags">>) => void;
-    onSave: () => void | Promise<void>;
-    onVisibilityChange: (visibility: string) => void | Promise<void>;
-    onDownload: () => void | Promise<void>;
-    onDelete: () => void | Promise<void>;
-  }
+  draft: AssetDraft | null
 ): MediaPreviewItem | null {
   const url = getFullAssetPreviewUrl(asset);
   if (!url) return null;
@@ -180,7 +219,11 @@ function assetToMediaPreview(
       canDownload: canDownloadAsset(asset),
       canDelete: Number.isFinite(asset.id),
       canPublish: canPublishAsset(asset),
-      ...actions,
+      onChange: () => {},
+      onSave: () => {},
+      onVisibilityChange: () => {},
+      onDownload: () => {},
+      onDelete: () => {},
     },
   };
 }
@@ -277,53 +320,80 @@ function EmptyState({ tab }: { tab: AssetTab }) {
 
 export default function AssetsPage() {
   const { user } = useAuth();
+  const initialPageCache = useMemo(
+    () => readPageCache<AssetsPageCache>(assetsPageCacheKey(user?.id, "ALL", "")),
+    [user?.id]
+  );
   const [tab, setTab] = useState<AssetTab>("ALL");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [assets, setAssets] = useState<AigcAsset[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [assets, setAssets] = useState<AigcAsset[]>(() => initialPageCache?.assets ?? []);
+  const [loading, setLoading] = useState(() => !initialPageCache);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [measuredRatios, setMeasuredRatios] = useState<Record<string, number>>({});
   const [pullDistance, setPullDistance] = useState(0);
-  const [total, setTotal] = useState(0);
-  const [counts, setCounts] = useState<AssetTabCounts>(EMPTY_COUNTS);
+  const [total, setTotal] = useState(() => initialPageCache?.total ?? 0);
+  const [counts, setCounts] = useState<AssetTabCounts>(() => initialPageCache?.counts ?? EMPTY_COUNTS);
   const [previewAssetKey, setPreviewAssetKey] = useState<string | null>(null);
   const [assetDraft, setAssetDraft] = useState<AssetDraft | null>(null);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(() => initialPageCache?.hasMore ?? true);
+  const [pageCursor, setPageCursor] = useState(() => initialPageCache?.nextPageNo ?? 1);
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const loadMoreElementRef = useRef<HTMLDivElement | null>(null);
   const muuriRef = useRef<Muuri | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const loadingPageRef = useRef(false);
-  const pageNoRef = useRef(1);
-  const hasMoreRef = useRef(true);
-  const assetsLengthRef = useRef(0);
+  const pageNoRef = useRef(initialPageCache?.nextPageNo ?? 1);
+  const hasMoreRef = useRef(initialPageCache?.hasMore ?? true);
+  const assetsLengthRef = useRef(initialPageCache?.assets.length ?? 0);
+  const countsRef = useRef<AssetTabCounts>(initialPageCache?.counts ?? EMPTY_COUNTS);
 
   const loadAssets = useCallback(async (reset = false) => {
     if (loadingPageRef.current) return;
     if (!reset && !hasMoreRef.current) return;
     loadingPageRef.current = true;
     const nextPageNo = reset ? 1 : pageNoRef.current;
-    setLoading(reset);
+    const cacheKey = assetsPageCacheKey(user?.id, tab, debouncedQuery);
+    const cached = reset ? readPageCache<AssetsPageCache>(cacheKey) : null;
+    const requestedPageCount = reset && cached ? Math.max(1, cached.nextPageNo - 1) : 1;
+    const requestPageSize = reset ? PAGE_SIZE * requestedPageCount : PAGE_SIZE;
+    if (cached) {
+      setAssets((items) => mergeStableList(items, cached.assets, getAssetKey));
+      setTotal(cached.total);
+      setCounts(cached.counts);
+      countsRef.current = cached.counts;
+      setHasMore(cached.hasMore);
+      setPageCursor(cached.nextPageNo);
+      pageNoRef.current = cached.nextPageNo;
+      hasMoreRef.current = cached.hasMore;
+      assetsLengthRef.current = cached.assets.length;
+      setLoading(false);
+    } else {
+      setLoading(reset);
+    }
     setLoadingMore(!reset);
     setError("");
     if (reset) {
-      pageNoRef.current = 1;
-      hasMoreRef.current = true;
-      assetsLengthRef.current = 0;
-      setAssets([]);
-      setMeasuredRatios({});
-      setTotal(0);
-      setCounts(EMPTY_COUNTS);
-      setHasMore(true);
+      if (!cached) {
+        pageNoRef.current = 1;
+        hasMoreRef.current = true;
+        assetsLengthRef.current = 0;
+        setAssets([]);
+        setMeasuredRatios({});
+        setTotal(0);
+        setCounts(EMPTY_COUNTS);
+        countsRef.current = EMPTY_COUNTS;
+        setHasMore(true);
+        setPageCursor(1);
+      }
     }
     try {
       const tabQuery = getAssetTabQuery(tab);
       const [data, categoryCounts] = await Promise.all([
         getMyAssetPage({
           pageNo: nextPageNo,
-          pageSize: PAGE_SIZE,
+          pageSize: requestPageSize,
           assetType: tabQuery.assetType,
           category: tabQuery.category,
           sourceType: tabQuery.sourceType,
@@ -337,20 +407,32 @@ export default function AssetsPage() {
       const nextTotal = data.total ?? 0;
       const currentLength = reset ? 0 : assetsLengthRef.current;
       const mergedLength = currentLength + nextList.length;
-      setAssets((items) => reset ? nextList : [...items, ...nextList]);
+      const nextPageCursor = reset ? requestedPageCount + 1 : nextPageNo + 1;
+      let nextCounts = countsRef.current;
       if (categoryCounts) {
-        setCounts({
+        nextCounts = {
           ALL: categoryCounts.allCount ?? 0,
           GENERATED_IMAGE: categoryCounts.generatedImageCount ?? 0,
           UPLOADED_IMAGE: categoryCounts.uploadedImageCount ?? 0,
           VIDEO: categoryCounts.videoCount ?? 0,
           OTHER: categoryCounts.otherCount ?? 0,
-        });
+        };
+        countsRef.current = nextCounts;
+        setCounts(nextCounts);
       }
+      const nextHasMore = nextList.length > 0 && mergedLength < nextTotal;
+      setAssets((items) => {
+        const mergedAssets = reset
+          ? mergeStableList(items, nextList, getAssetKey)
+          : mergeStableList(items, [...items, ...nextList], getAssetKey);
+        writeAssetsPageCache(user?.id, tab, debouncedQuery, mergedAssets, nextTotal, nextCounts, nextHasMore, nextPageCursor);
+        return mergedAssets;
+      });
       setTotal(nextTotal);
-      pageNoRef.current = nextPageNo + 1;
+      pageNoRef.current = nextPageCursor;
+      setPageCursor(nextPageCursor);
       assetsLengthRef.current = mergedLength;
-      hasMoreRef.current = nextList.length > 0 && mergedLength < nextTotal;
+      hasMoreRef.current = nextHasMore;
       setHasMore(hasMoreRef.current);
     } catch (err) {
       if (!getAccessToken()) {
@@ -358,6 +440,7 @@ export default function AssetsPage() {
         setTotal(0);
         setCounts(EMPTY_COUNTS);
         setHasMore(false);
+        setPageCursor(1);
         hasMoreRef.current = false;
         assetsLengthRef.current = 0;
         setError("登录已过期，请重新登录后查看资产。");
@@ -365,11 +448,15 @@ export default function AssetsPage() {
       }
       const localAssets = (await listGeneratedAssets(user?.id)).map(localToAsset);
       const localCounts = buildLocalAssetCounts(localAssets, debouncedQuery);
-      setAssets(localAssets);
+      writeAssetsPageCache(user?.id, tab, debouncedQuery, localAssets, localAssets.length, localCounts, false, 2);
+      setAssets((items) => mergeStableList(items, localAssets, getAssetKey));
       setTotal(localAssets.length);
       setCounts(localCounts);
+      countsRef.current = localCounts;
       setHasMore(false);
       hasMoreRef.current = false;
+      pageNoRef.current = 2;
+      setPageCursor(2);
       assetsLengthRef.current = localAssets.length;
       setError(localAssets.length > 0 ? "真实资产接口暂不可用，当前展示本地项目生成记录。" : err instanceof Error ? err.message : "资产列表加载失败");
     } finally {
@@ -394,7 +481,7 @@ export default function AssetsPage() {
   const assetLayoutKey = useMemo(() => filteredAssets.map((asset) => getAssetKey(asset)).join("|"), [filteredAssets]);
 
   useEffect(() => {
-    if (loading || !assetLayoutKey || !gridElementRef.current) return;
+    if (!assetLayoutKey || !gridElementRef.current) return;
     let disposed = false;
     const element = gridElementRef.current;
     import("muuri").then(({ default: MuuriGrid }) => {
@@ -416,7 +503,7 @@ export default function AssetsPage() {
       muuriRef.current?.destroy(false);
       muuriRef.current = null;
     };
-  }, [assetLayoutKey, loading]);
+  }, [assetLayoutKey]);
 
   const handlePreviewLoad = useCallback((asset: AigcAsset, ratio?: number) => {
     if (ratio && Number.isFinite(ratio)) {
@@ -429,7 +516,11 @@ export default function AssetsPage() {
   const previewAsset = useMemo(() => assets.find((asset) => getAssetKey(asset) === previewAssetKey) ?? null, [assets, previewAssetKey]);
 
   const refreshPreviewAsset = useCallback((nextAsset: AigcAsset) => {
-    setAssets((items) => items.map((asset) => getAssetKey(asset) === getAssetKey(nextAsset) ? nextAsset : asset));
+    setAssets((items) => {
+      const nextAssets = items.map((asset) => getAssetKey(asset) === getAssetKey(nextAsset) ? nextAsset : asset);
+      writeAssetsPageCache(user?.id, tab, debouncedQuery, nextAssets, total, counts, hasMore, pageCursor);
+      return nextAssets;
+    });
     setAssetDraft((draft) => draft?.assetKey === getAssetKey(nextAsset) ? {
       id: nextAsset.id,
       assetKey: getAssetKey(nextAsset),
@@ -438,7 +529,7 @@ export default function AssetsPage() {
       tags: nextAsset.tags || "",
       saving: false,
     } : draft);
-  }, []);
+  }, [counts, debouncedQuery, hasMore, pageCursor, tab, total, user?.id]);
 
   const openAssetPreview = useCallback((asset: AigcAsset) => {
     const assetKey = getAssetKey(asset);
@@ -467,16 +558,20 @@ export default function AssetsPage() {
         description: assetDraft.description,
         tags: assetDraft.tags,
       });
-      setAssets((items) => items.map((asset) => getAssetKey(asset) === assetDraft.assetKey ? {
-        ...asset,
-        title: assetDraft.title,
-        description: assetDraft.description,
-        tags: assetDraft.tags,
-      } : asset));
+      setAssets((items) => {
+        const nextAssets = items.map((asset) => getAssetKey(asset) === assetDraft.assetKey ? {
+          ...asset,
+          title: assetDraft.title,
+          description: assetDraft.description,
+          tags: assetDraft.tags,
+        } : asset);
+        writeAssetsPageCache(user?.id, tab, debouncedQuery, nextAssets, total, counts, hasMore, pageCursor);
+        return nextAssets;
+      });
     } finally {
       setAssetDraft((draft) => draft ? { ...draft, saving: false } : draft);
     }
-  }, [assetDraft]);
+  }, [assetDraft, counts, debouncedQuery, hasMore, pageCursor, tab, total, user?.id]);
 
   const handleAssetVisibilityChange = useCallback(async (visibility: string) => {
     if (!previewAsset || !Number.isFinite(previewAsset.id)) return;
@@ -503,20 +598,35 @@ export default function AssetsPage() {
     if (!previewAsset || !Number.isFinite(previewAsset.id)) return;
     if (!window.confirm("确认删除这个资产吗？")) return;
     await deleteMyAsset(previewAsset.id);
-    setAssets((items) => items.filter((asset) => getAssetKey(asset) !== getAssetKey(previewAsset)));
+    const nextCounts = decrementAssetCounts(counts, previewAsset);
+    countsRef.current = nextCounts;
+    setCounts(nextCounts);
+    setAssets((items) => {
+      const nextAssets = items.filter((asset) => getAssetKey(asset) !== getAssetKey(previewAsset));
+      const nextTotal = Math.max(0, total - 1);
+      writeAssetsPageCache(user?.id, tab, debouncedQuery, nextAssets, nextTotal, nextCounts, hasMore, pageCursor);
+      return nextAssets;
+    });
+    setTotal((value) => Math.max(0, value - 1));
     setPreviewAssetKey(null);
     setAssetDraft(null);
-  }, [previewAsset]);
+  }, [counts, debouncedQuery, hasMore, pageCursor, previewAsset, tab, total, user?.id]);
 
   const previewItem = useMemo(() => {
     if (!previewAsset) return null;
-    return assetToMediaPreview(previewAsset, assetDraft, {
-      onChange: handleAssetDraftChange,
-      onSave: handleAssetSave,
-      onVisibilityChange: handleAssetVisibilityChange,
-      onDownload: handleAssetDownload,
-      onDelete: handleAssetDelete,
-    });
+    const item = assetToMediaPreview(previewAsset, assetDraft);
+    if (!item?.editableAsset) return item;
+    return {
+      ...item,
+      editableAsset: {
+        ...item.editableAsset,
+        onChange: handleAssetDraftChange,
+        onSave: handleAssetSave,
+        onVisibilityChange: handleAssetVisibilityChange,
+        onDownload: handleAssetDownload,
+        onDelete: handleAssetDelete,
+      },
+    };
   }, [assetDraft, handleAssetDelete, handleAssetDownload, handleAssetDraftChange, handleAssetSave, handleAssetVisibilityChange, previewAsset]);
 
   useEffect(() => {
@@ -630,7 +740,7 @@ export default function AssetsPage() {
       )}
       <MediaPreviewDialog
         item={previewItem}
-        open={Boolean(previewItem)}
+        open={previewAssetKey != null}
         onClose={() => {
           setPreviewAssetKey(null);
           setAssetDraft(null);

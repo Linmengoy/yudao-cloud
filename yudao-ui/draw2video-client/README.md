@@ -102,9 +102,12 @@ Asset library:
 Current image generation behavior:
 
 - `/app` quick generation supports pasted, uploaded, and asset-picked reference images. References are shown immediately, cached in `localStorage`, and restored when the user returns to the page. The cache is keyed by stable asset metadata; signed preview URLs are refreshed from the asset API instead of being trusted as permanent links.
+- Clipboard images can be pasted directly with `Ctrl+V` / `Cmd+V` on `/app`; pasted files are uploaded/assetized as reference images and previewed immediately.
+- The `/app` plus icon opens an image asset picker. The picker can choose generated images or uploaded images, but selection only affects reference inputs and does not change the source type of generated output assets.
 - Multiple quick-generate reference images are supported. The first image is still sent through legacy single-reference fields for compatibility, while the complete list is sent through array fields.
 - Quick generation filters models by the current input capability (`TEXT_TO_IMAGE` / `IMAGE_TO_IMAGE` / `TEXT_TO_VIDEO` / `IMAGE_TO_VIDEO`), opens a `DynamicParamForm` parameter popover from the sliders button, and sends the selected params with template defaults filled in.
 - When `/app` creates a canvas project from text plus reference images, each reference image should become a canvas image node and be connected to the target generation node. Multi-image requests use all references for node creation and request arrays; single-image providers or legacy fields use the first reference image.
+- Quick generation must not submit until the prompt, selected model, required params, and reference compatibility rules are valid. Missing parameter configuration should be solved by showing the model parameter popover, not by silently disabling submit.
 - New image generation creates an `ImageNode` draft placeholder.
 - Image models, model parameters, and price display come from the AIGC model APIs. Backend SELECT options/default values are normalized so saved JSON-array values render as plain values such as `1:1`.
 - Existing image nodes persist `aigcModelId`; refreshing a project should restore the node's selected model instead of falling back to the default model.
@@ -171,6 +174,8 @@ Canvas navigation:
 - Node titles stay in canvas coordinates, so they scale visually with the canvas zoom and remain aligned to their preview content.
 - The canvas skips history/snapshot churn while nodes are actively dragged and saves the final position after drag stop.
 - Image nodes subscribe only to the React Flow state they actually need, so unrelated canvas changes do not force every image node through model/parameter recomputation.
+- Canvas edges keep the normal React Flow line style. Signal/highlight animation may be layered on top for a light sweep effect, but it should not replace the basic path shape or break selection/connection behavior.
+- Realtime messages must be filtered by the active server project ID before applying presence, member updates, operation acks, or rejection events. The `projectId` field may arrive as a number or string, so compare using a normalized string.
 
 Canvas motion:
 
@@ -201,6 +206,7 @@ Server persistence target:
 - Snapshot storage is threshold based: after runtime URLs and large local media are stripped, bodies up to 512KB with up to 200 nodes, 500 edges, and 64KB per node data may stay inline in MySQL; anything larger should be stored in OSS / MinIO with MySQL metadata only. Bodies at or above 2MB are always object-store snapshots.
 - Redis stores collaboration room hot state, pending operation state, and presence. A successful realtime accept may mean the operation is accepted into the hot path, not necessarily persisted to MySQL yet.
 - Runtime asset URLs from private OSS/S3 expire. Canvas, project covers, and asset pickers should refresh previews from asset APIs by `assetId` / `outputAssetId`, not reuse saved signed URLs.
+- Project cards display `nodeCount`, `assetCount`, `coverAssetId`, and runtime cover URL from backend project data. If a backend response lacks `coverAssetId`, the server may repair it from snapshot/asset refs; the frontend should not persist signed cover URLs as the project identity.
 
 ## Auth, Theme, And Email Code UI
 
@@ -227,7 +233,7 @@ npm run lint
 npm run build
 ```
 
-Run both before handing off canvas changes.
+Run both before handing off canvas changes. Docker image builds execute `npm run build`, so TypeScript-only issues such as realtime message union types will fail deployment even when local dev mode appears fine.
 
 ## Important Files
 

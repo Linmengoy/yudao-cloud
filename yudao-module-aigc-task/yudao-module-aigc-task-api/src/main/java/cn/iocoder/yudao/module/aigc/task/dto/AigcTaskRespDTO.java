@@ -42,6 +42,9 @@ public class AigcTaskRespDTO {
     @Schema(description = "进度", example = "100")
     private Integer progress;
 
+    @Schema(description = "预计耗时毫秒", example = "60000")
+    private Long estimatedDurationMillis;
+
     @Schema(description = "冻结记录编号", example = "4096")
     private Long freezeId;
 
@@ -80,6 +83,12 @@ public class AigcTaskRespDTO {
 
     @Schema(description = "创建时间")
     private LocalDateTime createTime;
+
+    @Schema(description = "提交时间")
+    private LocalDateTime submitTime;
+
+    @Schema(description = "开始执行时间")
+    private LocalDateTime startTime;
 
     @Schema(description = "完成时间")
     private LocalDateTime finishTime;

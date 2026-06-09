@@ -9,6 +9,7 @@ CREATE TABLE `aigc_task` (
   `provider_id` bigint DEFAULT NULL COMMENT '渠道商ID',
   `status` varchar(32) NOT NULL COMMENT '任务状态',
   `progress` int DEFAULT 0 COMMENT '进度',
+  `estimated_duration_millis` bigint DEFAULT NULL COMMENT '预计耗时毫秒',
   `request_params` json DEFAULT NULL COMMENT '请求参数快照',
   `price_snapshot` json DEFAULT NULL COMMENT '价格快照',
   `freeze_id` bigint DEFAULT NULL COMMENT '冻结记录ID',

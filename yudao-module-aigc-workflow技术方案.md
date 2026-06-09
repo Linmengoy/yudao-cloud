@@ -391,6 +391,15 @@ Snapshot 内联/OSS 判定策略：
 - 任一条件超限即写 OSS / MinIO，并在 `canvas_snapshot` 只落 `storageType`、`snapshotObjectKey`、`snapshotSize`、`snapshotHash` 等元数据；JSON body `>= 2MB` 时强制对象存储。
 - 阈值需要配置化，建议命名为 `canvas.snapshot.inlineMaxBytes`、`canvas.snapshot.inlineMaxNodes`、`canvas.snapshot.inlineMaxEdges`、`canvas.snapshot.inlineMaxNodeBytes`。
 
+Snapshot 外置存储运行依赖：
+
+- `aigc-workflow` 不直接操作 OSS / MinIO SDK，大体积 snapshot body 统一通过 `infra-api` 的 `FileApi` 写入和读取平台文件服务。
+- 保存大体积 snapshot 时调用 `FileApi.createFileV2(...)`，长期保存 `storageType`、`storageConfigId`、`bucket`、`snapshotObjectKey`、`snapshotSize`、`snapshotHash` 等稳定元数据。
+- 读取外置 snapshot 时调用 `FileApi.getFileContent(storageConfigId, snapshotObjectKey)` 还原 `nodesJson`、`edgesJson`、`viewportJson`。
+- `yudao-module-aigc-workflow-server` 必须依赖 `yudao-module-infra-api`，并在 `framework/rpc/config/RpcConfiguration.java` 的 `@EnableFeignClients` 中显式加入 `FileApi.class`。
+- 如果漏配 `FileApi` Feign Client，workflow 启动会失败并出现 `A component required a bean of type 'cn.iocoder.yudao.module.infra.api.file.FileApi' that could not be found`；这不是 Nacos shutdown 警告的根因，Nacos 相关栈通常是启动失败后的关闭噪音。
+- 私有 OSS/S3 的预签名 URL 只允许作为本次响应展示地址，不得写入 snapshot body、operation log 或项目封面长期字段。
+
 项目封面资产约束：
 
 - `aigc_canvas_project.cover_asset_id` 是项目封面的稳定资产身份，优先级高于临时 `coverUrl`。
@@ -708,6 +717,27 @@ aigc-billing 确认扣费、释放差额
 - 实现计费补偿。
 - 实现资产关系补偿。
 - 实现执行日志、统计报表和问题追踪。
+
+### 16.6 当前已落地补充
+
+本节记录 2026-06-09 已落地的画布、快捷生成和快照存储相关实现约束，后续开发按这些行为继续兼容。
+
+- `/app` 快捷生成已支持文本、单张参考图、多张参考图三类输入；多图请求同时发送数组字段，首张图继续写入旧版单图字段，兼容只支持单图的模型和旧接口。
+- 快捷生成创建 canvas 项目时，参考图必须生成独立 `image` 节点，并通过普通 React Flow 连线连接到目标 `image` / `video` 生成节点；目标节点通过 incoming edges 读取参考图。
+- 快捷生成的模型参数来自模型配置和参数模板，前端必须提供参数弹窗并随请求提交最终参数，不能只提交 prompt 和参考图。
+- 空 canvas 或无 snapshot 的项目保持空画布，不自动创建默认节点；节点只能来自用户显式创建、上传、粘贴、资产库选择或 `/app` 快捷生成初始化。
+- 画布持久化只保存 `assetId`、`outputAssetId`、`taskId`、节点参数、节点位置等稳定字段，`previewUrl`、`outputPreviewUrl`、`videoUrl`、`assetUrlExpireTime` 等运行时 URL 必须过滤。
+- 项目实体的 `nodeCount`、`assetCount`、`currentVersion`、`latestSnapshotId`、`coverAssetId` 应以服务端持久化状态为准，列表展示不能从前端当前页临时推导。
+- 项目封面以 `coverAssetId` 为长期身份；历史项目读取时如果缺失该字段，可从最新 snapshot、operation log 或 `aigc_canvas_asset_ref` 推导首个图片资产并回写，避免后续接口反复多分支判断。
+- 项目页已支持修改显示图：后端提供项目内图片资源分页和当前用户全部图片资源分页，前端只提交 `coverAssetId`，禁止提交签名 URL。
+- 大体积 snapshot 通过 `infra-api` 的 `FileApi` 进入平台文件服务；workflow 启动必须注册 `FileApi` Feign Client，否则会因找不到 `FileApi` Bean 启动失败。
+
+已验证命令：
+
+```text
+mvn -pl yudao-module-aigc-workflow/yudao-module-aigc-workflow-server -am -DskipTests compile
+mvn -pl yudao-module-aigc-workflow/yudao-module-aigc-workflow-server -am -DskipTests clean package
+```
 
 ## 17. 总结
 

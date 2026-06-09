@@ -7,14 +7,29 @@ import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyStatusPill } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
 import { getAigcTaskPage } from "@/features/tasks/task-api";
+import { getDisplayTaskProgress } from "@/features/tasks/task-progress-value";
 import { formatDateTime, formatPoints, getTaskTypeLabel } from "@/features/tasks/task-status";
 import type { AigcTask } from "@/features/tasks/task-types";
 import { TaskStatusBadge } from "@/features/tasks/components/task-status-badge";
+import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache";
 
 const taskPageSize = 12;
 
+type TasksPageCache = {
+  tasks: AigcTask[];
+  total: number;
+};
+
+function tasksPageCacheKey(pageNo: number) {
+  return `tasks:${pageNo}`;
+}
+
+function getTaskKey(task: AigcTask) {
+  return task.id ?? task.taskNo ?? "";
+}
+
 function getTaskProgress(task: AigcTask) {
-  return Math.max(0, Math.min(100, Number(task.progress ?? 0)));
+  return getDisplayTaskProgress(task);
 }
 
 function getTaskSafety(task: AigcTask) {
@@ -32,20 +47,35 @@ function getPageCount(total: number) {
 }
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<AigcTask[]>([]);
-  const [total, setTotal] = useState(0);
+  const initialPageCache = readPageCache<TasksPageCache>(tasksPageCacheKey(1));
+  const [tasks, setTasks] = useState<AigcTask[]>(() => initialPageCache?.tasks ?? []);
+  const [total, setTotal] = useState(() => initialPageCache?.total ?? 0);
   const [pageNo, setPageNo] = useState(1);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !initialPageCache);
   const [error, setError] = useState("");
   const pageCount = getPageCount(total);
 
   const loadTasks = useCallback(async (nextPageNo: number) => {
-    setLoading(true);
+    const cacheKey = tasksPageCacheKey(nextPageNo);
+    const cached = readPageCache<TasksPageCache>(cacheKey);
+    if (cached) {
+      setTasks((items) => mergeStableList(items, cached.tasks, getTaskKey));
+      setTotal(cached.total);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
       const data = await getAigcTaskPage({ pageNo: nextPageNo, pageSize: taskPageSize });
-      setTasks(data.list ?? []);
-      setTotal(data.total ?? 0);
+      const nextTasks = data.list ?? [];
+      const nextTotal = data.total ?? 0;
+      writePageCache<TasksPageCache>(cacheKey, {
+        tasks: nextTasks,
+        total: nextTotal,
+      });
+      setTasks((items) => mergeStableList(items, nextTasks, getTaskKey));
+      setTotal(nextTotal);
     } catch (err) {
       setError(err instanceof Error ? err.message : "任务列表加载失败");
     } finally {

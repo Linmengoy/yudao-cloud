@@ -40,9 +40,10 @@ public interface AigcTaskMapper extends BaseMapperX<AigcTaskDO> {
     default PageResult<AigcTaskDO> selectPageByUserId(cn.iocoder.yudao.framework.common.pojo.PageParam reqVO, Long userId) {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcTaskDO>()
                 .select(AigcTaskDO::getId, AigcTaskDO::getTaskNo, AigcTaskDO::getTaskType,
-                        AigcTaskDO::getStatus, AigcTaskDO::getProgress, AigcTaskDO::getSalePrice,
+                        AigcTaskDO::getStatus, AigcTaskDO::getProgress, AigcTaskDO::getEstimatedDurationMillis, AigcTaskDO::getSalePrice,
                         AigcTaskDO::getCurrencyType, AigcTaskDO::getOutputAssetId, AigcTaskDO::getOutputAssetType,
-                        AigcTaskDO::getOutputSummary, AigcTaskDO::getFailReason, AigcTaskDO::getCreateTime, AigcTaskDO::getFinishTime)
+                        AigcTaskDO::getOutputSummary, AigcTaskDO::getFailReason, AigcTaskDO::getCreateTime, AigcTaskDO::getSubmitTime,
+                        AigcTaskDO::getStartTime, AigcTaskDO::getFinishTime)
                 .eq(AigcTaskDO::getUserId, userId)
                 .orderByDesc(AigcTaskDO::getId));
     }
@@ -89,6 +90,7 @@ public interface AigcTaskMapper extends BaseMapperX<AigcTaskDO> {
                         #{status}
                     </foreach>
                     THEN 1 ELSE 0 END), 0) AS timeoutCount,
+                COALESCE(SUM(CASE WHEN retry_count &gt; 0 THEN 1 ELSE 0 END), 0) AS retryTaskCount,
                 COALESCE(AVG(CASE WHEN submit_time IS NOT NULL AND finish_time IS NOT NULL THEN TIMESTAMPDIFF(MICROSECOND, submit_time, finish_time) / 1000 ELSE NULL END), 0) AS avgDurationMillis
             FROM aigc_task
             WHERE deleted = 0
@@ -100,5 +102,74 @@ public interface AigcTaskMapper extends BaseMapperX<AigcTaskDO> {
                                                  @Param("finishedStatuses") Collection<String> finishedStatuses,
                                                  @Param("backlogStatuses") Collection<String> backlogStatuses,
                                                  @Param("now") LocalDateTime now);
+
+    @Select("""
+            <script>
+            SELECT
+                COUNT(1) AS sampleCount,
+                COALESCE(AVG(duration_millis), 0) AS avgDurationMillis
+            FROM (
+                SELECT TIMESTAMPDIFF(MICROSECOND, submit_time, finish_time) / 1000 AS duration_millis
+                FROM aigc_task
+                WHERE deleted = 0
+                  AND status IN
+                  <foreach collection="statuses" item="status" open="(" separator="," close=")">
+                      #{status}
+                  </foreach>
+                  AND submit_time IS NOT NULL
+                  AND finish_time IS NOT NULL
+                  <if test="providerId != null">
+                    AND provider_id = #{providerId}
+                  </if>
+                  <if test="modelId != null">
+                    AND model_id = #{modelId}
+                  </if>
+                  <if test="capability != null and capability != ''">
+                    AND capability = #{capability}
+                  </if>
+                ORDER BY finish_time DESC
+                LIMIT #{sampleSize}
+            ) latest_success_tasks
+            </script>
+            """)
+    AigcTaskDurationStatisticsAggregate selectDurationStatistics(@Param("statuses") Collection<String> statuses,
+                                                                 @Param("providerId") Long providerId,
+                                                                 @Param("modelId") Long modelId,
+                                                                 @Param("capability") String capability,
+                                                                 @Param("sampleSize") Integer sampleSize);
+
+    @Select("""
+            <script>
+            SELECT duration_millis
+            FROM (
+                SELECT TIMESTAMPDIFF(MICROSECOND, submit_time, finish_time) / 1000 AS duration_millis
+                FROM aigc_task
+                WHERE deleted = 0
+                  AND status IN
+                  <foreach collection="statuses" item="status" open="(" separator="," close=")">
+                      #{status}
+                  </foreach>
+                  AND submit_time IS NOT NULL
+                  AND finish_time IS NOT NULL
+                  <if test="providerId != null">
+                    AND provider_id = #{providerId}
+                  </if>
+                  <if test="modelId != null">
+                    AND model_id = #{modelId}
+                  </if>
+                  <if test="capability != null and capability != ''">
+                    AND capability = #{capability}
+                  </if>
+                ORDER BY finish_time DESC
+                LIMIT #{sampleSize}
+            ) latest_success_tasks
+            ORDER BY duration_millis ASC
+            </script>
+            """)
+    List<Long> selectRecentDurations(@Param("statuses") Collection<String> statuses,
+                                     @Param("providerId") Long providerId,
+                                     @Param("modelId") Long modelId,
+                                     @Param("capability") String capability,
+                                     @Param("sampleSize") Integer sampleSize);
 
 }

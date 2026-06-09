@@ -1,0 +1,146 @@
+beta.copse.top {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    handle /aigc/workflow/ws* {
+        reverse_proxy 111.228.39.103:48080 {
+            flush_interval -1
+
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+
+            transport http {
+                keepalive 120s
+                keepalive_idle_conns 256
+                response_header_timeout 600s
+                compression off
+            }
+        }
+    }
+
+    handle {
+        reverse_proxy 111.228.39.103:13000 {
+            flush_interval -1
+
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+
+            transport http {
+                keepalive 120s
+                keepalive_idle_conns 256
+                response_header_timeout 600s
+                compression off
+            }
+        }
+    }
+
+    encode zstd gzip
+
+    request_body {
+        max_size 100MB
+    }
+
+    log {
+        output file /var/log/caddy/manman-app.log {
+            roll_size 50mb
+            roll_keep 10
+            roll_keep_for 720h
+        }
+        format json
+        level INFO
+    }
+
+    handle_errors {
+        respond "{err.status_code} {err.status_text}"
+    }
+}
+
+admin.copse.top {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    handle /admin-api/* {
+        reverse_proxy 111.228.39.103:48080 {
+            flush_interval -1
+
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+
+            transport http {
+                keepalive 120s
+                keepalive_idle_conns 256
+                response_header_timeout 600s
+                compression off
+            }
+        }
+    }
+
+    handle /infra/ws* {
+        reverse_proxy 111.228.39.103:48080 {
+            flush_interval -1
+
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+
+            transport http {
+                keepalive 120s
+                keepalive_idle_conns 256
+                response_header_timeout 600s
+                compression off
+            }
+        }
+    }
+
+    handle {
+        reverse_proxy 111.228.39.103:8081 {
+            flush_interval -1
+
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+
+            transport http {
+                keepalive 120s
+                keepalive_idle_conns 256
+                response_header_timeout 600s
+                compression off
+            }
+        }
+    }
+
+    encode zstd gzip
+
+    request_body {
+        max_size 100MB
+    }
+
+    log {
+        output file /var/log/caddy/manman-admin.log {
+            roll_size 50mb
+            roll_keep 10
+            roll_keep_for 720h
+        }
+        format json
+        level INFO
+    }
+
+    handle_errors {
+        respond "{err.status_code} {err.status_text}"
+    }
+}

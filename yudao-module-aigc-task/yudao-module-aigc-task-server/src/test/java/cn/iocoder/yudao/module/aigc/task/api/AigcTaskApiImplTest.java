@@ -3,6 +3,8 @@ package cn.iocoder.yudao.module.aigc.task.api;
 import cn.iocoder.yudao.framework.test.core.ut.BaseMockitoUnitTest;
 import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskDO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsRespDTO;
 import cn.iocoder.yudao.module.aigc.task.enums.AigcTaskStatusEnum;
 import cn.iocoder.yudao.module.aigc.task.service.callback.AigcTaskCallbackService;
 import cn.iocoder.yudao.module.aigc.task.service.retry.AigcTaskRetryService;
@@ -45,9 +47,20 @@ public class AigcTaskApiImplTest extends BaseMockitoUnitTest {
 
     @Test
     public void testGetTask_success() {
-        when(taskService.validateTaskExists(1L)).thenReturn(new AigcTaskDO().setId(1L).setTaskNo("TASK1"));
+        when(taskService.getTaskWithResult(1L)).thenReturn(new AigcTaskDO().setId(1L).setTaskNo("TASK1"));
 
         assertEquals("TASK1", api.getTask(1L).getData().getTaskNo());
+    }
+
+    @Test
+    public void testGetSuccessDurationStatistics_success() {
+        AigcTaskDurationStatisticsReqDTO reqDTO = new AigcTaskDurationStatisticsReqDTO()
+                .setProviderId(10L)
+                .setModelId(20L)
+                .setCapability("IMAGE_GENERATE");
+        when(taskService.getSuccessDurationStatistics(reqDTO)).thenReturn(new AigcTaskDurationStatisticsRespDTO().setAvgDurationMillis(60000L));
+
+        assertEquals(60000L, api.getSuccessDurationStatistics(reqDTO).getData().getAvgDurationMillis());
     }
 
 }

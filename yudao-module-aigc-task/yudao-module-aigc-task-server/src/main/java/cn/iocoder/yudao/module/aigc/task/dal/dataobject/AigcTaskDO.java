@@ -76,6 +76,11 @@ public class AigcTaskDO extends TenantBaseDO {
     private Integer progress;
 
     /**
+     * 预计耗时，单位毫秒
+     */
+    private Long estimatedDurationMillis;
+
+    /**
      * 请求参数（JSON格式）
      */
     private String requestParams;

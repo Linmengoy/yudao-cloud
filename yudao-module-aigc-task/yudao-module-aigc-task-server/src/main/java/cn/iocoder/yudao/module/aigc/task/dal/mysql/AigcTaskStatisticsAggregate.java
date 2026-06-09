@@ -12,6 +12,7 @@ public class AigcTaskStatisticsAggregate {
     private Long refundingCount;
     private Long backlogCount;
     private Long timeoutCount;
+    private Long retryTaskCount;
     private Long avgDurationMillis;
 
 }

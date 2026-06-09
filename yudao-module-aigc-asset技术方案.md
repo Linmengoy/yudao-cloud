@@ -1150,11 +1150,25 @@ fileSize
 - `createImageAsset`、`createVideoAsset`、`createFromRemoteUrl`、`createFromDataUrl` 等生成结果资产化入口，不能直接使用固定标题或第三方文件名作为对象存储 Key。
 - 原始 `fileName`、`title`、`mimeType`、宽高、大小等信息继续保存为资产展示和检索元数据，不参与对象存储唯一性判断。
 - Canvas 上传、`/app` 参考图上传和生成结果资产化都依赖资产服务这一层防覆盖逻辑，前端不应通过相同文件名覆盖旧资产。
+- 资产编号生成必须带上 `userId`，包括管理端/上传入口的 `createAsset(AigcAssetSaveReqVO)` 和生成回调入口的 `createAsset(AigcAssetCreateReqDTO)`，避免方法签名不一致导致编译失败。
 
-### 18.10 已验证命令
+### 18.10 当前已落地补充
+
+本节记录 2026-06-09 已落地的资产库、私有 OSS/S3 和画布联动约束。
+
+- 上传图片与生成图片已通过 `sourceType` 分离：上传参考图或用户素材写 `UPLOAD`，模型生成结果写 `GENERATE`。资产库分类和 `/app` 加号选择器都不能把上传参考图伪装成生成图。
+- 资产库分类总数必须调用 `/aigc/asset/my-category-counts`，统计口径与分页列表共享当前用户、状态、标题搜索等过滤条件；前端禁止用当前分页结果反推其它分类数量。
+- 资产服务长期保存稳定文件引用，不保存私有 OSS/S3 的签名 URL。`fileUrl`、`coverUrl`、`thumbnailUrl` 等响应兼容字段只代表本次运行时访问 URL。
+- Canvas 打开项目、恢复 snapshot、回放 operation 或 URL 接近过期时，应优先调用 `POST /aigc/asset/access-urls` 批量刷新节点图片/视频 URL，避免逐个 `/my-get` 导致首屏图片很久才显示。
+- `aigc_canvas_asset_ref` 是节点与资产的稳定关系来源，项目素材数、封面推导、权限校验和 URL 刷新都应优先使用资产 ID，不使用签名 URL。
+- 项目显示图修改只保存 `coverAssetId`。后端校验该图片资产属于当前用户或已被当前项目引用，返回给前端的封面 URL 只作为展示票据。
+- 上传防覆盖策略同时覆盖 `/app` 参考图、canvas 内上传图片/视频、资产库上传、生成结果 Data URL 转存和第三方 URL 转存。
+
+### 18.11 已验证命令
 
 ```text
 mvn -pl yudao-module-aigc-asset/yudao-module-aigc-asset-server -am -DskipTests compile
+mvn -pl yudao-module-aigc-asset/yudao-module-aigc-asset-server -am -DskipTests clean compile
 mvn -pl yudao-module-infra/yudao-module-infra-server,yudao-module-aigc-gen/yudao-module-aigc-gen-server,yudao-module-aigc-workflow/yudao-module-aigc-workflow-server -am -DskipTests compile
 ```
 

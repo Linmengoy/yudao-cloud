@@ -25,6 +25,9 @@ public class AigcTaskStatisticsRespVO {
     @Schema(description = "超时任务数", example = "1")
     private Long timeoutCount;
 
+    @Schema(description = "已重试任务数", example = "3")
+    private Long retryTaskCount;
+
     @Schema(description = "成功率", example = "0.8")
     private Double successRate;
 
@@ -33,5 +36,8 @@ public class AigcTaskStatisticsRespVO {
 
     @Schema(description = "平均耗时毫秒", example = "60000")
     private Long avgDurationMillis;
+
+    @Schema(description = "P95 耗时毫秒", example = "120000")
+    private Long p95DurationMillis;
 
 }

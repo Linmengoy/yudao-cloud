@@ -14,7 +14,12 @@ services:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: 3000
+      NEXT_PUBLIC_GATEWAY_HOST: host.docker.internal
+      NEXT_PUBLIC_GATEWAY_PORT: 48080
       NEXT_PUBLIC_API_BASE_URL: ""
       NEXT_PUBLIC_APP_API_PREFIX: /app-api
+      NEXT_PUBLIC_WS_BASE_URL: wss://beta.copse.top
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:13000:3000"
+      - "13000:3000"

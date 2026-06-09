@@ -1,5 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { canCancelTask, getTaskStatusMeta } from "../task-status";
+import { getDisplayTaskProgress } from "../task-progress-value";
 import type { AigcTask } from "../task-types";
 import { TaskStatusBadge } from "./task-status-badge";
 
@@ -14,7 +15,7 @@ export function TaskProgress({
   cancelling?: boolean;
   onCancel?: () => void;
 }) {
-  const progress = Math.max(0, Math.min(100, Number(task.progress ?? 0)));
+  const progress = getDisplayTaskProgress(task);
   const meta = getTaskStatusMeta(task.status);
 
   return (

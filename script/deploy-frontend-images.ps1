@@ -6,7 +6,8 @@ param(
   [string]$Platform = "linux/amd64",
   [string]$ClientApiBaseUrl = "",
   [string]$ClientAppApiPrefix = "/app-api",
-  [string]$ClientWsBaseUrl = "ws://111.228.39.103:48080",
+  # [string]$ClientWsBaseUrl = "ws://111.228.39.103:48080",
+  [string]$ClientWsBaseUrl = "wss://beta.copse.top",
   [ValidateSet("all", "admin", "client")]
   [string]$Target = "all",
   [string]$ArchiveName = "",
@@ -21,6 +22,7 @@ $ErrorActionPreference = "Stop"
 $RootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 $AdminDir = Join-Path $RootDir "yudao-ui\draw2video-admin"
 $ClientDir = Join-Path $RootDir "yudao-ui\draw2video-client"
+$ComposeSourcePath = Join-Path $RootDir "script\docker\$ComposeFile"
 
 if ([string]::IsNullOrWhiteSpace($ArchiveName)) {
   if ($Target -eq "all") {
@@ -159,11 +161,16 @@ if (!$SkipSave) {
 if (!$SkipUpload) {
   Invoke-Step "Upload image archive" {
     Run-Command "ssh" @($Server, "mkdir -p $RemoteDir")
+    if (Test-Path $ComposeSourcePath) {
+      Run-Command "scp" @($ComposeSourcePath, "${Server}:${RemoteDir}/${ComposeFile}")
+    } else {
+      Write-Warning "Compose file not found locally: $ComposeSourcePath. Remote compose file will be reused."
+    }
     Run-Command "scp" @($ArchivePath, "${Server}:${RemoteDir}/${ArchiveName}")
   }
 
   Invoke-Step "Load images and restart containers" {
-    $RemoteCommand = "cd $RemoteDir; docker load -i $ArchiveName; docker compose -f $ComposeFile up -d --force-recreate $($Services -join ' ')"
+    $RemoteCommand = "cd $RemoteDir; docker load -i $ArchiveName; docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
     Run-Command "ssh" @($Server, $RemoteCommand)
   }
 }

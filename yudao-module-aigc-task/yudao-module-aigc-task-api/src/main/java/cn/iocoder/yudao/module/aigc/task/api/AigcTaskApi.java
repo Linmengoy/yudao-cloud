@@ -3,6 +3,8 @@ package cn.iocoder.yudao.module.aigc.task.api;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCallbackCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskRetryCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
@@ -36,6 +38,10 @@ public interface AigcTaskApi {
     @Operation(summary = "根据任务编号获取任务")
     @Parameter(name = "taskNo", description = "任务编号", required = true, example = "TASK202605260001")
     CommonResult<AigcTaskRespDTO> getTaskByTaskNo(@RequestParam("taskNo") String taskNo);
+
+    @PostMapping(PREFIX + "/success-duration-statistics")
+    @Operation(summary = "获取成功任务耗时统计")
+    CommonResult<AigcTaskDurationStatisticsRespDTO> getSuccessDurationStatistics(@RequestBody AigcTaskDurationStatisticsReqDTO reqDTO);
 
     @PutMapping(PREFIX + "/mark-queued")
     @Operation(summary = "标记排队中")

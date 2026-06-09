@@ -6,6 +6,8 @@ import cn.iocoder.yudao.module.aigc.task.controller.admin.task.vo.AigcTaskPageRe
 import cn.iocoder.yudao.module.aigc.task.controller.admin.task.vo.AigcTaskStatisticsRespVO;
 import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskDO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
 
 public interface AigcTaskService {
@@ -27,6 +29,8 @@ public interface AigcTaskService {
     PageResult<AigcTaskDO> getUserTaskPage(PageParam reqVO, Long userId);
 
     AigcTaskStatisticsRespVO getTaskStatistics();
+
+    AigcTaskDurationStatisticsRespDTO getSuccessDurationStatistics(AigcTaskDurationStatisticsReqDTO reqDTO);
 
     AigcTaskDO getUserTask(Long id, Long userId);
 

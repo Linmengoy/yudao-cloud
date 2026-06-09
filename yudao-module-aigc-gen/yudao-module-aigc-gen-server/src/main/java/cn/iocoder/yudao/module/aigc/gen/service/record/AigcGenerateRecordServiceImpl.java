@@ -46,12 +46,15 @@ import cn.iocoder.yudao.module.aigc.safety.dto.AigcSafetyPromptCheckRespDTO;
 import cn.iocoder.yudao.module.aigc.task.api.AigcTaskApi;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCallbackCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
 import cn.iocoder.yudao.module.infra.api.file.FileApi;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +78,7 @@ import static cn.iocoder.yudao.module.aigc.gen.enums.ErrorCodeConstants.GENERATE
 
 @Service
 @Validated
+@Slf4j
 public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService {
 
     private static final Set<String> FILE_TYPES = Set.of("IMAGE", "VIDEO", "AUDIO", "DOCUMENT");
@@ -139,10 +143,12 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         AigcBillingFreezeRespDTO freeze = billingApi.freeze(new AigcBillingFreezeReqDTO()
                 .setUserId(reqDTO.getUserId()).setBizType("AIGC_GENERATE").setBizId(reqDTO.getClientRequestId() == null ? generateGenerateNo() : reqDTO.getClientRequestId())
                 .setAmount(price.getSalePrice()).setTitle(reqDTO.getGenerateType() + "生成冻结").setPriceSnapshot(JsonUtils.toJsonString(price))).getCheckedData();
+        Long estimatedDurationMillis = resolveEstimatedDurationMillis(model, provider, reqDTO.getGenerateMode());
         Long taskId = taskApi.createTask(new AigcTaskCreateReqDTO()
                 .setClientRequestId(reqDTO.getClientRequestId()).setUserId(reqDTO.getUserId()).setTaskType(reqDTO.getGenerateType())
                 .setCapability(reqDTO.getGenerateMode()).setModelId(reqDTO.getModelId()).setProviderId(model.getProviderId()).setRequestParams(inputParamsSnapshot)
-                .setPriceSnapshot(JsonUtils.toJsonString(price)).setFreezeId(freeze.getId()).setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
+                .setEstimatedDurationMillis(estimatedDurationMillis).setPriceSnapshot(JsonUtils.toJsonString(price)).setFreezeId(freeze.getId())
+                .setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
         AigcGenerateRecordDO record = BeanUtils.toBean(reqDTO, AigcGenerateRecordDO.class)
                 .setInputParams(inputParamsSnapshot)
                 .setGenerateNo(generateGenerateNo()).setTaskId(taskId).setModelCode(model.getCode()).setProviderId(model.getProviderId())
@@ -178,6 +184,37 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             taskApi.markCallbackWaiting(new AigcTaskStatusUpdateReqDTO().setTaskId(record.getTaskId()).setExternalTaskId(providerResp.getProviderTaskId()).setProgress(30)).getCheckedData();
         }
         return generateRecordMapper.selectById(record.getId());
+    }
+
+    private Long resolveEstimatedDurationMillis(AigcModelRespDTO model, AigcModelProviderRespDTO provider, String capability) {
+        Long statisticsDurationMillis = resolveStatisticsDurationMillis(model, capability);
+        if (statisticsDurationMillis != null && statisticsDurationMillis > 0) {
+            return statisticsDurationMillis;
+        }
+        Integer timeoutSeconds = model.getTimeoutSeconds() != null ? model.getTimeoutSeconds() : (provider == null ? null : provider.getTimeoutSeconds());
+        return timeoutSeconds == null || timeoutSeconds <= 0 ? null : timeoutSeconds * 1000L;
+    }
+
+    private Long resolveStatisticsDurationMillis(AigcModelRespDTO model, String capability) {
+        if (model.getProviderId() == null || model.getId() == null || StrUtil.isBlank(capability)) {
+            return null;
+        }
+        AigcTaskDurationStatisticsRespDTO statistics;
+        try {
+            statistics = taskApi.getSuccessDurationStatistics(new AigcTaskDurationStatisticsReqDTO()
+                    .setProviderId(model.getProviderId())
+                    .setModelId(model.getId())
+                    .setCapability(capability)
+                    .setSampleSize(50)).getCheckedData();
+        } catch (Exception ex) {
+            log.warn("获取任务耗时统计失败，使用模型超时时间兜底，modelId={}, providerId={}, capability={}",
+                    model.getId(), model.getProviderId(), capability, ex);
+            return null;
+        }
+        if (statistics == null || statistics.getSampleCount() == null || statistics.getSampleCount() <= 0) {
+            return null;
+        }
+        return statistics.getAvgDurationMillis();
     }
 
     private void submitProviderAfterCommit(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {

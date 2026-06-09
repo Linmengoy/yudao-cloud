@@ -5,6 +5,8 @@ import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskDO;
 import cn.iocoder.yudao.module.aigc.task.dal.mysql.AigcTaskMapper;
 import cn.iocoder.yudao.module.aigc.task.controller.admin.task.vo.AigcTaskStatisticsRespVO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.enums.AigcTaskStatusEnum;
 import cn.iocoder.yudao.module.aigc.task.service.log.AigcTaskLogServiceImpl;
@@ -38,6 +40,7 @@ public class AigcTaskServiceImplTest extends BaseDbUnitTest {
         assertNotNull(task.getTaskNo());
         assertEquals(AigcTaskStatusEnum.CREATED.getCode(), task.getStatus());
         assertEquals(reqDTO.getUserId(), task.getUserId());
+        assertEquals(60000L, task.getEstimatedDurationMillis());
     }
 
     @Test
@@ -110,7 +113,7 @@ public class AigcTaskServiceImplTest extends BaseDbUnitTest {
         LocalDateTime now = LocalDateTime.now();
         taskMapper.insert(createTaskDO("TASK-SUCCESS", AigcTaskStatusEnum.SUCCESS.getCode(), now.minusMinutes(3), now.minusMinutes(1), null));
         taskMapper.insert(createTaskDO("TASK-FAILED", AigcTaskStatusEnum.FAILED.getCode(), now.minusMinutes(2), now.minusMinutes(1), null));
-        taskMapper.insert(createTaskDO("TASK-QUEUED", AigcTaskStatusEnum.QUEUED.getCode(), null, null, null));
+        taskMapper.insert(createTaskDO("TASK-QUEUED", AigcTaskStatusEnum.QUEUED.getCode(), null, null, null).setRetryCount(1));
         taskMapper.insert(createTaskDO("TASK-TIMEOUT", AigcTaskStatusEnum.RUNNING.getCode(), null, null, now.minusMinutes(1)));
         taskMapper.insert(createTaskDO("TASK-REFUNDING", AigcTaskStatusEnum.REFUNDING.getCode(), null, null, null));
 
@@ -122,9 +125,31 @@ public class AigcTaskServiceImplTest extends BaseDbUnitTest {
         assertEquals(1L, statistics.getRefundingCount());
         assertEquals(2L, statistics.getBacklogCount());
         assertEquals(1L, statistics.getTimeoutCount());
+        assertEquals(1L, statistics.getRetryTaskCount());
         assertEquals(0.5D, statistics.getSuccessRate());
         assertEquals(0.5D, statistics.getFailedRate());
         assertEquals(90000L, statistics.getAvgDurationMillis());
+        assertEquals(120000L, statistics.getP95DurationMillis());
+    }
+
+    @Test
+    public void testGetSuccessDurationStatistics() {
+        LocalDateTime now = LocalDateTime.now();
+        taskMapper.insert(createTaskDO("TASK-SUCCESS-1", AigcTaskStatusEnum.SUCCESS.getCode(), now.minusSeconds(10), now, null));
+        taskMapper.insert(createTaskDO("TASK-SUCCESS-2", AigcTaskStatusEnum.SUCCESS.getCode(), now.minusSeconds(20), now, null));
+        taskMapper.insert(createTaskDO("TASK-SUCCESS-3", AigcTaskStatusEnum.SUCCESS.getCode(), now.minusSeconds(30), now, null));
+        taskMapper.insert(createTaskDO("TASK-FAILED-1", AigcTaskStatusEnum.FAILED.getCode(), now.minusSeconds(60), now, null));
+        taskMapper.insert(createTaskDO("TASK-OTHER-PROVIDER", AigcTaskStatusEnum.SUCCESS.getCode(), now.minusSeconds(120), now, null).setProviderId(301L));
+
+        AigcTaskDurationStatisticsRespDTO statistics = taskService.getSuccessDurationStatistics(new AigcTaskDurationStatisticsReqDTO()
+                .setProviderId(300L)
+                .setModelId(200L)
+                .setCapability("TEXT_GENERATE")
+                .setSampleSize(50));
+
+        assertEquals(3L, statistics.getSampleCount());
+        assertEquals(20000L, statistics.getAvgDurationMillis());
+        assertEquals(30000L, statistics.getP95DurationMillis());
     }
 
     private AigcTaskCreateReqDTO createReqDTO() {
@@ -135,6 +160,7 @@ public class AigcTaskServiceImplTest extends BaseDbUnitTest {
                 .setCapability("TEXT_GENERATE")
                 .setModelId(200L)
                 .setProviderId(300L)
+                .setEstimatedDurationMillis(60000L)
                 .setCurrencyType("POINT");
     }
 
@@ -145,6 +171,7 @@ public class AigcTaskServiceImplTest extends BaseDbUnitTest {
                 .setTaskType("TEXT_GENERATE")
                 .setCapability("TEXT_GENERATE")
                 .setModelId(200L)
+                .setProviderId(300L)
                 .setStatus(status)
                 .setProgress(0)
                 .setSubmitTime(submitTime)

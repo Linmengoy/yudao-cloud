@@ -1757,7 +1757,37 @@ appendfsync everysec
 
 最终推荐路线：先完成“前端降频 + 服务端 snapshot 化 + operation 压缩”，当 `submitOperation` P95、数据库 insert TPS、锁等待或单项目 operation 增长达到瓶颈后，再升级到“Redis 热日志 + MySQL 周期落盘”。
 
-## 22. 结论
+## 22. 当前实现补充
+
+本节记录 2026-06-09 已落地的 canvas 交互、持久化和协作边界，作为后续开发的默认约束。
+
+### 22.1 节点与连线
+
+- `/app` 快捷生成进入 canvas 时，参考图必须成为真实 `image` 节点，目标生成内容成为 `image` 或 `video` 节点，参考节点通过普通 React Flow 连线连接到目标节点。
+- 多参考图创建多个参考节点；单图请求创建一个参考节点；只支持单图的模型或旧字段使用首张参考图，但 canvas 节点仍按实际参考图数量展示。
+- 节点之间的连接线保持普通线形态，不改成自定义复杂路径。需要流光效果时只在原普通线基础上叠加轻量动画，不改变连接语义、hit area、起止点和 React Flow 兼容行为。
+- 新建空画布或打开无 snapshot 项目时不自动创建默认节点。节点只来自用户创建、粘贴、上传、拖拽资产、资产选择器或快捷生成初始化。
+
+### 22.2 资产 URL 与恢复
+
+- Canvas 中图片/视频节点的长期身份是 `assetId`、`outputAssetId`、`assetVersionId`，不是 `previewUrl`、`videoUrl` 或签名 URL。
+- 读取 snapshot 或 operation 时如果历史数据包含签名 URL，只用于本次临时展示兜底，不回写为权威数据。
+- 打开项目后应批量收集节点资产 ID，调用资产服务批量访问 URL 接口刷新预览，避免私有 OSS/S3 URL 过期导致图片显示异常或首屏长时间空白。
+- 上传图片、视频或参考图后，应先资产化并取得稳定资产 ID，再进入 canvas 关系；同名文件不应覆盖旧资产。
+
+### 22.3 项目统计与封面
+
+- 项目列表展示的节点数和素材数以服务端 `canvas_project` 冗余字段为准，由 snapshot、operation log 和 `canvas_asset_ref` 更新；前端不能只按当前 React Flow 内存状态估算。
+- 如果历史项目缺少 `cover_asset_id`，服务端读取项目时可从最新 snapshot、operation log 或资产引用推导首个图片资产并回写，后续请求直接读取稳定字段。
+- 项目显示图修改弹窗分两栏：项目内图片资源和当前用户全部图片资源；两栏均分页加载，保存时只提交 `coverAssetId`。
+
+### 22.4 WebSocket 与类型兼容
+
+- WebSocket 消息里的 `projectId` 可能来自服务端数字 ID，也可能在前端类型上表现为字符串或未知扩展字段；前端过滤当前项目消息时必须兼容该联合类型并统一转字符串比较。
+- `canvas-presence`、`canvas-member-updated`、`canvas-op-applied`、`canvas-op-rejected` 都必须先校验是否属于当前服务端项目，再应用到本地状态。
+- 前端本地乐观更新后，仍需应用本端 `run/sync` 返回的最终 `TASK_STATUS_PATCH`，不能只依赖实时回声，否则发起节点可能刷新不及时。
+
+## 23. 结论
 
 本方案推荐采用“服务端权威状态 + 节点级 operation log + WebSocket 项目房间广播”的路线，先实现可落地的 Figma 式基础协作体验，再逐步补齐可靠性、任务编排、资产中心化和局部 CRDT 能力。
 

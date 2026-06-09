@@ -10,6 +10,7 @@ export function useTaskProgress(id: string) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [, setTick] = useState(0);
 
   const loadTask = useCallback(async (progressOnly = false) => {
     if (!id) return;
@@ -39,6 +40,12 @@ export function useTaskProgress(id: string) {
     const timer = window.setInterval(() => loadTask(true), 3000);
     return () => window.clearInterval(timer);
   }, [loadTask, taskStatus]);
+
+  useEffect(() => {
+    if (!taskStatus || !shouldPollTask(taskStatus)) return;
+    const timer = window.setInterval(() => setTick((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [taskStatus]);
 
   return { task, loading, refreshing, error, reload: () => loadTask(false), setTask };
 }

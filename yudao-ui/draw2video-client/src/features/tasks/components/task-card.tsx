@@ -2,12 +2,13 @@ import Link from "next/link";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice, SafetyStatusPill } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
+import { getDisplayTaskProgress } from "../task-progress-value";
 import { formatDateTime, formatPoints, getTaskTypeLabel } from "../task-status";
 import type { AigcTask } from "../task-types";
 import { TaskStatusBadge } from "./task-status-badge";
 
 export function TaskCard({ task }: { task: AigcTask }) {
-  const progress = Math.max(0, Math.min(100, Number(task.progress ?? 0)));
+  const progress = getDisplayTaskProgress(task);
   const safetyStatus = normalizeSafetyStatus(task.safetyStatus ?? task.auditStatus ?? (task.status === "AUDITING" ? "reviewing" : null));
   const failedSafetyStatus = task.status === "FAILED" ? normalizeSafetyStatusFromError(task.auditReason ?? task.failReason) : "idle";
   const safety = getSafetyCopy(safetyStatus !== "idle" ? safetyStatus : failedSafetyStatus, "task");

@@ -11,6 +11,7 @@ import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { clearCanvas } from "@/features/canvas/use-canvas-storage";
 import { useAuth } from "@/features/auth/auth-store";
+import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache";
 import {
   createProject,
   deleteProject,
@@ -35,6 +36,20 @@ type ProjectListItem = {
   readonly?: boolean;
   source: "server" | "local";
 };
+
+type ProjectsPageCache = {
+  projects: ProjectListItem[];
+  total: number;
+  statusMessage: string;
+};
+
+function projectsPageCacheKey(ownerKey: string | number | null | undefined, search: string, pageNo: number) {
+  return `projects:${ownerKey ?? "current"}:${search.trim()}:${pageNo}`;
+}
+
+function getProjectKey(project: ProjectListItem) {
+  return `${project.source}:${project.id}`;
+}
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -207,11 +222,15 @@ function CoverAssetPager({
 export default function ProjectsPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const initialPageCache = useMemo(
+    () => readPageCache<ProjectsPageCache>(projectsPageCacheKey(user?.id, "", 1)),
+    [user?.id]
+  );
+  const [projects, setProjects] = useState<ProjectListItem[]>(() => initialPageCache?.projects ?? []);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [pageNo, setPageNo] = useState(1);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState(() => initialPageCache?.total ?? 0);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState("");
@@ -227,15 +246,24 @@ export default function ProjectsPage() {
   const [userAssetsPageNo, setUserAssetsPageNo] = useState(1);
   const [userAssetsTotal, setUserAssetsTotal] = useState(0);
   const [isLoadingUserAssets, setIsLoadingUserAssets] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !initialPageCache);
   const [isCreating, setIsCreating] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState(() => initialPageCache?.statusMessage ?? "");
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const muuriRef = useRef<Muuri | null>(null);
   const projectLayoutKey = useMemo(() => projects.map((project) => project.id).join("|"), [projects]);
 
   const refreshProjects = useCallback(async (search = debouncedQuery, nextPageNo = pageNo) => {
-    setIsLoading(true);
+    const cacheKey = projectsPageCacheKey(user?.id, search, nextPageNo);
+    const cached = readPageCache<ProjectsPageCache>(cacheKey);
+    if (cached) {
+      setProjects((items) => mergeStableList(items, cached.projects, getProjectKey));
+      setTotal(cached.total);
+      setStatusMessage(cached.statusMessage);
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+    }
     try {
       const page = await canvasApi.listProjects({
         pageNo: nextPageNo,
@@ -247,7 +275,13 @@ export default function ProjectsPage() {
         setPageNo(nextPageCount);
         return;
       }
-      setProjects(page.list.map(toProjectListItem));
+      const nextProjects = page.list.map(toProjectListItem);
+      writePageCache<ProjectsPageCache>(cacheKey, {
+        projects: nextProjects,
+        total: page.total,
+        statusMessage: "",
+      });
+      setProjects((items) => mergeStableList(items, nextProjects, getProjectKey));
       setTotal(page.total);
       setStatusMessage("");
     } catch {
@@ -260,9 +294,16 @@ export default function ProjectsPage() {
         setPageNo(nextPageCount);
         return;
       }
-      setProjects(localProjects.slice((nextPageNo - 1) * PAGE_SIZE, nextPageNo * PAGE_SIZE));
+      const nextProjects = localProjects.slice((nextPageNo - 1) * PAGE_SIZE, nextPageNo * PAGE_SIZE);
+      const nextStatusMessage = "Project service is temporarily unavailable. Showing local drafts.";
+      writePageCache<ProjectsPageCache>(cacheKey, {
+        projects: nextProjects,
+        total: localProjects.length,
+        statusMessage: nextStatusMessage,
+      });
+      setProjects((items) => mergeStableList(items, nextProjects, getProjectKey));
       setTotal(localProjects.length);
-      setStatusMessage("暂时无法连接项目服务，已显示本机草稿。");
+      setStatusMessage(nextStatusMessage);
     } finally {
       setIsLoading(false);
     }
@@ -279,7 +320,7 @@ export default function ProjectsPage() {
   }, [debouncedQuery, pageNo, refreshProjects]);
 
   useEffect(() => {
-    if (isLoading || !projectLayoutKey || !gridElementRef.current) return;
+    if (!projectLayoutKey || !gridElementRef.current) return;
     let disposed = false;
     const element = gridElementRef.current;
     import("muuri").then(({ default: MuuriGrid }) => {
@@ -300,7 +341,7 @@ export default function ProjectsPage() {
       muuriRef.current?.destroy(false);
       muuriRef.current = null;
     };
-  }, [isLoading, projectLayoutKey]);
+  }, [projectLayoutKey]);
 
   const refreshProjectWallLayout = useCallback(() => {
     muuriRef.current?.refreshItems().layout();
@@ -523,7 +564,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {isLoading ? (
+      {isLoading && projects.length === 0 ? (
         <div className="mt-16 flex flex-col items-center rounded-2xl border border-dashed border-border-warm bg-background/70 px-6 py-16 text-center">
           <ImageIcon className="size-8 text-muted-gray" />
           <p className="mt-4 text-sm font-medium text-charcoal">正在加载项目</p>
@@ -629,7 +670,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {!isLoading && total > PAGE_SIZE && (
+      {total > PAGE_SIZE && (
         <div className="mt-8 flex items-center justify-between border-t border-border-warm pt-4 text-sm text-muted-gray">
           <span>
             第 {pageNo} / {pageCount} 页 · 共 {total} 个项目

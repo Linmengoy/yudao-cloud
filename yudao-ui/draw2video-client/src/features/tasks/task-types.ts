@@ -41,6 +41,7 @@ export interface AigcTask {
   modelId?: number;
   status: AigcTaskStatus | string;
   progress?: number;
+  estimatedDurationMillis?: number;
   freezeId?: number;
   salePrice?: number;
   currencyType?: string;
@@ -54,6 +55,8 @@ export interface AigcTask {
   auditStatus?: string | null;
   auditReason?: string | null;
   createTime?: string;
+  submitTime?: string;
+  startTime?: string;
   finishTime?: string;
 }
 

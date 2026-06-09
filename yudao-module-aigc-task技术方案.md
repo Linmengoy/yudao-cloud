@@ -274,6 +274,7 @@ yudao-module-aigc-task-server
 | provider_id | bigint | 渠道商 ID |
 | status | varchar(32) | 任务状态 |
 | progress | int | 进度，0 到 100 |
+| estimated_duration_millis | bigint | 预计耗时毫秒，用于用户端平滑进度条 |
 | request_params | json | 用户请求参数快照 |
 | price_snapshot | json | 价格快照 |
 | freeze_id | bigint | 冻结记录 ID |
@@ -1068,6 +1069,8 @@ aigc-gen 回调 aigc-task 推进状态
 - P95 执行耗时
 - 超时任务数量
 - 重试任务数量
+- 按 `providerId + modelId + capability` 维度统计的成功任务平均耗时
+- 按 `providerId + modelId + capability` 维度统计的成功任务 P95 耗时
 - 回调重复次数
 - 回调处理失败次数
 
@@ -1081,9 +1084,44 @@ aigc-gen 回调 aigc-task 推进状态
 | 成功率 | SUCCESS / 已结束任务 |
 | 失败率 | FAILED / 已结束任务 |
 | 平均耗时 | finishTime - submitTime |
+| P95 耗时 | 最近完成任务样本按耗时升序取 95 分位 |
 | 队列积压 | QUEUED / RUNNING / CALLBACK_WAITING 数量 |
 | 退款中任务 | REFUNDING 数量 |
 | 超时任务 | 超过 expireTime 未结束任务 |
+| 重试任务 | retryCount > 0 的任务数量 |
+
+### 17.3 任务预计耗时复用策略
+
+任务统计不仅服务管理端看板，也作为用户端进度条估时的基础能力。
+
+当 `aigc-gen` 已经确定本次请求的供应商、模型和能力后，应通过 `aigc-task-api` 查询最近成功任务耗时统计：
+
+```text
+providerId + modelId + capability
+  ↓
+aigc-task 查询最近 N 条 SUCCESS 任务
+  ↓
+返回 sampleCount、avgDurationMillis、p95DurationMillis
+  ↓
+aigc-gen 创建任务时写入 estimatedDurationMillis
+  ↓
+用户端根据 submitTime + estimatedDurationMillis 做平滑进度
+```
+
+统计口径：
+
+- 只使用 `SUCCESS` 任务作为用户侧预计耗时样本，避免失败、取消、退款链路拉低或拉高进度预估。
+- 默认取最近 `50` 条成功任务，最多允许取 `500` 条，后续可改为离线聚合表。
+- 平均耗时用于默认进度估计；P95 耗时用于管理端观察长尾，也可作为前端进度上限保护参考。
+- 当样本为空时返回 `0`，调用方应 fallback 到模型配置或供应商超时时间。
+- 前端不能因为预计耗时到达就自行判定失败，失败必须以后端任务终态为准。
+
+当前已实现：
+
+- `aigc_task.estimated_duration_millis` 已落库。
+- `AigcTaskCreateReqDTO` 支持写入 `estimatedDurationMillis`。
+- `AigcTaskRespDTO` 返回 `estimatedDurationMillis`、`submitTime` 和 `startTime`，用户端响应继续隐藏供应商 ID、第三方任务编号和内部失败码。
+- `aigc-gen` 创建任务前调用 `AigcTaskApi.getSuccessDurationStatistics`，优先使用 `providerId + modelId + capability` 最近成功任务平均耗时；样本为空或统计查询失败时 fallback 到模型或供应商 `timeoutSeconds`，不得阻断生成任务提交。
 
 ## 18. 测试方案
 
@@ -1384,6 +1422,7 @@ recordUsage
 - 已真实调用 `AigcBillingApi.releaseFreeze` 释放冻结积分，释放成功后推进任务到 `REFUNDED`。
 - 已实现管理端任务详情、分页、取消、人工标记失败、统计、日志分页、回调详情/分页/重放、重试分页/取消/触发。
 - 已实现用户端任务详情、分页、取消、进度查询，并对成本价、渠道商、第三方任务编号、内部失败码做脱敏。
+- 已扩展任务观测统计和预计耗时链路：管理端统计返回 P95 耗时、重试任务数；RPC 提供按 `providerId + modelId + capability` 查询最近成功任务平均耗时和 P95 耗时；`aigc-gen` 创建任务时写入 `estimatedDurationMillis`，用户端可按预计耗时平滑展示进度条。
 - 已实现独立 OpenAPI 分组 `aigc-task`。
 - 已补充任务服务、RPC、回调、重试、补偿测试，当前 `20` 个自动化测试用例通过。
 

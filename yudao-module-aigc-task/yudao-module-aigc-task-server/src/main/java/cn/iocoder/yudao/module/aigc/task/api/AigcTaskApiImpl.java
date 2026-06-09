@@ -5,6 +5,8 @@ import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskDO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCallbackCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskRetryCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
@@ -44,6 +46,11 @@ public class AigcTaskApiImpl implements AigcTaskApi {
     public CommonResult<AigcTaskRespDTO> getTaskByTaskNo(String taskNo) {
         AigcTaskDO task = taskService.getTaskByTaskNoWithResult(taskNo);
         return success(BeanUtils.toBean(task, AigcTaskRespDTO.class));
+    }
+
+    @Override
+    public CommonResult<AigcTaskDurationStatisticsRespDTO> getSuccessDurationStatistics(AigcTaskDurationStatisticsReqDTO reqDTO) {
+        return success(taskService.getSuccessDurationStatistics(reqDTO));
     }
 
     @Override

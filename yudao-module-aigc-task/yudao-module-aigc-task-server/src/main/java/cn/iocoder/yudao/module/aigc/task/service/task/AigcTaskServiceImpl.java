@@ -8,10 +8,13 @@ import cn.iocoder.yudao.module.aigc.task.controller.admin.task.vo.AigcTaskPageRe
 import cn.iocoder.yudao.module.aigc.task.controller.admin.task.vo.AigcTaskStatisticsRespVO;
 import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskDO;
 import cn.iocoder.yudao.module.aigc.task.dal.dataobject.AigcTaskResultDO;
+import cn.iocoder.yudao.module.aigc.task.dal.mysql.AigcTaskDurationStatisticsAggregate;
 import cn.iocoder.yudao.module.aigc.task.dal.mysql.AigcTaskMapper;
 import cn.iocoder.yudao.module.aigc.task.dal.mysql.AigcTaskResultMapper;
 import cn.iocoder.yudao.module.aigc.task.dal.mysql.AigcTaskStatisticsAggregate;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsReqDTO;
+import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.enums.AigcTaskStatusEnum;
 import cn.iocoder.yudao.module.aigc.task.service.log.AigcTaskLogService;
@@ -21,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -31,6 +35,9 @@ import static cn.iocoder.yudao.module.aigc.task.enums.ErrorCodeConstants.*;
 @Service
 @Validated
 public class AigcTaskServiceImpl implements AigcTaskService {
+
+    private static final int DEFAULT_DURATION_SAMPLE_SIZE = 50;
+    private static final int MAX_DURATION_SAMPLE_SIZE = 500;
 
     private static final Map<String, Set<String>> STATUS_TRANSFER_MAP = Map.ofEntries(
             Map.entry(AigcTaskStatusEnum.CREATED.getCode(), Set.of(AigcTaskStatusEnum.PRICE_CALCULATED.getCode(), AigcTaskStatusEnum.FROZEN.getCode(), AigcTaskStatusEnum.FAILED.getCode(), AigcTaskStatusEnum.CANCELLED.getCode())),
@@ -130,6 +137,9 @@ public class AigcTaskServiceImpl implements AigcTaskService {
         long successCount = nullToZero(statistics.getSuccessCount());
         long failedCount = nullToZero(statistics.getFailedCount());
         long finishedCount = nullToZero(statistics.getFinishedCount());
+        List<Long> durations = taskMapper.selectRecentDurations(
+                Set.of(AigcTaskStatusEnum.SUCCESS.getCode(), AigcTaskStatusEnum.FAILED.getCode(), AigcTaskStatusEnum.CANCELLED.getCode(), AigcTaskStatusEnum.REFUNDED.getCode()),
+                null, null, null, MAX_DURATION_SAMPLE_SIZE);
         return new AigcTaskStatisticsRespVO()
                 .setTotalCount(nullToZero(statistics.getTotalCount()))
                 .setSuccessCount(successCount)
@@ -137,9 +147,24 @@ public class AigcTaskServiceImpl implements AigcTaskService {
                 .setRefundingCount(nullToZero(statistics.getRefundingCount()))
                 .setBacklogCount(nullToZero(statistics.getBacklogCount()))
                 .setTimeoutCount(nullToZero(statistics.getTimeoutCount()))
+                .setRetryTaskCount(nullToZero(statistics.getRetryTaskCount()))
                 .setSuccessRate(finishedCount == 0 ? 0D : (double) successCount / finishedCount)
                 .setFailedRate(finishedCount == 0 ? 0D : (double) failedCount / finishedCount)
-                .setAvgDurationMillis(nullToZero(statistics.getAvgDurationMillis()));
+                .setAvgDurationMillis(nullToZero(statistics.getAvgDurationMillis()))
+                .setP95DurationMillis(calculateP95DurationMillis(durations));
+    }
+
+    @Override
+    public AigcTaskDurationStatisticsRespDTO getSuccessDurationStatistics(AigcTaskDurationStatisticsReqDTO reqDTO) {
+        int sampleSize = normalizeSampleSize(reqDTO.getSampleSize());
+        AigcTaskDurationStatisticsAggregate statistics = taskMapper.selectDurationStatistics(
+                Set.of(AigcTaskStatusEnum.SUCCESS.getCode()), reqDTO.getProviderId(), reqDTO.getModelId(), reqDTO.getCapability(), sampleSize);
+        List<Long> durations = taskMapper.selectRecentDurations(
+                Set.of(AigcTaskStatusEnum.SUCCESS.getCode()), reqDTO.getProviderId(), reqDTO.getModelId(), reqDTO.getCapability(), sampleSize);
+        return new AigcTaskDurationStatisticsRespDTO()
+                .setSampleCount(nullToZero(statistics.getSampleCount()))
+                .setAvgDurationMillis(nullToZero(statistics.getAvgDurationMillis()))
+                .setP95DurationMillis(calculateP95DurationMillis(durations));
     }
 
     @Override
@@ -236,6 +261,21 @@ public class AigcTaskServiceImpl implements AigcTaskService {
 
     private long nullToZero(Long value) {
         return value == null ? 0L : value;
+    }
+
+    private int normalizeSampleSize(Integer sampleSize) {
+        if (sampleSize == null || sampleSize <= 0) {
+            return DEFAULT_DURATION_SAMPLE_SIZE;
+        }
+        return Math.min(sampleSize, MAX_DURATION_SAMPLE_SIZE);
+    }
+
+    private long calculateP95DurationMillis(List<Long> durations) {
+        if (durations == null || durations.isEmpty()) {
+            return 0L;
+        }
+        int index = (int) Math.ceil(durations.size() * 0.95D) - 1;
+        return durations.get(Math.max(0, Math.min(index, durations.size() - 1)));
     }
 
     private AigcTaskDO fillResult(AigcTaskDO task) {

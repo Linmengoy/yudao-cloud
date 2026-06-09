@@ -55,9 +55,11 @@ export interface AigcTaskStatisticsRespVO {
   refundingCount?: number
   backlogCount?: number
   timeoutCount?: number
+  retryTaskCount?: number
   successRate?: number
   failedRate?: number
-  avgDurationSeconds?: number
+  avgDurationMillis?: number
+  p95DurationMillis?: number
 }
 
 export interface AigcTaskLogPageReqVO extends PageParam {
