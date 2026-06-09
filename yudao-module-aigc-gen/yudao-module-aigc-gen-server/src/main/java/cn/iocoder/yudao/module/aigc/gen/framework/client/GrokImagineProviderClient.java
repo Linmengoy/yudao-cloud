@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -110,6 +111,22 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             body.set("seconds", resolveSeconds(params));
             body.set("size", resolveVideoSize(params, providerImage));
         } else {
+            if (isImageToImage(reqDTO)) {
+                List<String> images = inputImages(params);
+                if (images.isEmpty()) {
+                    throw new IllegalArgumentException("Grok 图生图缺少参考图片");
+                }
+                body.remove("image_url");
+                body.remove("image");
+                body.remove("images");
+                if (images.size() == 1) {
+                    body.set("image", providerImageObject(images.get(0), reqDTO));
+                } else {
+                    JSONArray providerImages = new JSONArray();
+                    images.forEach(image -> providerImages.add(providerImageObject(image, reqDTO)));
+                    body.set("images", providerImages);
+                }
+            }
             body.set("n", params.getInt("n", 1));
         }
         return body;
@@ -152,6 +169,44 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             return inputImageUrls.getStr(0);
         }
         return null;
+    }
+
+    private List<String> inputImages(JSONObject params) {
+        List<String> images = new ArrayList<>();
+        addIfNotBlank(images, params.getStr("image_url"));
+        addIfNotBlank(images, params.getStr("image"));
+        JSONArray referenceImages = params.getJSONArray("referenceImages");
+        if (referenceImages != null) {
+            for (Object item : referenceImages) {
+                addIfNotBlank(images, String.valueOf(item));
+            }
+        }
+        JSONArray inputImages = params.getJSONArray("inputImages");
+        if (inputImages != null) {
+            for (Object item : inputImages) {
+                JSONObject image = JSONUtil.parseObj(item);
+                addIfNotBlank(images, firstNonBlank(image.getStr("url"), image.getStr("dataUrl")));
+            }
+        }
+        JSONArray inputImageUrls = params.getJSONArray("inputImageUrls");
+        if (inputImageUrls != null) {
+            for (Object item : inputImageUrls) {
+                addIfNotBlank(images, String.valueOf(item));
+            }
+        }
+        return images.size() <= 3 ? images : images.subList(0, 3);
+    }
+
+    private void addIfNotBlank(List<String> images, String image) {
+        if (StrUtil.isNotBlank(image) && !images.contains(image)) {
+            images.add(image);
+        }
+    }
+
+    private JSONObject providerImageObject(String image, AigcProviderSubmitReqDTO reqDTO) {
+        return JSONUtil.createObj()
+                .set("type", "image_url")
+                .set("url", toProviderImage(image, reqDTO));
     }
 
     private String toProviderImage(String image, AigcProviderSubmitReqDTO reqDTO) {
@@ -368,7 +423,11 @@ public class GrokImagineProviderClient implements AigcProviderClient {
         if (isVideo(reqDTO)) {
             return baseUrl.endsWith("/videos") ? baseUrl : baseUrl + "/videos";
         }
-        return baseUrl.endsWith("/images/generations") ? baseUrl : baseUrl + "/images/generations";
+        String target = isImageToImage(reqDTO) ? "/images/edits" : "/images/generations";
+        if (baseUrl.endsWith("/images/generations") || baseUrl.endsWith("/images/edits")) {
+            return baseUrl.substring(0, baseUrl.lastIndexOf("/images/")) + target;
+        }
+        return baseUrl + target;
     }
 
     private String resolveVideoTaskEndpoint(AigcProviderSubmitReqDTO reqDTO, boolean content) {
@@ -388,6 +447,10 @@ public class GrokImagineProviderClient implements AigcProviderClient {
 
     private boolean isVideo(AigcProviderSubmitReqDTO reqDTO) {
         return "VIDEO".equals(reqDTO.getGenerateType()) || "IMAGE_TO_VIDEO".equals(reqDTO.getGenerateMode()) || "TEXT_TO_VIDEO".equals(reqDTO.getGenerateMode());
+    }
+
+    private boolean isImageToImage(AigcProviderSubmitReqDTO reqDTO) {
+        return "IMAGE".equals(reqDTO.getGenerateType()) && "IMAGE_TO_IMAGE".equals(reqDTO.getGenerateMode());
     }
 
     private boolean isCompleted(String status) {

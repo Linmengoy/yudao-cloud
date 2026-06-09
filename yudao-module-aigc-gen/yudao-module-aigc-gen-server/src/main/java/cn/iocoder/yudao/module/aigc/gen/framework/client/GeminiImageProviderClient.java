@@ -169,6 +169,12 @@ public class GeminiImageProviderClient implements AigcProviderClient {
     private java.util.List<ImageInput> parseInputImages(AigcProviderSubmitReqDTO reqDTO) {
         JSONObject params = parseParams(reqDTO.getInputParams());
         java.util.List<ImageInput> images = new java.util.ArrayList<>();
+        for (Object item : parseArray(params, "referenceImages")) {
+            String source = String.valueOf(item);
+            if (StrUtil.isNotBlank(source)) {
+                images.add(new ImageInput(toBase64(source, reqDTO), "image/png"));
+            }
+        }
         for (Object item : parseArray(params, "inputImages")) {
             JSONObject image = JSONUtil.parseObj(item);
             String source = firstNonBlank(image.getStr("dataUrl"), image.getStr("url"));

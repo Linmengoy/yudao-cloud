@@ -26,6 +26,78 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class GrokImagineProviderClientTest {
 
     @Test
+    public void testSubmit_imageToImageUsesInputImage() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/images/edits", exchange -> handleImageSubmit(exchange, requestBody));
+        server.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            String imageUrl = "data:image/png;base64,aW1hZ2UtYnl0ZXM=";
+            GrokImagineProviderClient client = new GrokImagineProviderClient();
+
+            AigcProviderSubmitRespDTO respDTO = client.submit(new AigcProviderSubmitReqDTO()
+                    .setProviderBaseUrl(baseUrl)
+                    .setProviderApiKey("test-key")
+                    .setProviderModel("gpt-image-2")
+                    .setPrompt("{{Image 1}} 帮我给她穿上红色的晚礼服")
+                    .setGenerateType("IMAGE")
+                    .setGenerateMode("IMAGE_TO_IMAGE")
+                    .setInputParams("""
+                            {"resolution":"1k","inputImages":[{"dataUrl":"%s","fileName":"Image","mimeType":"image/png"}],"inputImageUrls":["%s"]}
+                            """.formatted(imageUrl, imageUrl)));
+
+            assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(requestBody.get());
+            assertEquals("gpt-image-2", body.getStr("model"));
+            assertEquals("{{Image 1}} 帮我给她穿上红色的晚礼服", body.getStr("prompt"));
+            assertEquals("image_url", body.getJSONObject("image").getStr("type"));
+            assertEquals(imageUrl, body.getJSONObject("image").getStr("url"));
+            assertEquals(1, body.getInt("n"));
+            assertFalse(body.containsKey("inputImages"));
+            assertFalse(body.containsKey("inputImageUrls"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_imageToImageUsesMultipleInputImages() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/images/edits", exchange -> handleImageSubmit(exchange, requestBody));
+        server.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/images/generations";
+            GrokImagineProviderClient client = new GrokImagineProviderClient();
+
+            AigcProviderSubmitRespDTO respDTO = client.submit(new AigcProviderSubmitReqDTO()
+                    .setProviderBaseUrl(baseUrl)
+                    .setProviderApiKey("test-key")
+                    .setProviderModel("grok-imagine-image")
+                    .setPrompt("把三张参考图中的主体合成到同一个画面")
+                    .setGenerateType("IMAGE")
+                    .setGenerateMode("IMAGE_TO_IMAGE")
+                    .setInputParams("""
+                            {"inputImages":[{"dataUrl":"data:image/png;base64,aW1hZ2Ux"},{"dataUrl":"data:image/png;base64,aW1hZ2Uy"}],"inputImageUrls":["data:image/png;base64,aW1hZ2Uz","data:image/png;base64,aW1hZ2U0"],"aspect_ratio":"3:2"}
+                            """));
+
+            assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(requestBody.get());
+            assertFalse(body.containsKey("image"));
+            assertEquals(3, body.getJSONArray("images").size());
+            assertEquals("data:image/png;base64,aW1hZ2Ux", body.getJSONArray("images").getJSONObject(0).getStr("url"));
+            assertEquals("data:image/png;base64,aW1hZ2Uy", body.getJSONArray("images").getJSONObject(1).getStr("url"));
+            assertEquals("data:image/png;base64,aW1hZ2Uz", body.getJSONArray("images").getJSONObject(2).getStr("url"));
+            assertEquals("3:2", body.getStr("aspect_ratio"));
+            assertFalse(body.containsKey("inputImages"));
+            assertFalse(body.containsKey("inputImageUrls"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void testSubmit_imageToVideoUsesReferenceImage() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
@@ -200,6 +272,16 @@ public class GrokImagineProviderClientTest {
     private void handleVideoSubmit(HttpExchange exchange, AtomicReference<String> requestBody) throws IOException {
         requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
         byte[] response = "{\"id\":\"video-task-1\",\"status\":\"queued\"}".getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, response.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(response);
+        }
+    }
+
+    private void handleImageSubmit(HttpExchange exchange, AtomicReference<String> requestBody) throws IOException {
+        requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+        byte[] response = "{\"id\":\"image-task-1\",\"data\":[{\"url\":\"https://example.com/result.png\"}]}".getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, response.length);
         try (OutputStream os = exchange.getResponseBody()) {
