@@ -216,7 +216,6 @@ public class GrokImagineProviderClient implements AigcProviderClient {
 
     private JSONObject providerImageObject(String image, AigcProviderSubmitReqDTO reqDTO) {
         return JSONUtil.createObj()
-                .set("type", "image_url")
                 .set("url", toProviderEditImage(image, reqDTO));
     }
 

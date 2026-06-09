@@ -51,7 +51,6 @@ public class GrokImagineProviderClientTest {
             JSONObject body = JSONUtil.parseObj(requestBody.get());
             assertEquals("gpt-image-2", body.getStr("model"));
             assertEquals("{{Image 1}} 帮我给她穿上红色的晚礼服", body.getStr("prompt"));
-            assertEquals("image_url", body.getJSONObject("image").getStr("type"));
             assertEquals(imageUrl, body.getJSONObject("image").getStr("url"));
             assertEquals(1, body.getInt("n"));
             assertFalse(body.containsKey("inputImages"));
