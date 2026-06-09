@@ -15,10 +15,19 @@ import cn.iocoder.yudao.module.aigc.gen.framework.security.AigcGenerateFileSecur
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +36,8 @@ public class GrokImagineProviderClient implements AigcProviderClient {
 
     private static final String PROVIDER_CODE = "grok";
     private static final List<String> VIDEO_ALLOWED_SIZES = List.of("1024x1024", "1024x1792", "1280x720", "1792x1024");
+    private static final int GROK_IMAGE_MAX_DATA_URL_BYTES = 960 * 1024;
+    private static final int GROK_IMAGE_MAX_EDGE = 1024;
 
     @Override
     public String getProviderCode() {
@@ -206,31 +217,136 @@ public class GrokImagineProviderClient implements AigcProviderClient {
     private JSONObject providerImageObject(String image, AigcProviderSubmitReqDTO reqDTO) {
         return JSONUtil.createObj()
                 .set("type", "image_url")
-                .set("url", toProviderImage(image, reqDTO));
+                .set("url", toProviderEditImage(image, reqDTO));
+    }
+
+    private String toProviderEditImage(String image, AigcProviderSubmitReqDTO reqDTO) {
+        SourceImage source = readSourceImage(image, reqDTO);
+        String dataUrl = toDataUrl(source.contentType(), source.bytes());
+        if (dataUrl.getBytes(StandardCharsets.UTF_8).length <= GROK_IMAGE_MAX_DATA_URL_BYTES) {
+            return dataUrl;
+        }
+        return compressEditImage(source);
     }
 
     private String toProviderImage(String image, AigcProviderSubmitReqDTO reqDTO) {
-        if (StrUtil.startWithIgnoreCase(image, "data:")) {
-            return image;
-        }
+        SourceImage source = readSourceImage(image, reqDTO);
+        return toDataUrl(source.contentType(), source.bytes());
+    }
+
+    private SourceImage readSourceImage(String image, AigcProviderSubmitReqDTO reqDTO) {
         if (!AigcGenerateFileSecurityUtils.isSafeRemoteUrl(image)) {
-            throw new IllegalArgumentException("Grok 首帧图片 URL 不安全");
+            if (StrUtil.startWithIgnoreCase(image, "data:")) {
+                return readDataUrlImage(image);
+            }
+            throw new IllegalArgumentException("Grok 参考图片 URL 不安全");
         }
         try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.get(image)
                 .timeout(timeoutMillis(reqDTO)), reqDTO)) {
             if (!response.isOk()) {
-                throw new IllegalStateException("Grok 首帧图片下载失败: HTTP_" + response.getStatus());
+                throw new IllegalStateException("Grok 参考图片下载失败: HTTP_" + response.getStatus());
             }
             byte[] content = response.bodyBytes();
             if (content == null || content.length == 0) {
-                throw new IllegalStateException("Grok 首帧图片下载结果为空");
+                throw new IllegalStateException("Grok 参考图片下载结果为空");
             }
             String contentType = StrUtil.blankToDefault(response.header(Header.CONTENT_TYPE.getValue()), "image/jpeg");
             if (contentType.contains(";")) {
                 contentType = StrUtil.subBefore(contentType, ";", false);
             }
-            return "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(content);
+            return new SourceImage(contentType, content);
         }
+    }
+
+    private SourceImage readDataUrlImage(String image) {
+        int commaIndex = image.indexOf(',');
+        if (commaIndex < 0) {
+            throw new IllegalArgumentException("Grok 参考图片 data URL 格式错误");
+        }
+        String meta = image.substring(0, commaIndex);
+        String payload = image.substring(commaIndex + 1);
+        String contentType = StrUtil.subBetween(meta, "data:", ";");
+        if (StrUtil.isBlank(contentType)) {
+            contentType = "image/png";
+        }
+        byte[] content = meta.contains(";base64")
+                ? Base64.getDecoder().decode(payload)
+                : URLDecoder.decode(payload, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8);
+        return new SourceImage(contentType, content);
+    }
+
+    private String compressEditImage(SourceImage source) {
+        try {
+            BufferedImage original = ImageIO.read(new ByteArrayInputStream(source.bytes()));
+            if (original == null) {
+                return toDataUrl(source.contentType(), source.bytes());
+            }
+            BufferedImage image = scaleImage(original, GROK_IMAGE_MAX_EDGE);
+            float[] qualities = new float[]{0.86F, 0.78F, 0.70F, 0.62F, 0.54F, 0.46F, 0.38F};
+            String best = null;
+            for (int scaleStep = 0; scaleStep < 4; scaleStep++) {
+                for (float quality : qualities) {
+                    byte[] jpeg = writeJpeg(image, quality);
+                    String dataUrl = toDataUrl("image/jpeg", jpeg);
+                    best = dataUrl;
+                    if (dataUrl.getBytes(StandardCharsets.UTF_8).length <= GROK_IMAGE_MAX_DATA_URL_BYTES) {
+                        return dataUrl;
+                    }
+                }
+                image = scaleImage(image, Math.max(512, Math.round(Math.max(image.getWidth(), image.getHeight()) * 0.82F)));
+            }
+            return best == null ? toDataUrl(source.contentType(), source.bytes()) : best;
+        } catch (Exception ex) {
+            return toDataUrl(source.contentType(), source.bytes());
+        }
+    }
+
+    private BufferedImage scaleImage(BufferedImage source, int maxEdge) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int longest = Math.max(width, height);
+        if (longest <= maxEdge) {
+            return toRgbImage(source, width, height);
+        }
+        double scale = (double) maxEdge / longest;
+        int targetWidth = Math.max(1, (int) Math.round(width * scale));
+        int targetHeight = Math.max(1, (int) Math.round(height * scale));
+        return toRgbImage(source, targetWidth, targetHeight);
+    }
+
+    private BufferedImage toRgbImage(BufferedImage source, int width, int height) {
+        BufferedImage target = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = target.createGraphics();
+        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        graphics.setColor(java.awt.Color.WHITE);
+        graphics.fillRect(0, 0, width, height);
+        graphics.drawImage(source, 0, 0, width, height, null);
+        graphics.dispose();
+        return target;
+    }
+
+    private byte[] writeJpeg(BufferedImage image, float quality) throws Exception {
+        Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpeg");
+        if (!writers.hasNext()) {
+            throw new IllegalStateException("JPEG writer not found");
+        }
+        ImageWriter writer = writers.next();
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+             ImageOutputStream imageOutputStream = ImageIO.createImageOutputStream(outputStream)) {
+            writer.setOutput(imageOutputStream);
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+            param.setCompressionQuality(quality);
+            writer.write(null, new javax.imageio.IIOImage(image, null, null), param);
+            return outputStream.toByteArray();
+        } finally {
+            writer.dispose();
+        }
+    }
+
+    private String toDataUrl(String contentType, byte[] content) {
+        return "data:" + StrUtil.blankToDefault(contentType, "image/jpeg") + ";base64," + Base64.getEncoder().encodeToString(content);
     }
 
     private String resolveSeconds(JSONObject params) {
@@ -490,5 +606,8 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             }
         }
         return null;
+    }
+
+    private record SourceImage(String contentType, byte[] bytes) {
     }
 }

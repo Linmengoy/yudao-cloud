@@ -98,6 +98,38 @@ public class GrokImagineProviderClientTest {
     }
 
     @Test
+    public void testSubmit_imageToImageCompressesLargeInputImage() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        byte[] largeImage = createLargeImageBytes(1600, 2200);
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/images/edits", exchange -> handleImageSubmit(exchange, requestBody));
+        server.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            String imageUrl = "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(largeImage);
+            GrokImagineProviderClient client = new GrokImagineProviderClient();
+
+            AigcProviderSubmitRespDTO respDTO = client.submit(new AigcProviderSubmitReqDTO()
+                    .setProviderBaseUrl(baseUrl)
+                    .setProviderApiKey("test-key")
+                    .setProviderModel("grok-imagine-image")
+                    .setPrompt("{{Image 1}} 改成红色礼服")
+                    .setGenerateType("IMAGE")
+                    .setGenerateMode("IMAGE_TO_IMAGE")
+                    .setInputParams("""
+                            {"inputImageUrls":["%s"]}
+                            """.formatted(imageUrl)));
+
+            assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
+            String providerImage = JSONUtil.parseObj(requestBody.get()).getJSONObject("image").getStr("url");
+            assertTrue(providerImage.startsWith("data:image/jpeg;base64,"));
+            assertTrue(providerImage.getBytes(StandardCharsets.UTF_8).length <= 960 * 1024);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void testSubmit_imageToVideoUsesReferenceImage() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
@@ -299,6 +331,21 @@ public class GrokImagineProviderClientTest {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         ImageIO.write(image, "png", outputStream);
         return "data:image/png;base64," + Base64.getEncoder().encodeToString(outputStream.toByteArray());
+    }
+
+    private byte[] createLargeImageBytes(int width, int height) throws IOException {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                int red = (x * 31 + y * 7) & 0xFF;
+                int green = (x * 13 + y * 17) & 0xFF;
+                int blue = (x * 5 + y * 29) & 0xFF;
+                image.setRGB(x, y, new Color(red, green, blue).getRGB());
+            }
+        }
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        ImageIO.write(image, "jpg", outputStream);
+        return outputStream.toByteArray();
     }
 
 }
