@@ -721,6 +721,8 @@ CREATE TABLE canvas_invite_link (
 - 项目列表、项目名称、节点数量、资产数量应来自服务端 API。
 - 空项目或无 snapshot 的画布保持空画布，不自动创建默认节点；节点只能来自服务端 snapshot、用户操作或 `/app` 快速生成初始化。
 - 恢复 canvas 中图片/视频节点时，长期身份以 `assetId/outputAssetId` 为准，展示 URL 通过资产服务批量访问接口刷新；历史 snapshot 或 operation 中的临时签名 URL 不作为恢复事实源。
+- 画布前端保留完整 React Flow `nodes` / `edges` 状态用于协作、连线、选择、撤销重做和 operation 生成；渲染层开启 `onlyRenderVisibleElements`，资源 URL 刷新层只处理当前可视区外扩安全距离内的媒体节点，避免打开大画布时一次性刷新全部私有 OSS/S3 签名 URL。
+- 拖动画布或缩放结束后，应按新的 viewport 重新计算扩展可视区并补拉附近媒体节点的访问 URL；不应为了性能把非可视节点直接从 React Flow 状态中裁掉，否则会破坏边关系、成员协作和快照一致性。
 
 ### 10.5 项目 ID 边界
 
@@ -1772,7 +1774,8 @@ appendfsync everysec
 
 - Canvas 中图片/视频节点的长期身份是 `assetId`、`outputAssetId`、`assetVersionId`，不是 `previewUrl`、`videoUrl` 或签名 URL。
 - 读取 snapshot 或 operation 时如果历史数据包含签名 URL，只用于本次临时展示兜底，不回写为权威数据。
-- 打开项目后应批量收集节点资产 ID，调用资产服务批量访问 URL 接口刷新预览，避免私有 OSS/S3 URL 过期导致图片显示异常或首屏长时间空白。
+- 打开项目后应按扩展可视区批量收集附近节点资产 ID，调用资产服务批量访问 URL 接口刷新预览，避免私有 OSS/S3 URL 过期导致图片显示异常，同时避免大画布一次性刷新全部节点造成首屏阻塞。
+- 当用户平移或缩放到新的区域时，前端再对新扩展可视区内的媒体节点补拉访问 URL；已经不在附近视口的节点可以保留稳定资产 ID 和旧运行时 URL，不主动刷新。
 - 上传图片、视频或参考图后，应先资产化并取得稳定资产 ID，再进入 canvas 关系；同名文件不应覆盖旧资产。
 
 ### 22.3 项目统计与封面

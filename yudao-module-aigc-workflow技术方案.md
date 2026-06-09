@@ -376,6 +376,8 @@ Canvas 持久化约束：
 - `previewUrl`、`outputPreviewUrl`、`videoUrl`、`assetUrlExpireTime` 属于前端运行时展示字段，服务端保存 snapshot、处理 `NODE_UPDATE_DATA`、`TASK_STATUS_PATCH`、`ASSET_ATTACH` 时必须过滤。
 - 生成节点完成后，operation patch 只写回 `assetId` / `outputAssetId` 等稳定字段；客户端根据资产详情或访问 URL 接口刷新当前可用的预览/播放 URL。
 - 历史 operation 中如包含运行时 URL，回放时应忽略这些字段，避免旧签名 URL 覆盖前端刚刷新的有效 URL。
+- 前端恢复画布时，React Flow 图状态仍保留完整节点和连线；渲染层使用可视元素优化，媒体访问 URL 只对当前 viewport 外扩安全距离内的节点批量刷新。后端无需按 viewport 切分 snapshot，snapshot 仍作为完整画布事实源返回。
+- 画布平移或缩放结束后，前端根据新 viewport 对附近媒体节点补拉访问 URL；非可视节点只保留 `assetId` / `outputAssetId` 等稳定字段，不主动刷新私有 OSS/S3 签名 URL。
 
 画布存储分层目标：
 
@@ -730,6 +732,7 @@ aigc-billing 确认扣费、释放差额
 - 项目实体的 `nodeCount`、`assetCount`、`currentVersion`、`latestSnapshotId`、`coverAssetId` 应以服务端持久化状态为准，列表展示不能从前端当前页临时推导。
 - 项目封面以 `coverAssetId` 为长期身份；历史项目读取时如果缺失该字段，可从最新 snapshot、operation log 或 `aigc_canvas_asset_ref` 推导首个图片资产并回写，避免后续接口反复多分支判断。
 - 项目页已支持修改显示图：后端提供项目内图片资源分页和当前用户全部图片资源分页，前端只提交 `coverAssetId`，禁止提交签名 URL。
+- Canvas 前端已开启可视元素渲染优化，并将资产访问 URL 刷新限制在扩展可视区内；打开大画布时不会一次性拉取所有节点的私有 OSS/S3 临时访问地址，拖动或缩放结束后再按当前 viewport 补拉附近媒体。
 - 大体积 snapshot 通过 `infra-api` 的 `FileApi` 进入平台文件服务；workflow 启动必须注册 `FileApi` Feign Client，否则会因找不到 `FileApi` Bean 启动失败。
 
 已验证命令：
