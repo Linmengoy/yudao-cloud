@@ -11,6 +11,7 @@ import {
 } from "@/features/assets/asset-dictionaries";
 import type { AigcAsset } from "@/features/assets/asset-types";
 import { listGeneratedAssets, type GeneratedAsset } from "@/features/assets/asset-library";
+import { useAuth } from "@/features/auth/auth-store";
 import type Muuri from "muuri";
 import type { Item, LayoutFunctionCallback } from "muuri";
 
@@ -192,6 +193,7 @@ function EmptyState({ tab }: { tab: AssetTab }) {
 }
 
 export default function AssetsPage() {
+  const { user } = useAuth();
   const [tab, setTab] = useState<AssetTab>("ALL");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -276,7 +278,7 @@ export default function AssetsPage() {
         setError("登录已过期，请重新登录后查看资产。");
         return;
       }
-      const localAssets = (await listGeneratedAssets()).map(localToAsset);
+      const localAssets = (await listGeneratedAssets(user?.id)).map(localToAsset);
       const localCounts = buildLocalAssetCounts(localAssets, debouncedQuery);
       setAssets(localAssets);
       setTotal(localAssets.length);
@@ -291,7 +293,7 @@ export default function AssetsPage() {
       setPullDistance(0);
       loadingPageRef.current = false;
     }
-  }, [debouncedQuery, tab]);
+  }, [debouncedQuery, tab, user?.id]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadAssets(true), 0);

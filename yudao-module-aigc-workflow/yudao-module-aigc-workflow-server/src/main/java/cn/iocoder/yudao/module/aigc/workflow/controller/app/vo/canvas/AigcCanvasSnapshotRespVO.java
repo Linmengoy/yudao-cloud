@@ -15,6 +15,18 @@ public class AigcCanvasSnapshotRespVO {
     private Long projectId;
     @Schema(description = "版本")
     private Long version;
+    @Schema(description = "快照存储类型 INLINE/OSS/MINIO")
+    private String storageType;
+    @Schema(description = "快照文件存储配置编号")
+    private Long storageConfigId;
+    @Schema(description = "快照 Bucket")
+    private String bucket;
+    @Schema(description = "快照对象 Key")
+    private String snapshotObjectKey;
+    @Schema(description = "快照大小")
+    private Long snapshotSize;
+    @Schema(description = "快照 Hash")
+    private String snapshotHash;
     @Schema(description = "节点 JSON")
     private String nodesJson;
     @Schema(description = "连线 JSON")

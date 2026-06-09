@@ -62,6 +62,8 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
     private AigcCanvasOperationLogMapper operationLogMapper;
     @Resource
     private AigcCanvasSnapshotMapper snapshotMapper;
+    @Resource
+    private AigcCanvasSnapshotStorageService snapshotStorageService;
 
     private final Map<Long, CanvasGraphState> graphStateCache = new ConcurrentHashMap<>();
 
@@ -75,6 +77,7 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
             return existed;
         }
         validateOperation(reqVO);
+        validateAssetReferences(reqVO, userId);
         CanvasGraphState graphState = rebuildGraphState(reqVO.getProjectId());
         validateOperationAgainstGraph(reqVO, graphState);
         if ("EDGE_CREATE".equals(reqVO.getOperationType())) {
@@ -122,7 +125,7 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
     public AigcCanvasOperationSyncRespVO syncOperations(Long projectId, Long afterVersion, Long userId) {
         AigcCanvasProjectDO project = projectService.validateReadableProject(projectId, userId);
         long version = afterVersion == null ? 0L : afterVersion;
-        AigcCanvasSnapshotDO snapshot = snapshotMapper.selectLatestByProjectId(projectId);
+        AigcCanvasSnapshotDO snapshot = snapshotStorageService.hydrateForRead(snapshotMapper.selectLatestByProjectId(projectId));
         if (snapshot != null && version < snapshot.getVersion()) {
             return buildSnapshotSync(project, snapshot);
         }
@@ -160,8 +163,24 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
         }
         respVO.setMode("snapshot");
         respVO.setToVersion(project.getCurrentVersion());
+        sanitizeSnapshot(snapshot);
         respVO.setSnapshot(BeanUtils.toBean(snapshot, AigcCanvasSnapshotRespVO.class));
         return respVO;
+    }
+
+    private void sanitizeSnapshot(AigcCanvasSnapshotDO snapshot) {
+        if (snapshot == null || !JSONUtil.isTypeJSONArray(snapshot.getNodesJson())) {
+            return;
+        }
+        JSONArray nodes = JSONUtil.parseArray(snapshot.getNodesJson());
+        for (Object item : nodes) {
+            JSONObject node = JSONUtil.parseObj(item);
+            JSONObject data = node.getJSONObject("data");
+            if (data != null && ("image".equals(node.getStr("type")) || "video".equals(node.getStr("type")))) {
+                RUNTIME_ASSET_URL_NODE_DATA_KEYS.forEach(data::remove);
+            }
+        }
+        snapshot.setNodesJson(nodes.toString());
     }
 
     private void validateOperation(AigcCanvasOperationSubmitReqVO reqVO) {
@@ -172,6 +191,69 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
         validateOperationPayload(reqVO.getOperationType(), operationJson);
         if (reqVO.getInverseOperationJson() != null) {
             validateJson(reqVO.getInverseOperationJson());
+        }
+    }
+
+    private void validateAssetReferences(AigcCanvasOperationSubmitReqVO reqVO, Long userId) {
+        JSONObject operationJson = JSONUtil.parseObj(reqVO.getOperationJson());
+        JSONObject payload = operationJson.getJSONObject("payload");
+        Set<Long> assetIds = new HashSet<>();
+        if ("NODE_CREATE".equals(reqVO.getOperationType())) {
+            JSONObject node = payload.getJSONObject("node");
+            if (node != null) {
+                collectNodeAssetIds(assetIds, node.getJSONObject("data"));
+            }
+        }
+        if ("NODE_UPDATE_DATA".equals(reqVO.getOperationType()) || "TASK_STATUS_PATCH".equals(reqVO.getOperationType())) {
+            collectNodeAssetIds(assetIds, payload.getJSONObject("patch"));
+        }
+        if ("ASSET_ATTACH".equals(reqVO.getOperationType())) {
+            addAssetId(assetIds, payload.get("assetId"));
+        }
+        if (!assetIds.isEmpty()) {
+            projectService.validateProjectAssetReferences(reqVO.getProjectId(), assetIds, userId);
+        }
+    }
+
+    private void collectNodeAssetIds(Set<Long> assetIds, JSONObject data) {
+        if (data == null) {
+            return;
+        }
+        addAssetId(assetIds, data.get("assetId"));
+        addAssetId(assetIds, data.get("outputAssetId"));
+        addAssetId(assetIds, data.get("previewAssetId"));
+        addAssetId(assetIds, data.get("assetIdList"));
+        addAssetId(assetIds, data.get("assetIds"));
+    }
+
+    private void addAssetId(Set<Long> assetIds, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Number number) {
+            long assetId = number.longValue();
+            if (assetId > 0) {
+                assetIds.add(assetId);
+            }
+            return;
+        }
+        if (value instanceof CharSequence text) {
+            String str = text.toString();
+            if (str.matches("\\d+")) {
+                assetIds.add(Long.valueOf(str));
+            }
+            return;
+        }
+        if (value instanceof JSONArray array) {
+            for (Object item : array) {
+                addAssetId(assetIds, item);
+            }
+            return;
+        }
+        if (value instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                addAssetId(assetIds, item);
+            }
         }
     }
 
@@ -363,7 +445,7 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
         }
         CanvasGraphState state = new CanvasGraphState();
         long afterVersion = 0L;
-        AigcCanvasSnapshotDO snapshot = snapshotMapper.selectLatestByProjectId(projectId);
+        AigcCanvasSnapshotDO snapshot = snapshotStorageService.hydrateForRead(snapshotMapper.selectLatestByProjectId(projectId));
         if (snapshot != null) {
             hydrateGraphStateFromSnapshot(state, snapshot);
             afterVersion = snapshot.getVersion();

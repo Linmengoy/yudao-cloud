@@ -377,6 +377,20 @@ Canvas 持久化约束：
 - 生成节点完成后，operation patch 只写回 `assetId` / `outputAssetId` 等稳定字段；客户端根据资产详情或访问 URL 接口刷新当前可用的预览/播放 URL。
 - 历史 operation 中如包含运行时 URL，回放时应忽略这些字段，避免旧签名 URL 覆盖前端刚刷新的有效 URL。
 
+画布存储分层目标：
+
+- MySQL 保存 `canvas_project`、`canvas_snapshot` 元数据、`canvas_operation_log`、`canvas_asset_ref`。其中项目表承载 `latestSnapshotId`、`currentVersion`、`coverAssetId`、节点数和素材数等可检索字段；operation log 与 asset ref 是恢复、审计、素材统计和封面推导的长期事实源。
+- `canvas_snapshot` 当前可兼容小型 snapshot JSON 内联字段；生产目标是只保存版本、对象 key、大小、hash、创建时间等元数据，大体积 snapshot body 不长期压在 MySQL。
+- OSS / MinIO 保存大体积 snapshot JSON 和历史 snapshot 包。私有 OSS/S3 的访问 URL 只在读取时临时生成，不能写入 snapshot body、operation log 或节点持久数据。
+- Redis 保存协作房间热状态、pending operation、幂等键、presence 和短期增量。启用 Redis 热路径后，MySQL 仍是最终落盘和恢复来源，snapshot 只能覆盖已持久化版本。
+
+Snapshot 内联/OSS 判定策略：
+
+- 服务端保存 snapshot 前先清洗运行时 URL、大媒体 `dataUrl/blob:` 和任务临时展示字段，再统计清洗后的 JSON body 大小。
+- 默认内联 MySQL 条件：snapshot JSON `<= 512KB`、节点数 `<= 200`、边数 `<= 500`、单个节点 data JSON `<= 64KB`。
+- 任一条件超限即写 OSS / MinIO，并在 `canvas_snapshot` 只落 `storageType`、`snapshotObjectKey`、`snapshotSize`、`snapshotHash` 等元数据；JSON body `>= 2MB` 时强制对象存储。
+- 阈值需要配置化，建议命名为 `canvas.snapshot.inlineMaxBytes`、`canvas.snapshot.inlineMaxNodes`、`canvas.snapshot.inlineMaxEdges`、`canvas.snapshot.inlineMaxNodeBytes`。
+
 项目封面资产约束：
 
 - `aigc_canvas_project.cover_asset_id` 是项目封面的稳定资产身份，优先级高于临时 `coverUrl`。
@@ -384,6 +398,8 @@ Canvas 持久化约束：
 - 读取项目详情或项目分页时，如果 `coverAssetId` 为空，但能从 image/sketch 节点数据或 `aigc_canvas_asset_ref` 推导到首个图片资产 ID，应立即按 `id + cover_asset_id is null` 条件回写项目表。
 - 推导到资产 ID 后即使本次私有 OSS/S3 预览 URL 获取失败，也应先补齐 `coverAssetId`；URL 只影响本次响应展示，不影响稳定字段收敛。
 - 一旦 `coverAssetId` 已存在，不再从节点和资产引用反复推导封面，避免后续链路到处写多分支判断。
+- 项目页修改显示图时，后端提供 `GET /canvas/projects/{id}/assets` 分页返回项目内图片资源，并允许前端同时分页读取用户所有图片资源。
+- 更新项目 `coverAssetId` 时必须校验图片资产属于当前用户或已经被当前项目引用；保存字段只能是资产 ID，不能保存签名 URL 或节点预览 URL。
 
 ## 8. 状态机设计
 

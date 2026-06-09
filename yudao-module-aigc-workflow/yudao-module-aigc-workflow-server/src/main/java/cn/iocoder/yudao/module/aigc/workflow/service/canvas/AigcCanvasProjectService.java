@@ -21,6 +21,7 @@ import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasSke
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasSnapshotDO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface AigcCanvasProjectService {
@@ -64,6 +65,8 @@ public interface AigcCanvasProjectService {
     AigcCanvasSketchDO saveSketch(AigcCanvasSketchSaveReqVO reqVO, Long userId);
 
     Long bindAsset(AigcCanvasAssetBindReqVO reqVO, Long userId);
+
+    void validateProjectAssetReferences(Long projectId, Collection<Long> assetIds, Long userId);
 
     void refreshProjectStatistics(Long projectId);
 

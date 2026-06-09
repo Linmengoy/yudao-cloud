@@ -6,6 +6,7 @@ import cn.iocoder.yudao.framework.websocket.core.util.WebSocketFrameworkUtils;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSubmitReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasOperationLogDO;
 import cn.iocoder.yudao.module.aigc.workflow.service.canvas.AigcCanvasOperationService;
+import cn.iocoder.yudao.module.aigc.workflow.service.canvas.AigcCanvasProjectService;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasOperationAppliedMessage;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasOperationMessage;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasOperationRejectedMessage;
@@ -19,6 +20,8 @@ public class AigcCanvasOperationMessageListener implements WebSocketMessageListe
     @Resource
     private AigcCanvasOperationService operationService;
     @Resource
+    private AigcCanvasProjectService projectService;
+    @Resource
     private AigcCanvasRoomService roomService;
 
     @Override
@@ -26,6 +29,10 @@ public class AigcCanvasOperationMessageListener implements WebSocketMessageListe
         Long userId = WebSocketFrameworkUtils.getLoginUserId(session);
         AigcCanvasOperationSubmitReqVO reqVO = BeanUtils.toBean(message, AigcCanvasOperationSubmitReqVO.class);
         try {
+            projectService.validateEditableProject(message.getProjectId(), userId);
+            if (!roomService.isJoined(message.getProjectId(), session.getId())) {
+                throw new IllegalStateException("WebSocket session is not joined to this canvas project");
+            }
             AigcCanvasOperationLogDO operation = operationService.submitOperation(reqVO, userId);
             AigcCanvasOperationAppliedMessage appliedMessage = new AigcCanvasOperationAppliedMessage()
                     .setProjectId(operation.getProjectId())

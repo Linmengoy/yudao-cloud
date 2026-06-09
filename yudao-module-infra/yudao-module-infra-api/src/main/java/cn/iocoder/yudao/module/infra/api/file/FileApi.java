@@ -87,4 +87,9 @@ public interface FileApi {
                                                      @NotEmpty(message = "文件路径不能为空") @RequestParam("path") String path,
                                                      @RequestParam(value = "expirationSeconds", required = false) Integer expirationSeconds);
 
+    @GetMapping(PREFIX + "/content")
+    @Operation(summary = "读取文件内容")
+    CommonResult<byte[]> getFileContent(@RequestParam("configId") Long configId,
+                                        @NotEmpty(message = "文件路径不能为空") @RequestParam("path") String path);
+
 }

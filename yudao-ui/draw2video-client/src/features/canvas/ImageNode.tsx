@@ -29,6 +29,7 @@ import type {
 } from "./types";
 import { deleteImage, saveImage } from "./image-store";
 import { DEFAULT_PROMPT_DATA } from "./types";
+import { useAuth } from "@/features/auth/auth-store";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { createGenerationTask, resolveInputImages } from "./use-generation";
 import type { ImageModeration, ImageOutputFormat, ImageQuality, ImageTaskParams } from "@/features/image-generation/types";
@@ -358,6 +359,7 @@ function ParamSegmented<T extends string>({
 }
 
 export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodeProps) {
+  const { user } = useAuth();
   const { setNodes, setEdges, getNode, getNodes, getEdges } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
@@ -434,6 +436,14 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
   const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
   const imageSrc = data.previewUrl || data.dataUrl;
+  const mediaStoreScope = useMemo(() => {
+    const urlProjectId = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("projectId");
+    const dataProjectId = typeof data.projectId === "string" || typeof data.projectId === "number" ? data.projectId : null;
+    return {
+      ownerKey: user?.id ?? null,
+      projectId: dataProjectId ?? urlProjectId,
+    };
+  }, [data.projectId, user?.id]);
   const generatingStatusLabel = getGenerationStatusLabel(data.taskStatus || data.upstreamStatus || "RUNNING");
   const sizeSelection = useMemo(() => getModelSizeSelection(params, aigcModels.templates), [aigcModels.templates, params]);
   const effectiveParams = useMemo(() => filterModelParams(params, aigcModels.templates), [aigcModels.templates, params]);
@@ -527,8 +537,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     setNodeMenu((prev) => ({ ...prev, visible: false }));
     setNodes((nds) => nds.filter((n) => n.id !== id));
     setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
-    deleteImage(data.imageId).catch(() => {});
-  }, [data.imageId, id, setEdges, setNodes]);
+    deleteImage(data.imageId, mediaStoreScope).catch(() => {});
+  }, [data.imageId, id, mediaStoreScope, setEdges, setNodes]);
 
   const duplicateNode = useCallback(() => {
     const source = getNode(id);
@@ -540,7 +550,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       fileName: data.fileName,
       createdAt: new Date().toISOString(),
     };
-    saveImage(duplicateData).catch(() => {});
+    saveImage(duplicateData, mediaStoreScope).catch(() => {});
     setNodeMenu((prev) => ({ ...prev, visible: false }));
     setNodes((nds) => [
       ...nds.map((node) => ({ ...node, selected: false })),
@@ -552,7 +562,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         data: duplicateData,
       },
     ]);
-  }, [data, getNode, id, setNodes]);
+  }, [data, getNode, id, mediaStoreScope, setNodes]);
 
   const copyImageToClipboard = useCallback(async () => {
     setNodeMenu((prev) => ({ ...prev, visible: false }));
@@ -845,11 +855,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       nds.map((n) => {
         if (n.id !== id) return n;
         const merged = { ...(n.data as ImageNodeData), ...nextData };
-        saveImage(merged).catch(() => {});
+        saveImage(merged, mediaStoreScope).catch(() => {});
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, effectiveParams, getEdges, getNodes, id, isGenerating, mentionOptions, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, effectiveParams, getEdges, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen) return;

@@ -41,4 +41,13 @@ public class FileApiImpl implements FileApi {
         return success(fileService.presignGetUrlV2(configId, path, expirationSeconds));
     }
 
+    @Override
+    public CommonResult<byte[]> getFileContent(Long configId, String path) {
+        try {
+            return success(fileService.getFileContent(configId, path));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
 }

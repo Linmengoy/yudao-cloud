@@ -17,6 +17,9 @@ public class AigcCanvasLeaveMessageListener implements WebSocketMessageListener<
     @Override
     public void onMessage(WebSocketSession session, AigcCanvasLeaveMessage message) {
         Long userId = WebSocketFrameworkUtils.getLoginUserId(session);
+        if (!roomService.isJoined(message.getProjectId(), session.getId())) {
+            return;
+        }
         roomService.leave(message.getProjectId(), session.getId());
         roomService.broadcastMemberEvent(message.getProjectId(), new AigcCanvasMemberMessage()
                 .setProjectId(message.getProjectId())

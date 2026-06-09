@@ -20,6 +20,9 @@ public class AigcCanvasPresenceMessageListener implements WebSocketMessageListen
     public void onMessage(WebSocketSession session, AigcCanvasPresenceMessage message) {
         Long userId = WebSocketFrameworkUtils.getLoginUserId(session);
         projectService.validateReadableProject(message.getProjectId(), userId);
+        if (!roomService.isJoined(message.getProjectId(), session.getId())) {
+            return;
+        }
         roomService.broadcast(message.getProjectId(), "canvas-presence", message, session.getId());
     }
 

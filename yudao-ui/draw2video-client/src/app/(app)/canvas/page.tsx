@@ -3,7 +3,7 @@
 import "@xyflow/react/dist/style.css";
 import "tldraw/tldraw.css";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -1357,6 +1357,7 @@ function isServerProjectId(projectId: string | null | undefined): projectId is s
 function CanvasFlow() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const routeProjectId = searchParams.get("projectId");
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const serverProjectId = isServerProjectId(activeProjectId) ? activeProjectId : null;
@@ -1502,6 +1503,10 @@ function CanvasFlow() {
   const canvasRealtime = useCanvasRealtime(serverProjectId, clientId, lastAppliedVersion);
   // 初始化操作操作
   const canvasOperations = useCanvasOperations(serverProjectId, clientId, latestKnownVersion, setLatestKnownVersion, canvasRealtime.sendOperation, canvasRealtime.isConnected);
+  const mediaStoreScope = useMemo(() => ({
+    ownerKey: user?.id ?? null,
+    projectId: activeProjectId,
+  }), [activeProjectId, user?.id]);
   // 初始化实时消息计数
   const processedRealtimeMessageCountRef = useRef(0);
   // 初始化画布缩放
@@ -1714,7 +1719,12 @@ function CanvasFlow() {
   useEffect(() => {
     const newMessages = canvasRealtime.messages.slice(processedRealtimeMessageCountRef.current);
     processedRealtimeMessageCountRef.current = canvasRealtime.messages.length;
+    const isCurrentProjectMessage = (message: { projectId?: unknown }) => {
+      if (!serverProjectId) return false;
+      return String(message.projectId ?? "") === serverProjectId;
+    };
     for (const message of newMessages) {
+      if (!isCurrentProjectMessage(message)) continue;
       if (message.type === "canvas-presence") {
         if (typeof message.clientId === "string" && message.clientId !== clientId) {
           const remoteClientId = message.clientId;
@@ -2389,6 +2399,7 @@ function CanvasFlow() {
       ),
       data: {
         imageId: id,
+        projectId: serverProjectId,
         fileName: "Image",
         dataUrl: "",
         mimeType: "image/png",
@@ -2407,7 +2418,7 @@ function CanvasFlow() {
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
-  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
 
   const addSketchNode = useCallback((position?: { x: number; y: number }) => {
     if (isReadOnly) return null;
@@ -2680,7 +2691,11 @@ function CanvasFlow() {
               imageData = await attachImageAsset(file, imageData);
             } catch {
             }
-            await saveImage(imageData);
+            imageData = {
+              ...imageData,
+              projectId: activeProjectId,
+            };
+            await saveImage(imageData, mediaStoreScope);
             newNodes.push(withCardNodeInteraction({
               id: imageData.imageId,
               type: "image",
@@ -2701,7 +2716,11 @@ function CanvasFlow() {
               videoData = await attachVideoAsset(file, videoData);
             } catch {
             }
-            await saveVideo(videoData, blob);
+            videoData = {
+              ...videoData,
+              projectId: activeProjectId,
+            };
+            await saveVideo(videoData, blob, mediaStoreScope);
             newNodes.push(withCardNodeInteraction({
               id: videoData.videoId ?? `uploaded_video_${Date.now()}`,
               type: "video",
@@ -2735,7 +2754,7 @@ function CanvasFlow() {
         }
       }
     },
-    [activeProjectId, canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]
+    [activeProjectId, canvasOperations, getNodes, isReadOnly, mediaStoreScope, screenToFlowPosition, serverProjectId, setNodes]
   );
 
   const handleFileInputChange = useCallback(
@@ -2763,6 +2782,7 @@ function CanvasFlow() {
       const now = new Date().toISOString();
       let imageData: ImageNodeData = {
         imageId,
+        projectId: activeProjectId,
         fileName: detail.fileName || "Video frame.png",
         dataUrl: detail.dataUrl ?? "",
         assetId: detail.assetId ?? null,
@@ -2790,7 +2810,7 @@ function CanvasFlow() {
         // Keep the local frame usable even if the asset upload path is unavailable.
       }
 
-      await saveImage(imageData);
+      await saveImage(imageData, mediaStoreScope);
 
       const newNode: AppNode = withCardNodeInteraction({
         id: imageId,
@@ -2821,7 +2841,7 @@ function CanvasFlow() {
 
     window.addEventListener("copse:video-frame-capture", handleVideoFrameCapture);
     return () => window.removeEventListener("copse:video-frame-capture", handleVideoFrameCapture);
-  }, [canvasOperations, getNodes, isReadOnly, serverProjectId, setNodes]);
+  }, [activeProjectId, canvasOperations, getNodes, isReadOnly, mediaStoreScope, serverProjectId, setNodes]);
 
   // --- Drag & Drop ---
   const [isDragOver, setIsDragOver] = useState(false);

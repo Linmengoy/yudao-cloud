@@ -106,7 +106,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setAssetNo(generateAssetNo())
                 .setSourceType(StrUtil.blankToDefault(reqVO.getSourceType(), AigcAssetSourceTypeEnum.UPLOAD.getCode()))
                 .setVisibility(StrUtil.blankToDefault(reqVO.getVisibility(), AigcAssetVisibilityEnum.PRIVATE.getCode()))
-                .setAuditStatus(StrUtil.blankToDefault(reqVO.getAuditStatus(), AigcAssetAuditStatusEnum.PENDING.getCode()))
+                .setAuditStatus(
+                        StrUtil.blankToDefault(reqVO.getAuditStatus(), AigcAssetAuditStatusEnum.PENDING.getCode()))
                 .setStatus(AigcAssetStatusEnum.NORMAL.getCode())
                 .setViewCount(0)
                 .setDownloadCount(0)
@@ -116,12 +117,14 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     }
 
     @Override
-    public Long uploadAsset(Long userId, String assetType, String title, String fileName, String mimeType, byte[] content) {
+    public Long uploadAsset(Long userId, String assetType, String title, String fileName, String mimeType,
+            byte[] content) {
         if (content == null || content.length == 0) {
             throw exception(ASSET_FILE_EMPTY);
         }
         validateFileSize(content.length);
-        FileCreateRespDTO file = fileApi.createFileV2(content, uniqueAssetStorageFileName(fileName, mimeType), "aigc/asset", mimeType);
+        FileCreateRespDTO file = fileApi.createFileV2(content, uniqueAssetStorageFileName(fileName, mimeType),
+                "aigc/asset", mimeType);
         AigcAssetSaveReqVO reqVO = new AigcAssetSaveReqVO()
                 .setUserId(userId)
                 .setAssetType(assetType)
@@ -130,7 +133,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setVisibility(AigcAssetVisibilityEnum.PRIVATE.getCode())
                 .setAuditStatus(AigcAssetAuditStatusEnum.PENDING.getCode());
         Long assetId = createAsset(reqVO);
-        assetFileMapper.insert(buildAssetFileDO(assetId, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null, null, null, null));
+        assetFileMapper.insert(
+                buildAssetFileDO(assetId, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null, null, null, null));
         return assetId;
     }
 
@@ -140,14 +144,19 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         if (!AigcAssetTypeEnum.VIDEO.getCode().equals(videoAsset.getAssetType())) {
             throw exception(ASSET_FILE_TYPE_UNSUPPORTED);
         }
-        AigcAssetFileDO videoFile = assetFileMapper.selectByAssetIdAndRole(videoAssetId, AigcAssetFileRoleEnum.ORIGINAL.getCode());
+        AigcAssetFileDO videoFile = assetFileMapper.selectByAssetIdAndRole(videoAssetId,
+                AigcAssetFileRoleEnum.ORIGINAL.getCode());
         if (videoFile == null) {
             throw exception(ASSET_FILE_EMPTY);
         }
-        AigcAssetAccessUrlRespDTO accessUrl = getAccessUrl(videoAsset, videoFile, AigcAssetAccessTypeEnum.DOWNLOAD.getCode(), userId);
-        byte[] frameContent = captureVideoFrameBytes(accessUrl.getUrl(), resolveCaptureSecond(capturedAt, timeSec, videoFile.getDuration()));
-        String frameTitle = StrUtil.blankToDefault(title, StrUtil.blankToDefault(videoAsset.getTitle(), "Video") + " 截帧.png");
-        return uploadAsset(userId, AigcAssetTypeEnum.IMAGE.getCode(), frameTitle, ensurePngFileName(frameTitle), "image/png", frameContent);
+        AigcAssetAccessUrlRespDTO accessUrl = getAccessUrl(videoAsset, videoFile,
+                AigcAssetAccessTypeEnum.DOWNLOAD.getCode(), userId);
+        byte[] frameContent = captureVideoFrameBytes(accessUrl.getUrl(),
+                resolveCaptureSecond(capturedAt, timeSec, videoFile.getDuration()));
+        String frameTitle = StrUtil.blankToDefault(title,
+                StrUtil.blankToDefault(videoAsset.getTitle(), "Video") + " 截帧.png");
+        return uploadAsset(userId, AigcAssetTypeEnum.IMAGE.getCode(), frameTitle, ensurePngFileName(frameTitle),
+                "image/png", frameContent);
     }
 
     @Override
@@ -163,11 +172,15 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             validateTaskExists(reqDTO.getTaskId());
         }
         AigcAssetDO asset = BeanUtils.toBean(reqDTO, AigcAssetDO.class)
-                .setAssetNo(generateAssetNo())
-                .setSourceType(StrUtil.blankToDefault(reqDTO.getSourceType(), AigcAssetSourceTypeEnum.GENERATE.getCode()))
-                .setBizType(StrUtil.blankToDefault(reqDTO.getBizType(), reqDTO.getTaskId() == null ? null : AigcAssetBizTypeEnum.TASK.getCode()))
-                .setVisibility(StrUtil.blankToDefault(reqDTO.getVisibility(), AigcAssetVisibilityEnum.PRIVATE.getCode()))
-                .setAuditStatus(StrUtil.blankToDefault(reqDTO.getAuditStatus(), AigcAssetAuditStatusEnum.PENDING.getCode()))
+                .setAssetNo(generateAssetNo(reqDTO.getUserId()))
+                .setSourceType(
+                        StrUtil.blankToDefault(reqDTO.getSourceType(), AigcAssetSourceTypeEnum.GENERATE.getCode()))
+                .setBizType(StrUtil.blankToDefault(reqDTO.getBizType(),
+                        reqDTO.getTaskId() == null ? null : AigcAssetBizTypeEnum.TASK.getCode()))
+                .setVisibility(
+                        StrUtil.blankToDefault(reqDTO.getVisibility(), AigcAssetVisibilityEnum.PRIVATE.getCode()))
+                .setAuditStatus(
+                        StrUtil.blankToDefault(reqDTO.getAuditStatus(), AigcAssetAuditStatusEnum.PENDING.getCode()))
                 .setStatus(AigcAssetStatusEnum.NORMAL.getCode())
                 .setViewCount(0)
                 .setDownloadCount(0)
@@ -247,7 +260,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         List<AigcAssetDO> assets = getAssetList(ids);
         Map<Long, List<AigcAssetFileDO>> fileMap = assetFileMapper.selectListByAssetIds(ids).stream()
                 .collect(Collectors.groupingBy(AigcAssetFileDO::getAssetId));
-        return assets.stream().map(asset -> buildAssetRespDTO(asset, fileMap.get(asset.getId()), userId)).collect(Collectors.toList());
+        return assets.stream().map(asset -> buildAssetRespDTO(asset, fileMap.get(asset.getId()), userId))
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -534,7 +548,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     }
 
     private AigcAssetCreateRespDTO buildCreateRespDTO(AigcAssetDO asset) {
-        AigcAssetFileDO file = assetFileMapper.selectByAssetIdAndRole(asset.getId(), AigcAssetFileRoleEnum.ORIGINAL.getCode());
+        AigcAssetFileDO file = assetFileMapper.selectByAssetIdAndRole(asset.getId(),
+                AigcAssetFileRoleEnum.ORIGINAL.getCode());
         return buildCreateRespDTO(asset, file);
     }
 
@@ -553,8 +568,10 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setFilePath(file.getFilePath());
     }
 
-    private String generateAssetNo() {
-        return "AST" + UUID.fastUUID().toString(true).toUpperCase();
+    private String generateAssetNo(Long userId) {
+        String uuid = UUID.fastUUID().toString(true).toUpperCase();
+        userId += 15;
+        return "AST" + userId + uuid.substring(0, 5);
     }
 
     private AigcAssetFileDO prepareFile(AigcAssetCreateReqDTO reqDTO) {
@@ -572,9 +589,12 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             throw exception(ASSET_DOWNLOAD_FAILED);
         }
         validateFileSize(content.length);
-        FileCreateRespDTO file = fileApi.createFileV2(content, uniqueAssetStorageFileName(reqDTO.getTitle(), reqDTO.getMimeType()), "aigc/asset", reqDTO.getMimeType());
+        FileCreateRespDTO file = fileApi.createFileV2(content,
+                uniqueAssetStorageFileName(reqDTO.getTitle(), reqDTO.getMimeType()), "aigc/asset",
+                reqDTO.getMimeType());
         reqDTO.setFileSize((long) content.length);
-        return buildAssetFileDO(null, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, reqDTO.getOriginUrl(), reqDTO.getWidth(), reqDTO.getHeight(), reqDTO.getDuration());
+        return buildAssetFileDO(null, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, reqDTO.getOriginUrl(),
+                reqDTO.getWidth(), reqDTO.getHeight(), reqDTO.getDuration());
     }
 
     private byte[] downloadOriginFile(AigcAssetCreateReqDTO reqDTO) {
@@ -588,7 +608,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         try (HttpResponse response = AigcAssetProxyUtils.execute(request, reqDTO)) {
             if (!response.isOk()) {
                 log.warn("[downloadOriginFile][originUrl({}) proxy({}:{}) HTTP 下载失败 status({}) body({})]",
-                        reqDTO.getOriginUrl(), reqDTO.getProxyHost(), reqDTO.getProxyPort(), response.getStatus(), StrUtil.maxLength(response.body(), 512));
+                        reqDTO.getOriginUrl(), reqDTO.getProxyHost(), reqDTO.getProxyPort(), response.getStatus(),
+                        StrUtil.maxLength(response.body(), 512));
                 throw exception(ASSET_DOWNLOAD_FAILED);
             }
             return response.bodyBytes();
@@ -606,7 +627,9 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             ProcessBuilder processBuilder = new ProcessBuilder(
                     "curl",
                     "--socks5-hostname", reqDTO.getProxyHost() + ":" + reqDTO.getProxyPort(),
-                    "--proxy-user", StrUtil.blankToDefault(reqDTO.getProxyUsername(), "") + ":" + StrUtil.blankToDefault(reqDTO.getProxyPassword(), ""),
+                    "--proxy-user",
+                    StrUtil.blankToDefault(reqDTO.getProxyUsername(), "") + ":"
+                            + StrUtil.blankToDefault(reqDTO.getProxyPassword(), ""),
                     "--location",
                     "--fail",
                     "--silent",
@@ -627,7 +650,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             }
             if (process.exitValue() != 0) {
                 log.warn("[downloadOriginFileByCurl][originUrl({}) proxy({}:{}) curl 下载失败 exit({}) error({})]",
-                        reqDTO.getOriginUrl(), reqDTO.getProxyHost(), reqDTO.getProxyPort(), process.exitValue(), StrUtil.maxLength(stderr, 512));
+                        reqDTO.getOriginUrl(), reqDTO.getProxyHost(), reqDTO.getProxyPort(), process.exitValue(),
+                        StrUtil.maxLength(stderr, 512));
                 throw exception(ASSET_DOWNLOAD_FAILED);
             }
             return Files.readAllBytes(outputFile);
@@ -650,7 +674,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 && Boolean.TRUE.equals(reqDTO.getProxyEnabled())
                 && StrUtil.isNotBlank(reqDTO.getProxyHost())
                 && reqDTO.getProxyPort() != null
-                && ("SOCKS5".equalsIgnoreCase(reqDTO.getProxyProtocol()) || "SOCKS5H".equalsIgnoreCase(reqDTO.getProxyProtocol()));
+                && ("SOCKS5".equalsIgnoreCase(reqDTO.getProxyProtocol())
+                        || "SOCKS5H".equalsIgnoreCase(reqDTO.getProxyProtocol()));
     }
 
     private AigcAssetFileDO prepareDataUrlFile(AigcAssetCreateReqDTO reqDTO) {
@@ -659,7 +684,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         if (commaIndex <= 5 || !dataUrl.substring(0, commaIndex).contains(";base64")) {
             throw exception(ASSET_DOWNLOAD_FAILED);
         }
-        String mimeType = StrUtil.blankToDefault(reqDTO.getMimeType(), dataUrl.substring("data:".length(), dataUrl.indexOf(";base64")));
+        String mimeType = StrUtil.blankToDefault(reqDTO.getMimeType(),
+                dataUrl.substring("data:".length(), dataUrl.indexOf(";base64")));
         byte[] content;
         try {
             content = Base64.getDecoder().decode(dataUrl.substring(commaIndex + 1));
@@ -671,13 +697,15 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         }
         validateFileSize(content.length);
         String fileExt = StrUtil.blankToDefault(reqDTO.getFileExt(), fileExtFromMimeType(mimeType));
-        String fileName = uniqueAssetStorageFileName(StrUtil.blankToDefault(reqDTO.getTitle(), "aigc-asset") + "." + fileExt, mimeType);
+        String fileName = uniqueAssetStorageFileName(
+                StrUtil.blankToDefault(reqDTO.getTitle(), "aigc-asset") + "." + fileExt, mimeType);
         FileCreateRespDTO file = fileApi.createFileV2(content, fileName, "aigc/asset", mimeType);
         reqDTO.setFileSize((long) content.length);
         reqDTO.setMimeType(mimeType);
         reqDTO.setFileExt(fileExt);
         reqDTO.setOriginUrl(null);
-        return buildAssetFileDO(null, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null, reqDTO.getWidth(), reqDTO.getHeight(), reqDTO.getDuration())
+        return buildAssetFileDO(null, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null, reqDTO.getWidth(),
+                reqDTO.getHeight(), reqDTO.getDuration())
                 .setFileExt(fileExt);
     }
 
@@ -701,7 +729,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     }
 
     private AigcAssetFileDO buildAssetFileDO(Long assetId, String fileRole, FileCreateRespDTO file, String originUrl,
-                                            Integer width, Integer height, java.math.BigDecimal duration) {
+            Integer width, Integer height, java.math.BigDecimal duration) {
         boolean publicAccess = BooleanUtil.isTrue(file.getPublicAccess());
         return new AigcAssetFileDO()
                 .setAssetId(assetId)
@@ -720,7 +748,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setWidth(width)
                 .setHeight(height)
                 .setDuration(duration)
-                .setAccessMode(publicAccess ? AigcAssetAccessModeEnum.PUBLIC.getCode() : AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode())
+                .setAccessMode(publicAccess ? AigcAssetAccessModeEnum.PUBLIC.getCode()
+                        : AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode())
                 .setPublicUrl(publicAccess ? file.getUrl() : null)
                 .setStatus(AigcAssetStatusEnum.NORMAL.getCode());
     }
@@ -769,7 +798,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             return respDTO.setFiles(Collections.emptyList());
         }
         List<AigcAssetFileRespDTO> fileRespDTOs = files.stream().map(file -> {
-            AigcAssetAccessUrlRespDTO accessUrl = getAccessUrl(asset, file, accessTypeForRole(file.getFileRole()), userId);
+            AigcAssetAccessUrlRespDTO accessUrl = getAccessUrl(asset, file, accessTypeForRole(file.getFileRole()),
+                    userId);
             return new AigcAssetFileRespDTO()
                     .setAssetFileId(file.getId())
                     .setFileRole(file.getFileRole())
@@ -789,15 +819,18 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         files.stream().filter(file -> AigcAssetFileRoleEnum.ORIGINAL.getCode().equals(file.getFileRole())).findFirst()
                 .ifPresent(file -> fillLegacyFileFields(respDTO, file, fileRespDTOs));
         files.stream().filter(file -> AigcAssetFileRoleEnum.COVER.getCode().equals(file.getFileRole())).findFirst()
-                .ifPresent(file -> fileRespDTOs.stream().filter(resp -> Objects.equals(resp.getAssetFileId(), file.getId())).findFirst()
+                .ifPresent(file -> fileRespDTOs.stream()
+                        .filter(resp -> Objects.equals(resp.getAssetFileId(), file.getId())).findFirst()
                         .ifPresent(resp -> respDTO.setCoverUrl(resp.getAccessUrl())));
         files.stream().filter(file -> AigcAssetFileRoleEnum.THUMBNAIL.getCode().equals(file.getFileRole())).findFirst()
-                .ifPresent(file -> fileRespDTOs.stream().filter(resp -> Objects.equals(resp.getAssetFileId(), file.getId())).findFirst()
+                .ifPresent(file -> fileRespDTOs.stream()
+                        .filter(resp -> Objects.equals(resp.getAssetFileId(), file.getId())).findFirst()
                         .ifPresent(resp -> respDTO.setThumbnailUrl(resp.getAccessUrl())));
         return respDTO;
     }
 
-    private void fillLegacyFileFields(AigcAssetRespDTO respDTO, AigcAssetFileDO file, List<AigcAssetFileRespDTO> fileRespDTOs) {
+    private void fillLegacyFileFields(AigcAssetRespDTO respDTO, AigcAssetFileDO file,
+            List<AigcAssetFileRespDTO> fileRespDTOs) {
         respDTO.setFileId(file.getFileId())
                 .setMimeType(file.getMimeType())
                 .setFileExt(file.getFileExt())
@@ -816,7 +849,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         return AigcAssetAccessTypeEnum.PREVIEW.getCode();
     }
 
-    private AigcAssetAccessUrlRespDTO getAccessUrl(AigcAssetDO asset, AigcAssetFileDO file, String accessType, Long userId) {
+    private AigcAssetAccessUrlRespDTO getAccessUrl(AigcAssetDO asset, AigcAssetFileDO file, String accessType,
+            Long userId) {
         if (!Objects.equals(AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode(), file.getAccessMode())) {
             return new AigcAssetAccessUrlRespDTO()
                     .setAssetId(asset.getId())
@@ -859,7 +893,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
 
     private AigcAssetAccessUrlRespDTO generateAccessUrl(AigcAssetDO asset, AigcAssetFileDO file, String accessType) {
         Integer expireSeconds = AigcAssetAccessTypeEnum.getExpireSeconds(accessType);
-        FilePresignRespDTO presign = fileApi.presignGetUrlV2(file.getStorageConfigId(), file.getFilePath(), expireSeconds).getCheckedData();
+        FilePresignRespDTO presign = fileApi
+                .presignGetUrlV2(file.getStorageConfigId(), file.getFilePath(), expireSeconds).getCheckedData();
         return new AigcAssetAccessUrlRespDTO()
                 .setAssetId(asset.getId())
                 .setAssetFileId(file.getId())
@@ -874,13 +909,15 @@ public class AigcAssetServiceImpl implements AigcAssetService {
 
     private String buildAccessUrlCacheKey(AigcAssetFileDO file, String accessType, Long userId) {
         Long tenantId = TenantContextHolder.getTenantId() == null ? 0L : TenantContextHolder.getTenantId();
-        String userKey = AigcAssetAccessTypeEnum.DOWNLOAD.getCode().equals(accessType) ? String.valueOf(userId) : "PUBLIC";
+        String userKey = AigcAssetAccessTypeEnum.DOWNLOAD.getCode().equals(accessType) ? String.valueOf(userId)
+                : "PUBLIC";
         return String.format(ASSET_ACCESS_URL, tenantId, file.getId(), file.getFileRole(), accessType, userKey);
     }
 
     private String buildAccessUrlLockKey(AigcAssetFileDO file, String accessType, Long userId) {
         Long tenantId = TenantContextHolder.getTenantId() == null ? 0L : TenantContextHolder.getTenantId();
-        String userKey = AigcAssetAccessTypeEnum.DOWNLOAD.getCode().equals(accessType) ? String.valueOf(userId) : "PUBLIC";
+        String userKey = AigcAssetAccessTypeEnum.DOWNLOAD.getCode().equals(accessType) ? String.valueOf(userId)
+                : "PUBLIC";
         return String.format(ASSET_ACCESS_URL_LOCK, tenantId, file.getId(), file.getFileRole(), accessType, userKey);
     }
 

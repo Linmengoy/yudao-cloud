@@ -80,9 +80,39 @@
 - 服务端存储层：项目、成员、快照、操作日志、资产引用。
 - AIGC 编排层：文本、图片、视频任务调度、计费、审核、结果入库、节点状态推送。
 
+### 3.3 生产存储分层目标
+
+逻辑表名以下按 `canvas_*` 描述；落到当前代码库时继续映射到已有的 `aigc_canvas_*` 表前缀。当前实现仍兼容小型 snapshot 直接写入 MySQL JSON 字段，生产目标按以下分层收敛：
+
+MySQL：
+
+- `canvas_project`：项目主元数据、封面资产 ID、当前版本、最新快照 ID、节点数和素材数等可检索字段。
+- `canvas_snapshot` 元数据：只保存快照版本、存储位置、对象 key、大小、hash、创建人和创建时间等索引信息；大体积 snapshot body 不作为主存储放在 MySQL。
+- `canvas_operation_log`：最终持久化 operation，用于审计、恢复、差量同步和快照压缩。
+- `canvas_asset_ref`：节点与资产的稳定引用关系，用于权限校验、封面推导、素材统计和私有 URL 刷新。
+
+OSS / MinIO：
+
+- 大体积 snapshot JSON：节点、边、viewport、必要的轻量节点数据以 JSON 或压缩 JSON 对象保存。
+- 历史 snapshot 包：按项目、时间或版本范围归档旧 snapshot body 和已压缩 operation，降低在线表膨胀。
+
+Redis：
+
+- 协作房间热状态：在线成员、热版本、当前画布热状态、短期增量索引等。
+- pending operation / presence：未确认或待落盘操作、幂等键、光标/选区/在线状态等临时协作数据。
+
+Snapshot 内联/对象存储判定策略：
+
+- 服务端先生成已清洗的 snapshot body：剥离 `previewUrl`、`outputPreviewUrl`、`videoUrl`、`assetUrlExpireTime`、`dataUrl`、`blob:` 等运行时或大媒体字段，只保留节点、边、viewport 和稳定资产 ID。
+- 默认内联 MySQL 条件：清洗后的 UTF-8 JSON body `<= 512KB`，节点数 `<= 200`，边数 `<= 500`，且单个节点 data JSON `<= 64KB`。
+- 只要任一条件超过阈值，就写 OSS / MinIO，并在 `canvas_snapshot` 写入 `storage_type`、`snapshot_object_key`、`snapshot_size`、`snapshot_hash` 等元数据。
+- 清洗后的 JSON body `>= 2MB` 时强制 OSS / MinIO，不允许通过配置回退到 MySQL 内联，避免大 JSON 字段影响在线查询、备份和恢复。
+- 历史 snapshot 包默认进入 OSS / MinIO；MySQL 只保留最新可用 snapshot 元数据和必要的索引字段。
+- 阈值做成配置项，例如 `canvas.snapshot.inlineMaxBytes`、`canvas.snapshot.inlineMaxNodes`、`canvas.snapshot.inlineMaxEdges`、`canvas.snapshot.inlineMaxNodeBytes`，便于压测后调整。
+
 ## 4. 数据模型设计
 
-第 4 章到第 20 章默认描述当前同步 MySQL 路线；第 21 章为生产增强路线。启用 Redis 热日志后，operation 的实时接收、版本分配和短期补拉由 Redis 承担，MySQL 表作为最终持久化、恢复和审计来源。
+第 4 章到第 20 章默认描述当前同步 MySQL 路线；第 21 章为生产增强路线。启用 Redis 热日志后，operation 的实时接收、版本分配、pending 队列和短期补拉由 Redis 承担，MySQL 表作为最终持久化、恢复和审计来源；大体积 snapshot JSON 进入 OSS / MinIO，`canvas_snapshot` 只保留元数据和兼容字段。
 
 ### 4.1 canvas_project
 
@@ -117,16 +147,20 @@
 
 ### 4.3 canvas_snapshot
 
-保存画布快照，用于初始化和操作日志压缩。
+保存画布快照元数据，用于初始化、恢复和操作日志压缩。当前小型快照可继续兼容 `nodes_json`、`edges_json`、`viewport_json` 直接落 MySQL；当快照体积变大或进入生产多项目协作时，应把完整 snapshot JSON 写入 OSS / MinIO，MySQL 只保存对象位置和校验信息。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | id | bigint | 快照 ID |
 | project_id | bigint | 项目 ID |
 | version | bigint | 快照对应版本 |
-| nodes_json | json/text | React Flow 节点列表 |
-| edges_json | json/text | React Flow 边列表 |
-| viewport_json | json/text | 视口状态 |
+| storage_type | varchar | `INLINE` / `OSS` / `MINIO`，标记快照 body 存储位置 |
+| snapshot_object_key | varchar | OSS / MinIO 中的大体积 snapshot JSON 对象 key |
+| snapshot_size | bigint | 快照 body 字节数，用于阈值判断和排障 |
+| snapshot_hash | varchar | 快照 body hash，用于完整性校验和重复归档判断 |
+| nodes_json | json/text | 兼容字段：小型快照或旧数据的 React Flow 节点列表 |
+| edges_json | json/text | 兼容字段：小型快照或旧数据的 React Flow 边列表 |
+| viewport_json | json/text | 兼容字段：小型快照或旧数据的视口状态 |
 | created_by | bigint | 创建人，系统快照可为空 |
 | create_time | datetime | 创建时间 |
 
@@ -716,6 +750,7 @@ CREATE TABLE canvas_invite_link (
 | GET | `/app-api/canvas/projects/{id}/members` | 成员列表 |
 | PUT | `/app-api/canvas/projects/{id}/members/{memberId}` | 修改成员角色 |
 | DELETE | `/app-api/canvas/projects/{id}/members/{memberId}` | 移除成员 |
+| GET | `/app-api/canvas/projects/{id}/assets` | 分页查询项目内资产，用于项目显示图选择、素材统计和资产引用排障 |
 | POST | `/app-api/canvas/projects/{id}/assets` | 上传或绑定资产 |
 | POST | `/app-api/canvas/projects/{id}/nodes/{nodeId}/run` | 执行节点生成任务 |
 
@@ -725,6 +760,8 @@ CREATE TABLE canvas_invite_link (
 - 如果项目历史数据缺少 `cover_asset_id`，服务端会从最新 snapshot + 后续 operation 重建的 image/sketch 节点，或 `aigc_canvas_asset_ref` 资产引用中推导首个图片资产 ID。
 - 推导到资产 ID 后，服务端按 `project_id + cover_asset_id is null` 条件回写 `aigc_canvas_project.cover_asset_id`；后续读取直接使用项目字段，避免每次进入项目都重复走节点/资产引用兜底分支。
 - 私有 OSS/S3 场景下，封面 URL 只作为本次响应的运行时访问地址，`cover_asset_id` 才是长期持久字段。
+- 项目页在删除按钮旁展示图片图标，点击打开“修改项目显示图”弹窗；弹窗左栏分页展示项目内图片资源，右栏分页展示当前用户所有图片资源。
+- 保存项目显示图时只提交 `coverAssetId`，服务端校验该图片资产属于当前用户或已经被该项目引用；禁止把临时签名 URL、`coverUrl` 或节点预览 URL 当作项目封面身份保存。
 
 ### 11.1.1 项目回收站
 
@@ -1408,9 +1445,10 @@ P2：长期增强。
 
 核心分工：
 
-- Redis：热 operation 日志、项目热版本、幂等键、短期增量同步、当前画布热状态、presence 和在线状态。
-- MySQL：最终 operation log、项目 currentVersion、snapshot、资产引用、成员权限、审计日志。
-- Worker：Redis 到 MySQL 的周期落盘、snapshot 压缩、异常恢复和积压监控。
+- MySQL：`canvas_project`、`canvas_snapshot` 元数据、`canvas_operation_log`、`canvas_asset_ref`，承接最终持久化、恢复、审计、权限和统计。
+- OSS / MinIO：大体积 snapshot JSON、历史 snapshot 包和旧版本归档，避免把长 JSON 长期压在在线 MySQL 表里。
+- Redis：协作房间热状态、热 operation、项目热版本、幂等键、pending operation、presence 和短期增量同步。
+- Worker：Redis 到 MySQL 的周期落盘、snapshot body 写入 OSS / MinIO、snapshot 元数据写入 MySQL、异常恢复和积压监控。
 - 前端：本地乐观更新、pending/accepted/persisted 状态管理、重连补拉和必要时补交 operation。
 
 ### 21.3 版本模型
@@ -1572,8 +1610,11 @@ snapshotWorker(projectId)
   -> 读取 snapshotVersion 和 persistedVersion
   -> 判断 persistedVersion - snapshotVersion 是否超过阈值
   -> 从 Redis state 或 MySQL snapshot + operation 重建当前画布
-  -> 写入 aigc_canvas_snapshot
+  -> 小型 snapshot 可内联写入 aigc_canvas_snapshot
+  -> 大体积 snapshot JSON 写入 OSS / MinIO
+  -> aigc_canvas_snapshot 写入版本、对象 key、大小、hash 等元数据
   -> 更新项目 latest_snapshot_id 和 snapshotVersion
+  -> 将旧 snapshot body 或历史 snapshot 包归档到 OSS / MinIO
   -> 归档或清理 snapshotVersion 之前的旧 operation
   -> 清理 Redis 中不再需要的热日志
 ```
@@ -1583,6 +1624,7 @@ snapshotWorker(projectId)
 - 每 300 到 500 条 operation 生成一次 snapshot。
 - 或每 5 到 10 分钟生成一次 snapshot。
 - 或项目停止编辑 30 秒后生成一次 snapshot。
+- snapshot body 超过配置阈值时必须走 OSS / MinIO 对象存储；MySQL 只保留 `canvas_snapshot` 元数据，避免 JSON 大字段拖慢项目列表、差量查询和备份恢复。
 
 快照生成失败不能阻塞实时编辑链路，只能告警并稍后重试。
 
