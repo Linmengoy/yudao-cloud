@@ -60,6 +60,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -541,11 +542,82 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     }
 
     private String buildRequestSummary(AigcGenerateRecordDO record) {
+        JSONObject params = parseInputParamsJson(record.getInputParams());
         return new JSONObject()
                 .set("generateMode", record.getGenerateMode())
                 .set("modelCode", record.getModelCode())
                 .set("prompt", maskPrompt(record.getPrompt()))
+                .set("inputImageCount", countInputImages(params))
+                .set("imagePayloadMode", resolveImagePayloadMode(record, params))
+                .set("imagePayloadBytes", estimateInputImagePayloadBytes(params))
                 .toString();
+    }
+
+    private JSONObject parseInputParamsJson(String inputParams) {
+        if (StrUtil.isBlank(inputParams) || !JSONUtil.isTypeJSON(inputParams)) {
+            return JSONUtil.createObj();
+        }
+        return JSONUtil.parseObj(inputParams);
+    }
+
+    private int countInputImages(JSONObject params) {
+        List<String> images = collectInputImages(params);
+        return images.size();
+    }
+
+    private String resolveImagePayloadMode(AigcGenerateRecordDO record, JSONObject params) {
+        if (countInputImages(params) <= 0) {
+            return null;
+        }
+        if ("grok".equalsIgnoreCase(record.getProviderCode()) && "grok-imagine-image".equalsIgnoreCase(record.getModelCode())) {
+            return "json.image";
+        }
+        if ("grok".equalsIgnoreCase(record.getProviderCode()) && "IMAGE_TO_IMAGE".equalsIgnoreCase(record.getGenerateMode())) {
+            return "multipart.image";
+        }
+        return "provider.reference";
+    }
+
+    private long estimateInputImagePayloadBytes(JSONObject params) {
+        long total = 0L;
+        for (String image : collectInputImages(params)) {
+            if (StrUtil.startWithIgnoreCase(image, "data:")) {
+                total += image.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            }
+        }
+        return total;
+    }
+
+    private List<String> collectInputImages(JSONObject params) {
+        List<String> images = new ArrayList<>();
+        addInputImage(images, params.getStr("image_url"));
+        addInputImage(images, params.getStr("image"));
+        addArrayImages(images, params, "referenceImages");
+        addArrayImages(images, params, "inputImageUrls");
+        JSONArray inputImages = params.getJSONArray("inputImages");
+        if (inputImages != null) {
+            for (Object item : inputImages) {
+                JSONObject image = JSONUtil.parseObj(item);
+                addInputImage(images, StrUtil.blankToDefault(image.getStr("url"), image.getStr("dataUrl")));
+            }
+        }
+        return images;
+    }
+
+    private void addArrayImages(List<String> images, JSONObject params, String key) {
+        JSONArray array = params.getJSONArray(key);
+        if (array == null) {
+            return;
+        }
+        for (Object item : array) {
+            addInputImage(images, String.valueOf(item));
+        }
+    }
+
+    private void addInputImage(List<String> images, String image) {
+        if (StrUtil.isNotBlank(image) && !images.contains(image)) {
+            images.add(image);
+        }
     }
 
     private String buildResponseSummary(AigcProviderSubmitRespDTO resp) {
