@@ -13,7 +13,7 @@ import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitC
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
-import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, type PromptMentionOption } from "./PromptMentionInput";
+import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, useComposerWheelPan, type PromptMentionOption } from "./PromptMentionInput";
 
 type TextNodeProps = NodeProps<Node<TextNodeData, "text">>;
 
@@ -23,7 +23,8 @@ const DEFAULT_MODEL = "Gemini 3.1 Flash Lite";
 const COMPOSER_WIDTH = 620;
 
 export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProps) {
-  const { setNodes, getNodes, getEdges } = useReactFlow();
+  const { setNodes, getNodes, getEdges, getViewport, setViewport } = useReactFlow();
+  const composerWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
   const zoom = useStore((s) => s.transform[2] || 1);
   const selectedNodeCount = useStore((s) => s.nodes.filter((node) => node.selected).length);
   const referenceImagesSignature = useStore((s) => (s.edges as AppEdge[])
@@ -350,6 +351,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
             animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
             exit={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
             transition={{ duration: 0.18, ease: "easeOut" }}
+            ref={composerWheelRef}
             className="nodrag nowheel absolute rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
             style={{
               width: COMPOSER_WIDTH,
@@ -366,6 +368,9 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
             disabled={isGenerating}
             placeholder="Describe the text you want to generate or rewrite"
             minHeightClassName="min-h-[110px]"
+            onSubmit={() => {
+              if (data.prompt.trim() && !isGenerating) void handleGenerate();
+            }}
           />
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-border-warm pt-3">
             <div className="flex items-center gap-2 text-sm font-medium text-charcoal">

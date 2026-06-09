@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, Check, ChevronLeft, ChevronRight, FolderPlus, ImageIcon, Search, Trash2, X } from "lucide-react";
+import { Archive, Check, ChevronLeft, ChevronRight, FolderPlus, ImageIcon, MoreVertical, Pencil, Search, Trash2, X } from "lucide-react";
 import { getMyAssetPage } from "@/features/assets/asset-api";
 import { getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import type { AigcAsset } from "@/features/assets/asset-types";
@@ -107,18 +107,6 @@ function canUpdateProjectCover(project: ProjectListItem) {
 }
 
 function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
-  useEffect(() => {
-    if (!project.coverUrl || !onLoad) return;
-    const image = new window.Image();
-    image.onload = onLoad;
-    image.onerror = onLoad;
-    image.src = project.coverUrl;
-    return () => {
-      image.onload = null;
-      image.onerror = null;
-    };
-  }, [onLoad, project.coverUrl]);
-
   if (project.coverUrl) {
     return (
       <div className="bg-muted">
@@ -134,8 +122,8 @@ function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: 
     );
   }
   return (
-    <div className="flex aspect-[4/3] items-center justify-center bg-muted px-4 text-center text-charcoal">
-      <span className="line-clamp-3 text-sm font-semibold leading-snug">{project.name}</span>
+    <div className="flex aspect-[4/3] items-center justify-center bg-muted text-muted-gray">
+      <ImageIcon className="size-10" strokeWidth={1.6} />
     </div>
   );
 }
@@ -249,8 +237,10 @@ export default function ProjectsPage() {
   const [isLoading, setIsLoading] = useState(() => !initialPageCache);
   const [isCreating, setIsCreating] = useState(false);
   const [statusMessage, setStatusMessage] = useState(() => initialPageCache?.statusMessage ?? "");
+  const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const muuriRef = useRef<Muuri | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const projectLayoutKey = useMemo(() => projects.map((project) => project.id).join("|"), [projects]);
 
   const refreshProjects = useCallback(async (search = debouncedQuery, nextPageNo = pageNo) => {
@@ -346,6 +336,23 @@ export default function ProjectsPage() {
   const refreshProjectWallLayout = useCallback(() => {
     muuriRef.current?.refreshItems().layout();
   }, []);
+
+  useEffect(() => {
+    if (!openMenuProjectId) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      setOpenMenuProjectId(null);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpenMenuProjectId(null);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openMenuProjectId]);
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
   const projectAssetsPageCount = useMemo(() => Math.max(1, Math.ceil(projectAssetsTotal / COVER_ASSET_PAGE_SIZE)), [projectAssetsTotal]);
@@ -445,6 +452,7 @@ export default function ProjectsPage() {
 
   function startRename(project: ProjectListItem) {
     if (!canRenameProject(project) || savingProjectId) return;
+    setOpenMenuProjectId(null);
     setEditingProjectId(project.id);
     setEditingProjectName(project.name);
   }
@@ -471,6 +479,7 @@ export default function ProjectsPage() {
       setProjects((items) => items.map((item) => item.id === project.id ? { ...item, name: nextName } : item));
       setStatusMessage("");
       cancelRename();
+      window.setTimeout(refreshProjectWallLayout, 0);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "项目名称修改失败，请稍后再试。");
     } finally {
@@ -480,6 +489,7 @@ export default function ProjectsPage() {
 
   function openCoverPicker(project: ProjectListItem) {
     if (!canUpdateProjectCover(project) || savingCoverProjectId) return;
+    setOpenMenuProjectId(null);
     setCoverProject(project);
     setSelectedCoverAssetId(null);
     setProjectAssetsPageNo(1);
@@ -591,80 +601,134 @@ export default function ProjectsPage() {
           {projects.map((project) => (
             <div
               key={project.id}
-              className="project-grid-item absolute w-full p-2 sm:w-1/2 lg:w-1/3 xl:w-1/4"
+              className="project-grid-item absolute w-full p-2 sm:w-1/2 lg:w-1/4"
             >
-              <div className="group relative overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]">
-                <Link href={`/canvas?projectId=${encodeURIComponent(project.id)}`} className="block">
-                  <ProjectCover project={project} onLoad={refreshProjectWallLayout} />
-                </Link>
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      {editingProjectId === project.id ? (
-                        <input
-                          value={editingProjectName}
-                          autoFocus
-                          disabled={savingProjectId === project.id}
-                          onChange={(event) => setEditingProjectName(event.target.value)}
-                          onBlur={() => submitRename(project)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") submitRename(project);
-                            if (event.key === "Escape") cancelRename();
-                          }}
-                          className="w-full rounded-md border border-border-warm bg-background px-2 py-1 text-sm font-medium text-charcoal outline-none focus:border-[rgba(28,28,28,0.45)] disabled:opacity-60"
-                        />
-                      ) : (
+              <article className="group relative overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]">
+                <div className="relative overflow-hidden rounded-t-xl bg-muted">
+                  <Link
+                    href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
+                    className="block"
+                    aria-label={`打开项目 ${project.name}`}
+                  >
+                    <ProjectCover project={project} onLoad={refreshProjectWallLayout} />
+                  </Link>
+
+                  <div
+                    ref={openMenuProjectId === project.id ? menuRef : null}
+                    className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 has-[:focus-visible]:opacity-100"
+                  >
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setOpenMenuProjectId((value) => value === project.id ? null : project.id);
+                      }}
+                      className="inline-flex size-8 items-center justify-center rounded-full bg-charcoal/75 text-off-white shadow-sm backdrop-blur transition-colors hover:bg-charcoal"
+                      aria-label="项目详情菜单"
+                      aria-expanded={openMenuProjectId === project.id}
+                    >
+                      <MoreVertical className="size-4" />
+                    </button>
+
+                    {openMenuProjectId === project.id && (
+                      <div className="absolute right-0 top-10 z-20 w-36 overflow-hidden rounded-lg border border-border-warm bg-background py-1 text-sm text-charcoal shadow-[0_12px_32px_rgba(0,0,0,0.18)]">
                         <button
                           type="button"
                           onClick={() => startRename(project)}
                           disabled={!canRenameProject(project) || savingProjectId === project.id}
-                          className="block max-w-full truncate rounded-sm text-left text-sm font-medium text-charcoal outline-none hover:text-charcoal disabled:cursor-default disabled:hover:text-charcoal"
-                          title={canRenameProject(project) ? "点击修改项目名称" : project.name}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-45"
                         >
-                          {project.name}
+                          <Pencil className="size-3.5" />
+                          重命名项目
                         </button>
-                      )}
-                        <p className="mt-1 text-xs text-muted-gray">
-                          {projectRoleLabel(project)}
-                          {project.source === "local" ? " · 本机草稿" : ""}
-                        </p>
-                    </div>
-                    <div className="shrink-0 text-right text-xs text-muted-gray">
-                      <p>{project.nodeCount} 节点</p>
-                      <p className="mt-1">{project.assetCount} 素材</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-center justify-between gap-3">
-                    <p className="min-w-0 text-xs text-muted-gray">最近打开 {formatDate(project.lastOpenedAt)}</p>
-                    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      {canUpdateProjectCover(project) && (
                         <button
                           type="button"
                           onClick={() => openCoverPicker(project)}
-                          disabled={savingCoverProjectId === project.id}
-                          className="inline-flex size-7 items-center justify-center rounded-lg text-muted-gray transition-colors hover:bg-muted hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
-                          aria-label="修改项目显示图"
-                          title="修改项目显示图"
+                          disabled={!canUpdateProjectCover(project) || savingCoverProjectId === project.id}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           <ImageIcon className="size-3.5" />
+                          修改显示图
                         </button>
-                      )}
-                      {canDeleteProject(project) && (
                         <button
                           type="button"
-                          onClick={() => handleDelete(project)}
-                          disabled={deletingProjectId === project.id}
-                          className="inline-flex size-7 items-center justify-center rounded-lg text-destructive transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                          aria-label="删除项目"
-                          title={deletingProjectId === project.id ? "删除中" : "删除项目"}
+                          onClick={() => {
+                            setOpenMenuProjectId(null);
+                            void handleDelete(project);
+                          }}
+                          disabled={!canDeleteProject(project) || deletingProjectId === project.id}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-destructive transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           <Trash2 className="size-3.5" />
+                          删除
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {canUpdateProjectCover(project) && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        openCoverPicker(project);
+                      }}
+                      disabled={savingCoverProjectId === project.id}
+                      className="absolute bottom-2 right-2 inline-flex size-8 items-center justify-center rounded-full bg-charcoal/75 text-off-white opacity-0 shadow-sm backdrop-blur transition-colors hover:bg-charcoal group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-45"
+                      aria-label="替换项目封面图"
+                      title="替换封面图"
+                    >
+                      <ImageIcon className="size-4" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="px-3 pb-4 pt-4">
+                  {editingProjectId === project.id ? (
+                    <input
+                      value={editingProjectName}
+                      autoFocus
+                      disabled={savingProjectId === project.id}
+                      onChange={(event) => setEditingProjectName(event.target.value)}
+                      onBlur={() => submitRename(project)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") submitRename(project);
+                        if (event.key === "Escape") cancelRename();
+                      }}
+                      className="h-6 w-full rounded-md border border-border-warm bg-background px-1.5 py-0 text-base font-semibold leading-6 text-charcoal outline-none focus:border-[rgba(28,28,28,0.45)] disabled:opacity-60"
+                    />
+                  ) : (
+                    <div className="group/title flex min-w-0 items-center gap-1">
+                      <Link
+                        href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
+                        className="min-w-0 truncate text-base font-semibold text-charcoal outline-none hover:text-charcoal"
+                        title={project.name}
+                      >
+                        {project.name}
+                      </Link>
+                      {canRenameProject(project) && (
+                        <button
+                          type="button"
+                          onClick={() => startRename(project)}
+                          disabled={savingProjectId === project.id}
+                          className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-gray opacity-0 transition-colors hover:bg-muted hover:text-charcoal group-hover/title:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-45"
+                          aria-label="修改项目名称"
+                          title="修改项目名称"
+                        >
+                          <Pencil className="size-3.5" />
                         </button>
                       )}
                     </div>
-                  </div>
+                  )}
+                  <p className="mt-1 truncate text-sm text-muted-gray">
+                    修改于 {formatDate(project.lastOpenedAt)}
+                    {project.source === "local" ? " · 本机草稿" : ""}
+                    {project.source === "server" && project.role && project.role !== "owner" ? ` · ${projectRoleLabel(project)}` : ""}
+                  </p>
                 </div>
-              </div>
+              </article>
             </div>
           ))}
         </div>

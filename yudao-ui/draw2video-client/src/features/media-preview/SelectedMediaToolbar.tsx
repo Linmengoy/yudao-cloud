@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, Ref } from "react";
 import { motion } from "motion/react";
 import { Download, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ type SelectedMediaToolbarProps = {
   className?: string;
   style?: CSSProperties;
   uiScale?: number;
+  wheelRef?: Ref<HTMLDivElement>;
 };
 
 export function SelectedMediaToolbar({
@@ -21,9 +22,11 @@ export function SelectedMediaToolbar({
   className,
   style,
   uiScale = 1,
+  wheelRef,
 }: SelectedMediaToolbarProps) {
   return (
     <div
+      ref={wheelRef}
       className={cn(
         "nodrag nowheel absolute z-30 -translate-x-1/2",
         className

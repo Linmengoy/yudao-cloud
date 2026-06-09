@@ -1,7 +1,7 @@
 <template>
   <ContentWrap>
     <el-form ref="queryFormRef" :model="queryParams" :inline="true" class="-mb-15px" label-width="68px">
-      <el-form-item label="模型" prop="modelId"><el-select v-model="queryParams.modelId" class="!w-240px" clearable filterable placeholder="请选择模型"><el-option v-for="item in modelList" :key="item.id" :label="formatModelLabel(item)" :value="getModelOptionValue(item)" /></el-select></el-form-item>
+      <el-form-item label="模型" prop="modelId"><el-select v-model="queryParams.modelId" class="!w-240px" clearable filterable placeholder="请选择模型"><el-option v-for="item in modelList" :key="item.id" :label="getModelName(item)" :value="getModelOptionValue(item)" /></el-select></el-form-item>
       <el-form-item label="能力" prop="capability"><el-select v-model="queryParams.capability" class="!w-240px" clearable placeholder="请选择能力"><el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
       <el-form-item>
         <el-button @click="handleQuery"><Icon icon="ep:search" class="mr-5px" /> 搜索</el-button>
@@ -12,8 +12,11 @@
   </ContentWrap>
   <ContentWrap>
     <el-table v-loading="loading" :data="list" :stripe="true" :show-overflow-tooltip="true">
-      <el-table-column label="模型" align="center" prop="modelId" min-width="180">
-        <template #default="scope">{{ getModelLabel(scope.row.modelId) }}</template>
+      <el-table-column label="模型名称" align="center" prop="modelId" min-width="160">
+        <template #default="scope">{{ getModelNameById(scope.row.modelId) }}</template>
+      </el-table-column>
+      <el-table-column label="模型标识" align="center" prop="modelId" min-width="180">
+        <template #default="scope">{{ getModelIdentifierById(scope.row.modelId) }}</template>
       </el-table-column>
       <el-table-column label="能力" align="center" prop="capability" min-width="140"><template #default="scope">{{ getOptionLabel(AIGC_MODEL_CAPABILITIES, scope.row.capability) }}</template></el-table-column>
       <el-table-column label="计费单位" align="center" prop="billingUnit" min-width="110"><template #default="scope">{{ getOptionLabel(AIGC_BILLING_UNITS, scope.row.billingUnit) }}</template></el-table-column>
@@ -60,11 +63,16 @@ const loadModelList = async () => {
   const data = await AigcModelApi.getModelPage({ pageNo: 1, pageSize: 100 })
   modelList.value = data.list || []
 }
-const formatModelLabel = (model: AigcModelRespVO) => {
-  return [model.name, model.model].filter(Boolean).join(' / ') || `模型 ${model.id}`
+const getModelName = (model: AigcModelRespVO) => {
+  return model.name || `模型 ${model.id}`
 }
-const getModelLabel = (modelId?: number) => {
-  return formatModelLabel(modelList.value.find((item) => item.id === modelId) || { id: modelId })
+const getModelById = (modelId?: number) => modelList.value.find((item) => item.id === modelId)
+const getModelNameById = (modelId?: number) => {
+  const model = getModelById(modelId)
+  return model ? getModelName(model) : `模型 ${modelId}`
+}
+const getModelIdentifierById = (modelId?: number) => {
+  return getModelById(modelId)?.model || '-'
 }
 const getModelOptionValue = (model: AigcModelRespVO) => Number(model.id)
 const formRef = ref()

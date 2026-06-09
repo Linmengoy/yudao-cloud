@@ -66,7 +66,7 @@ public class GptImageProviderClient implements AigcProviderClient {
         if (StrUtil.isNotBlank(reqDTO.getInputParams()) && JSONUtil.isTypeJSON(reqDTO.getInputParams())) {
             JSONObject params = JSONUtil.parseObj(reqDTO.getInputParams());
             params.forEach((key, value) -> {
-                if (value != null && !"inputImages".equals(key) && !"inputImageIds".equals(key) && !"inputImageUrls".equals(key)) {
+                if (value != null && !isInternalParam(key)) {
                     body.put(key, value);
                 }
             });
@@ -76,6 +76,15 @@ public class GptImageProviderClient implements AigcProviderClient {
         }
         body.putIfAbsent("n", 1);
         return JSONUtil.parseObj(body);
+    }
+
+    private boolean isInternalParam(String key) {
+        return "referenceImages".equals(key)
+                || "referenceImageIds".equals(key)
+                || "referenceAssetIds".equals(key)
+                || "inputImages".equals(key)
+                || "inputImageIds".equals(key)
+                || "inputImageUrls".equals(key);
     }
 
     private HttpResponse submitGeneration(AigcProviderSubmitReqDTO reqDTO) {
@@ -146,6 +155,15 @@ public class GptImageProviderClient implements AigcProviderClient {
         }
         JSONObject params = JSONUtil.parseObj(inputParams);
         List<ImageInput> images = new ArrayList<>();
+        JSONArray referenceImages = params.getJSONArray("referenceImages");
+        if (referenceImages != null) {
+            for (Object item : referenceImages) {
+                String url = String.valueOf(item);
+                if (StrUtil.isNotBlank(url)) {
+                    images.add(new ImageInput(url, "input.png", "image/png"));
+                }
+            }
+        }
         JSONArray inputImages = params.getJSONArray("inputImages");
         if (inputImages != null) {
             for (Object item : inputImages) {

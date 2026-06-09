@@ -134,6 +134,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         checkPrompt(reqDTO);
         recordMetric("aigc_gen_submit_total");
         AigcModelRespDTO model = modelApi.validateModel(reqDTO.getModelId(), reqDTO.getGenerateMode()).getCheckedData();
+        Long executionModelId = model.getId();
         AigcModelProviderRespDTO provider = model.getProviderId() == null ? null : modelApi.getProvider(model.getProviderId()).getCheckedData();
         Map<String, Object> inputParams = parseInputParams(reqDTO.getInputParams());
         String inputParamsSnapshot = sanitizeInputParamsSnapshot(reqDTO.getInputParams());
@@ -146,11 +147,12 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         Long estimatedDurationMillis = resolveEstimatedDurationMillis(model, provider, reqDTO.getGenerateMode());
         Long taskId = taskApi.createTask(new AigcTaskCreateReqDTO()
                 .setClientRequestId(reqDTO.getClientRequestId()).setUserId(reqDTO.getUserId()).setTaskType(reqDTO.getGenerateType())
-                .setCapability(reqDTO.getGenerateMode()).setModelId(reqDTO.getModelId()).setProviderId(model.getProviderId()).setRequestParams(inputParamsSnapshot)
+                .setCapability(reqDTO.getGenerateMode()).setModelId(executionModelId).setProviderId(model.getProviderId()).setRequestParams(inputParamsSnapshot)
                 .setEstimatedDurationMillis(estimatedDurationMillis).setPriceSnapshot(JsonUtils.toJsonString(price)).setFreezeId(freeze.getId())
                 .setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
         AigcGenerateRecordDO record = BeanUtils.toBean(reqDTO, AigcGenerateRecordDO.class)
                 .setInputParams(inputParamsSnapshot)
+                .setModelId(executionModelId)
                 .setGenerateNo(generateGenerateNo()).setTaskId(taskId).setModelCode(model.getCode()).setProviderId(model.getProviderId())
                 .setProviderCode(resolveProviderCode(provider)).setFreezeId(freeze.getId())
                 .setPriceAmount(price.getSalePrice()).setCostAmount(price.getCostPrice()).setStatus(AigcGenerateStatusEnum.SUBMITTING.getCode()).setSubmitTime(LocalDateTime.now());
