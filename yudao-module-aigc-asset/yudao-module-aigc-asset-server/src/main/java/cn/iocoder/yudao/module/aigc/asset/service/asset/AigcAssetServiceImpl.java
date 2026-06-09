@@ -103,7 +103,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     @Override
     public Long createAsset(AigcAssetSaveReqVO reqVO) {
         AigcAssetDO asset = BeanUtils.toBean(reqVO, AigcAssetDO.class)
-                .setAssetNo(generateAssetNo())
+                .setAssetNo(generateAssetNo(reqVO.getUserId()))
                 .setSourceType(StrUtil.blankToDefault(reqVO.getSourceType(), AigcAssetSourceTypeEnum.UPLOAD.getCode()))
                 .setVisibility(StrUtil.blankToDefault(reqVO.getVisibility(), AigcAssetVisibilityEnum.PRIVATE.getCode()))
                 .setAuditStatus(

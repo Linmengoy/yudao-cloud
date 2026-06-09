@@ -1719,7 +1719,7 @@ function CanvasFlow() {
   useEffect(() => {
     const newMessages = canvasRealtime.messages.slice(processedRealtimeMessageCountRef.current);
     processedRealtimeMessageCountRef.current = canvasRealtime.messages.length;
-    const isCurrentProjectMessage = (message: { projectId?: unknown }) => {
+    const isCurrentProjectMessage = (message: { type: string; projectId?: unknown }) => {
       if (!serverProjectId) return false;
       return String(message.projectId ?? "") === serverProjectId;
     };
