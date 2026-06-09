@@ -54,9 +54,13 @@ public interface AigcModelPriceMapper extends BaseMapperX<AigcModelPriceDO> {
 
     default List<AigcModelPriceDO> selectListByModelIdAndCapability(Long modelId, String capability) {
         return selectList(new LambdaQueryWrapperX<AigcModelPriceDO>()
-                .eq(AigcModelPriceDO::getModelId, modelId)
-                .eq(AigcModelPriceDO::getCapability, capability)
-                .eq(AigcModelPriceDO::getStatus, CommonStatusEnum.ENABLE.getStatus()));
+                .eqIfPresent(AigcModelPriceDO::getModelId, modelId)
+                .eqIfPresent(AigcModelPriceDO::getCapability, capability)
+                .eq(AigcModelPriceDO::getStatus, CommonStatusEnum.ENABLE.getStatus())
+                .orderByAsc(AigcModelPriceDO::getModelId)
+                .orderByAsc(AigcModelPriceDO::getCapability)
+                .orderByDesc(AigcModelPriceDO::getTenantId)
+                .orderByDesc(AigcModelPriceDO::getId));
     }
 
 }

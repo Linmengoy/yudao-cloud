@@ -6,7 +6,7 @@ export type AigcModelPriceSaveReqVO = Omit<AigcModelPriceRespVO, 'capability'> &
 }
 
 export const AigcModelPriceApi = {
-  getPriceList: async (params: { modelId: number; capability: string }) => {
+  getPriceList: async (params: { modelId?: number; capability?: string }) => {
     return await request.get({ url: '/aigc/model/price/list', params })
   },
   getPrice: async (id: number) => {

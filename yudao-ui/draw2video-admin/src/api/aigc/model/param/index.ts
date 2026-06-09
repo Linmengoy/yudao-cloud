@@ -6,7 +6,7 @@ export type AigcModelParamTemplateSaveReqVO = Omit<AigcModelParamTemplateRespVO,
 }
 
 export const AigcModelParamApi = {
-  getParamList: async (params: { modelId: number; capability: string }) => {
+  getParamList: async (params: { modelId?: number; capability?: string }) => {
     return await request.get({ url: '/aigc/model/param/list', params })
   },
   getParam: async (id: number) => {

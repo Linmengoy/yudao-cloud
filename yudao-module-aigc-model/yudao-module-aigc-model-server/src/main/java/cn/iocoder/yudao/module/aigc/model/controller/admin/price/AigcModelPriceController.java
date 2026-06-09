@@ -62,12 +62,12 @@ public class AigcModelPriceController {
 
     @GetMapping("/list")
     @Operation(summary = "获取价格规则列表")
-    @Parameter(name = "modelId", description = "模型ID", required = true)
-    @Parameter(name = "capability", description = "能力", required = true)
+    @Parameter(name = "modelId", description = "模型ID")
+    @Parameter(name = "capability", description = "能力")
     @PreAuthorize("@ss.hasPermission('aigc:model:price:query')")
     public CommonResult<List<AigcModelPriceDO>> getPriceList(
-            @RequestParam("modelId") Long modelId,
-            @RequestParam("capability") String capability) {
+            @RequestParam(value = "modelId", required = false) Long modelId,
+            @RequestParam(value = "capability", required = false) String capability) {
         return success(priceService.getPriceList(modelId, capability));
     }
 

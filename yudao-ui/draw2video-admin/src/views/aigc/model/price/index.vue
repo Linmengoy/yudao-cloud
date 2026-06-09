@@ -12,7 +12,9 @@
   </ContentWrap>
   <ContentWrap>
     <el-table v-loading="loading" :data="list" :stripe="true" :show-overflow-tooltip="true">
-      <el-table-column label="模型 ID" align="center" prop="modelId" min-width="90" />
+      <el-table-column label="模型" align="center" prop="modelId" min-width="180">
+        <template #default="scope">{{ getModelLabel(scope.row.modelId) }}</template>
+      </el-table-column>
       <el-table-column label="能力" align="center" prop="capability" min-width="140"><template #default="scope">{{ getOptionLabel(AIGC_MODEL_CAPABILITIES, scope.row.capability) }}</template></el-table-column>
       <el-table-column label="计费单位" align="center" prop="billingUnit" min-width="110"><template #default="scope">{{ getOptionLabel(AIGC_BILLING_UNITS, scope.row.billingUnit) }}</template></el-table-column>
       <el-table-column label="成本价" align="center" prop="costPrice" min-width="100" />
@@ -45,10 +47,6 @@ const modelList = ref<AigcModelRespVO[]>([])
 const queryFormRef = ref()
 const queryParams = reactive<{ modelId?: number; capability?: string }>({ modelId: undefined, capability: undefined })
 const getList = async () => {
-  if (!queryParams.modelId || !queryParams.capability) {
-    list.value = []
-    return
-  }
   loading.value = true
   try {
     list.value = await AigcModelPriceApi.getPriceList({ modelId: queryParams.modelId, capability: queryParams.capability })
@@ -64,6 +62,9 @@ const loadModelList = async () => {
 }
 const formatModelLabel = (model: AigcModelRespVO) => {
   return [model.name, model.model].filter(Boolean).join(' / ') || `模型 ${model.id}`
+}
+const getModelLabel = (modelId?: number) => {
+  return formatModelLabel(modelList.value.find((item) => item.id === modelId) || { id: modelId })
 }
 const getModelOptionValue = (model: AigcModelRespVO) => Number(model.id)
 const formRef = ref()
