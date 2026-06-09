@@ -7,8 +7,8 @@ import { formatDateTime, formatPoints, getTaskTypeLabel } from "../task-status";
 import type { AigcTask } from "../task-types";
 import { TaskStatusBadge } from "./task-status-badge";
 
-export function TaskCard({ task }: { task: AigcTask }) {
-  const progress = getDisplayTaskProgress(task);
+export function TaskCard({ task, now }: { task: AigcTask; now?: number }) {
+  const progress = getDisplayTaskProgress(task, now);
   const safetyStatus = normalizeSafetyStatus(task.safetyStatus ?? task.auditStatus ?? (task.status === "AUDITING" ? "reviewing" : null));
   const failedSafetyStatus = task.status === "FAILED" ? normalizeSafetyStatusFromError(task.auditReason ?? task.failReason) : "idle";
   const safety = getSafetyCopy(safetyStatus !== "idle" ? safetyStatus : failedSafetyStatus, "task");

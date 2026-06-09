@@ -8,7 +8,7 @@ import { SafetyStatusPill } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
 import { getAigcTaskPage } from "@/features/tasks/task-api";
 import { getDisplayTaskProgress } from "@/features/tasks/task-progress-value";
-import { formatDateTime, formatPoints, getTaskTypeLabel } from "@/features/tasks/task-status";
+import { formatDateTime, formatPoints, getTaskTypeLabel, shouldPollTask } from "@/features/tasks/task-status";
 import type { AigcTask } from "@/features/tasks/task-types";
 import { TaskStatusBadge } from "@/features/tasks/components/task-status-badge";
 import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache";
@@ -28,8 +28,8 @@ function getTaskKey(task: AigcTask) {
   return task.id ?? task.taskNo ?? "";
 }
 
-function getTaskProgress(task: AigcTask) {
-  return getDisplayTaskProgress(task);
+function getTaskProgress(task: AigcTask, now: number) {
+  return getDisplayTaskProgress(task, now);
 }
 
 function getTaskSafety(task: AigcTask) {
@@ -53,19 +53,22 @@ export default function TasksPage() {
   const [pageNo, setPageNo] = useState(1);
   const [loading, setLoading] = useState(() => !initialPageCache);
   const [error, setError] = useState("");
+  const [now, setNow] = useState(() => Date.now());
   const pageCount = getPageCount(total);
 
-  const loadTasks = useCallback(async (nextPageNo: number) => {
+  const loadTasks = useCallback(async (nextPageNo: number, options?: { silent?: boolean }) => {
     const cacheKey = tasksPageCacheKey(nextPageNo);
     const cached = readPageCache<TasksPageCache>(cacheKey);
     if (cached) {
       setTasks((items) => mergeStableList(items, cached.tasks, getTaskKey));
       setTotal(cached.total);
       setLoading(false);
-    } else {
+    } else if (!options?.silent) {
       setLoading(true);
     }
-    setError("");
+    if (!options?.silent) {
+      setError("");
+    }
     try {
       const data = await getAigcTaskPage({ pageNo: nextPageNo, pageSize: taskPageSize });
       const nextTasks = data.list ?? [];
@@ -77,9 +80,13 @@ export default function TasksPage() {
       setTasks((items) => mergeStableList(items, nextTasks, getTaskKey));
       setTotal(nextTotal);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "任务列表加载失败");
+      if (!options?.silent) {
+        setError(err instanceof Error ? err.message : "任务列表加载失败");
+      }
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -93,6 +100,18 @@ export default function TasksPage() {
     const timer = window.setTimeout(() => loadTasks(1), 0);
     return () => window.clearTimeout(timer);
   }, [loadTasks]);
+
+  useEffect(() => {
+    if (!tasks.some((task) => shouldPollTask(task.status))) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [tasks]);
+
+  useEffect(() => {
+    if (!tasks.some((task) => shouldPollTask(task.status))) return;
+    const timer = window.setInterval(() => loadTasks(pageNo, { silent: true }), 3000);
+    return () => window.clearInterval(timer);
+  }, [loadTasks, pageNo, tasks]);
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-8">
@@ -149,7 +168,7 @@ export default function TasksPage() {
               </thead>
               <tbody className="divide-y divide-border-warm">
                 {tasks.map((task) => {
-                  const progress = getTaskProgress(task);
+                  const progress = getTaskProgress(task, now);
                   const safety = getTaskSafety(task);
                   const note = getTaskNote(task);
 

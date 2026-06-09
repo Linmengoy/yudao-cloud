@@ -44,6 +44,26 @@ public class AigcTaskServiceImplTest extends BaseDbUnitTest {
     }
 
     @Test
+    public void testCreateTask_estimatedDurationFallbackToAverage() {
+        LocalDateTime now = LocalDateTime.now();
+        taskMapper.insert(createTaskDO("TASK-SUCCESS-1", AigcTaskStatusEnum.SUCCESS.getCode(), now.minusSeconds(20), now, null));
+        taskMapper.insert(createTaskDO("TASK-SUCCESS-2", AigcTaskStatusEnum.SUCCESS.getCode(), now.minusSeconds(40), now, null));
+
+        Long taskId = taskService.createTask(createReqDTO().setClientRequestId("REQ-AVG").setEstimatedDurationMillis(null));
+
+        AigcTaskDO task = taskMapper.selectById(taskId);
+        assertEquals(30000L, task.getEstimatedDurationMillis());
+    }
+
+    @Test
+    public void testCreateTask_estimatedDurationFallbackToDefault() {
+        Long taskId = taskService.createTask(createReqDTO().setClientRequestId("REQ-DEFAULT").setEstimatedDurationMillis(null));
+
+        AigcTaskDO task = taskMapper.selectById(taskId);
+        assertEquals(60000L, task.getEstimatedDurationMillis());
+    }
+
+    @Test
     public void testCancelTask_submitted() {
         Long taskId = taskService.createTask(createReqDTO().setFreezeId(1L));
         taskService.updateTaskStatus(taskId, AigcTaskStatusEnum.QUEUED.getCode());
@@ -89,6 +109,20 @@ public class AigcTaskServiceImplTest extends BaseDbUnitTest {
         assertEquals(AigcTaskStatusEnum.SUCCESS.getCode(), task.getStatus());
         assertEquals(100, task.getProgress());
         assertNotNull(task.getFinishTime());
+    }
+
+    @Test
+    public void testUpdateTaskStatus_defaultProgress() {
+        Long taskId = taskService.createTask(createReqDTO().setFreezeId(1L));
+
+        taskService.updateTaskStatus(taskId, AigcTaskStatusEnum.QUEUED.getCode());
+        assertEquals(5, taskMapper.selectById(taskId).getProgress());
+
+        taskService.updateTaskStatus(taskId, AigcTaskStatusEnum.RUNNING.getCode());
+        assertEquals(10, taskMapper.selectById(taskId).getProgress());
+
+        taskService.updateTaskStatus(new AigcTaskStatusUpdateReqDTO().setTaskId(taskId).setProgress(8), AigcTaskStatusEnum.SUBMITTED.getCode());
+        assertEquals(20, taskMapper.selectById(taskId).getProgress());
     }
 
     @Test

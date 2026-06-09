@@ -38,6 +38,21 @@ public class AigcTaskServiceImpl implements AigcTaskService {
 
     private static final int DEFAULT_DURATION_SAMPLE_SIZE = 50;
     private static final int MAX_DURATION_SAMPLE_SIZE = 500;
+    private static final long DEFAULT_ESTIMATED_DURATION_MILLIS = 60_000L;
+
+    private static final Map<String, Integer> STATUS_DEFAULT_PROGRESS_MAP = Map.ofEntries(
+            Map.entry(AigcTaskStatusEnum.PRICE_CALCULATED.getCode(), 1),
+            Map.entry(AigcTaskStatusEnum.FROZEN.getCode(), 3),
+            Map.entry(AigcTaskStatusEnum.QUEUED.getCode(), 5),
+            Map.entry(AigcTaskStatusEnum.RUNNING.getCode(), 10),
+            Map.entry(AigcTaskStatusEnum.SUBMITTED.getCode(), 20),
+            Map.entry(AigcTaskStatusEnum.CALLBACK_WAITING.getCode(), 30),
+            Map.entry(AigcTaskStatusEnum.DOWNLOADING.getCode(), 75),
+            Map.entry(AigcTaskStatusEnum.ASSET_CREATING.getCode(), 88),
+            Map.entry(AigcTaskStatusEnum.AUDITING.getCode(), 95),
+            Map.entry(AigcTaskStatusEnum.REFUNDING.getCode(), 95),
+            Map.entry(AigcTaskStatusEnum.REFUNDED.getCode(), 100)
+    );
 
     private static final Map<String, Set<String>> STATUS_TRANSFER_MAP = Map.ofEntries(
             Map.entry(AigcTaskStatusEnum.CREATED.getCode(), Set.of(AigcTaskStatusEnum.PRICE_CALCULATED.getCode(), AigcTaskStatusEnum.FROZEN.getCode(), AigcTaskStatusEnum.FAILED.getCode(), AigcTaskStatusEnum.CANCELLED.getCode())),
@@ -74,10 +89,12 @@ public class AigcTaskServiceImpl implements AigcTaskService {
         if (reqDTO.getTaskNo() != null && taskMapper.selectByTaskNo(reqDTO.getTaskNo()) != null) {
             throw exception(TASK_NO_DUPLICATE);
         }
+        String initialStatus = reqDTO.getFreezeId() == null ? AigcTaskStatusEnum.CREATED.getCode() : AigcTaskStatusEnum.FROZEN.getCode();
         AigcTaskDO task = BeanUtils.toBean(reqDTO, AigcTaskDO.class)
                 .setTaskNo(reqDTO.getTaskNo() == null ? generateTaskNo() : reqDTO.getTaskNo())
-                .setStatus(reqDTO.getFreezeId() == null ? AigcTaskStatusEnum.CREATED.getCode() : AigcTaskStatusEnum.FROZEN.getCode())
-                .setProgress(0)
+                .setStatus(initialStatus)
+                .setProgress(STATUS_DEFAULT_PROGRESS_MAP.getOrDefault(initialStatus, 0))
+                .setEstimatedDurationMillis(resolveEstimatedDurationMillis(reqDTO))
                 .setSubmitTime(LocalDateTime.now())
                 .setRetryCount(0)
                 .setMaxRetryCount(3);
@@ -200,8 +217,9 @@ public class AigcTaskServiceImpl implements AigcTaskService {
         AigcTaskDO updateObj = BeanUtils.toBean(reqDTO, AigcTaskDO.class)
                 .setId(reqDTO.getTaskId())
                 .setStatus(toStatus);
-        if (AigcTaskStatusEnum.SUCCESS.getCode().equals(toStatus)) {
-            updateObj.setProgress(100);
+        Integer progress = resolveStatusProgress(toStatus, task.getProgress(), reqDTO.getProgress());
+        if (progress != null) {
+            updateObj.setProgress(progress);
         }
         updateObj.setOutputSummary(buildOutputSummary(reqDTO.getOutputText()));
         if (!sameStatus && AigcTaskStatusEnum.RUNNING.getCode().equals(toStatus)) {
@@ -261,6 +279,37 @@ public class AigcTaskServiceImpl implements AigcTaskService {
 
     private long nullToZero(Long value) {
         return value == null ? 0L : value;
+    }
+
+    private Long resolveEstimatedDurationMillis(AigcTaskCreateReqDTO reqDTO) {
+        if (reqDTO.getEstimatedDurationMillis() != null && reqDTO.getEstimatedDurationMillis() > 0) {
+            return reqDTO.getEstimatedDurationMillis();
+        }
+        AigcTaskDurationStatisticsAggregate statistics = taskMapper.selectDurationStatistics(
+                Set.of(AigcTaskStatusEnum.SUCCESS.getCode()),
+                reqDTO.getProviderId(), reqDTO.getModelId(), reqDTO.getCapability(), DEFAULT_DURATION_SAMPLE_SIZE);
+        Long avgDurationMillis = statistics == null ? null : statistics.getAvgDurationMillis();
+        return avgDurationMillis != null && avgDurationMillis > 0 ? avgDurationMillis : DEFAULT_ESTIMATED_DURATION_MILLIS;
+    }
+
+    private Integer resolveStatusProgress(String toStatus, Integer currentProgress, Integer requestedProgress) {
+        if (AigcTaskStatusEnum.SUCCESS.getCode().equals(toStatus)) {
+            return 100;
+        }
+        int current = clampProgress(currentProgress == null ? 0 : currentProgress);
+        Integer defaultProgress = STATUS_DEFAULT_PROGRESS_MAP.get(toStatus);
+        int next = defaultProgress == null ? current : Math.max(current, defaultProgress);
+        if (requestedProgress != null) {
+            next = Math.max(next, clampProgress(requestedProgress));
+        }
+        return next == current && defaultProgress == null && requestedProgress == null ? null : next;
+    }
+
+    private int clampProgress(Integer progress) {
+        if (progress == null) {
+            return 0;
+        }
+        return Math.max(0, Math.min(100, progress));
     }
 
     private int normalizeSampleSize(Integer sampleSize) {

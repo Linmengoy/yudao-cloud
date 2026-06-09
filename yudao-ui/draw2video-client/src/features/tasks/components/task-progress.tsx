@@ -9,13 +9,15 @@ export function TaskProgress({
   refreshing,
   cancelling,
   onCancel,
+  now,
 }: {
   task: AigcTask;
   refreshing?: boolean;
   cancelling?: boolean;
   onCancel?: () => void;
+  now?: number;
 }) {
-  const progress = getDisplayTaskProgress(task);
+  const progress = getDisplayTaskProgress(task, now);
   const meta = getTaskStatusMeta(task.status);
 
   return (
