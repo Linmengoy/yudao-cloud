@@ -48,13 +48,13 @@ public class GrokImagineProviderClientTest {
                             """.formatted(imageUrl, imageUrl)));
 
             assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
-            JSONObject body = JSONUtil.parseObj(requestBody.get());
-            assertEquals("gpt-image-2", body.getStr("model"));
-            assertEquals("{{Image 1}} 帮我给她穿上红色的晚礼服", body.getStr("prompt"));
-            assertEquals(imageUrl, body.getJSONObject("image").getStr("url"));
-            assertEquals(1, body.getInt("n"));
-            assertFalse(body.containsKey("inputImages"));
-            assertFalse(body.containsKey("inputImageUrls"));
+            String body = requestBody.get();
+            assertTrue(body.contains("name=\"model\""));
+            assertTrue(body.contains("gpt-image-2"));
+            assertTrue(body.contains("name=\"prompt\""));
+            assertTrue(body.contains("name=\"image\""));
+            assertFalse(body.contains("inputImages"));
+            assertFalse(body.contains("inputImageUrls"));
         } finally {
             server.stop(0);
         }
@@ -82,15 +82,13 @@ public class GrokImagineProviderClientTest {
                             """));
 
             assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
-            JSONObject body = JSONUtil.parseObj(requestBody.get());
-            assertFalse(body.containsKey("image"));
-            assertEquals(3, body.getJSONArray("images").size());
-            assertEquals("data:image/png;base64,aW1hZ2Ux", body.getJSONArray("images").getJSONObject(0).getStr("url"));
-            assertEquals("data:image/png;base64,aW1hZ2Uy", body.getJSONArray("images").getJSONObject(1).getStr("url"));
-            assertEquals("data:image/png;base64,aW1hZ2Uz", body.getJSONArray("images").getJSONObject(2).getStr("url"));
-            assertEquals("3:2", body.getStr("aspect_ratio"));
-            assertFalse(body.containsKey("inputImages"));
-            assertFalse(body.containsKey("inputImageUrls"));
+            String body = requestBody.get();
+            assertFalse(body.contains("name=\"image\""));
+            assertEquals(3, countOccurrences(body, "name=\"image[]\""));
+            assertTrue(body.contains("name=\"aspect_ratio\""));
+            assertTrue(body.contains("3:2"));
+            assertFalse(body.contains("inputImages"));
+            assertFalse(body.contains("inputImageUrls"));
         } finally {
             server.stop(0);
         }
@@ -120,9 +118,9 @@ public class GrokImagineProviderClientTest {
                             """.formatted(imageUrl)));
 
             assertTrue(respDTO.getSuccess(), respDTO.getErrorCode() + ": " + respDTO.getErrorMessage());
-            String providerImage = JSONUtil.parseObj(requestBody.get()).getJSONObject("image").getStr("url");
-            assertTrue(providerImage.startsWith("data:image/jpeg;base64,"));
-            assertTrue(providerImage.getBytes(StandardCharsets.UTF_8).length <= 960 * 1024);
+            String body = requestBody.get();
+            assertTrue(body.contains("name=\"image\""));
+            assertTrue(body.length() <= 960 * 1024);
         } finally {
             server.stop(0);
         }
@@ -311,7 +309,7 @@ public class GrokImagineProviderClientTest {
     }
 
     private void handleImageSubmit(HttpExchange exchange, AtomicReference<String> requestBody) throws IOException {
-        requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+        requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.ISO_8859_1));
         byte[] response = "{\"id\":\"image-task-1\",\"data\":[{\"url\":\"https://example.com/result.png\"}]}".getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, response.length);
@@ -345,6 +343,16 @@ public class GrokImagineProviderClientTest {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         ImageIO.write(image, "jpg", outputStream);
         return outputStream.toByteArray();
+    }
+
+    private int countOccurrences(String value, String pattern) {
+        int count = 0;
+        int index = 0;
+        while ((index = value.indexOf(pattern, index)) >= 0) {
+            count++;
+            index += pattern.length();
+        }
+        return count;
     }
 
 }

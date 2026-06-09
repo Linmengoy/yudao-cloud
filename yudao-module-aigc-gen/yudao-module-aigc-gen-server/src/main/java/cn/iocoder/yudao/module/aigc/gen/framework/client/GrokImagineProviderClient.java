@@ -23,8 +23,10 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Iterator;
@@ -50,11 +52,7 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             return failed("CONFIG_INVALID", "Grok 渠道未配置 API 地址或 API Key");
         }
         long start = System.currentTimeMillis();
-        try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.post(resolveSubmitEndpoint(reqDTO))
-                .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
-                .contentType(ContentType.JSON.getValue())
-                .body(buildSubmitBody(reqDTO).toString())
-                .timeout(timeoutMillis(reqDTO)), reqDTO)) {
+        try (HttpResponse response = isImageToImage(reqDTO) ? submitImageEdit(reqDTO) : submitJson(reqDTO)) {
             if (!response.isOk()) {
                 return failed("HTTP_" + response.getStatus(), safeBody(response.body())).setDurationMillis(System.currentTimeMillis() - start);
             }
@@ -64,6 +62,47 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             return result.setDurationMillis(System.currentTimeMillis() - start);
         } catch (Exception ex) {
             return failed("REQUEST_EXCEPTION", ex.getMessage()).setDurationMillis(System.currentTimeMillis() - start);
+        }
+    }
+
+    private HttpResponse submitJson(AigcProviderSubmitReqDTO reqDTO) {
+        return AigcProviderProxyUtils.execute(HttpRequest.post(resolveSubmitEndpoint(reqDTO))
+                .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
+                .contentType(ContentType.JSON.getValue())
+                .body(buildSubmitBody(reqDTO).toString())
+                .timeout(timeoutMillis(reqDTO)), reqDTO);
+    }
+
+    private HttpResponse submitImageEdit(AigcProviderSubmitReqDTO reqDTO) throws Exception {
+        JSONObject params = parseParams(reqDTO.getInputParams());
+        List<String> images = inputImages(params);
+        if (images.isEmpty()) {
+            throw new IllegalArgumentException("Grok 图生图缺少参考图片");
+        }
+        List<File> tempFiles = new ArrayList<>();
+        try {
+            HttpRequest request = AigcProviderProxyUtils.applyProxy(HttpRequest.post(resolveSubmitEndpoint(reqDTO))
+                    .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
+                    .timeout(timeoutMillis(reqDTO)), reqDTO);
+            JSONObject body = buildBaseImageBody(reqDTO, params);
+            body.forEach((key, value) -> {
+                if (value != null) {
+                    request.form(key, String.valueOf(value));
+                }
+            });
+            for (int i = 0; i < images.size(); i++) {
+                File file = createEditImageFile(images.get(i), i, reqDTO);
+                tempFiles.add(file);
+                request.form(images.size() == 1 ? "image" : "image[]", file);
+            }
+            return AigcProviderProxyUtils.execute(request, reqDTO);
+        } finally {
+            for (File file : tempFiles) {
+                try {
+                    Files.deleteIfExists(file.toPath());
+                } catch (Exception ignored) {
+                }
+            }
         }
     }
 
@@ -140,6 +179,23 @@ public class GrokImagineProviderClient implements AigcProviderClient {
             }
             body.set("n", params.getInt("n", 1));
         }
+        return body;
+    }
+
+    private JSONObject buildBaseImageBody(AigcProviderSubmitReqDTO reqDTO, JSONObject params) {
+        JSONObject body = JSONUtil.createObj()
+                .set("model", StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode()))
+                .set("prompt", StrUtil.blankToDefault(reqDTO.getPrompt(), ""));
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            if (value != null && !isInternalParam(key)) {
+                body.set(key, value);
+            }
+        }
+        body.set("model", StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode()));
+        body.set("prompt", StrUtil.blankToDefault(reqDTO.getPrompt(), ""));
+        body.set("n", params.getInt("n", 1));
         return body;
     }
 
@@ -228,6 +284,32 @@ public class GrokImagineProviderClient implements AigcProviderClient {
         return compressEditImage(source);
     }
 
+    private File createEditImageFile(String image, int index, AigcProviderSubmitReqDTO reqDTO) throws Exception {
+        SourceImage source = readSourceImage(image, reqDTO);
+        SourceImage normalized = normalizeEditImage(source);
+        File file = File.createTempFile("grok-edit-" + index + "-", imageSuffix(normalized.contentType()));
+        Files.write(file.toPath(), normalized.bytes());
+        return file;
+    }
+
+    private String imageSuffix(String contentType) {
+        if (StrUtil.containsIgnoreCase(contentType, "png")) {
+            return ".png";
+        }
+        if (StrUtil.containsIgnoreCase(contentType, "webp")) {
+            return ".webp";
+        }
+        return ".jpg";
+    }
+
+    private SourceImage normalizeEditImage(SourceImage source) {
+        String dataUrl = toDataUrl(source.contentType(), source.bytes());
+        if (dataUrl.getBytes(StandardCharsets.UTF_8).length <= GROK_IMAGE_MAX_DATA_URL_BYTES) {
+            return source;
+        }
+        return dataUrlToSourceImage(compressEditImage(source));
+    }
+
     private String toProviderImage(String image, AigcProviderSubmitReqDTO reqDTO) {
         SourceImage source = readSourceImage(image, reqDTO);
         return toDataUrl(source.contentType(), source.bytes());
@@ -272,6 +354,10 @@ public class GrokImagineProviderClient implements AigcProviderClient {
                 ? Base64.getDecoder().decode(payload)
                 : URLDecoder.decode(payload, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8);
         return new SourceImage(contentType, content);
+    }
+
+    private SourceImage dataUrlToSourceImage(String dataUrl) {
+        return readDataUrlImage(dataUrl);
     }
 
     private String compressEditImage(SourceImage source) {
