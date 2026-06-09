@@ -74,6 +74,9 @@ public class GrokImagineProviderClient implements AigcProviderClient {
     }
 
     private HttpResponse submitImageEdit(AigcProviderSubmitReqDTO reqDTO) throws Exception {
+        if (isGrokImagineImage(reqDTO)) {
+            return submitJsonImageReference(reqDTO);
+        }
         JSONObject params = parseParams(reqDTO.getInputParams());
         List<String> images = inputImages(params);
         if (images.isEmpty()) {
@@ -104,6 +107,14 @@ public class GrokImagineProviderClient implements AigcProviderClient {
                 }
             }
         }
+    }
+
+    private HttpResponse submitJsonImageReference(AigcProviderSubmitReqDTO reqDTO) {
+        return AigcProviderProxyUtils.execute(HttpRequest.post(resolveImageGenerationEndpoint(reqDTO))
+                .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
+                .contentType(ContentType.JSON.getValue())
+                .body(buildSubmitBody(reqDTO).toString())
+                .timeout(timeoutMillis(reqDTO)), reqDTO);
     }
 
     @Override
@@ -170,11 +181,15 @@ public class GrokImagineProviderClient implements AigcProviderClient {
                 body.remove("image");
                 body.remove("images");
                 if (images.size() == 1) {
-                    body.set("image", providerImageObject(images.get(0), reqDTO));
+                    body.set("image", isGrokImagineImage(reqDTO)
+                            ? toProviderEditImage(images.get(0), reqDTO)
+                            : providerImageObject(images.get(0), reqDTO));
                 } else {
                     JSONArray providerImages = new JSONArray();
-                    images.forEach(image -> providerImages.add(providerImageObject(image, reqDTO)));
-                    body.set("images", providerImages);
+                    images.forEach(image -> providerImages.add(isGrokImagineImage(reqDTO)
+                            ? toProviderEditImage(image, reqDTO)
+                            : providerImageObject(image, reqDTO)));
+                    body.set(isGrokImagineImage(reqDTO) ? "image" : "images", providerImages);
                 }
             }
             body.set("n", params.getInt("n", 1));
@@ -631,6 +646,17 @@ public class GrokImagineProviderClient implements AigcProviderClient {
         return baseUrl + target;
     }
 
+    private String resolveImageGenerationEndpoint(AigcProviderSubmitReqDTO reqDTO) {
+        String baseUrl = StrUtil.removeSuffix(reqDTO.getProviderBaseUrl(), "/");
+        if (baseUrl.endsWith("/images/generations")) {
+            return baseUrl;
+        }
+        if (baseUrl.endsWith("/images/edits")) {
+            return baseUrl.substring(0, baseUrl.lastIndexOf("/images/")) + "/images/generations";
+        }
+        return baseUrl + "/images/generations";
+    }
+
     private String resolveVideoTaskEndpoint(AigcProviderSubmitReqDTO reqDTO, boolean content) {
         return resolveContentEndpoint(reqDTO.getProviderTaskId(), reqDTO.getProviderBaseUrl()) + (content ? "/content" : "");
     }
@@ -652,6 +678,11 @@ public class GrokImagineProviderClient implements AigcProviderClient {
 
     private boolean isImageToImage(AigcProviderSubmitReqDTO reqDTO) {
         return "IMAGE".equals(reqDTO.getGenerateType()) && "IMAGE_TO_IMAGE".equals(reqDTO.getGenerateMode());
+    }
+
+    private boolean isGrokImagineImage(AigcProviderSubmitReqDTO reqDTO) {
+        String model = StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode());
+        return "grok-imagine-image".equalsIgnoreCase(model);
     }
 
     private boolean isCompleted(String status) {
