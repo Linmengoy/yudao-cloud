@@ -2,7 +2,7 @@
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="760px">
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="110px" v-loading="formLoading">
       <el-row :gutter="20">
-        <el-col :span="12"><el-form-item label="模型" prop="modelId"><el-select v-model="formData.modelId" class="!w-1/1" filterable placeholder="请选择模型"><el-option v-for="item in modelList" :key="item.id" :label="formatModelLabel(item)" :value="getModelOptionValue(item)" /></el-select></el-form-item></el-col>
+        <el-col :span="12"><el-form-item label="模型" prop="modelId"><el-select v-model="formData.modelId" class="!w-1/1" filterable placeholder="请选择模型"><el-option v-for="item in modelList" :key="item.id" :label="getModelName(item)" :value="getModelOptionValue(item)" /></el-select></el-form-item></el-col>
         <el-col :span="12"><el-form-item label="能力" prop="capability"><el-select v-model="formData.capability" class="!w-1/1" :multiple="formType === 'create'" collapse-tags collapse-tags-tooltip placeholder="请选择能力"><el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
@@ -69,8 +69,8 @@ const loadModelList = async () => {
   modelList.value = data.list || []
 }
 
-const formatModelLabel = (model: AigcModelRespVO) => {
-  return [model.name, model.model].filter(Boolean).join(' / ') || `模型 ${model.id}`
+const getModelName = (model: AigcModelRespVO) => {
+  return model.name || `模型 ${model.id}`
 }
 
 const getModelOptionValue = (model: AigcModelRespVO) => Number(model.id)

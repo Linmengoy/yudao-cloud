@@ -3,7 +3,7 @@
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="110px" v-loading="formLoading">
       <el-row :gutter="20">
         <el-col :span="12"><el-form-item label="租户 ID" prop="tenantId"><el-input-number v-model="formData.tenantId" class="!w-1/1" :min="1" controls-position="right" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="模型 ID" prop="modelId"><el-input-number v-model="formData.modelId" class="!w-1/1" :min="1" controls-position="right" /></el-form-item></el-col>
+        <el-col :span="12"><el-form-item label="模型" prop="modelId"><el-select v-model="formData.modelId" class="!w-1/1" filterable placeholder="请选择模型"><el-option v-for="item in modelList" :key="item.id" :label="getModelName(item)" :value="getModelOptionValue(item)" /></el-select></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
         <el-col :span="8"><el-form-item label="启用" prop="enabled"><el-switch v-model="formData.enabled" /></el-form-item></el-col>
@@ -25,6 +25,8 @@
 </template>
 <script setup lang="ts">
 import { AigcModelTenantApi, type AigcModelTenantSaveReqVO } from '@/api/aigc/model/tenant'
+import { AigcModelApi } from '@/api/aigc/model/model'
+import type { AigcModelRespVO } from '@/api/aigc/model/types'
 
 defineOptions({ name: 'AigcModelTenantForm' })
 
@@ -35,14 +37,16 @@ const dialogTitle = ref('')
 const formLoading = ref(false)
 const formType = ref('')
 const formRef = ref()
+const modelList = ref<AigcModelRespVO[]>([])
 const formData = ref<AigcModelTenantSaveReqVO>({ id: undefined, tenantId: undefined, modelId: undefined, enabled: true, publicVisible: true, defaultModel: false, sort: 0, maxConcurrent: 1, dailyLimit: 0, remark: undefined })
-const formRules = reactive({ tenantId: [{ required: true, message: '租户 ID 不能为空', trigger: 'blur' }], modelId: [{ required: true, message: '模型 ID 不能为空', trigger: 'blur' }] })
+const formRules = reactive({ tenantId: [{ required: true, message: '租户 ID 不能为空', trigger: 'blur' }], modelId: [{ required: true, message: '模型不能为空', trigger: 'change' }] })
 
 const open = async (type: string, id?: number, tenantId?: number) => {
   dialogVisible.value = true
   dialogTitle.value = t('action.' + type)
   formType.value = type
   resetForm()
+  await loadModelList()
   if (tenantId) formData.value.tenantId = tenantId
   if (id) {
     formLoading.value = true
@@ -54,6 +58,17 @@ const open = async (type: string, id?: number, tenantId?: number) => {
   }
 }
 defineExpose({ open })
+
+const loadModelList = async () => {
+  const data = await AigcModelApi.getModelPage({ pageNo: 1, pageSize: 100 })
+  modelList.value = data.list || []
+}
+
+const getModelName = (model: AigcModelRespVO) => {
+  return model.name || `模型 ${model.id}`
+}
+
+const getModelOptionValue = (model: AigcModelRespVO) => Number(model.id)
 
 const emit = defineEmits(['success'])
 const submitForm = async () => {

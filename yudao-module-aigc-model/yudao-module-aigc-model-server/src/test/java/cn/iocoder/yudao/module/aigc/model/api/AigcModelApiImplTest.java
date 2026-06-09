@@ -12,6 +12,7 @@ import cn.iocoder.yudao.module.aigc.model.service.model.AigcModelService;
 import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
 import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
 import cn.iocoder.yudao.module.aigc.model.service.provider.AigcModelProviderService;
+import cn.iocoder.yudao.module.aigc.model.service.route.AigcModelRouteService;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -40,11 +41,14 @@ public class AigcModelApiImplTest extends BaseMockitoUnitTest {
     private AigcModelParamService paramService;
     @Mock
     private AigcModelPriceService priceService;
+    @Mock
+    private AigcModelRouteService routeService;
 
     @Test
     public void testValidateModel_success() {
-        AigcModelDO model = randomPojo(AigcModelDO.class).setId(1L);
+        AigcModelDO model = randomPojo(AigcModelDO.class).setId(1L).setCode("display-model");
         when(modelService.validateTenantModel(eq(1L), eq(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()))).thenReturn(model);
+        when(routeService.route(eq("display-model"), eq(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()))).thenReturn(null);
 
         CommonResult<AigcModelRespDTO> result = modelApi.validateModel(1L, AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode());
 

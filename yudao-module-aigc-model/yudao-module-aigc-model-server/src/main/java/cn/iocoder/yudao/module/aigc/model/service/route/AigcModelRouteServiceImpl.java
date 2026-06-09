@@ -14,7 +14,9 @@ import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.*;
@@ -79,13 +81,14 @@ public class AigcModelRouteServiceImpl implements AigcModelRouteService {
         }
 
         AigcModelRouteDO route = routes.get(0);
-        AigcModelRouteStrategyEnum strategy = AigcModelRouteStrategyEnum.getByValue(route.getStrategy());
-
-        if (strategy == null) {
+        AigcModelRouteStrategyEnum strategy;
+        try {
+            strategy = AigcModelRouteStrategyEnum.getByValue(route.getStrategy());
+        } catch (IllegalArgumentException ex) {
             return null;
         }
 
-        List<Long> modelIds = JSONUtil.toList(route.getModelIds(), Long.class);
+        List<Long> modelIds = parseModelIds(route.getModelIds());
         if (modelIds.isEmpty()) {
             return null;
         }
@@ -100,6 +103,28 @@ public class AigcModelRouteServiceImpl implements AigcModelRouteService {
             case FASTEST_RESPONSE:
             default:
                 return modelIds.get(0);
+        }
+    }
+
+    private List<Long> parseModelIds(String modelIds) {
+        if (modelIds == null || modelIds.isBlank()) {
+            return List.of();
+        }
+        try {
+            return JSONUtil.toList(modelIds, Long.class);
+        } catch (Exception ignored) {
+            return Arrays.stream(modelIds.split(","))
+                    .map(String::trim)
+                    .filter(item -> !item.isBlank())
+                    .map(item -> {
+                        try {
+                            return Long.valueOf(item);
+                        } catch (NumberFormatException ex) {
+                            return null;
+                        }
+                    })
+                    .filter(Objects::nonNull)
+                    .toList();
         }
     }
 
