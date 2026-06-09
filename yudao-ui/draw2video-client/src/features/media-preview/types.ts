@@ -7,6 +7,27 @@ export type MediaPreviewInfoItem = {
   value: MediaPreviewInfoValue;
 };
 
+export type MediaPreviewEditableAsset = {
+  title: string;
+  description: string;
+  tags: string;
+  visibility?: string;
+  auditStatus?: string;
+  status?: string;
+  auditReason?: string;
+  taskId?: number;
+  saving?: boolean;
+  canEdit?: boolean;
+  canDownload?: boolean;
+  canDelete?: boolean;
+  canPublish?: boolean;
+  onChange: (patch: Partial<Pick<MediaPreviewEditableAsset, "title" | "description" | "tags">>) => void;
+  onSave: () => void | Promise<void>;
+  onVisibilityChange?: (visibility: string) => void | Promise<void>;
+  onDownload?: () => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
+};
+
 export type MediaPreviewItem = {
   kind: MediaPreviewKind;
   url: string;
@@ -16,4 +37,5 @@ export type MediaPreviewItem = {
   createdAt?: string;
   projectName?: string;
   information?: MediaPreviewInfoItem[];
+  editableAsset?: MediaPreviewEditableAsset;
 };

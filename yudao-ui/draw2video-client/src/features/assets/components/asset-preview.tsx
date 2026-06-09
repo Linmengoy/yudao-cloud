@@ -1,6 +1,7 @@
 import { FileText, Music, PlaySquare } from "lucide-react";
 import type { AigcAsset } from "../asset-types";
 import { getAssetPreviewUrl, getAssetTypeLabel } from "../asset-dictionaries";
+import { PreviewVideoPlayer } from "@/features/media-preview/PreviewVideoPlayer";
 
 export function AssetPreview({ asset, large = false }: { asset: AigcAsset; large?: boolean }) {
   const type = asset.assetType;
@@ -20,7 +21,13 @@ export function AssetPreview({ asset, large = false }: { asset: AigcAsset; large
 
   if (type === "VIDEO") {
     if (large && asset.fileUrl) {
-      return <video src={asset.fileUrl} poster={asset.coverUrl || asset.thumbnailUrl} controls className="max-h-[520px] w-full rounded-xl border border-border-warm bg-muted" />;
+      return (
+        <PreviewVideoPlayer
+          src={asset.fileUrl}
+          poster={asset.coverUrl || asset.thumbnailUrl}
+          className="max-h-[520px] w-full rounded-xl border border-border-warm bg-charcoal"
+        />
+      );
     }
     return (
       <div className={`${sizeClass} flex items-center justify-center rounded-xl border border-border-warm bg-muted text-muted-gray`}>

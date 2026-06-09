@@ -1,7 +1,9 @@
 import request from '@/config/axios'
 import type { AigcModelParamTemplateRespVO } from '@/api/aigc/model/types'
 
-export type AigcModelParamTemplateSaveReqVO = AigcModelParamTemplateRespVO
+export type AigcModelParamTemplateSaveReqVO = Omit<AigcModelParamTemplateRespVO, 'capability'> & {
+  capability?: string | string[]
+}
 
 export const AigcModelParamApi = {
   getParamList: async (params: { modelId: number; capability: string }) => {
