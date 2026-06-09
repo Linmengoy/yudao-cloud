@@ -16,6 +16,7 @@ import cn.iocoder.yudao.module.aigc.model.service.model.AigcModelService;
 import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
 import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
 import cn.iocoder.yudao.module.aigc.model.service.provider.AigcModelProviderService;
+import cn.iocoder.yudao.module.aigc.model.service.route.AigcModelRouteService;
 import cn.iocoder.yudao.module.aigc.model.service.usage.AigcModelUsageService;
 import cn.iocoder.yudao.module.aigc.model.util.AigcModelParamUtils;
 import jakarta.annotation.Resource;
@@ -44,11 +45,18 @@ public class AigcModelApiImpl implements AigcModelApi {
     private AigcModelPriceService priceService;
 
     @Resource
+    private AigcModelRouteService routeService;
+
+    @Resource
     private AigcModelUsageService usageService;
 
     @Override
     public CommonResult<AigcModelRespDTO> validateModel(Long modelId, String capability) {
         AigcModelDO model = modelService.validateTenantModel(modelId, capability);
+        Long routedModelId = routeService.route(model.getCode(), capability);
+        if (routedModelId != null && !routedModelId.equals(modelId)) {
+            model = modelService.validateTenantModel(routedModelId, capability);
+        }
         return success(BeanUtils.toBean(model, AigcModelRespDTO.class));
     }
 

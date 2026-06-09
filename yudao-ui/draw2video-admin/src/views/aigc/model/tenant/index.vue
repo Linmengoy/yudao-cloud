@@ -12,7 +12,9 @@
   <ContentWrap>
     <el-table v-loading="loading" :data="list" :stripe="true" :show-overflow-tooltip="true">
       <el-table-column label="租户 ID" align="center" prop="tenantId" min-width="90" />
-      <el-table-column label="模型 ID" align="center" prop="modelId" min-width="90" />
+      <el-table-column label="模型名称" align="center" prop="modelId" min-width="160">
+        <template #default="scope">{{ getModelNameById(scope.row.modelId) }}</template>
+      </el-table-column>
       <el-table-column label="启用" align="center" prop="enabled" min-width="90"><template #default="scope"><el-tag :type="scope.row.enabled ? 'success' : 'info'">{{ scope.row.enabled ? '启用' : '停用' }}</el-tag></template></el-table-column>
       <el-table-column label="用户端展示" align="center" prop="publicVisible" min-width="110"><template #default="scope"><el-tag :type="scope.row.publicVisible ? 'success' : 'info'">{{ scope.row.publicVisible ? '展示' : '隐藏' }}</el-tag></template></el-table-column>
       <el-table-column label="默认" align="center" prop="defaultModel" min-width="80"><template #default="scope"><el-tag v-if="scope.row.defaultModel" type="warning">默认</el-tag><span v-else>-</span></template></el-table-column>
@@ -27,7 +29,8 @@
 </template>
 <script setup lang="ts">
 import { AigcModelTenantApi } from '@/api/aigc/model/tenant'
-import type { AigcModelTenantRespVO } from '@/api/aigc/model/types'
+import { AigcModelApi } from '@/api/aigc/model/model'
+import type { AigcModelRespVO, AigcModelTenantRespVO } from '@/api/aigc/model/types'
 import TenantForm from './TenantForm.vue'
 
 defineOptions({ name: 'AigcModelTenant' })
@@ -36,6 +39,7 @@ const message = useMessage()
 const { t } = useI18n()
 const loading = ref(false)
 const list = ref<AigcModelTenantRespVO[]>([])
+const modelList = ref<AigcModelRespVO[]>([])
 const queryFormRef = ref()
 const queryParams = reactive<{ tenantId?: number }>({ tenantId: 1 })
 const getList = async () => {
@@ -52,6 +56,17 @@ const getList = async () => {
 }
 const handleQuery = () => getList()
 const resetQuery = () => { queryFormRef.value.resetFields(); handleQuery() }
+const loadModelList = async () => {
+  const data = await AigcModelApi.getModelPage({ pageNo: 1, pageSize: 100 })
+  modelList.value = data.list || []
+}
+const getModelName = (model: AigcModelRespVO) => {
+  return model.name || `模型 ${model.id}`
+}
+const getModelNameById = (modelId?: number) => {
+  const model = modelList.value.find((item) => item.id === modelId)
+  return model ? getModelName(model) : `模型 ${modelId}`
+}
 const formRef = ref()
 const openForm = (type: string, id?: number) => formRef.value.open(type, id, queryParams.tenantId)
 const handleDelete = async (id: number) => {
@@ -62,5 +77,8 @@ const handleDelete = async (id: number) => {
     await getList()
   } catch {}
 }
-onMounted(() => getList())
+onMounted(async () => {
+  await loadModelList()
+  await getList()
+})
 </script>
