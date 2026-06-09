@@ -13,6 +13,7 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSubmitReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSyncRespVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectAssetPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectQuickGenerateReqVO;
@@ -29,6 +30,7 @@ import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasMem
 import cn.iocoder.yudao.module.aigc.workflow.service.canvas.AigcCanvasOperationService;
 import cn.iocoder.yudao.module.aigc.workflow.service.canvas.AigcCanvasNodeRunService;
 import cn.iocoder.yudao.module.aigc.workflow.service.canvas.AigcCanvasProjectService;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -93,6 +95,13 @@ public class AigcCanvasAppController {
     @Parameter(name = "id", description = "项目编号", required = true)
     public CommonResult<AigcCanvasProjectRespVO> getProject(@PathVariable("id") Long id) {
         return success(projectService.getProjectDetail(id, getLoginUserId()));
+    }
+
+    @GetMapping("/projects/{id}/assets")
+    @Operation(summary = "画布项目资产分页")
+    public CommonResult<PageResult<AigcAssetRespDTO>> getProjectAssetPage(@PathVariable("id") Long id,
+                                                                         @Valid AigcCanvasProjectAssetPageReqVO reqVO) {
+        return success(projectService.getProjectAssetPage(id, reqVO, getLoginUserId()));
     }
 
     @GetMapping("/projects/{id}/members")

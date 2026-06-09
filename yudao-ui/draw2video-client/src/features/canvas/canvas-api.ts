@@ -1,4 +1,5 @@
 import { api } from "@/lib/api-client";
+import type { AigcAsset } from "@/features/assets/asset-types";
 import type {
   AppEdge,
   AppNode,
@@ -193,6 +194,14 @@ export const canvasApi = {
       ...input,
       id: projectId,
     }),
+
+  getProjectAssets: (projectId: string | number, params: { pageNo?: number; pageSize?: number; assetType?: string } = {}) => {
+    const query = new URLSearchParams();
+    query.set("pageNo", String(params.pageNo ?? 1));
+    query.set("pageSize", String(params.pageSize ?? 20));
+    if (params.assetType) query.set("assetType", params.assetType);
+    return api.get<PageResult<AigcAsset>>(`/canvas/projects/${projectId}/assets?${query.toString()}`);
+  },
 
   getSnapshot: (projectId: string | number) => api.get<CanvasSnapshotRecord | null>(`/canvas/projects/${projectId}/snapshot`),
 

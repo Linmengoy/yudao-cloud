@@ -14,6 +14,7 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberInviteReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSubmitReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectAssetPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectCreateReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectPageReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasProjectQuickGenerateReqVO;
@@ -51,6 +52,7 @@ import org.springframework.validation.annotation.Validated;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -181,7 +183,10 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
 
     @Override
     public void updateProject(AigcCanvasProjectUpdateReqVO reqVO, Long userId) {
-        validateEditableProject(reqVO.getId(), userId);
+        AigcCanvasProjectDO project = validateEditableProject(reqVO.getId(), userId);
+        if (reqVO.getCoverAssetId() != null) {
+            validateProjectCoverAsset(project, reqVO.getCoverAssetId(), userId);
+        }
         AigcCanvasProjectDO update = new AigcCanvasProjectDO();
         update.setId(reqVO.getId());
         update.setName(reqVO.getName());
@@ -337,6 +342,57 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     public PageResult<AigcCanvasProjectRecycleBinRespVO> getProjectRecycleBinPage(AigcCanvasProjectRecycleBinPageReqVO reqVO, Long userId) {
         PageResult<AigcCanvasProjectRecycleBinDO> pageResult = projectRecycleBinMapper.selectPage(reqVO, userId);
         return new PageResult<>(BeanUtils.toBean(pageResult.getList(), AigcCanvasProjectRecycleBinRespVO.class), pageResult.getTotal());
+    }
+
+    @Override
+    public PageResult<AigcAssetRespDTO> getProjectAssetPage(Long projectId, AigcCanvasProjectAssetPageReqVO reqVO, Long userId) {
+        validateReadableProject(projectId, userId);
+        List<Long> assetIds = collectProjectAssetIds(projectId);
+        if (assetIds.isEmpty()) {
+            return PageResult.empty();
+        }
+        Map<Long, AigcAssetRespDTO> assetMap = getAssetMapByIds(assetIds);
+        List<AigcAssetRespDTO> assets = assetIds.stream()
+                .map(assetMap::get)
+                .filter(Objects::nonNull)
+                .filter(asset -> StrUtil.isBlank(reqVO.getAssetType()) || reqVO.getAssetType().equals(asset.getAssetType()))
+                .toList();
+        int fromIndex = Math.min((reqVO.getPageNo() - 1) * reqVO.getPageSize(), assets.size());
+        int toIndex = Math.min(fromIndex + reqVO.getPageSize(), assets.size());
+        return new PageResult<>(assets.subList(fromIndex, toIndex), (long) assets.size());
+    }
+
+    private List<Long> collectProjectAssetIds(Long projectId) {
+        Map<String, JSONObject> nodes = rebuildProjectNodes(projectId);
+        Set<Long> assetIds = new LinkedHashSet<>();
+        for (JSONObject node : nodes.values()) {
+            collectNodeAssetIds(assetIds, node.getJSONObject("data"));
+        }
+        if (!nodes.isEmpty()) {
+            Set<String> currentNodeIds = nodes.keySet();
+            for (AigcCanvasAssetRefDO ref : assetRefMapper.selectListByProjectId(projectId)) {
+                if (ref.getAssetId() != null && currentNodeIds.contains(ref.getNodeId())) {
+                    assetIds.add(ref.getAssetId());
+                }
+            }
+        }
+        return assetIds.stream().toList();
+    }
+
+    private void validateProjectCoverAsset(AigcCanvasProjectDO project, Long coverAssetId, Long userId) {
+        AigcAssetRespDTO asset;
+        try {
+            asset = assetApi.getAsset(coverAssetId).getCheckedData();
+        } catch (Exception ignored) {
+            throw exception(CANVAS_NO_PERMISSION);
+        }
+        if (asset == null || !"IMAGE".equals(asset.getAssetType())) {
+            throw exception(CANVAS_NO_PERMISSION);
+        }
+        if (Objects.equals(asset.getUserId(), userId) || collectProjectAssetIds(project.getId()).contains(coverAssetId)) {
+            return;
+        }
+        throw exception(CANVAS_NO_PERMISSION);
     }
 
     private AigcCanvasProjectRespVO buildProjectResp(AigcCanvasProjectDO project, Long userId, AigcCanvasMemberDO member,

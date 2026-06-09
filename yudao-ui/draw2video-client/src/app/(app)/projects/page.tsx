@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, FolderPlus, ImageIcon, Search, Trash2 } from "lucide-react";
+import { Archive, Check, ChevronLeft, ChevronRight, FolderPlus, ImageIcon, Search, Trash2, X } from "lucide-react";
+import { getMyAssetPage } from "@/features/assets/asset-api";
+import { getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
+import type { AigcAsset } from "@/features/assets/asset-types";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { clearCanvas } from "@/features/canvas/use-canvas-storage";
@@ -18,6 +21,7 @@ import {
 import type Muuri from "muuri";
 
 const PAGE_SIZE = 12;
+const COVER_ASSET_PAGE_SIZE = 12;
 
 type ProjectListItem = {
   id: string;
@@ -82,6 +86,10 @@ function canRenameProject(project: ProjectListItem) {
   return project.source === "local" || (project.readonly !== true && project.role !== "viewer");
 }
 
+function canUpdateProjectCover(project: ProjectListItem) {
+  return project.source === "server" && project.readonly !== true && project.role !== "viewer";
+}
+
 function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
   useEffect(() => {
     if (!project.coverUrl || !onLoad) return;
@@ -116,6 +124,85 @@ function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: 
   );
 }
 
+function AssetChoiceCard({
+  asset,
+  selected,
+  onSelect,
+}: {
+  asset: AigcAsset;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const previewUrl = getAssetPreviewUrl(asset);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`group/asset overflow-hidden rounded-lg border bg-background text-left transition-colors ${
+        selected ? "border-charcoal" : "border-border-warm hover:border-[rgba(28,28,28,0.45)]"
+      }`}
+    >
+      <div className="relative aspect-square bg-muted">
+        {previewUrl ? (
+          <img src={previewUrl} alt={asset.title || "项目封面候选图"} className="size-full object-cover" draggable={false} />
+        ) : (
+          <div className="flex size-full items-center justify-center text-muted-gray">
+            <ImageIcon className="size-5" />
+          </div>
+        )}
+        {selected && (
+          <span className="absolute right-2 top-2 inline-flex size-5 items-center justify-center rounded-full bg-charcoal text-off-white">
+            <Check className="size-3.5" />
+          </span>
+        )}
+      </div>
+      <div className="px-2 py-2">
+        <p className="truncate text-xs font-medium text-charcoal">{asset.title || asset.assetNo || `资产 ${asset.id}`}</p>
+      </div>
+    </button>
+  );
+}
+
+function CoverAssetPager({
+  pageNo,
+  pageCount,
+  total,
+  onPageChange,
+}: {
+  pageNo: number;
+  pageCount: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}) {
+  return (
+    <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-gray">
+      <span>
+        {total > 0 ? `第 ${pageNo} / ${pageCount} 页 · 共 ${total} 张` : "暂无图片"}
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.max(1, pageNo - 1))}
+          disabled={pageNo <= 1}
+          className="inline-flex size-7 items-center justify-center rounded-md border border-border-warm transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="上一页"
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.min(pageCount, pageNo + 1))}
+          disabled={pageNo >= pageCount}
+          className="inline-flex size-7 items-center justify-center rounded-md border border-border-warm transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="下一页"
+        >
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ProjectsPage() {
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
@@ -127,6 +214,17 @@ export default function ProjectsPage() {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState("");
   const [savingProjectId, setSavingProjectId] = useState<string | null>(null);
+  const [coverProject, setCoverProject] = useState<ProjectListItem | null>(null);
+  const [selectedCoverAssetId, setSelectedCoverAssetId] = useState<number | null>(null);
+  const [savingCoverProjectId, setSavingCoverProjectId] = useState<string | null>(null);
+  const [projectAssets, setProjectAssets] = useState<AigcAsset[]>([]);
+  const [projectAssetsPageNo, setProjectAssetsPageNo] = useState(1);
+  const [projectAssetsTotal, setProjectAssetsTotal] = useState(0);
+  const [isLoadingProjectAssets, setIsLoadingProjectAssets] = useState(false);
+  const [userAssets, setUserAssets] = useState<AigcAsset[]>([]);
+  const [userAssetsPageNo, setUserAssetsPageNo] = useState(1);
+  const [userAssetsTotal, setUserAssetsTotal] = useState(0);
+  const [isLoadingUserAssets, setIsLoadingUserAssets] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -207,6 +305,58 @@ export default function ProjectsPage() {
   }, []);
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
+  const projectAssetsPageCount = useMemo(() => Math.max(1, Math.ceil(projectAssetsTotal / COVER_ASSET_PAGE_SIZE)), [projectAssetsTotal]);
+  const userAssetsPageCount = useMemo(() => Math.max(1, Math.ceil(userAssetsTotal / COVER_ASSET_PAGE_SIZE)), [userAssetsTotal]);
+
+  const loadProjectCoverAssets = useCallback(async (projectId: string, nextPageNo: number) => {
+    setIsLoadingProjectAssets(true);
+    try {
+      const page = await canvasApi.getProjectAssets(projectId, {
+        pageNo: nextPageNo,
+        pageSize: COVER_ASSET_PAGE_SIZE,
+        assetType: "IMAGE",
+      });
+      setProjectAssets(page.list);
+      setProjectAssetsTotal(page.total);
+    } catch (error) {
+      setProjectAssets([]);
+      setProjectAssetsTotal(0);
+      setStatusMessage(error instanceof Error ? error.message : "项目内图片加载失败。");
+    } finally {
+      setIsLoadingProjectAssets(false);
+    }
+  }, []);
+
+  const loadUserCoverAssets = useCallback(async (nextPageNo: number) => {
+    setIsLoadingUserAssets(true);
+    try {
+      const page = await getMyAssetPage({
+        pageNo: nextPageNo,
+        pageSize: COVER_ASSET_PAGE_SIZE,
+        assetType: "IMAGE",
+      });
+      setUserAssets(page.list);
+      setUserAssetsTotal(page.total);
+    } catch (error) {
+      setUserAssets([]);
+      setUserAssetsTotal(0);
+      setStatusMessage(error instanceof Error ? error.message : "用户图片资源加载失败。");
+    } finally {
+      setIsLoadingUserAssets(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!coverProject) return;
+    const timer = window.setTimeout(() => loadProjectCoverAssets(coverProject.id, projectAssetsPageNo), 0);
+    return () => window.clearTimeout(timer);
+  }, [coverProject, loadProjectCoverAssets, projectAssetsPageNo]);
+
+  useEffect(() => {
+    if (!coverProject) return;
+    const timer = window.setTimeout(() => loadUserCoverAssets(userAssetsPageNo), 0);
+    return () => window.clearTimeout(timer);
+  }, [coverProject, loadUserCoverAssets, userAssetsPageNo]);
 
   async function handleCreateProject() {
     if (isCreating) return;
@@ -282,6 +432,46 @@ export default function ProjectsPage() {
       setStatusMessage(error instanceof Error ? error.message : "项目名称修改失败，请稍后再试。");
     } finally {
       setSavingProjectId(null);
+    }
+  }
+
+  function openCoverPicker(project: ProjectListItem) {
+    if (!canUpdateProjectCover(project) || savingCoverProjectId) return;
+    setCoverProject(project);
+    setSelectedCoverAssetId(null);
+    setProjectAssetsPageNo(1);
+    setUserAssetsPageNo(1);
+    setProjectAssets([]);
+    setUserAssets([]);
+    setProjectAssetsTotal(0);
+    setUserAssetsTotal(0);
+  }
+
+  function closeCoverPicker() {
+    if (savingCoverProjectId) return;
+    setCoverProject(null);
+    setSelectedCoverAssetId(null);
+  }
+
+  async function submitCoverAsset() {
+    if (!coverProject || !selectedCoverAssetId || savingCoverProjectId) return;
+    setSavingCoverProjectId(coverProject.id);
+    try {
+      await canvasApi.updateProject(coverProject.id, { coverAssetId: selectedCoverAssetId });
+      const selectedAsset = [...projectAssets, ...userAssets].find((asset) => asset.id === selectedCoverAssetId);
+      const coverUrl = selectedAsset ? getAssetPreviewUrl(selectedAsset) : coverProject.coverUrl;
+      setProjects((items) => items.map((item) => item.id === coverProject.id
+        ? { ...item, coverUrl }
+        : item
+      ));
+      setStatusMessage("项目显示图已更新。");
+      setCoverProject(null);
+      setSelectedCoverAssetId(null);
+      window.setTimeout(refreshProjectWallLayout, 0);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "项目显示图修改失败，请稍后再试。");
+    } finally {
+      setSavingCoverProjectId(null);
     }
   }
 
@@ -403,18 +593,32 @@ export default function ProjectsPage() {
                   </div>
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <p className="min-w-0 text-xs text-muted-gray">最近打开 {formatDate(project.lastOpenedAt)}</p>
-                    {canDeleteProject(project) && (
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(project)}
-                        disabled={deletingProjectId === project.id}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-destructive opacity-0 transition-colors hover:bg-muted group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label="删除项目"
-                      >
-                        <Trash2 className="size-3.5" />
-                        {deletingProjectId === project.id ? "删除中" : ""}
-                      </button>
-                    )}
+                    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      {canUpdateProjectCover(project) && (
+                        <button
+                          type="button"
+                          onClick={() => openCoverPicker(project)}
+                          disabled={savingCoverProjectId === project.id}
+                          className="inline-flex size-7 items-center justify-center rounded-lg text-muted-gray transition-colors hover:bg-muted hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="修改项目显示图"
+                          title="修改项目显示图"
+                        >
+                          <ImageIcon className="size-3.5" />
+                        </button>
+                      )}
+                      {canDeleteProject(project) && (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(project)}
+                          disabled={deletingProjectId === project.id}
+                          className="inline-flex size-7 items-center justify-center rounded-lg text-destructive transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="删除项目"
+                          title={deletingProjectId === project.id ? "删除中" : "删除项目"}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -445,6 +649,108 @@ export default function ProjectsPage() {
             >
               下一页
             </button>
+          </div>
+        </div>
+      )}
+
+      {coverProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-6">
+          <div className="flex max-h-[88vh] w-full max-w-[980px] flex-col rounded-xl border border-border-warm bg-background shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
+            <div className="flex items-center justify-between gap-3 border-b border-border-warm px-5 py-4">
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-semibold text-charcoal">修改项目显示图</h2>
+                <p className="mt-1 truncate text-xs text-muted-gray">{coverProject.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCoverPicker}
+                disabled={Boolean(savingCoverProjectId)}
+                className="inline-flex size-8 items-center justify-center rounded-lg text-muted-gray transition-colors hover:bg-muted hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="关闭"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 lg:grid-cols-2">
+              <section className="min-w-0 rounded-lg border border-border-warm p-3">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium text-charcoal">项目内图片资源</h3>
+                  {isLoadingProjectAssets && <span className="text-xs text-muted-gray">加载中</span>}
+                </div>
+                {projectAssets.length === 0 ? (
+                  <div className="flex h-[360px] items-center justify-center rounded-lg bg-muted px-4 text-center text-xs text-muted-gray">
+                    {isLoadingProjectAssets ? "正在加载项目资源" : "当前项目还没有可选图片"}
+                  </div>
+                ) : (
+                  <div className="grid h-[360px] content-start gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                    {projectAssets.map((asset) => (
+                      <AssetChoiceCard
+                        key={`project-${asset.id}`}
+                        asset={asset}
+                        selected={selectedCoverAssetId === asset.id}
+                        onSelect={() => setSelectedCoverAssetId(asset.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+                <CoverAssetPager
+                  pageNo={projectAssetsPageNo}
+                  pageCount={projectAssetsPageCount}
+                  total={projectAssetsTotal}
+                  onPageChange={setProjectAssetsPageNo}
+                />
+              </section>
+
+              <section className="min-w-0 rounded-lg border border-border-warm p-3">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium text-charcoal">用户所有图片资源</h3>
+                  {isLoadingUserAssets && <span className="text-xs text-muted-gray">加载中</span>}
+                </div>
+                {userAssets.length === 0 ? (
+                  <div className="flex h-[360px] items-center justify-center rounded-lg bg-muted px-4 text-center text-xs text-muted-gray">
+                    {isLoadingUserAssets ? "正在加载用户资源" : "没有可选图片资源"}
+                  </div>
+                ) : (
+                  <div className="grid h-[360px] content-start gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                    {userAssets.map((asset) => (
+                      <AssetChoiceCard
+                        key={`user-${asset.id}`}
+                        asset={asset}
+                        selected={selectedCoverAssetId === asset.id}
+                        onSelect={() => setSelectedCoverAssetId(asset.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+                <CoverAssetPager
+                  pageNo={userAssetsPageNo}
+                  pageCount={userAssetsPageCount}
+                  total={userAssetsTotal}
+                  onPageChange={setUserAssetsPageNo}
+                />
+              </section>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border-warm px-5 py-4">
+              <button
+                type="button"
+                onClick={closeCoverPicker}
+                disabled={Boolean(savingCoverProjectId)}
+                className="rounded-lg border border-border-warm px-4 py-2 text-sm text-muted-gray transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={submitCoverAsset}
+                disabled={!selectedCoverAssetId || Boolean(savingCoverProjectId)}
+                className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Check className="size-4" />
+                {savingCoverProjectId ? "保存中" : "设为显示图"}
+              </button>
+            </div>
           </div>
         </div>
       )}
