@@ -480,14 +480,14 @@ idx_model_id = model_id
 
 ### 5.8 aigc_model_route
 
-模型路由规则表，第一阶段可先建表但不做复杂路由。
+模型路由规则表，用于将用户端选择的“展示模型”路由到一个或多个真实执行模型。展示模型负责用户端可见名称、参数模板和价格规则；执行模型负责绑定真实渠道商、第三方模型标识和实际调用配置。
 
 
 | 字段       | 类型         | 说明        |
 | ---------- | ------------ | ----------- |
 | id         | bigint       | 主键        |
 | name       | varchar(128) | 路由名称    |
-| task_type  | varchar(64)  | 任务类型    |
+| task_type  | varchar(64)  | 展示模型编码 |
 | capability | varchar(64)  | 能力        |
 | strategy   | varchar(64)  | 路由策略    |
 | model_ids  | json         | 候选模型 ID |
@@ -496,11 +496,26 @@ idx_model_id = model_id
 
 路由策略：
 
-- FIXED_MODEL
-- LOWEST_COST
-- HIGHEST_SUCCESS_RATE
-- FASTEST_RESPONSE
-- ROUND_ROBIN
+- `FIXED_MODEL`：固定使用候选模型列表第一个。
+- `ROUND_ROBIN`：在候选模型列表中轮询。
+- `LOWEST_COST`、`HIGHEST_SUCCESS_RATE`、`FASTEST_RESPONSE`：当前预留，暂按候选模型列表第一个执行，后续接入成本、成功率和延迟统计后再实现。
+
+配置规则：
+
+- `task_type` 填展示模型的 `code`，例如用户端展示模型 `GPT Image 2` 的编码 `gpt-image-2`。
+- `capability` 填该路由适用的能力。管理端新增时支持多选能力，系统会按每个能力创建一条路由规则。
+- `model_ids` 填真实执行模型 ID 列表。管理端以模型名称多选，保存为 JSON 数组。
+- 未配置路由、路由禁用、策略异常、候选模型为空时，系统回退到用户端传入的原始展示模型。
+
+推荐配置示例：
+
+| 模型角色 | 模型名称 | 用户端展示 | 供应商 | 说明 |
+| -------- | -------- | ---------- | ------ | ---- |
+| 展示模型 | GPT Image 2 | 开启 | 任一可用供应商 | 用户端只看到这一条；参数模板和价格规则配置在这条模型上 |
+| 执行模型 | GPT Image 2 - Copse | 关闭 | Copse | 真实调用 Copse 渠道 |
+| 执行模型 | GPT Image 2 - SubRouter | 关闭 | SubRouter.ai | 真实调用 SubRouter 渠道 |
+
+以上三条模型都需要配置能力并在租户模型授权中启用；执行模型可以不对用户端展示。
 
 ### 5.9 aigc_model_tenant
 
@@ -680,19 +695,16 @@ public interface AigcModelApi {
 
 校验：
 
-- 模型存在
-- 模型启用
-- 渠道商存在
-- 渠道商启用
-- 模型支持该能力
-- 当前租户已授权该模型
-- 当前租户启用了该模型
+- 校验用户端传入的展示模型存在、启用、渠道商启用、支持该能力、当前租户已授权并启用。
+- 使用展示模型 `code + capability` 查询启用状态的路由规则。
+- 如果路由命中候选执行模型，则按路由策略选出真实执行模型，并重新校验该执行模型存在、启用、渠道商启用、支持该能力、当前租户已授权并启用。
+- 如果路由未命中或路由配置不可用，则回退到展示模型自身。
 
 返回：
 
-- 模型信息
-- 渠道商 ID
-- 模型标识
+- 实际执行模型信息
+- 实际执行渠道商 ID
+- 实际执行模型标识
 - 超时时间
 - 最大并发
 
@@ -1042,18 +1054,25 @@ aigc-gen 接收用户生成请求
   ↓
 调用 aigc-model.validateModel(modelId, capability)
   ↓
-aigc-model 校验模型和渠道状态
+aigc-model 校验展示模型并按路由规则解析实际执行模型
   ↓
 调用 aigc-model.validateParams(modelId, params)
   ↓
-aigc-model 校验参数模板
+aigc-model 按展示模型校验参数模板
   ↓
 调用 aigc-model.calculatePrice(modelId, capability, params)
   ↓
-返回销售价和成本价
+按展示模型返回用户侧销售价和成本价
   ↓
-aigc-gen 创建任务并调用 billing 冻结积分
+aigc-gen 使用实际执行模型创建任务、记录 providerId，并调用 billing 冻结积分
 ```
+
+说明：
+
+- 请求中的 `modelId` 是用户端选择的展示模型 ID。
+- `validateModel` 返回的是实际执行模型，生成记录、任务记录、供应商调用和用量统计使用实际执行模型 ID 与 providerId。
+- 参数模板和价格规则按展示模型配置，避免同一个用户端模型背后的多个渠道执行模型重复维护参数和用户定价。
+- 执行模型只需要配置能力、供应商、模型标识、租户授权和状态；通常不需要单独配置用户侧价格规则。
 
 ### 10.2 价格计算流程
 
@@ -1599,22 +1618,53 @@ priceSource = TENANT / PLATFORM
 ```text
 获取当前 tenantId
   ↓
-校验模型存在且启用
+校验展示模型存在且启用
   ↓
-校验渠道商存在且启用
+校验展示模型渠道商存在且启用
   ↓
-校验模型支持 capability
+校验展示模型支持 capability
   ↓
-校验当前租户已授权该模型
+校验当前租户已授权并启用展示模型
   ↓
-校验租户启用了该模型
+按展示模型 code + capability 查询路由规则
   ↓
-返回模型信息
+如果命中路由，选择真实执行模型并重复模型、渠道、能力、租户授权校验
+  ↓
+返回实际执行模型信息
 ```
 
 如果是内部平台任务，可以显式传 `tenantId = 0` 或使用系统租户上下文。
 
-### 16.7 租户级默认模型
+### 16.7 路由验证 SQL
+
+提交生成后，可通过生成记录和任务记录确认路由是否生效：
+
+```sql
+SELECT
+  r.task_id,
+  r.model_id,
+  m.name AS model_name,
+  m.model AS provider_model,
+  r.provider_id,
+  p.name AS provider_name,
+  p.code AS provider_code,
+  r.provider_code AS record_provider_code,
+  r.status,
+  r.provider_task_id
+FROM gen_db.aigc_gen_record r
+LEFT JOIN model_db.aigc_model m ON m.id = r.model_id
+LEFT JOIN model_db.aigc_model_provider p ON p.id = r.provider_id
+WHERE r.task_id IN (80, 81)
+ORDER BY r.task_id;
+```
+
+判断标准：
+
+- 如果生成请求传入展示模型 ID，但 `aigc_gen_record.model_id` 变成候选执行模型 ID，说明路由生效。
+- 如果 `provider_id` 在不同任务间切换，说明轮询或其他策略已切换到不同渠道。
+- 如果 `model_id` 仍是展示模型 ID，说明路由未命中、未启用、候选为空，或服务未部署到包含路由逻辑的版本。
+
+### 16.8 租户级默认模型
 
 默认模型必须放在租户维度，不建议直接使用 `aigc_model.default_model` 作为最终默认模型。
 
@@ -1625,7 +1675,7 @@ priceSource = TENANT / PLATFORM
 - 新租户开通 AIGC 服务时，根据平台默认配置生成租户授权记录。
 - 租户管理员可以调整自己的默认模型。
 
-### 16.8 租户级价格计算
+### 16.9 租户级价格计算
 
 `calculatePrice` 必须按以下顺序执行：
 
@@ -1649,7 +1699,7 @@ priceSource = TENANT / PLATFORM
 - 租户价格主要覆盖销售价。
 - 如果允许代理商租户自定义售价，需要记录租户售价来源。
 
-### 16.9 租户级密钥策略
+### 16.10 租户级密钥策略
 
 渠道商密钥分两种：
 
@@ -1665,7 +1715,7 @@ priceSource = TENANT / PLATFORM
 - 租户密钥能力保留表结构和权限，不在 C 端开放。
 - 企业租户后续可开启自有渠道配置。
 
-### 16.10 租户开通流程
+### 16.11 租户开通流程
 
 新租户开通 AIGC 服务时，需要初始化：
 
@@ -1689,7 +1739,7 @@ priceSource = TENANT / PLATFORM
 为租户初始化 AIGC 模型授权
 ```
 
-### 16.11 租户权限边界
+### 16.12 租户权限边界
 
 平台管理员：
 
@@ -1712,7 +1762,7 @@ priceSource = TENANT / PLATFORM
 - 只查看当前租户可用且公开展示的模型。
 - 只能计算当前租户授权模型的价格。
 
-### 16.12 多租户测试补充
+### 16.13 多租户测试补充
 
 必须补充以下测试：
 
@@ -1730,7 +1780,7 @@ priceSource = TENANT / PLATFORM
 | T-009 | 租户 A 无法查看租户 B 渠道商 | 查询为空或无权限            |
 | T-010 | 平台管理员查看租户授权       | 可查看所有租户授权          |
 
-### 16.13 多租户质量门禁
+### 16.14 多租户质量门禁
 
 上线前必须满足：
 
