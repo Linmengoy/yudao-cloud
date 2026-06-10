@@ -5,6 +5,7 @@ import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FileCreateReq
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePageReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePresignedUrlRespVO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignReqDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileDO;
 import jakarta.validation.constraints.NotEmpty;
@@ -60,6 +61,8 @@ public interface FileService {
     String presignGetUrl(String url, Integer expirationSeconds);
 
     FilePresignRespDTO presignGetUrlV2(Long configId, String path, Integer expirationSeconds);
+
+    List<FilePresignRespDTO> presignGetUrlListV2(List<FilePresignReqDTO> reqDTOs);
 
     /**
      * 创建文件

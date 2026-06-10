@@ -5,9 +5,11 @@ import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetPageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCategoryCountRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetPageReqDTO;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
@@ -43,6 +45,31 @@ public interface AigcAssetMapper extends BaseMapperX<AigcAssetDO> {
     default Long selectCount(AigcAssetPageReqVO reqVO) {
         return selectCount(buildPageWrapper(reqVO));
     }
+
+    @Select("""
+            <script>
+            SELECT
+                COUNT(1) AS allCount,
+                COALESCE(SUM(CASE WHEN asset_type = 'IMAGE' AND source_type = 'GENERATE' THEN 1 ELSE 0 END), 0) AS generatedImageCount,
+                COALESCE(SUM(CASE WHEN asset_type = 'IMAGE' AND source_type = 'UPLOAD' THEN 1 ELSE 0 END), 0) AS uploadedImageCount,
+                COALESCE(SUM(CASE WHEN asset_type = 'VIDEO' THEN 1 ELSE 0 END), 0) AS videoCount,
+                COALESCE(SUM(CASE WHEN asset_type NOT IN ('IMAGE', 'VIDEO') THEN 1 ELSE 0 END), 0) AS otherCount
+            FROM aigc_asset
+            WHERE deleted = 0
+              AND user_id = #{userId}
+              AND status = #{status}
+            <if test="auditStatus != null and auditStatus != ''">
+              AND audit_status = #{auditStatus}
+            </if>
+            <if test="visibility != null and visibility != ''">
+              AND visibility = #{visibility}
+            </if>
+            <if test="title != null and title != ''">
+              AND title LIKE CONCAT('%', #{title}, '%')
+            </if>
+            </script>
+            """)
+    AigcAssetCategoryCountRespDTO selectCategoryCounts(AigcAssetPageReqVO reqVO);
 
     default LambdaQueryWrapperX<AigcAssetDO> buildPageWrapper(AigcAssetPageReqVO reqVO) {
         LambdaQueryWrapperX<AigcAssetDO> wrapper = new LambdaQueryWrapperX<AigcAssetDO>()

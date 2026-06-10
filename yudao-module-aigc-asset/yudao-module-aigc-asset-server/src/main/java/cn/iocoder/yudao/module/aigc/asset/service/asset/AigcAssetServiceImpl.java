@@ -18,10 +18,12 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -80,6 +82,7 @@ import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
 import cn.iocoder.yudao.module.infra.api.file.FileApi;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignReqDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -270,9 +273,22 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     @Override
     public List<AigcAssetRespDTO> getAssetRespList(Collection<Long> ids, Long userId) {
         List<AigcAssetDO> assets = getAssetList(ids);
-        Map<Long, List<AigcAssetFileDO>> fileMap = assetFileMapper.selectListByAssetIds(ids).stream()
+        return buildAssetRespList(assets, userId);
+    }
+
+    @Override
+    public List<AigcAssetRespDTO> buildAssetRespList(List<AigcAssetDO> assets, Long userId) {
+        if (assets == null || assets.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> ids = assets.stream().map(AigcAssetDO::getId).toList();
+        List<AigcAssetFileDO> files = assetFileMapper.selectListByAssetIds(ids);
+        Map<Long, List<AigcAssetFileDO>> fileMap = files.stream()
                 .collect(Collectors.groupingBy(AigcAssetFileDO::getAssetId));
-        return assets.stream().map(asset -> buildAssetRespDTO(asset, fileMap.get(asset.getId()), userId))
+        Map<Long, AigcAssetDO> assetMap = assets.stream()
+                .collect(Collectors.toMap(AigcAssetDO::getId, asset -> asset, (a, b) -> a, LinkedHashMap::new));
+        Map<Long, AigcAssetAccessUrlRespDTO> accessUrlMap = buildAccessUrlMap(assetMap, files, userId);
+        return assets.stream().map(asset -> buildAssetRespDTO(asset, fileMap.get(asset.getId()), accessUrlMap))
                 .collect(Collectors.toList());
     }
 
@@ -337,19 +353,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
 
     @Override
     public AigcAssetCategoryCountRespDTO getUserAssetCategoryCounts(AigcAssetPageReqVO reqVO, Long userId) {
-        AigcAssetPageReqVO baseReqVO = buildUserAssetCountReqVO(reqVO, userId);
-        return new AigcAssetCategoryCountRespDTO()
-                .setAllCount(assetMapper.selectCount(baseReqVO))
-                .setGeneratedImageCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
-                        .setAssetType(AigcAssetTypeEnum.IMAGE.getCode())
-                        .setSourceType(AigcAssetSourceTypeEnum.GENERATE.getCode())))
-                .setUploadedImageCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
-                        .setAssetType(AigcAssetTypeEnum.IMAGE.getCode())
-                        .setSourceType(AigcAssetSourceTypeEnum.UPLOAD.getCode())))
-                .setVideoCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
-                        .setAssetType(AigcAssetTypeEnum.VIDEO.getCode())))
-                .setOtherCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
-                        .setCategory("OTHER")));
+        return assetMapper.selectCategoryCounts(buildUserAssetCountReqVO(reqVO, userId));
     }
 
     private AigcAssetPageReqVO buildUserAssetCountReqVO(AigcAssetPageReqVO reqVO, Long userId) {
@@ -805,14 +809,19 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     }
 
     private AigcAssetRespDTO buildAssetRespDTO(AigcAssetDO asset, List<AigcAssetFileDO> files, Long userId) {
+        Map<Long, AigcAssetAccessUrlRespDTO> accessUrlMap = buildAccessUrlMap(Collections.singletonMap(asset.getId(), asset), files, userId);
+        return buildAssetRespDTO(asset, files, accessUrlMap);
+    }
+
+    private AigcAssetRespDTO buildAssetRespDTO(AigcAssetDO asset, List<AigcAssetFileDO> files,
+            Map<Long, AigcAssetAccessUrlRespDTO> accessUrlMap) {
         AigcAssetRespDTO respDTO = BeanUtils.toBean(asset, AigcAssetRespDTO.class);
         if (files == null || files.isEmpty()) {
             return respDTO.setFiles(Collections.emptyList());
         }
+        Set<String> filledFileRoles = new HashSet<>();
         List<AigcAssetFileRespDTO> fileRespDTOs = files.stream().map(file -> {
-            AigcAssetAccessUrlRespDTO accessUrl = getAccessUrl(asset, file, accessTypeForRole(file.getFileRole()),
-                    userId);
-            Set<String> filledFileRoles = new HashSet<>();
+            AigcAssetAccessUrlRespDTO accessUrl = accessUrlMap.get(file.getId());
             AigcAssetFileRespDTO fileRespDTO = new AigcAssetFileRespDTO()
                     .setAssetFileId(file.getId())
                     .setFileRole(file.getFileRole())
@@ -845,6 +854,35 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         return respDTO;
     }
 
+    private Map<Long, AigcAssetAccessUrlRespDTO> buildAccessUrlMap(Map<Long, AigcAssetDO> assetMap,
+            List<AigcAssetFileDO> files, Long userId) {
+        if (files == null || files.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, AigcAssetAccessUrlRespDTO> accessUrlMap = new LinkedHashMap<>();
+        List<AccessUrlGenerateContext> generateContexts = new ArrayList<>();
+        for (AigcAssetFileDO file : files) {
+            AigcAssetDO asset = assetMap.get(file.getAssetId());
+            if (asset == null) {
+                continue;
+            }
+            String accessType = accessTypeForRole(file.getFileRole());
+            if (!Objects.equals(AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode(), file.getAccessMode())) {
+                accessUrlMap.put(file.getId(), buildPublicAccessUrl(asset, file, accessType));
+                continue;
+            }
+            String key = buildAccessUrlCacheKey(file, accessType, userId);
+            AigcAssetAccessUrlRespDTO cached = accessUrlRedisDAO.get(key);
+            if (cached != null) {
+                accessUrlMap.put(file.getId(), cached.setCacheHit(true));
+                continue;
+            }
+            generateContexts.add(new AccessUrlGenerateContext(asset, file, accessType, key));
+        }
+        generateAccessUrls(generateContexts).forEach(accessUrl -> accessUrlMap.put(accessUrl.getAssetFileId(), accessUrl));
+        return accessUrlMap;
+    }
+
     private void fillLegacyFileFields(AigcAssetRespDTO respDTO, AigcAssetFileDO file,
             AigcAssetFileRespDTO fileRespDTO) {
         respDTO.setFileId(file.getFileId())
@@ -867,14 +905,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     private AigcAssetAccessUrlRespDTO getAccessUrl(AigcAssetDO asset, AigcAssetFileDO file, String accessType,
             Long userId) {
         if (!Objects.equals(AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode(), file.getAccessMode())) {
-            return new AigcAssetAccessUrlRespDTO()
-                    .setAssetId(asset.getId())
-                    .setAssetFileId(file.getId())
-                    .setFileRole(file.getFileRole())
-                    .setAccessType(accessType)
-                    .setUrl(file.getPublicUrl())
-                    .setPublicAccess(true)
-                    .setCacheHit(false);
+            return buildPublicAccessUrl(asset, file, accessType);
         }
         String key = buildAccessUrlCacheKey(file, accessType, userId);
         AigcAssetAccessUrlRespDTO cached = accessUrlRedisDAO.get(key);
@@ -899,6 +930,47 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         }
     }
 
+    private AigcAssetAccessUrlRespDTO buildPublicAccessUrl(AigcAssetDO asset, AigcAssetFileDO file,
+            String accessType) {
+        return new AigcAssetAccessUrlRespDTO()
+                .setAssetId(asset.getId())
+                .setAssetFileId(file.getId())
+                .setFileRole(file.getFileRole())
+                .setAccessType(accessType)
+                .setUrl(file.getPublicUrl())
+                .setPublicAccess(true)
+                .setCacheHit(false);
+    }
+
+    private List<AigcAssetAccessUrlRespDTO> generateAccessUrls(List<AccessUrlGenerateContext> contexts) {
+        if (contexts == null || contexts.isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            List<FilePresignReqDTO> reqDTOs = contexts.stream().map(context -> new FilePresignReqDTO()
+                    .setConfigId(context.file.getStorageConfigId())
+                    .setPath(context.file.getFilePath())
+                    .setExpirationSeconds(AigcAssetAccessTypeEnum.getExpireSeconds(context.accessType)))
+                    .collect(Collectors.toList());
+            List<FilePresignRespDTO> presigns = fileApi.presignGetUrlListV2(reqDTOs).getCheckedData();
+            List<AigcAssetAccessUrlRespDTO> accessUrls = new ArrayList<>();
+            for (int i = 0; i < contexts.size(); i++) {
+                AccessUrlGenerateContext context = contexts.get(i);
+                AigcAssetAccessUrlRespDTO accessUrl = buildAccessUrl(context.asset, context.file, context.accessType,
+                        presigns.get(i));
+                cacheAccessUrl(context.cacheKey, accessUrl);
+                accessUrls.add(accessUrl);
+            }
+            return accessUrls;
+        } catch (Exception ex) {
+            return contexts.stream().map(context -> {
+                AigcAssetAccessUrlRespDTO accessUrl = generateAccessUrl(context.asset, context.file, context.accessType);
+                cacheAccessUrl(context.cacheKey, accessUrl);
+                return accessUrl;
+            }).collect(Collectors.toList());
+        }
+    }
+
     private void cacheAccessUrl(String key, AigcAssetAccessUrlRespDTO accessUrl) {
         int ttl = Math.max(1, accessUrl.getExpireSeconds() == null
                 ? AigcAssetAccessTypeEnum.PREVIEW.getExpireSeconds()
@@ -910,6 +982,11 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         Integer expireSeconds = AigcAssetAccessTypeEnum.getExpireSeconds(accessType);
         FilePresignRespDTO presign = fileApi
                 .presignGetUrlV2(file.getStorageConfigId(), file.getFilePath(), expireSeconds).getCheckedData();
+        return buildAccessUrl(asset, file, accessType, presign);
+    }
+
+    private AigcAssetAccessUrlRespDTO buildAccessUrl(AigcAssetDO asset, AigcAssetFileDO file, String accessType,
+            FilePresignRespDTO presign) {
         return new AigcAssetAccessUrlRespDTO()
                 .setAssetId(asset.getId())
                 .setAssetFileId(file.getId())
@@ -920,6 +997,23 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setExpireTime(presign.getExpireTime())
                 .setPublicAccess(presign.getPublicAccess())
                 .setCacheHit(false);
+    }
+
+    private static class AccessUrlGenerateContext {
+
+        private final AigcAssetDO asset;
+        private final AigcAssetFileDO file;
+        private final String accessType;
+        private final String cacheKey;
+
+        private AccessUrlGenerateContext(AigcAssetDO asset, AigcAssetFileDO file, String accessType,
+                String cacheKey) {
+            this.asset = asset;
+            this.file = file;
+            this.accessType = accessType;
+            this.cacheKey = cacheKey;
+        }
+
     }
 
     private String buildAccessUrlCacheKey(AigcAssetFileDO file, String accessType, Long userId) {
