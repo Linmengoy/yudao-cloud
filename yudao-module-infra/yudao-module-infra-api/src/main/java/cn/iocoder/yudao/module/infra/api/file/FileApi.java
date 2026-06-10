@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.infra.api.file;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateReqDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignReqDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.enums.ApiConstants;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,6 +15,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+
+import java.util.List;
 
 @FeignClient(name = ApiConstants.NAME) // TODO 芋艿：fallbackFactory =
 @Tag(name = "RPC 服务 - 文件")
@@ -86,6 +89,10 @@ public interface FileApi {
     CommonResult<FilePresignRespDTO> presignGetUrlV2(@RequestParam("configId") Long configId,
                                                      @NotEmpty(message = "文件路径不能为空") @RequestParam("path") String path,
                                                      @RequestParam(value = "expirationSeconds", required = false) Integer expirationSeconds);
+
+    @PostMapping(PREFIX + "/presigned-url-v2-batch")
+    @Operation(summary = "批量生成文件预签名地址，用于读取")
+    CommonResult<List<FilePresignRespDTO>> presignGetUrlListV2(@Valid @RequestBody List<FilePresignReqDTO> reqDTOs);
 
     @GetMapping(PREFIX + "/content")
     @Operation(summary = "读取文件内容")

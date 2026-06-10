@@ -10,6 +10,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.http.HttpUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignReqDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FileCreateReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePageReqVO;
@@ -27,7 +28,11 @@ import lombok.SneakyThrows;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static cn.hutool.core.date.DatePattern.PURE_DATE_PATTERN;
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
@@ -175,6 +180,24 @@ public class FileServiceImpl implements FileService {
     public FilePresignRespDTO presignGetUrlV2(Long configId, String path, Integer expirationSeconds) {
         FileClient fileClient = fileConfigService.getFileClient(configId);
         Assert.notNull(fileClient, "客户端({}) 不能为空", configId);
+        return buildPresignRespDTO(fileClient, configId, path, expirationSeconds);
+    }
+
+    @Override
+    public List<FilePresignRespDTO> presignGetUrlListV2(List<FilePresignReqDTO> reqDTOs) {
+        if (reqDTOs == null || reqDTOs.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, FileClient> fileClientMap = new HashMap<>();
+        return reqDTOs.stream().map(reqDTO -> {
+            FileClient fileClient = fileClientMap.computeIfAbsent(reqDTO.getConfigId(), fileConfigService::getFileClient);
+            Assert.notNull(fileClient, "客户端({}) 不能为空", reqDTO.getConfigId());
+            return buildPresignRespDTO(fileClient, reqDTO.getConfigId(), reqDTO.getPath(), reqDTO.getExpirationSeconds());
+        }).collect(Collectors.toList());
+    }
+
+    private FilePresignRespDTO buildPresignRespDTO(FileClient fileClient, Long configId, String path,
+            Integer expirationSeconds) {
         int expireSeconds = expirationSeconds != null ? expirationSeconds : 86400;
         return new FilePresignRespDTO()
                 .setUrl(fileClient.presignGetUrl(path, expireSeconds))

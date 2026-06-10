@@ -54,6 +54,7 @@ public class AigcAssetAppController {
         return success(assetService.getAssetResp(id, getLoginUserId()));
     }
 
+    // get
     @GetMapping("/my-page")
     @Operation(summary = "获取我的资产分页")
     public CommonResult<PageResult<AigcAssetRespDTO>> getMyAssetPage(@Valid AigcAssetPageReqVO reqVO) {
@@ -64,6 +65,7 @@ public class AigcAssetAppController {
         return success(respPage);
     }
 
+    // get
     @GetMapping("/my-list")
     @Operation(summary = "获取我的资产列表")
     public CommonResult<List<AigcAssetRespDTO>> getMyAssetList(@Valid AigcAssetPageReqVO reqVO) {
@@ -71,8 +73,9 @@ public class AigcAssetAppController {
         return success(assetService.buildAssetRespList(list, getLoginUserId()));
     }
 
+    //
     @GetMapping("/my-category-counts")
-    @Operation(summary = "鑾峰彇鎴戠殑璧勪骇鍒嗙被鏁伴噺")
+    @Operation(summary = "获取我的资产分类统计")
     public CommonResult<AigcAssetCategoryCountRespDTO> getMyAssetCategoryCounts(@Valid AigcAssetPageReqVO reqVO) {
         return success(assetService.getUserAssetCategoryCounts(reqVO, getLoginUserId()));
     }
