@@ -24,6 +24,9 @@ public class AigcModelUsageRecordReqDTO {
     @Schema(description = "渠道商编号", example = "1024")
     private Long providerId;
 
+    @Schema(description = "渠道实现编号", example = "2048")
+    private Long channelId;
+
     @Schema(description = "模型能力", requiredMode = Schema.RequiredMode.REQUIRED, example = "TEXT_GENERATE")
     private String capability;
 

@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS `aigc_gen_record` (
   `generate_mode` varchar(32) NOT NULL COMMENT '生成模式',
   `model_id` bigint NOT NULL COMMENT '模型编号',
   `model_code` varchar(64) DEFAULT NULL COMMENT '模型编码快照',
+  `channel_id` bigint DEFAULT NULL COMMENT '渠道实现编号',
+  `provider_model` varchar(128) DEFAULT NULL COMMENT '渠道上游模型标识快照',
   `provider_id` bigint DEFAULT NULL COMMENT '渠道商编号',
   `provider_code` varchar(64) DEFAULT NULL COMMENT '渠道编码快照',
   `provider_task_id` varchar(128) DEFAULT NULL COMMENT '第三方任务编号',

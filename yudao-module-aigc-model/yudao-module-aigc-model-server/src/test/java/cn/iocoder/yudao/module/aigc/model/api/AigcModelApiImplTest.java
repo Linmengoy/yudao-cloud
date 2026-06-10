@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.model.api;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.test.core.ut.BaseMockitoUnitTest;
+import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelChannelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelDO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateReqDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateRespDTO;
@@ -13,6 +14,7 @@ import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
 import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
 import cn.iocoder.yudao.module.aigc.model.service.provider.AigcModelProviderService;
 import cn.iocoder.yudao.module.aigc.model.service.route.AigcModelRouteService;
+import cn.iocoder.yudao.module.aigc.model.service.channel.AigcModelChannelService;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -20,7 +22,6 @@ import org.mockito.Mock;
 import java.math.BigDecimal;
 import java.util.Map;
 
-import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertPojoEquals;
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomPojo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -43,17 +44,26 @@ public class AigcModelApiImplTest extends BaseMockitoUnitTest {
     private AigcModelPriceService priceService;
     @Mock
     private AigcModelRouteService routeService;
+    @Mock
+    private AigcModelChannelService channelService;
 
     @Test
     public void testValidateModel_success() {
         AigcModelDO model = randomPojo(AigcModelDO.class).setId(1L).setCode("display-model");
+        AigcModelChannelDO channel = randomPojo(AigcModelChannelDO.class).setId(10L).setProviderId(20L).setProviderModel("upstream-image2");
         when(modelService.validateTenantModel(eq(1L), eq(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()))).thenReturn(model);
-        when(routeService.route(eq("display-model"), eq(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()))).thenReturn(null);
+        when(routeService.routeChannel(eq(1L), eq("display-model"), eq(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()))).thenReturn(10L);
+        when(channelService.validateChannelExistsAndEnable(eq(10L))).thenReturn(channel);
+        when(providerService.validateProviderExistsAndEnable(eq(20L))).thenReturn(null);
 
         CommonResult<AigcModelRespDTO> result = modelApi.validateModel(1L, AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode());
 
         assertEquals(0, result.getCode());
-        assertPojoEquals(model, result.getData());
+        assertEquals(model.getId(), result.getData().getId());
+        assertEquals(model.getCode(), result.getData().getCode());
+        assertEquals(10L, result.getData().getChannelId());
+        assertEquals(20L, result.getData().getProviderId());
+        assertEquals("upstream-image2", result.getData().getProviderModel());
     }
 
     @Test

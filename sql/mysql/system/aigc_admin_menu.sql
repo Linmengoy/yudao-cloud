@@ -74,6 +74,32 @@ INSERT INTO `system_menu` (
 ('渠道商修改', 'aigc:model:provider:update', 3, 3, @modelProviderMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
 ('渠道商删除', 'aigc:model:provider:delete', 3, 4, @modelProviderMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
 
+-- 模型渠道实现
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '渠道实现', 'aigc:model:channel:query', 2, 3, @aigcModelParentId,
+    'channel', 'ep:share', 'aigc/model/channel/index', 'AigcModelChannel',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @modelChannelMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('渠道实现查询', 'aigc:model:channel:query', 3, 1, @modelChannelMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('渠道实现新增', 'aigc:model:channel:create', 3, 2, @modelChannelMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('渠道实现修改', 'aigc:model:channel:update', 3, 3, @modelChannelMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('渠道实现删除', 'aigc:model:channel:delete', 3, 4, @modelChannelMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
 -- 代理管理
 INSERT INTO `system_menu` (
     `name`, `permission`, `type`, `sort`, `parent_id`,
@@ -81,7 +107,7 @@ INSERT INTO `system_menu` (
     `status`, `visible`, `keep_alive`, `always_show`,
     `creator`, `create_time`, `updater`, `update_time`, `deleted`
 ) VALUES (
-    '代理管理', 'aigc:model:proxy:query', 2, 3, @aigcModelParentId,
+    '代理管理', 'aigc:model:proxy:query', 2, 4, @aigcModelParentId,
     'proxy', 'ep:link', 'aigc/model/proxy/index', 'AigcModelProxy',
     0, b'1', b'1', b'1',
     'admin', NOW(), 'admin', NOW(), b'0'
@@ -107,7 +133,7 @@ INSERT INTO `system_menu` (
     `status`, `visible`, `keep_alive`, `always_show`,
     `creator`, `create_time`, `updater`, `update_time`, `deleted`
 ) VALUES (
-    '模型参数模板', 'aigc:model:param:query', 2, 3, @aigcModelParentId,
+    '模型参数模板', 'aigc:model:param:query', 2, 5, @aigcModelParentId,
     'param', 'ep:document', 'aigc/model/param/index', 'AigcModelParam',
     0, b'1', b'1', b'1',
     'admin', NOW(), 'admin', NOW(), b'0'
@@ -133,7 +159,7 @@ INSERT INTO `system_menu` (
     `status`, `visible`, `keep_alive`, `always_show`,
     `creator`, `create_time`, `updater`, `update_time`, `deleted`
 ) VALUES (
-    '模型价格规则', 'aigc:model:price:query', 2, 4, @aigcModelParentId,
+    '模型价格规则', 'aigc:model:price:query', 2, 6, @aigcModelParentId,
     'price', 'ep:coin', 'aigc/model/price/index', 'AigcModelPrice',
     0, b'1', b'1', b'1',
     'admin', NOW(), 'admin', NOW(), b'0'
@@ -159,7 +185,7 @@ INSERT INTO `system_menu` (
     `status`, `visible`, `keep_alive`, `always_show`,
     `creator`, `create_time`, `updater`, `update_time`, `deleted`
 ) VALUES (
-    '模型路由规则', 'aigc:model:route:query', 2, 5, @aigcModelParentId,
+    '模型路由规则', 'aigc:model:route:query', 2, 7, @aigcModelParentId,
     'route', 'ep:share', 'aigc/model/route/index', 'AigcModelRoute',
     0, b'1', b'1', b'1',
     'admin', NOW(), 'admin', NOW(), b'0'
@@ -185,7 +211,7 @@ INSERT INTO `system_menu` (
     `status`, `visible`, `keep_alive`, `always_show`,
     `creator`, `create_time`, `updater`, `update_time`, `deleted`
 ) VALUES (
-    '租户模型授权', 'aigc:model:tenant:query', 2, 6, @aigcModelParentId,
+    '租户模型授权', 'aigc:model:tenant:query', 2, 8, @aigcModelParentId,
     'tenant', 'ep:user', 'aigc/model/tenant/index', 'AigcModelTenant',
     0, b'1', b'1', b'1',
     'admin', NOW(), 'admin', NOW(), b'0'

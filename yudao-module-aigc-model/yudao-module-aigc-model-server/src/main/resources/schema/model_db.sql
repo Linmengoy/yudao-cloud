@@ -56,10 +56,10 @@ CREATE TABLE `aigc_model_proxy` (
 
 CREATE TABLE `aigc_model` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `provider_id` bigint NOT NULL COMMENT '渠道商ID',
+  `provider_id` bigint DEFAULT NULL COMMENT '兼容字段：旧渠道商ID，新逻辑使用 aigc_model_channel',
   `code` varchar(64) NOT NULL COMMENT '平台内部模型编码',
   `name` varchar(128) NOT NULL COMMENT '模型展示名称',
-  `model` varchar(128) NOT NULL COMMENT '渠道商模型标识',
+  `model` varchar(128) DEFAULT NULL COMMENT '兼容字段：旧渠道商模型标识，新逻辑使用 aigc_model_channel.provider_model',
   `type` int NOT NULL COMMENT '模型类型',
   `public_visible` tinyint(1) DEFAULT 0 COMMENT '用户端是否展示',
   `default_model` tinyint(1) DEFAULT 0 COMMENT '是否默认模型',
@@ -82,6 +82,35 @@ CREATE TABLE `aigc_model` (
   KEY `idx_public_visible` (`public_visible`),
   KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型配置表';
+
+CREATE TABLE `aigc_model_channel` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `model_id` bigint NOT NULL COMMENT '业务模型ID',
+  `provider_id` bigint NOT NULL COMMENT '渠道商ID',
+  `provider_model` varchar(128) NOT NULL COMMENT '渠道商真实模型标识',
+  `name` varchar(128) DEFAULT NULL COMMENT '渠道实现名称',
+  `cost_price` decimal(18,6) DEFAULT 0 COMMENT '渠道成本价',
+  `currency_type` varchar(32) DEFAULT 'POINT' COMMENT '货币类型',
+  `weight` int DEFAULT 100 COMMENT '路由权重',
+  `priority` int DEFAULT 100 COMMENT '路由优先级',
+  `max_concurrent` int DEFAULT NULL COMMENT '最大并发',
+  `timeout_seconds` int DEFAULT NULL COMMENT '超时时间',
+  `rate_limit_config` json DEFAULT NULL COMMENT '限流配置',
+  `health_status` varchar(32) DEFAULT 'UNKNOWN' COMMENT '健康状态',
+  `status` int NOT NULL DEFAULT 1 COMMENT '状态',
+  `remark` varchar(512) DEFAULT NULL COMMENT '备注',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_model_provider_model` (`model_id`, `provider_id`, `provider_model`),
+  KEY `idx_model_id` (`model_id`),
+  KEY `idx_provider_id` (`provider_id`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型渠道实现表';
 
 CREATE TABLE `aigc_model_capability` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
@@ -156,9 +185,11 @@ CREATE TABLE `aigc_model_route` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
   `name` varchar(128) NOT NULL COMMENT '路由名称',
   `task_type` varchar(64) DEFAULT NULL COMMENT '任务类型',
+  `model_id` bigint DEFAULT NULL COMMENT '业务模型ID',
   `capability` varchar(64) DEFAULT NULL COMMENT '能力',
   `strategy` varchar(64) NOT NULL COMMENT '路由策略',
-  `model_ids` json DEFAULT NULL COMMENT '候选模型ID',
+  `model_ids` json DEFAULT NULL COMMENT '兼容字段：候选模型ID',
+  `channel_ids` json DEFAULT NULL COMMENT '候选渠道实现ID',
   `user_level` varchar(64) DEFAULT NULL COMMENT '用户等级',
   `status` int DEFAULT 1 COMMENT '状态',
   `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
@@ -198,6 +229,7 @@ CREATE TABLE `aigc_model_usage_log` (
   `user_id` bigint DEFAULT NULL COMMENT '用户编号',
   `model_id` bigint NOT NULL COMMENT '模型编号',
   `provider_id` bigint DEFAULT NULL COMMENT '渠道商编号',
+  `channel_id` bigint DEFAULT NULL COMMENT '渠道实现编号',
   `capability` varchar(64) NOT NULL COMMENT '模型能力',
   `request_id` varchar(128) DEFAULT NULL COMMENT '请求编号',
   `external_task_id` varchar(128) DEFAULT NULL COMMENT '外部任务编号',
@@ -227,6 +259,7 @@ CREATE TABLE `aigc_model_usage_log` (
   KEY `idx_task_id` (`task_id`),
   KEY `idx_user_time` (`user_id`, `create_time`),
   KEY `idx_model_time` (`model_id`, `create_time`),
+  KEY `idx_channel_id` (`channel_id`),
   KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型调用计量日志表';
 

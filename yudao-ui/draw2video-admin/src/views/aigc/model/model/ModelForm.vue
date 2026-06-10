@@ -3,13 +3,6 @@
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="120px" v-loading="formLoading">
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="渠道商" prop="providerId">
-            <el-select v-model="formData.providerId" class="!w-1/1" filterable placeholder="请选择渠道商">
-              <el-option v-for="item in providerList" :key="item.id" :label="item.name" :value="item.id" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
           <el-form-item label="模型类型" prop="type">
             <el-select v-model="formData.type" class="!w-1/1" placeholder="请选择模型类型">
               <el-option v-for="item in AIGC_MODEL_TYPES" :key="item.value" :label="item.label" :value="item.value" />
@@ -29,9 +22,6 @@
           </el-form-item>
         </el-col>
       </el-row>
-      <el-form-item label="模型标识" prop="model">
-        <el-input v-model="formData.model" placeholder="请输入第三方模型标识" />
-      </el-form-item>
       <el-form-item label="模型能力" prop="capabilities">
         <el-select v-model="formData.capabilities" class="!w-1/1" multiple filterable placeholder="请选择模型能力">
           <el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" />
@@ -87,8 +77,6 @@
 import { CommonStatusEnum } from '@/utils/constants'
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { AigcModelApi, AigcModelSaveReqVO } from '@/api/aigc/model/model'
-import { AigcModelProviderApi } from '@/api/aigc/model/provider'
-import type { AigcModelProviderRespVO } from '@/api/aigc/model/types'
 import { AIGC_MODEL_CAPABILITIES, AIGC_MODEL_TYPES } from '../constants'
 
 defineOptions({ name: 'AigcModelForm' })
@@ -100,7 +88,6 @@ const dialogTitle = ref('')
 const formLoading = ref(false)
 const formType = ref('')
 const formRef = ref()
-const providerList = ref<AigcModelProviderRespVO[]>([])
 const formData = ref<AigcModelSaveReqVO>({
   id: undefined,
   providerId: undefined,
@@ -118,10 +105,8 @@ const formData = ref<AigcModelSaveReqVO>({
   remark: undefined
 })
 const formRules = reactive({
-  providerId: [{ required: true, message: '渠道商不能为空', trigger: 'change' }],
   code: [{ required: true, message: '模型编码不能为空', trigger: 'blur' }],
   name: [{ required: true, message: '模型名称不能为空', trigger: 'blur' }],
-  model: [{ required: true, message: '模型标识不能为空', trigger: 'blur' }],
   type: [{ required: true, message: '模型类型不能为空', trigger: 'change' }],
   status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
 })
@@ -131,8 +116,6 @@ const open = async (type: string, id?: number) => {
   dialogTitle.value = t('action.' + type)
   formType.value = type
   resetForm()
-  const providerPage = await AigcModelProviderApi.getProviderPage({ pageNo: 1, pageSize: 100 })
-  providerList.value = providerPage.list
   if (id) {
     formLoading.value = true
     try {
@@ -184,4 +167,3 @@ const resetForm = () => {
   formRef.value?.resetFields()
 }
 </script>
-

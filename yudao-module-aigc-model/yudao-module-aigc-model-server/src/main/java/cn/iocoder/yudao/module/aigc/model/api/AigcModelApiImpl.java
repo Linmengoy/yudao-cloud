@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.model.api;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelChannelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelParamTemplateDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelProviderDO;
@@ -17,6 +18,7 @@ import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
 import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
 import cn.iocoder.yudao.module.aigc.model.service.provider.AigcModelProviderService;
 import cn.iocoder.yudao.module.aigc.model.service.route.AigcModelRouteService;
+import cn.iocoder.yudao.module.aigc.model.service.channel.AigcModelChannelService;
 import cn.iocoder.yudao.module.aigc.model.service.usage.AigcModelUsageService;
 import cn.iocoder.yudao.module.aigc.model.util.AigcModelParamUtils;
 import jakarta.annotation.Resource;
@@ -26,7 +28,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
+import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.MODEL_CHANNEL_NOT_FOUND;
 
 @RestController
 @Validated
@@ -48,16 +52,21 @@ public class AigcModelApiImpl implements AigcModelApi {
     private AigcModelRouteService routeService;
 
     @Resource
+    private AigcModelChannelService channelService;
+
+    @Resource
     private AigcModelUsageService usageService;
 
     @Override
     public CommonResult<AigcModelRespDTO> validateModel(Long modelId, String capability) {
         AigcModelDO model = modelService.validateTenantModel(modelId, capability);
-        Long routedModelId = routeService.route(model.getCode(), capability);
-        if (routedModelId != null && !routedModelId.equals(modelId)) {
-            model = modelService.validateTenantModel(routedModelId, capability);
+        Long channelId = routeService.routeChannel(model.getId(), model.getCode(), capability);
+        if (channelId == null) {
+            throw exception(MODEL_CHANNEL_NOT_FOUND);
         }
-        return success(BeanUtils.toBean(model, AigcModelRespDTO.class));
+        AigcModelChannelDO channel = channelService.validateChannelExistsAndEnable(channelId);
+        providerService.validateProviderExistsAndEnable(channel.getProviderId());
+        return success(convertModel(model, channel));
     }
 
     @Override
@@ -109,6 +118,23 @@ public class AigcModelApiImpl implements AigcModelApi {
     private AigcModelParamTemplateRespDTO convertParamTemplate(AigcModelParamTemplateDO template) {
         return BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class,
                 resp -> resp.setOptions(AigcModelParamUtils.parseOptions(template.getOptions())));
+    }
+
+    private AigcModelRespDTO convertModel(AigcModelDO model, AigcModelChannelDO channel) {
+        return BeanUtils.toBean(model, AigcModelRespDTO.class, resp -> {
+            if (channel != null) {
+                resp.setChannelId(channel.getId());
+                resp.setProviderId(channel.getProviderId());
+                resp.setProviderModel(channel.getProviderModel());
+                resp.setModel(channel.getProviderModel());
+                if (channel.getTimeoutSeconds() != null) {
+                    resp.setTimeoutSeconds(channel.getTimeoutSeconds());
+                }
+                if (channel.getMaxConcurrent() != null) {
+                    resp.setMaxConcurrent(channel.getMaxConcurrent());
+                }
+            }
+        });
     }
 
 }

@@ -21,6 +21,12 @@ public class AigcModelRespDTO {
     @Schema(description = "模型标识", requiredMode = Schema.RequiredMode.REQUIRED, example = "kling-v1")
     private String model;
 
+    @Schema(description = "实际执行的渠道实现编号", example = "2048")
+    private Long channelId;
+
+    @Schema(description = "实际执行的上游模型标识", example = "image2")
+    private String providerModel;
+
     @Schema(description = "模型类型", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     private Integer type;
 

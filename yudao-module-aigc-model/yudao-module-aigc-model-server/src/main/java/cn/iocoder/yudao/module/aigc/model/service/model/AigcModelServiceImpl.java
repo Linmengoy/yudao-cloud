@@ -8,10 +8,12 @@ import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.model.vo.AigcModelPageReqVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.model.vo.AigcModelSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelCapabilityDO;
+import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelChannelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelProviderDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelTenantDO;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelCapabilityMapper;
+import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelChannelMapper;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelMapper;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelParamTemplateMapper;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelPriceMapper;
@@ -42,6 +44,9 @@ public class AigcModelServiceImpl implements AigcModelService {
 
     @Resource
     private AigcModelCapabilityMapper capabilityMapper;
+
+    @Resource
+    private AigcModelChannelMapper channelMapper;
 
     @Resource
     private AigcModelParamTemplateMapper paramTemplateMapper;
@@ -101,6 +106,7 @@ public class AigcModelServiceImpl implements AigcModelService {
         validateModelExists(id);
 
         capabilityMapper.deleteByModelId(id);
+        channelMapper.deleteByModelId(id);
         paramTemplateMapper.deleteByModelId(id);
         priceMapper.deleteByModelId(id);
         modelMapper.deleteById(id);
@@ -136,7 +142,7 @@ public class AigcModelServiceImpl implements AigcModelService {
             throw exception(MODEL_NOT_AUTHORIZED);
         }
         AigcModelDO model = validatePlatformModelExistsAndEnable(id);
-        validateProviderEnable(model.getProviderId());
+        validateModelHasEnabledChannel(model);
         validateModelCapability(id, capability);
         return model;
     }
@@ -193,7 +199,7 @@ public class AigcModelServiceImpl implements AigcModelService {
         return models.stream()
                 .filter(model -> type == null || ObjectUtil.equal(model.getType(), type))
                 .filter(model -> CommonStatusEnum.isEnable(model.getStatus()))
-                .filter(model -> isProviderEnable(model.getProviderId()))
+                .filter(this::hasEnabledChannel)
                 .peek(model -> fillTenantModelFields(model, tenantModelMap.get(model.getId())))
                 .sorted(Comparator.comparing(AigcModelDO::getSort, Comparator.nullsLast(Integer::compareTo)))
                 .toList();
@@ -207,7 +213,7 @@ public class AigcModelServiceImpl implements AigcModelService {
             throw exception(MODEL_NOT_AUTHORIZED);
         }
         AigcModelDO model = validatePlatformModelExistsAndEnable(id);
-        validateProviderEnable(model.getProviderId());
+        validateModelHasEnabledChannel(model);
         fillTenantModelFields(model, tenantModel);
         return model;
     }
@@ -251,6 +257,22 @@ public class AigcModelServiceImpl implements AigcModelService {
         if (!isProviderEnable(providerId)) {
             throw exception(MODEL_PROVIDER_DISABLED);
         }
+    }
+
+    private void validateModelHasEnabledChannel(AigcModelDO model) {
+        if (hasEnabledChannel(model)) {
+            return;
+        }
+        if (model.getProviderId() != null) {
+            validateProviderEnable(model.getProviderId());
+            return;
+        }
+        throw exception(MODEL_CHANNEL_NOT_FOUND);
+    }
+
+    private boolean hasEnabledChannel(AigcModelDO model) {
+        List<AigcModelChannelDO> channels = TenantUtils.executeIgnore(() -> channelMapper.selectEnabledListByModelId(model.getId()));
+        return channels.stream().anyMatch(channel -> isProviderEnable(channel.getProviderId()));
     }
 
     private boolean isProviderEnable(Long providerId) {

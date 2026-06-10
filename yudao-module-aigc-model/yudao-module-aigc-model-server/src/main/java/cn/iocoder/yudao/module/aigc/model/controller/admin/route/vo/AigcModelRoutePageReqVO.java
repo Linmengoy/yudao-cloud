@@ -16,6 +16,9 @@ public class AigcModelRoutePageReqVO extends PageParam {
     @Schema(description = "任务类型", example = "image")
     private String taskType;
 
+    @Schema(description = "业务模型编号", example = "1024")
+    private Long modelId;
+
     @Schema(description = "模型能力", example = "TEXT_TO_IMAGE")
     private String capability;
 

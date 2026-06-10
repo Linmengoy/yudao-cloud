@@ -7,6 +7,7 @@ CREATE TABLE `aigc_task` (
   `capability` varchar(64) NOT NULL COMMENT '模型能力',
   `model_id` bigint NOT NULL COMMENT '模型ID',
   `provider_id` bigint DEFAULT NULL COMMENT '渠道商ID',
+  `channel_id` bigint DEFAULT NULL COMMENT '渠道实现ID',
   `status` varchar(32) NOT NULL COMMENT '任务状态',
   `progress` int DEFAULT 0 COMMENT '进度',
   `estimated_duration_millis` bigint DEFAULT NULL COMMENT '预计耗时毫秒',
@@ -44,6 +45,7 @@ CREATE TABLE `aigc_task` (
   KEY `idx_status_create_time` (`status`, `create_time`),
   KEY `idx_external_task_id` (`external_task_id`),
   KEY `idx_model_id` (`model_id`),
+  KEY `idx_channel_id` (`channel_id`),
   KEY `idx_tenant_status` (`tenant_id`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC任务主表';
 

@@ -21,6 +21,11 @@ public interface ErrorCodeConstants {
     ErrorCode MODEL_CAPABILITY_INVALID = new ErrorCode(1_041_001_004, "模型能力配置不合法");
     ErrorCode MODEL_NOT_AUTHORIZED = new ErrorCode(1_041_001_005, "模型未授权");
 
+    ErrorCode MODEL_CHANNEL_NOT_EXISTS = new ErrorCode(1_041_001_100, "模型渠道实现不存在");
+    ErrorCode MODEL_CHANNEL_DISABLED = new ErrorCode(1_041_001_101, "模型渠道实现已禁用");
+    ErrorCode MODEL_CHANNEL_DUPLICATE = new ErrorCode(1_041_001_102, "模型渠道实现重复");
+    ErrorCode MODEL_CHANNEL_NOT_FOUND = new ErrorCode(1_041_001_103, "模型没有可用渠道实现");
+
     ErrorCode MODEL_PARAM_NOT_EXISTS = new ErrorCode(1_041_002_000, "模型参数不存在");
     ErrorCode MODEL_PARAM_INVALID = new ErrorCode(1_041_002_001, "模型参数不合法");
     ErrorCode MODEL_PARAM_CODE_DUPLICATE = new ErrorCode(1_041_002_002, "模型参数编码重复");

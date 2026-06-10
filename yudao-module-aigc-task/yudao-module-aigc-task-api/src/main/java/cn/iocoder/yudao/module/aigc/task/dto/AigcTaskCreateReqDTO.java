@@ -36,6 +36,9 @@ public class AigcTaskCreateReqDTO {
     @Schema(description = "渠道商编号", example = "2048")
     private Long providerId;
 
+    @Schema(description = "渠道实现编号", example = "4096")
+    private Long channelId;
+
     @Schema(description = "预计耗时毫秒", example = "60000")
     private Long estimatedDurationMillis;
 

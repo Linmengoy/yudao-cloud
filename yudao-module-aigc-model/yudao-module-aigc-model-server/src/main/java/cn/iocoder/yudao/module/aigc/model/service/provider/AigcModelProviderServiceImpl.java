@@ -9,6 +9,7 @@ import cn.iocoder.yudao.module.aigc.model.controller.admin.provider.vo.AigcModel
 import cn.iocoder.yudao.module.aigc.model.controller.admin.provider.vo.AigcModelProviderSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelProxyDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelProviderDO;
+import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelChannelMapper;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelMapper;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelProviderMapper;
 import cn.iocoder.yudao.module.aigc.model.service.proxy.AigcModelProxyService;
@@ -33,6 +34,8 @@ public class AigcModelProviderServiceImpl implements AigcModelProviderService {
 
     @Resource
     private AigcModelMapper modelMapper;
+    @Resource
+    private AigcModelChannelMapper channelMapper;
     @Resource
     private AigcModelProxyService proxyService;
 
@@ -70,7 +73,7 @@ public class AigcModelProviderServiceImpl implements AigcModelProviderService {
     public void deleteProvider(Long id) {
         validateProviderExists(id);
 
-        Long modelCount = modelMapper.selectCountByProviderId(id);
+        Long modelCount = modelMapper.selectCountByProviderId(id) + channelMapper.selectCountByProviderId(id);
         if (modelCount > 0) {
             throw exception(MODEL_PROVIDER_HAS_MODEL);
         }

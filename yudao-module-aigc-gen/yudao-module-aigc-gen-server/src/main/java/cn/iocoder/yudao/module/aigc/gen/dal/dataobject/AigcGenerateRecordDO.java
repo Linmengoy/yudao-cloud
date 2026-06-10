@@ -29,6 +29,8 @@ public class AigcGenerateRecordDO extends TenantBaseDO {
     private String generateMode;
     private Long modelId;
     private String modelCode;
+    private Long channelId;
+    private String providerModel;
     private Long providerId;
     private String providerCode;
     private String providerTaskId;

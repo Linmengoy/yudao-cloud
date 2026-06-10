@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS "aigc_task" (
     "capability" varchar(64) NOT NULL,
     "model_id" bigint NOT NULL,
     "provider_id" bigint,
+    "channel_id" bigint,
     "status" varchar(32) NOT NULL,
     "progress" int DEFAULT 0,
     "estimated_duration_millis" bigint,
