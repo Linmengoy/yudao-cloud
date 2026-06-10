@@ -135,7 +135,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         checkPrompt(reqDTO);
         recordMetric("aigc_gen_submit_total");
         AigcModelRespDTO model = modelApi.validateModel(reqDTO.getModelId(), reqDTO.getGenerateMode()).getCheckedData();
-        Long executionModelId = model.getId();
+        Long businessModelId = model.getId();
         AigcModelProviderRespDTO provider = model.getProviderId() == null ? null : modelApi.getProvider(model.getProviderId()).getCheckedData();
         Map<String, Object> inputParams = parseInputParams(reqDTO.getInputParams());
         String inputParamsSnapshot = sanitizeInputParamsSnapshot(reqDTO.getInputParams());
@@ -148,12 +148,12 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         Long estimatedDurationMillis = resolveEstimatedDurationMillis(model, provider, reqDTO.getGenerateMode());
         Long taskId = taskApi.createTask(new AigcTaskCreateReqDTO()
                 .setClientRequestId(reqDTO.getClientRequestId()).setUserId(reqDTO.getUserId()).setTaskType(reqDTO.getGenerateType())
-                .setCapability(reqDTO.getGenerateMode()).setModelId(executionModelId).setProviderId(model.getProviderId()).setRequestParams(inputParamsSnapshot)
+                .setCapability(reqDTO.getGenerateMode()).setModelId(businessModelId).setProviderId(model.getProviderId()).setChannelId(model.getChannelId()).setRequestParams(inputParamsSnapshot)
                 .setEstimatedDurationMillis(estimatedDurationMillis).setPriceSnapshot(JsonUtils.toJsonString(price)).setFreezeId(freeze.getId())
                 .setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
         AigcGenerateRecordDO record = BeanUtils.toBean(reqDTO, AigcGenerateRecordDO.class)
                 .setInputParams(inputParamsSnapshot)
-                .setModelId(executionModelId)
+                .setModelId(businessModelId).setChannelId(model.getChannelId()).setProviderModel(model.getProviderModel())
                 .setGenerateNo(generateGenerateNo()).setTaskId(taskId).setModelCode(model.getCode()).setProviderId(model.getProviderId())
                 .setProviderCode(resolveProviderCode(provider)).setFreezeId(freeze.getId())
                 .setPriceAmount(price.getSalePrice()).setCostAmount(price.getCostPrice()).setStatus(AigcGenerateStatusEnum.SUBMITTING.getCode()).setSubmitTime(LocalDateTime.now());
@@ -384,7 +384,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     private AigcProviderSubmitRespDTO submitProvider(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {
         AigcModelRespDTO model = modelApi.getModel(record.getModelId()).getCheckedData();
         AigcProviderSubmitReqDTO providerReq = new AigcProviderSubmitReqDTO().setRecordId(record.getId()).setTaskId(record.getTaskId()).setUserId(record.getUserId())
-                .setModelId(record.getModelId()).setModelCode(record.getModelCode()).setProviderModel(model == null ? null : model.getModel())
+                .setModelId(record.getModelId()).setModelCode(record.getModelCode()).setChannelId(record.getChannelId())
+                .setProviderModel(resolveProviderModel(record, model))
                 .setProviderId(record.getProviderId()).setProviderCode(record.getProviderCode())
                 .setProviderBaseUrl(provider == null ? null : provider.getApiBaseUrl()).setProviderApiKey(provider == null ? null : provider.getApiKey())
                 .setProviderSecretKey(provider == null ? null : provider.getSecretKey()).setProviderExtraConfig(provider == null ? null : provider.getExtraConfig())
@@ -419,7 +420,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setUserId(record.getUserId())
                 .setModelId(record.getModelId())
                 .setModelCode(record.getModelCode())
-                .setProviderModel(model == null ? null : model.getModel())
+                .setChannelId(record.getChannelId())
+                .setProviderModel(resolveProviderModel(record, model))
                 .setProviderId(record.getProviderId())
                 .setProviderCode(record.getProviderCode())
                 .setProviderTaskId(record.getProviderTaskId())
@@ -447,6 +449,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         billingApi.confirmFreeze(new AigcBillingConfirmReqDTO().setFreezeId(record.getFreezeId()).setTaskId(record.getTaskId()).setActualAmount(record.getPriceAmount())
                 .setModelId(record.getModelId()).setProviderId(record.getProviderId()).setPriceSnapshot(record.getInputParams())).getCheckedData();
         modelApi.recordUsage(new AigcModelUsageRecordReqDTO().setTaskId(record.getTaskId()).setUserId(record.getUserId()).setModelId(record.getModelId()).setProviderId(record.getProviderId())
+                .setChannelId(record.getChannelId())
                 .setCapability(record.getGenerateMode()).setRequestId(record.getGenerateNo()).setExternalTaskId(record.getProviderTaskId()).setPromptTokens(resp.getPromptTokens())
                 .setCompletionTokens(resp.getCompletionTokens()).setTotalTokens(resp.getTotalTokens()).setCostPrice(record.getCostAmount()).setSalePrice(record.getPriceAmount()).setCurrencyType("POINT")
                 .setStatus(0).setDurationMillis(resp.getDurationMillis())).getCheckedData();
@@ -484,6 +487,17 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         };
         generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId()).setAssetIds("[" + asset.getId() + "]"));
         return asset.getId();
+    }
+
+    private String resolveProviderModel(AigcGenerateRecordDO record, AigcModelRespDTO model) {
+        if (record.getProviderModel() != null) {
+            return record.getProviderModel();
+        }
+        if (record.getProviderId() != null && model != null && model.getProviderId() != null
+                && record.getProviderId().equals(model.getProviderId()) && model.getProviderModel() != null) {
+            return model.getProviderModel();
+        }
+        return model == null ? null : model.getModel();
     }
 
     private String buildPromptSnapshot(String prompt) {

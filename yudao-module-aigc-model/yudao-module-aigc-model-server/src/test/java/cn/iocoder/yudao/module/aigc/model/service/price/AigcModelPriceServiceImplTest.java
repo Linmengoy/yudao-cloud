@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.model.service.price;
 
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
+import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.price.vo.AigcModelPriceSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelPriceDO;
@@ -91,7 +92,8 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
     public void testCalculatePrice_ignoreDisabledAndExpiredPrice() {
         AigcModelDO model = createModel();
         priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
-                AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.500000", "1.000000", null).setStatus(0));
+                AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.500000", "1.000000", null)
+                .setStatus(CommonStatusEnum.DISABLE.getStatus()));
         priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.IMAGE_TO_IMAGE.getCode(),
                 AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.500000", "1.000000", null)
                 .setEffectiveEndTime(LocalDateTime.now().minusDays(1)));
@@ -130,8 +132,8 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
         Long tenantId = 1L;
         TenantContextHolder.setTenantId(tenantId);
         AigcModelDO model = randomPojo(AigcModelDO.class)
-                .setCode(randomString()).setStatus(1);
-        model.setTenantId(tenantId);
+                .setCode(randomString()).setStatus(CommonStatusEnum.ENABLE.getStatus());
+        model.setTenantId(0L);
         modelMapper.insert(model);
         AigcModelTenantDO tenant = new AigcModelTenantDO().setModelId(model.getId()).setEnabled(true);
         tenant.setTenantId(tenantId);
@@ -143,7 +145,8 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
                                          String costPrice, String salePrice, String priceConfig) {
         return new AigcModelPriceDO().setModelId(modelId).setCapability(capability).setBillingUnit(billingUnit)
                 .setCostPrice(new BigDecimal(costPrice)).setSalePrice(new BigDecimal(salePrice))
-                .setCurrencyType("POINT").setPriceConfig(priceConfig).setStatus(1);
+                .setCurrencyType("POINT").setPriceConfig(priceConfig)
+                .setStatus(CommonStatusEnum.ENABLE.getStatus()).setTenantId(0L);
     }
 
     private AigcModelPriceSaveReqVO createPriceReq(Long modelId) {
@@ -153,7 +156,7 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
                 .setCostPrice(new BigDecimal("0.500000"))
                 .setSalePrice(new BigDecimal("1.000000"))
                 .setCurrencyType("POINT")
-                .setStatus(1);
+                .setStatus(CommonStatusEnum.ENABLE.getStatus());
     }
 
 }

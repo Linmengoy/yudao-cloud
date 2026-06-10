@@ -7,6 +7,8 @@ export interface AigcModelRespVO {
   id?: number
   providerId?: number
   providerName?: string
+  channelId?: number
+  providerModel?: string
   code?: string
   name?: string
   model?: string
@@ -19,6 +21,25 @@ export interface AigcModelRespVO {
   queuePriority?: number
   status?: number
   capabilities?: string[]
+  remark?: string
+  createTime?: Date
+}
+
+export interface AigcModelChannelRespVO {
+  id?: number
+  modelId?: number
+  providerId?: number
+  providerModel?: string
+  name?: string
+  costPrice?: number
+  currencyType?: string
+  weight?: number
+  priority?: number
+  maxConcurrent?: number
+  timeoutSeconds?: number
+  rateLimitConfig?: string
+  healthStatus?: string
+  status?: number
   remark?: string
   createTime?: Date
 }
@@ -99,9 +120,11 @@ export interface AigcModelRouteRespVO {
   id?: number
   name?: string
   taskType?: string
+  modelId?: number
   capability?: string
   strategy?: string
   modelIds?: string
+  channelIds?: string
   userLevel?: string
   status?: number
   createTime?: Date

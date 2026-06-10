@@ -2,7 +2,6 @@ package cn.iocoder.yudao.module.aigc.model.controller.admin.model.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.util.List;
@@ -14,8 +13,7 @@ public class AigcModelSaveReqVO {
     @Schema(description = "模型编号", example = "1024")
     private Long id;
 
-    @Schema(description = "渠道商编号", requiredMode = Schema.RequiredMode.REQUIRED, example = "1024")
-    @NotNull(message = "渠道商ID不能为空")
+    @Schema(description = "兼容字段：旧渠道商编号，新逻辑使用渠道实现", example = "1024")
     private Long providerId;
 
     @Schema(description = "模型编码", requiredMode = Schema.RequiredMode.REQUIRED, example = "kling-v1")
@@ -26,12 +24,11 @@ public class AigcModelSaveReqVO {
     @NotBlank(message = "模型名称不能为空")
     private String name;
 
-    @Schema(description = "模型标识", requiredMode = Schema.RequiredMode.REQUIRED, example = "kling-v1")
-    @NotBlank(message = "模型标识不能为空")
+    @Schema(description = "兼容字段：旧渠道商模型标识，新逻辑使用渠道实现", example = "kling-v1")
     private String model;
 
     @Schema(description = "模型类型", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
-    @NotNull(message = "模型类型不能为空")
+    @jakarta.validation.constraints.NotNull(message = "模型类型不能为空")
     private Integer type;
 
     @Schema(description = "是否用户端展示", example = "true")

@@ -17,6 +17,7 @@ public interface AigcModelRouteMapper extends BaseMapperX<AigcModelRouteDO> {
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcModelRouteDO>()
                 .likeIfPresent(AigcModelRouteDO::getName, reqVO.getName())
                 .eqIfPresent(AigcModelRouteDO::getTaskType, reqVO.getTaskType())
+                .eqIfPresent(AigcModelRouteDO::getModelId, reqVO.getModelId())
                 .eqIfPresent(AigcModelRouteDO::getCapability, reqVO.getCapability())
                 .eqIfPresent(AigcModelRouteDO::getStatus, reqVO.getStatus())
                 .orderByDesc(AigcModelRouteDO::getId));
@@ -27,6 +28,14 @@ public interface AigcModelRouteMapper extends BaseMapperX<AigcModelRouteDO> {
                 .eqIfPresent(AigcModelRouteDO::getTaskType, taskType)
                 .eqIfPresent(AigcModelRouteDO::getCapability, capability)
                 .eq(AigcModelRouteDO::getStatus, CommonStatusEnum.ENABLE.getStatus()));
+    }
+
+    default List<AigcModelRouteDO> selectListByModelIdAndCapability(Long modelId, String capability) {
+        return selectList(new LambdaQueryWrapperX<AigcModelRouteDO>()
+                .eq(AigcModelRouteDO::getModelId, modelId)
+                .eqIfPresent(AigcModelRouteDO::getCapability, capability)
+                .eq(AigcModelRouteDO::getStatus, CommonStatusEnum.ENABLE.getStatus())
+                .orderByDesc(AigcModelRouteDO::getId));
     }
 
 }
