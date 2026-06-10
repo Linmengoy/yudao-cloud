@@ -66,6 +66,10 @@ public interface AigcModelApi {
     @Operation(summary = "计算模型价格")
     CommonResult<AigcModelPriceCalculateRespDTO> calculatePrice(@RequestBody AigcModelPriceCalculateReqDTO reqDTO);
 
+    @PostMapping(PREFIX + "/prepare-submit")
+    @Operation(summary = "提交前校验模型、参数并计算价格")
+    CommonResult<AigcModelSubmitPrepareRespDTO> prepareSubmit(@RequestBody AigcModelPriceCalculateReqDTO reqDTO);
+
     @PostMapping(PREFIX + "/record-usage")
     @Operation(summary = "记录模型调用计量")
     CommonResult<Long> recordUsage(@RequestBody AigcModelUsageRecordReqDTO reqDTO);

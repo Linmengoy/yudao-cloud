@@ -4,9 +4,11 @@ import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.test.core.ut.BaseMockitoUnitTest;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelChannelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelDO;
+import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelProviderDO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateReqDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelRespDTO;
+import cn.iocoder.yudao.module.aigc.model.dto.AigcModelSubmitPrepareRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelValidateReqDTO;
 import cn.iocoder.yudao.module.aigc.model.enums.AigcModelCapabilityEnum;
 import cn.iocoder.yudao.module.aigc.model.service.model.AigcModelService;
@@ -91,6 +93,33 @@ public class AigcModelApiImplTest extends BaseMockitoUnitTest {
         CommonResult<AigcModelPriceCalculateRespDTO> result = modelApi.calculatePrice(reqDTO);
 
         assertEquals(respDTO, result.getData());
+    }
+
+    @Test
+    public void testPrepareSubmit_success() {
+        AigcModelPriceCalculateReqDTO reqDTO = new AigcModelPriceCalculateReqDTO()
+                .setModelId(1L).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())
+                .setTaskType("IMAGE").setParams(Map.of("ratio", "1:1"));
+        AigcModelDO model = randomPojo(AigcModelDO.class).setId(1L).setCode("display-model");
+        AigcModelChannelDO channel = randomPojo(AigcModelChannelDO.class).setId(10L).setProviderId(20L).setProviderModel("upstream-image2");
+        AigcModelProviderDO provider = randomPojo(AigcModelProviderDO.class).setId(20L).setCode("openai");
+        AigcModelPriceCalculateRespDTO price = new AigcModelPriceCalculateRespDTO()
+                .setModelId(1L).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())
+                .setSalePrice(new BigDecimal("1.000000"));
+        when(modelService.validateTenantModel(eq(1L), eq(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()))).thenReturn(model);
+        when(routeService.routeChannel(eq(1L), eq("display-model"), eq(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()))).thenReturn(10L);
+        when(channelService.validateChannelExistsAndEnable(eq(10L))).thenReturn(channel);
+        when(providerService.validateProviderExistsAndEnable(eq(20L))).thenReturn(provider);
+        when(priceService.calculatePrice(eq(reqDTO))).thenReturn(price);
+
+        CommonResult<AigcModelSubmitPrepareRespDTO> result = modelApi.prepareSubmit(reqDTO);
+
+        assertEquals(0, result.getCode());
+        assertEquals(1L, result.getData().getModel().getId());
+        assertEquals(20L, result.getData().getProvider().getId());
+        assertEquals("openai", result.getData().getProvider().getCode());
+        assertEquals(price, result.getData().getPrice());
+        verify(paramService).validateParams(eq(1L), eq(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()), eq(Map.of("ratio", "1:1")));
     }
 
 }

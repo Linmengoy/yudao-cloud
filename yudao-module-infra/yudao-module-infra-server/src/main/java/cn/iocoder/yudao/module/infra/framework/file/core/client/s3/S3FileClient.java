@@ -35,6 +35,7 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
 
     private S3Client client;
     private S3Presigner presigner;
+    private S3Presigner uploadPresigner;
 
     public S3FileClient(Long id, S3FileClientConfig config) {
         super(id, config);
@@ -68,6 +69,12 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
                 .credentialsProvider(credentialsProvider)
                 .region(region)
                 .endpointOverride(presignerEndpoint)
+                .serviceConfiguration(serviceConfiguration)
+                .build();
+        uploadPresigner = S3Presigner.builder()
+                .credentialsProvider(credentialsProvider)
+                .region(region)
+                .endpointOverride(endpoint)
                 .serviceConfiguration(serviceConfiguration)
                 .build();
     }
@@ -107,7 +114,7 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
 
     @Override
     public String presignPutUrl(String path) {
-        return presigner.presignPutObject(PutObjectPresignRequest.builder()
+        return uploadPresigner.presignPutObject(PutObjectPresignRequest.builder()
                 .signatureDuration(EXPIRATION_DEFAULT)
                 .putObjectRequest(b -> b.bucket(config.getBucket()).key(path)).build())
                 .url().toString();

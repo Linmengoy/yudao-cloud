@@ -38,8 +38,8 @@ import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateReqDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelProviderRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelRespDTO;
+import cn.iocoder.yudao.module.aigc.model.dto.AigcModelSubmitPrepareRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelUsageRecordReqDTO;
-import cn.iocoder.yudao.module.aigc.model.dto.AigcModelValidateReqDTO;
 import cn.iocoder.yudao.module.aigc.safety.api.AigcSafetyApi;
 import cn.iocoder.yudao.module.aigc.safety.dto.AigcSafetyPromptCheckReqDTO;
 import cn.iocoder.yudao.module.aigc.safety.dto.AigcSafetyPromptCheckRespDTO;
@@ -133,15 +133,15 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return exists;
         }
         checkPrompt(reqDTO);
-        recordMetric("aigc_gen_submit_total");
-        AigcModelRespDTO model = modelApi.validateModel(reqDTO.getModelId(), reqDTO.getGenerateMode()).getCheckedData();
-        Long businessModelId = model.getId();
-        AigcModelProviderRespDTO provider = model.getProviderId() == null ? null : modelApi.getProvider(model.getProviderId()).getCheckedData();
+        recordMetric("gen_submit_total");
         Map<String, Object> inputParams = parseInputParams(reqDTO.getInputParams());
         String inputParamsSnapshot = sanitizeInputParamsSnapshot(reqDTO.getInputParams());
-        modelApi.validateParams(new AigcModelValidateReqDTO().setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setParams(inputParams)).getCheckedData();
-        AigcModelPriceCalculateRespDTO price = modelApi.calculatePrice(new AigcModelPriceCalculateReqDTO()
+        AigcModelSubmitPrepareRespDTO prepare = modelApi.prepareSubmit(new AigcModelPriceCalculateReqDTO()
                 .setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setTaskType(reqDTO.getGenerateType()).setParams(inputParams)).getCheckedData();
+        AigcModelRespDTO model = prepare.getModel();
+        Long businessModelId = model.getId();
+        AigcModelProviderRespDTO provider = prepare.getProvider();
+        AigcModelPriceCalculateRespDTO price = prepare.getPrice();
         AigcBillingFreezeRespDTO freeze = billingApi.freeze(new AigcBillingFreezeReqDTO()
                 .setUserId(reqDTO.getUserId()).setBizType("AIGC_GENERATE").setBizId(reqDTO.getClientRequestId() == null ? generateGenerateNo() : reqDTO.getClientRequestId())
                 .setAmount(price.getSalePrice()).setTitle(reqDTO.getGenerateType() + "生成冻结").setPriceSnapshot(JsonUtils.toJsonString(price))).getCheckedData();

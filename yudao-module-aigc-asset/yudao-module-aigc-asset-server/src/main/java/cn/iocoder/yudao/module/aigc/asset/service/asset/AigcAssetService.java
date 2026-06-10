@@ -32,7 +32,7 @@ public interface AigcAssetService {
 
     AigcAssetDirectUploadPrepareRespDTO prepareDirectUpload(Long userId, AigcAssetDirectUploadPrepareReqDTO reqDTO);
 
-    Long completeDirectUpload(Long userId, AigcAssetDirectUploadCompleteReqDTO reqDTO);
+    AigcAssetRespDTO completeDirectUpload(Long userId, AigcAssetDirectUploadCompleteReqDTO reqDTO);
 
     Long captureVideoFrame(Long userId, Long videoAssetId, String capturedAt, java.math.BigDecimal timeSec, String title);
 

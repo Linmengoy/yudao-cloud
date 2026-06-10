@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Paperclip, Plus, Send, SlidersHorizontal, X } from "lucide-react";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
-import { getMyAsset, getMyAssetPage, uploadAsset } from "@/features/assets/asset-api";
+import { getMyAssetPage, uploadAssetAndGetInfo } from "@/features/assets/asset-api";
 import { getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import type { AigcAsset } from "@/features/assets/asset-types";
 import { getImageFilesFromPasteEvent } from "@/features/canvas/clipboard";
@@ -117,6 +117,25 @@ function normalizeReferenceFile(file: File) {
   return new File([file], fileName, {
     type: mimeType,
     lastModified: file.lastModified || Date.now(),
+  });
+}
+
+function readImageDimensions(file: File): Promise<{ width?: number; height?: number }> {
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    const cleanup = () => URL.revokeObjectURL(objectUrl);
+    image.onload = () => {
+      const width = image.naturalWidth || undefined;
+      const height = image.naturalHeight || undefined;
+      cleanup();
+      resolve({ width, height });
+    };
+    image.onerror = () => {
+      cleanup();
+      resolve({});
+    };
+    image.src = objectUrl;
   });
 }
 
@@ -344,10 +363,17 @@ function reorderItems<T>(items: T[], fromIndex: number, toIndex: number) {
 
 async function uploadReferenceFile(sourceFile: File): Promise<ReferenceImage> {
   const file = normalizeReferenceFile(sourceFile);
-  const assetId = await uploadAsset(file, "IMAGE", file.name);
-  const asset = await getMyAsset(assetId);
+  const dimensions = await readImageDimensions(file);
+  const asset = await uploadAssetAndGetInfo(file, "IMAGE", {
+    title: file.name,
+    width: dimensions.width,
+    height: dimensions.height,
+    metadata: {
+      source: "workspace-reference-image",
+    },
+  });
   return {
-    assetId,
+    assetId: asset.id,
     previewUrl: getAssetPreviewUrl(asset) || null,
     fileName: file.name,
     mimeType: file.type || "image/png",

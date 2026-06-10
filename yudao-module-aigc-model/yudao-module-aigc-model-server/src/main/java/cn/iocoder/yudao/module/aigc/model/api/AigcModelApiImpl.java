@@ -11,6 +11,7 @@ import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelProviderRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelParamTemplateRespDTO;
+import cn.iocoder.yudao.module.aigc.model.dto.AigcModelSubmitPrepareRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelUsageRecordReqDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelValidateReqDTO;
 import cn.iocoder.yudao.module.aigc.model.service.model.AigcModelService;
@@ -59,14 +60,7 @@ public class AigcModelApiImpl implements AigcModelApi {
 
     @Override
     public CommonResult<AigcModelRespDTO> validateModel(Long modelId, String capability) {
-        AigcModelDO model = modelService.validateTenantModel(modelId, capability);
-        Long channelId = routeService.routeChannel(model.getId(), model.getCode(), capability);
-        if (channelId == null) {
-            throw exception(MODEL_CHANNEL_NOT_FOUND);
-        }
-        AigcModelChannelDO channel = channelService.validateChannelExistsAndEnable(channelId);
-        providerService.validateProviderExistsAndEnable(channel.getProviderId());
-        return success(convertModel(model, channel));
+        return success(validateAndRouteModel(modelId, capability).getModel());
     }
 
     @Override
@@ -111,6 +105,17 @@ public class AigcModelApiImpl implements AigcModelApi {
     }
 
     @Override
+    public CommonResult<AigcModelSubmitPrepareRespDTO> prepareSubmit(AigcModelPriceCalculateReqDTO reqDTO) {
+        AigcModelRouteResult routeResult = validateAndRouteModel(reqDTO.getModelId(), reqDTO.getCapability());
+        paramService.validateParams(reqDTO.getModelId(), reqDTO.getCapability(), reqDTO.getParams());
+        AigcModelPriceCalculateRespDTO price = priceService.calculatePrice(reqDTO);
+        return success(new AigcModelSubmitPrepareRespDTO()
+                .setModel(routeResult.getModel())
+                .setProvider(BeanUtils.toBean(routeResult.getProvider(), AigcModelProviderRespDTO.class))
+                .setPrice(price));
+    }
+
+    @Override
     public CommonResult<Long> recordUsage(AigcModelUsageRecordReqDTO reqDTO) {
         return success(usageService.recordUsage(reqDTO));
     }
@@ -118,6 +123,17 @@ public class AigcModelApiImpl implements AigcModelApi {
     private AigcModelParamTemplateRespDTO convertParamTemplate(AigcModelParamTemplateDO template) {
         return BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class,
                 resp -> resp.setOptions(AigcModelParamUtils.parseOptions(template.getOptions())));
+    }
+
+    private AigcModelRouteResult validateAndRouteModel(Long modelId, String capability) {
+        AigcModelDO model = modelService.validateTenantModel(modelId, capability);
+        Long channelId = routeService.routeChannel(model.getId(), model.getCode(), capability);
+        if (channelId == null) {
+            throw exception(MODEL_CHANNEL_NOT_FOUND);
+        }
+        AigcModelChannelDO channel = channelService.validateChannelExistsAndEnable(channelId);
+        AigcModelProviderDO provider = providerService.validateProviderExistsAndEnable(channel.getProviderId());
+        return new AigcModelRouteResult(convertModel(model, channel), provider);
     }
 
     private AigcModelRespDTO convertModel(AigcModelDO model, AigcModelChannelDO channel) {
@@ -135,6 +151,26 @@ public class AigcModelApiImpl implements AigcModelApi {
                 }
             }
         });
+    }
+
+    private static class AigcModelRouteResult {
+
+        private final AigcModelRespDTO model;
+        private final AigcModelProviderDO provider;
+
+        private AigcModelRouteResult(AigcModelRespDTO model, AigcModelProviderDO provider) {
+            this.model = model;
+            this.provider = provider;
+        }
+
+        private AigcModelRespDTO getModel() {
+            return model;
+        }
+
+        private AigcModelProviderDO getProvider() {
+            return provider;
+        }
+
     }
 
 }

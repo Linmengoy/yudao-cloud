@@ -26,7 +26,6 @@ import {
   TriangleToolbarItem,
   createShapesForAssets,
   getAssetInfo,
-  getHashForBuffer,
   getSnapshot,
   loadSnapshot,
   createShapeId,
@@ -34,6 +33,7 @@ import {
   type TLAsset,
   type TLComponents,
   type TLEditorSnapshot,
+  type TLImageAsset,
   type TLShapeId,
   type TLUiOverrides,
 } from "tldraw";
@@ -41,6 +41,8 @@ import { NodeCreateHandle } from "./NodeCreateHandle";
 import type { NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, SketchNodeData } from "./types";
 import { isAcceptedImageType } from "./image-upload";
 import { canvasApi } from "@/features/canvas/canvas-api";
+import { getAssetAccessUrls, getMyAsset, uploadAssetAndGetInfo } from "@/features/assets/asset-api";
+import { getAssetPreviewExpireTime, getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { compactInfo, downloadMedia } from "@/features/media-preview/media-preview-utils";
 import { cn } from "@/lib/utils";
@@ -58,6 +60,85 @@ const BLANK_PREVIEW_WIDTH = 1024;
 const BLANK_PREVIEW_HEIGHT = 768;
 const UPLOADED_IMAGE_MAX_WIDTH = 960;
 const UPLOADED_IMAGE_MAX_HEIGHT = 720;
+const SKETCH_ASSET_URL_REFRESH_MS = 120_000;
+
+type SketchEmbeddedAssetMeta = {
+  aigcAssetId?: unknown;
+  aigcAssetUrlExpireTime?: unknown;
+};
+
+function normalizeAssetIds(assetIds?: number[]) {
+  return Array.from(new Set((assetIds ?? []).filter((assetId) => Number.isFinite(assetId) && assetId > 0)));
+}
+
+function readSketchEmbeddedAssetId(asset: TLAsset) {
+  const raw = (asset.meta as SketchEmbeddedAssetMeta | undefined)?.aigcAssetId;
+  const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : null;
+  return value && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function getSketchEmbeddedAssetIds(editor: Editor) {
+  return normalizeAssetIds(editor.getAssets().map(readSketchEmbeddedAssetId).filter((assetId): assetId is number => assetId !== null));
+}
+
+function shouldRefreshSketchAssetUrl(asset: TLAsset) {
+  const expireTime = (asset.meta as SketchEmbeddedAssetMeta | undefined)?.aigcAssetUrlExpireTime;
+  if (typeof expireTime !== "string" || !expireTime) return true;
+  const expireAt = new Date(expireTime).getTime();
+  return !Number.isFinite(expireAt) || expireAt - Date.now() < SKETCH_ASSET_URL_REFRESH_MS;
+}
+
+async function fetchSketchAssetUrl(assetId: number) {
+  try {
+    const [entry] = await getAssetAccessUrls([{ assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" }]);
+    if (entry?.url) return { url: entry.url, expireTime: entry.expireTime ?? null };
+  } catch {
+  }
+  const asset = await getMyAsset(assetId);
+  const url = getAssetPreviewUrl(asset);
+  return url ? { url, expireTime: getAssetPreviewExpireTime(asset) ?? null } : null;
+}
+
+async function fetchProjectSketchAssetUrl(assetId: number, projectId?: string | number | null) {
+  if (projectId) {
+    try {
+      const [entry] = await canvasApi.getProjectAssetAccessUrls(projectId, [{ assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" }]);
+      if (entry?.url) return { url: entry.url, expireTime: entry.expireTime ?? null };
+    } catch {
+    }
+  }
+  return fetchSketchAssetUrl(assetId);
+}
+
+async function refreshSketchEmbeddedAssetUrls(editor: Editor, projectId?: string | number | null, force = false) {
+  const updates: Array<{ id: TLAsset["id"]; type: TLAsset["type"]; props: Partial<TLImageAsset["props"]>; meta: Partial<TLImageAsset["meta"]> }> = [];
+  const seen = new Map<number, Promise<{ url: string; expireTime: string | null } | null>>();
+  const getFreshUrl = (assetId: number) => {
+    const cached = seen.get(assetId);
+    if (cached) return cached;
+    const promise = fetchProjectSketchAssetUrl(assetId, projectId);
+    seen.set(assetId, promise);
+    return promise;
+  };
+
+  for (const asset of editor.getAssets()) {
+    if (asset.type !== "image") continue;
+    const assetId = readSketchEmbeddedAssetId(asset);
+    if (!assetId || (!force && asset.props.src && !shouldRefreshSketchAssetUrl(asset))) continue;
+    const fresh = await getFreshUrl(assetId);
+    if (!fresh?.url) continue;
+    updates.push({
+      id: asset.id,
+      type: asset.type,
+      props: { src: fresh.url },
+      meta: { aigcAssetId: assetId, aigcAssetUrlExpireTime: fresh.expireTime ?? undefined },
+    });
+  }
+
+  if (updates.length > 0) {
+    editor.updateAssets(updates);
+  }
+}
 
 function scaleSketchPreview(width?: number, height?: number) {
   if (!width || !height) return { width: CARD_WIDTH, height: CARD_HEIGHT };
@@ -173,6 +254,44 @@ function fitUploadedImageNearViewport(editor: Editor, shapeId: TLShapeId) {
   });
 }
 
+async function buildRemoteImageAsset(editor: Editor, file: File): Promise<{ asset: TLImageAsset; assetId: number }> {
+  const assetInfo = await getAssetInfo(editor, file);
+  if (!assetInfo || assetInfo.type !== "image") {
+    throw new Error("Cannot read image metadata");
+  }
+  const imageAssetInfo = assetInfo as TLImageAsset;
+  const asset = await uploadAssetAndGetInfo(file, "IMAGE", {
+    title: file.name,
+    width: imageAssetInfo.props.w,
+    height: imageAssetInfo.props.h,
+    metadata: {
+      source: "sketch-node",
+    },
+  });
+  const assetId = asset.id;
+  const tldrawAssetId = AssetRecordType.createId(`aigc-${assetId}`);
+  const previewUrl = getAssetPreviewUrl(asset);
+  if (!previewUrl) {
+    throw new Error("Cannot resolve image URL");
+  }
+  return {
+    asset: {
+      ...imageAssetInfo,
+      id: tldrawAssetId,
+      props: {
+        ...imageAssetInfo.props,
+        src: previewUrl,
+      },
+      meta: {
+        ...(assetInfo.meta ?? {}),
+        aigcAssetId: assetId,
+        aigcAssetUrlExpireTime: getAssetPreviewExpireTime(asset) ?? undefined,
+      },
+    },
+    assetId,
+  };
+}
+
 function getExportShapeIds(editor: Editor): TLShapeId[] {
   return Array.from(editor.getCurrentPageShapeIds()).filter((shapeId) => shapeId !== SKETCH_BOARD_ID);
 }
@@ -223,14 +342,14 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
   }, [data.background, data.createdAt, data.fileName, data.height, data.mimeType, data.updatedAt, data.width, previewSrc]);
 
   const updateData = useCallback(
-    (patch: Partial<SketchNodeData>) => {
+    (patch: Partial<SketchNodeData>, options?: { flush?: boolean }) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === id ? { ...node, data: { ...node.data, ...patch } } : node
         )
       );
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
-        detail: { nodeId: id, patch },
+        detail: { nodeId: id, patch, flush: options?.flush },
       }));
     },
     [id, setNodes]
@@ -276,6 +395,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
     if (snapshot) {
       try {
         loadSnapshot(mountedEditor.store, snapshot);
+        void refreshSketchEmbeddedAssetUrls(mountedEditor, data.projectId, false);
       } catch {
       }
     }
@@ -288,14 +408,16 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
         mountedEditor.zoomToFit({ animation: { duration: 0 } });
       }
     }, 0);
-  }, [data.sceneJson]);
+  }, [data.projectId, data.sceneJson]);
 
   const saveSketch = useCallback(async () => {
     if (!editor) return;
     setSaving(true);
     try {
       removeLegacyFixedSketchBoard(editor);
+      await refreshSketchEmbeddedAssetUrls(editor, data.projectId, false);
       const snapshot = getSnapshot(editor.store);
+      const assetIds = getSketchEmbeddedAssetIds(editor);
       const shapeIds = getExportShapeIds(editor);
       const exportResult = shapeIds.length > 0
         ? await editor.toImageDataUrl(shapeIds, {
@@ -309,6 +431,7 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
       const updatedAt = new Date().toISOString();
       updateData({
         sceneJson: snapshot,
+        assetIds,
         dataUrl: exportResult.url,
         previewUrl: null,
         mimeType: "image/png",
@@ -348,30 +471,28 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
     setUploadingImage(true);
     setUploadError(null);
     try {
-      const assetId = AssetRecordType.createId(getHashForBuffer(await file.arrayBuffer()));
-      const assetInfo = await getAssetInfo(editor, file, assetId);
-      if (!assetInfo || assetInfo.type !== "image") {
-        setUploadError("无法读取这张图片");
-        return;
-      }
-      editor.createTemporaryAssetPreview(assetInfo.id, file);
-      const uploadedAsset = await editor.getAssetForExternalContent({
-        type: "file",
-        file,
-        assetId,
-      });
-      const asset = ({ ...(uploadedAsset ?? assetInfo), id: assetId } as TLAsset);
+      const { asset, assetId } = await buildRemoteImageAsset(editor, file);
       const [shapeId] = await createShapesForAssets(editor, [asset], getViewportCenter(editor));
       if (shapeId) {
         fitUploadedImageNearViewport(editor, shapeId);
         editor.select(shapeId);
       }
+      if (data.projectId) {
+        await canvasApi.bindNodeAsset(data.projectId, id, {
+          assetId,
+          usageType: "source",
+        });
+      }
+      updateData({
+        assetIds: normalizeAssetIds([...(data.assetIds ?? []), assetId]),
+        updatedAt: new Date().toISOString(),
+      }, { flush: true });
     } catch {
       setUploadError("图片上传失败，请换一张再试");
     } finally {
       setUploadingImage(false);
     }
-  }, [editor]);
+  }, [data.assetIds, editor, updateData]);
 
   const handleImageInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
