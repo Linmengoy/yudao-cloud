@@ -19,6 +19,7 @@ public class AigcGenerateProviderLogDO extends TenantBaseDO {
     private Long id;
 
     private Long recordId;
+    private Long attemptId;
     private Long taskId;
     private String providerCode;
     private String modelCode;

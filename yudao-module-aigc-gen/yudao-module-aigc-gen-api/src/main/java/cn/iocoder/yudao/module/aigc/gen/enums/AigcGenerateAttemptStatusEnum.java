@@ -8,23 +8,18 @@ import java.util.Arrays;
 
 @Getter
 @RequiredArgsConstructor
-public enum AigcGenerateStatusEnum implements ArrayValuable<String> {
+public enum AigcGenerateAttemptStatusEnum implements ArrayValuable<String> {
 
     CREATED("CREATED", "Created"),
     SUBMITTING("SUBMITTING", "Submitting"),
     SUBMITTED("SUBMITTED", "Submitted"),
     CALLBACK_WAITING("CALLBACK_WAITING", "Callback waiting"),
-    RETRYING("RETRYING", "Retrying"),
-    FALLBACKING("FALLBACKING", "Fallbacking"),
-    HEDGING("HEDGING", "Hedging"),
-    SYNCING("SYNCING", "Syncing"),
-    DOWNLOADING("DOWNLOADING", "Downloading"),
-    ASSET_CREATING("ASSET_CREATING", "Asset creating"),
     SUCCESS("SUCCESS", "Success"),
     FAILED("FAILED", "Failed"),
-    CANCELLED("CANCELLED", "Cancelled");
+    CANCELLED("CANCELLED", "Cancelled"),
+    IGNORED("IGNORED", "Ignored");
 
-    public static final String[] ARRAYS = Arrays.stream(values()).map(AigcGenerateStatusEnum::getCode).toArray(String[]::new);
+    public static final String[] ARRAYS = Arrays.stream(values()).map(AigcGenerateAttemptStatusEnum::getCode).toArray(String[]::new);
 
     private final String code;
     private final String label;

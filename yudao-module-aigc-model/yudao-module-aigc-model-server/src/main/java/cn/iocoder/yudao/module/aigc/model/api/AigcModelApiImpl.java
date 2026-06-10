@@ -11,6 +11,8 @@ import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelProviderRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelParamTemplateRespDTO;
+import cn.iocoder.yudao.module.aigc.model.dto.AigcModelSubmitCandidateReqDTO;
+import cn.iocoder.yudao.module.aigc.model.dto.AigcModelSubmitCandidateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelSubmitPrepareRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelUsageRecordReqDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelValidateReqDTO;
@@ -26,7 +28,14 @@ import jakarta.annotation.Resource;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
@@ -116,6 +125,17 @@ public class AigcModelApiImpl implements AigcModelApi {
     }
 
     @Override
+    public CommonResult<AigcModelSubmitCandidateRespDTO> prepareSubmitCandidates(AigcModelSubmitCandidateReqDTO reqDTO) {
+        AigcModelDO primaryModel = modelService.validateTenantModel(reqDTO.getModelId(), reqDTO.getCapability());
+        paramService.validateParams(primaryModel.getId(), reqDTO.getCapability(), reqDTO.getParams());
+        int limit = reqDTO.getMaxCandidates() == null || reqDTO.getMaxCandidates() <= 0 ? 10 : reqDTO.getMaxCandidates();
+        List<AigcModelSubmitCandidateRespDTO.Candidate> candidates = buildSubmitCandidates(reqDTO, primaryModel).stream()
+                .limit(limit)
+                .collect(Collectors.toList());
+        return success(new AigcModelSubmitCandidateRespDTO().setCandidates(candidates));
+    }
+
+    @Override
     public CommonResult<Long> recordUsage(AigcModelUsageRecordReqDTO reqDTO) {
         return success(usageService.recordUsage(reqDTO));
     }
@@ -123,6 +143,99 @@ public class AigcModelApiImpl implements AigcModelApi {
     private AigcModelParamTemplateRespDTO convertParamTemplate(AigcModelParamTemplateDO template) {
         return BeanUtils.toBean(template, AigcModelParamTemplateRespDTO.class,
                 resp -> resp.setOptions(AigcModelParamUtils.parseOptions(template.getOptions())));
+    }
+
+    private List<AigcModelSubmitCandidateRespDTO.Candidate> buildSubmitCandidates(AigcModelSubmitCandidateReqDTO reqDTO, AigcModelDO primaryModel) {
+        Set<Long> excludeChannelIds = reqDTO.getExcludeChannelIds() == null ? Set.of() : reqDTO.getExcludeChannelIds();
+        Set<Long> excludeProviderIds = reqDTO.getExcludeProviderIds() == null ? Set.of() : reqDTO.getExcludeProviderIds();
+        List<AigcModelDO> models = listCandidateModels(reqDTO, primaryModel);
+        List<AigcModelSubmitCandidateRespDTO.Candidate> candidates = new ArrayList<>();
+        for (AigcModelDO model : models) {
+            AigcModelPriceCalculateRespDTO price = calculateCandidatePrice(reqDTO, model);
+            if (price == null) {
+                continue;
+            }
+            List<AigcModelChannelDO> channels = channelService.listEnabledChannelsByModelId(model.getId());
+            for (AigcModelChannelDO channel : channels) {
+                if (excludeChannelIds.contains(channel.getId()) || excludeProviderIds.contains(channel.getProviderId())) {
+                    continue;
+                }
+                if (isChannelRetry(reqDTO) && reqDTO.getPreferredProviderId() != null
+                        && !Objects.equals(reqDTO.getPreferredProviderId(), channel.getProviderId())) {
+                    continue;
+                }
+                AigcModelProviderDO provider = validateCandidateProvider(channel);
+                if (provider == null) {
+                    continue;
+                }
+                candidates.add(new AigcModelSubmitCandidateRespDTO.Candidate()
+                        .setModel(convertModel(model, channel))
+                        .setProvider(BeanUtils.toBean(provider, AigcModelProviderRespDTO.class))
+                        .setPrice(price)
+                        .setStrategy(reqDTO.getStrategy())
+                        .setPriority(channel.getPriority())
+                        .setWeight(channel.getWeight())
+                        .setHealthStatus(channel.getHealthStatus()));
+            }
+        }
+        return candidates.stream()
+                .sorted(candidateComparator(primaryModel))
+                .collect(Collectors.toList());
+    }
+
+    private List<AigcModelDO> listCandidateModels(AigcModelSubmitCandidateReqDTO reqDTO, AigcModelDO primaryModel) {
+        Map<Long, AigcModelDO> modelMap = new LinkedHashMap<>();
+        modelMap.put(primaryModel.getId(), primaryModel);
+        if (!isChannelRetry(reqDTO)) {
+            for (AigcModelDO model : modelService.listTenantAvailableModels(primaryModel.getType())) {
+                if (!Objects.equals(model.getId(), primaryModel.getId())
+                        && modelService.hasModelCapability(model.getId(), reqDTO.getCapability())) {
+                    modelMap.put(model.getId(), model);
+                }
+            }
+        }
+        return new ArrayList<>(modelMap.values());
+    }
+
+    private AigcModelPriceCalculateRespDTO calculateCandidatePrice(AigcModelSubmitCandidateReqDTO reqDTO, AigcModelDO model) {
+        try {
+            paramService.validateParams(model.getId(), reqDTO.getCapability(), reqDTO.getParams());
+            return priceService.calculatePrice(new AigcModelPriceCalculateReqDTO()
+                    .setModelId(model.getId())
+                    .setCapability(reqDTO.getCapability())
+                    .setTaskType(reqDTO.getTaskType())
+                    .setParams(reqDTO.getParams()));
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private AigcModelProviderDO validateCandidateProvider(AigcModelChannelDO channel) {
+        try {
+            return providerService.validateProviderExistsAndEnable(channel.getProviderId());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private Comparator<AigcModelSubmitCandidateRespDTO.Candidate> candidateComparator(AigcModelDO primaryModel) {
+        return Comparator
+                .comparing((AigcModelSubmitCandidateRespDTO.Candidate candidate) -> !Objects.equals(candidate.getModel().getId(), primaryModel.getId()))
+                .thenComparing(candidate -> nullLastInteger(candidate.getPriority()))
+                .thenComparing(candidate -> nullLastBigDecimal(candidate.getPrice() == null ? null : candidate.getPrice().getCostPrice()))
+                .thenComparing(candidate -> nullLastInteger(candidate.getWeight()));
+    }
+
+    private boolean isChannelRetry(AigcModelSubmitCandidateReqDTO reqDTO) {
+        return "CHANNEL_RETRY".equalsIgnoreCase(reqDTO.getStrategy());
+    }
+
+    private Integer nullLastInteger(Integer value) {
+        return value == null ? Integer.MAX_VALUE : value;
+    }
+
+    private BigDecimal nullLastBigDecimal(BigDecimal value) {
+        return value == null ? new BigDecimal("999999999") : value;
     }
 
     private AigcModelRouteResult validateAndRouteModel(Long modelId, String capability) {

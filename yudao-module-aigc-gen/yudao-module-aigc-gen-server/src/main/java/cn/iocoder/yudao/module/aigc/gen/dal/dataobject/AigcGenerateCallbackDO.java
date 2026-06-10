@@ -21,6 +21,7 @@ public class AigcGenerateCallbackDO extends TenantBaseDO {
     private Long id;
 
     private Long recordId;
+    private Long attemptId;
     private Long taskId;
     private String providerCode;
     private String providerTaskId;

@@ -14,6 +14,12 @@ public class AigcCostRecordCreateReqDTO {
     @NotNull(message = "任务编号不能为空")
     private Long taskId;
 
+    @Schema(description = "Generate record id", example = "4096")
+    private Long recordId;
+
+    @Schema(description = "Generate attempt id", example = "8192")
+    private Long attemptId;
+
     @Schema(description = "任务号", example = "T202605260001")
     private String taskNo;
 
@@ -26,6 +32,9 @@ public class AigcCostRecordCreateReqDTO {
 
     @Schema(description = "渠道商编号", example = "200")
     private Long providerId;
+
+    @Schema(description = "Channel id", example = "300")
+    private Long channelId;
 
     @Schema(description = "模型能力", example = "TEXT_TO_IMAGE")
     private String capability;

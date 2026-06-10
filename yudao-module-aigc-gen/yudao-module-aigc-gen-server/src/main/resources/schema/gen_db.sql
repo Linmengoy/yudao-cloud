@@ -44,6 +44,48 @@ CREATE TABLE IF NOT EXISTS `aigc_gen_record` (
   UNIQUE KEY `uk_tenant_client_request` (`tenant_id`, `user_id`, `client_request_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 生成记录表';
 
+CREATE TABLE IF NOT EXISTS `aigc_gen_attempt` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `record_id` bigint NOT NULL COMMENT '生成记录编号',
+  `task_id` bigint DEFAULT NULL COMMENT 'AIGC 统一任务编号',
+  `attempt_no` int NOT NULL COMMENT '尝试序号',
+  `batch_no` int NOT NULL DEFAULT 1 COMMENT '批次序号',
+  `strategy` varchar(32) NOT NULL COMMENT '尝试策略',
+  `model_id` bigint NOT NULL COMMENT '模型编号',
+  `model_code` varchar(64) DEFAULT NULL COMMENT '模型编码快照',
+  `channel_id` bigint DEFAULT NULL COMMENT '渠道实现编号',
+  `provider_model` varchar(128) DEFAULT NULL COMMENT '供应商模型标识',
+  `provider_id` bigint DEFAULT NULL COMMENT '供应商编号',
+  `provider_code` varchar(64) DEFAULT NULL COMMENT '供应商编码',
+  `provider_task_id` varchar(128) DEFAULT NULL COMMENT '第三方任务编号',
+  `provider_status` varchar(64) DEFAULT NULL COMMENT '第三方任务状态',
+  `status` varchar(32) NOT NULL COMMENT '尝试状态',
+  `sale_amount` decimal(18, 6) DEFAULT NULL COMMENT '销售金额快照',
+  `cost_amount` decimal(18, 6) DEFAULT NULL COMMENT '成本金额快照',
+  `currency_type` varchar(32) DEFAULT NULL COMMENT '币种',
+  `billing_unit` varchar(32) DEFAULT NULL COMMENT '计费单位',
+  `price_snapshot` json DEFAULT NULL COMMENT '价格快照',
+  `request_summary` json DEFAULT NULL COMMENT '请求摘要',
+  `response_summary` json DEFAULT NULL COMMENT '响应摘要',
+  `fail_code` varchar(64) DEFAULT NULL COMMENT '失败编码',
+  `fail_reason` varchar(512) DEFAULT NULL COMMENT '失败原因',
+  `winner` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否最终成功尝试',
+  `submit_time` datetime DEFAULT NULL COMMENT '提交时间',
+  `callback_time` datetime DEFAULT NULL COMMENT '回调时间',
+  `finish_time` datetime DEFAULT NULL COMMENT '完成时间',
+  `creator` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
+  `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_tenant_record_attempt` (`tenant_id`, `record_id`, `attempt_no`),
+  KEY `idx_tenant_record_status` (`tenant_id`, `record_id`, `status`),
+  KEY `idx_tenant_provider_task` (`tenant_id`, `provider_code`, `provider_task_id`),
+  KEY `idx_tenant_task` (`tenant_id`, `task_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 生成尝试表';
+
 CREATE TABLE IF NOT EXISTS `aigc_gen_callback` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
   `record_id` bigint DEFAULT NULL COMMENT '生成记录编号',
@@ -64,10 +106,12 @@ CREATE TABLE IF NOT EXISTS `aigc_gen_callback` (
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
   `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  `attempt_id` bigint DEFAULT NULL COMMENT '生成尝试编号',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_tenant_provider_callback` (`tenant_id`, `provider_code`, `callback_no`),
   KEY `idx_tenant_provider_task` (`tenant_id`, `provider_code`, `provider_task_id`),
   KEY `idx_tenant_task` (`tenant_id`, `task_id`),
+  KEY `idx_tenant_attempt` (`tenant_id`, `attempt_id`),
   KEY `idx_tenant_status_time` (`tenant_id`, `process_status`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 生成回调表';
 
@@ -92,8 +136,10 @@ CREATE TABLE IF NOT EXISTS `aigc_gen_provider_log` (
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted` bit(1) NOT NULL DEFAULT b'0' COMMENT '是否删除',
   `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
+  `attempt_id` bigint DEFAULT NULL COMMENT '生成尝试编号',
   PRIMARY KEY (`id`),
   KEY `idx_tenant_record` (`tenant_id`, `record_id`),
+  KEY `idx_tenant_attempt` (`tenant_id`, `attempt_id`),
   KEY `idx_tenant_provider_time` (`tenant_id`, `provider_code`, `create_time`),
   KEY `idx_tenant_success_time` (`tenant_id`, `success`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 渠道调用日志表';

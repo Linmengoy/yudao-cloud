@@ -1434,3 +1434,66 @@ mvn -pl yudao-module-aigc-task/yudao-module-aigc-task-server -am -DskipTests com
 ```
 
 测试日志中本地 Nacos `127.0.0.1:9848` 连接失败属于单元测试环境未启动 Nacos 的噪声，不影响测试结果。生产环境需要确保 `aigc-task-server` 可通过 Nacos 发现 `aigc-billing-server`。
+
+## 24. 多 Attempt 自动重试下的任务状态边界
+
+生成服务后续支持多 attempt fallback 后，`aigc-task` 仍然只维护用户视角的主任务生命周期，不直接感知每一次供应商尝试的细节。
+
+### 24.1 主任务与 Attempt 的关系
+
+- `aigc_task` 对应一次用户任务。
+- `aigc_gen_record` 对应一次用户生成主单。
+- `aigc_gen_attempt` 对应一次内部供应商尝试。
+
+任务服务不需要保存 attempt 明细，attempt 明细归 `aigc-gen` 管理。任务服务只接收生成服务对主任务的状态推进。
+
+### 24.2 单次 Attempt 失败不等于主任务失败
+
+当某次供应商调用失败时：
+
+- 不调用 `markFailed`。
+- 不进入 `REFUNDING` 或 `REFUNDED`。
+- 不触发任务级失败统计。
+- 由 `aigc-gen` 继续尝试下一个渠道或供应商。
+
+只有所有可重试、可 fallback、可 hedging 的候选都耗尽后，`aigc-gen` 才能调用 `markFailed`，并进入后续退款或释放冻结流程。
+
+### 24.3 建议任务状态映射
+
+用户端不需要看到内部切换供应商过程。任务状态建议按以下方式映射：
+
+| gen 内部状态 | task 状态 | 用户展示 |
+| ---- | ---- | ---- |
+| `SUBMITTING` | `RUNNING` | 生成中 |
+| `RETRYING` | `RUNNING` | 生成中 |
+| `FALLBACKING` | `RUNNING` | 生成中 |
+| `HEDGING` | `RUNNING` 或 `CALLBACK_WAITING` | 生成中 |
+| winner 成功 | `SUCCESS` | 成功 |
+| 所有 attempt 失败 | `FAILED -> REFUNDING -> REFUNDED` | 失败或已释放冻结 |
+
+如果未来需要管理端可见内部状态，可以在任务日志中记录 `ATTEMPT_FAILED`、`CHANNEL_RETRY`、`PROVIDER_FALLBACK`、`HEDGING_START`、`HEDGING_WINNER` 等事件，但不建议扩展用户端任务状态。
+
+### 24.4 重试记录边界
+
+现有 `aigc_task_retry` 更适合任务级人工重试、补偿扫描或最终失败后的再执行，不建议直接复用为每一次供应商 attempt。
+
+原因：
+
+- attempt 需要记录 `channel_id`、`provider_id`、`provider_task_id`、成本、winner、并发批次。
+- `aigc_task_retry` 当前是任务级重试，字段粒度不足。
+- 将 attempt 塞进 task retry 会让任务服务承担供应商调度细节，破坏模块边界。
+
+建议：
+
+- 自动切渠道、切供应商、并发兜底：使用 `aigc_gen_attempt`。
+- 人工重跑整个任务、补偿任务级失败：继续使用 `aigc_task_retry`。
+
+### 24.5 补偿要求
+
+任务补偿扫描不能只看到长时间 `RUNNING` 就直接失败退款。自动 fallback 落地后，需要先询问 `aigc-gen` 当前主单是否仍有 active attempt 或可继续 fallback：
+
+- 有 active attempt：保持运行中，必要时触发 attempt 同步。
+- 无 active attempt 但还有候选：由 `aigc-gen` 创建下一批 attempt。
+- 无候选且均失败：任务服务才允许进入最终失败和退款流程。
+
+任务服务仍然负责最终状态机合法性和日志审计，但供应商尝试策略由生成服务负责。

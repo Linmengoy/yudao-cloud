@@ -1130,3 +1130,171 @@ WHERE p.id = 6\G
 - 渠道失败率超过阈值时告警
 - 等待回调任务超过最大等待时间时告警
 - 扣费确认失败、资产创建失败必须告警
+
+## 23. 多供应商自动重试与成本归集设计
+
+本节记录生成失败后的自动兜底策略。目标是：用户只感知一次生成任务和一次计费；平台内部可以按策略多次尝试不同渠道账号、不同供应商模型，最终成功时只向用户扣一次销售价，成本侧则真实记录每一次已产生成本的供应商调用。
+
+### 23.1 设计结论
+
+当前 `aigc_gen_record` 是用户侧生成主单，但它也保存了单次供应商调用的 `provider_id`、`channel_id`、`provider_task_id`、`provider_status`。该结构适合第一阶段的一次提交，不适合多轮 fallback 和并发兜底。
+
+后续应新增正式的 `aigc_gen_attempt` 表，将一次用户生成拆成：
+
+- `aigc_gen_record`：用户可见主单，只代表一次用户生成请求。
+- `aigc_gen_attempt`：内部供应商尝试记录，一次供应商提交一条。
+- `aigc_gen_provider_log`：请求/响应日志，继续作为审计日志，不承担 attempt 状态机职责。
+
+### 23.2 推荐表：aigc_gen_attempt
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `id` | attempt 主键 |
+| `record_id` | 生成主单 ID |
+| `task_id` | 统一任务 ID |
+| `attempt_no` | 尝试序号，从 1 递增 |
+| `batch_no` | 并发兜底批次号，串行重试可为空或等于 attempt_no |
+| `strategy` | 尝试策略：`PRIMARY`、`CHANNEL_RETRY`、`PROVIDER_FALLBACK`、`HEDGING` |
+| `model_id` | 本次尝试使用的业务模型 ID |
+| `model_code` | 模型编码快照 |
+| `channel_id` | 本次尝试使用的渠道账号/渠道实现 ID |
+| `provider_id` | 供应商 ID |
+| `provider_code` | 供应商编码快照 |
+| `provider_model` | 上游真实模型名快照 |
+| `provider_task_id` | 第三方任务 ID |
+| `provider_status` | 第三方任务状态 |
+| `status` | attempt 状态：`CREATED`、`SUBMITTING`、`SUBMITTED`、`CALLBACK_WAITING`、`SUCCESS`、`FAILED`、`CANCELLED`、`IGNORED` |
+| `winner` | 是否为最终胜出的 attempt |
+| `cost_amount` | 本次尝试实际产生成本 |
+| `currency_type` | 成本币种 |
+| `request_snapshot` | 提交给供应商前的脱敏请求快照 |
+| `response_snapshot` | 供应商响应脱敏快照 |
+| `error_code` | 失败错误码 |
+| `error_message` | 失败原因 |
+| `start_time` | 开始时间 |
+| `submit_time` | 提交第三方时间 |
+| `finish_time` | 结束时间 |
+
+建议索引：
+
+| 索引 | 字段 | 说明 |
+| ---- | ---- | ---- |
+| `uk_tenant_record_attempt` | `tenant_id, record_id, attempt_no` | 主单内尝试序号唯一 |
+| `uk_tenant_provider_task` | `tenant_id, provider_code, provider_task_id` | 回调定位 attempt |
+| `idx_tenant_record_status` | `tenant_id, record_id, status` | 查询主单下 attempt |
+| `idx_tenant_task_status` | `tenant_id, task_id, status` | 补偿扫描 |
+
+### 23.3 自动重试策略
+
+失败处理必须先区分“单次尝试失败”和“最终失败”：
+
+- 单次尝试失败：只更新 `aigc_gen_attempt`，不释放用户冻结，不把 `aigc_gen_record` 和 `aigc_task` 置为最终失败。
+- 最终失败：所有可用策略耗尽后，才更新主单为 `FAILED`，释放用户冻结，并推进任务退款状态。
+
+推荐策略顺序：
+
+1. 主渠道提交。
+2. 同供应商下切换未尝试过的渠道账号，适合账号限流、额度不足、临时网络异常。
+3. 切换到其他供应商或其他业务模型映射，适合供应商整体不可用、模型临时故障。
+4. 并发请求剩余未尝试过的供应商渠道，适合长时间失败后做最终兜底。
+
+### 23.4 失败分类
+
+可重试失败：
+
+- 网络超时、连接失败、读取超时。
+- 供应商 5xx。
+- 供应商限流。
+- 渠道账号余额不足、额度不足、并发已满。
+- 第三方任务超时或回调超时。
+- 可明确归类为供应商临时不可用的错误。
+
+不可重试失败：
+
+- 用户参数非法。
+- 模型能力不支持当前规格。
+- 提示词或输入素材安全审核不通过。
+- 用户余额不足或冻结失败。
+- 用户主动取消。
+- 供应商明确返回内容违规且不可换供应商绕过的场景。
+
+### 23.5 Winner 机制
+
+并发兜底时必须有且只有一个 winner attempt：
+
+- 第一个成功完成且通过结果安全校验的 attempt 可以竞争 winner。
+- 使用 `record_id + status` 或单独 winner 锁做条件更新，避免并发成功互相覆盖。
+- winner attempt 回写主单输出、创建资产、确认用户扣费、推进任务成功。
+- loser attempt 的后续回调只记录状态、日志和成本，不允许覆盖主单结果，不允许重复创建资产，不允许重复确认用户扣费。
+- 能取消的 loser 尝试应调用供应商取消接口；不能取消的只做本地忽略和成本审计。
+
+### 23.6 计费与成本原则
+
+用户侧：
+
+- 一次用户生成只冻结一次。
+- 最终成功只确认扣费一次，金额为用户提交时的 `price_amount`。
+- 全部尝试失败才释放冻结。
+- 自动切换渠道和供应商对用户无感知，前端只看到主单进度。
+
+成本侧：
+
+- 每次 attempt 只要供应商实际产生成本，都必须记录成本。
+- 主单 `cost_amount` 应为所有有成本 attempt 的汇总。
+- 失败 attempt 的成本也要计入平台成本和毛利统计。
+- 成本记录需要能关联 attempt，不能继续只按 `task_id` 一任务一条。
+
+### 23.7 对现有代码的改造点
+
+当前 `failRecord()` 是最终失败处理，包含主单失败、任务失败、释放冻结、任务退款。自动 fallback 落地后，不能在单次供应商失败时直接调用它。
+
+需要新增：
+
+- `handleAttemptFailed(record, attempt, error)`：处理单次尝试失败，判断是否继续重试。
+- `selectNextAttemptCandidates(record, attemptedChannels, attemptedProviders)`：从模型服务获取下一批候选。
+- `submitAttempt(record, candidate)`：按候选渠道提交供应商。
+- `completeAttemptSuccess(attempt, providerResp)`：尝试成功，竞争 winner。
+- `finalFailRecord(record, reason)`：所有策略耗尽后的最终失败。
+
+`createCallback()` 需要先通过 `provider_code + provider_task_id` 定位 `aigc_gen_attempt`，再由 attempt 找到主单；不能继续直接定位 `aigc_gen_record`。
+
+`syncTask()` 和超时补偿也要以 active attempt 为粒度查询供应商状态；只有主单所有 attempt 均不可继续时，才最终失败。
+
+### 23.8 状态补充
+
+主单建议新增或内部使用以下状态：
+
+| 状态 | 说明 |
+| ---- | ---- |
+| `RETRYING` | 正在串行重试渠道账号 |
+| `FALLBACKING` | 正在切换供应商或模型兜底 |
+| `HEDGING` | 正在并发请求多个候选供应商 |
+
+这些状态可以对用户端隐藏或映射为“生成中”。用户端不要暴露内部供应商切换细节。
+
+### 23.9 配置项
+
+建议按租户、模型能力或生成类型配置：
+
+| 配置项 | 说明 |
+| ------ | ---- |
+| `maxAttemptCount` | 最大尝试次数 |
+| `maxProviderCount` | 最大供应商数量 |
+| `maxHedgingConcurrency` | 并发兜底并发数 |
+| `maxTotalDurationMillis` | 单个主单最大内部执行时长 |
+| `maxInternalCostAmount` | 最大平台内部成本上限 |
+| `retryableErrorCodes` | 可重试错误码集合 |
+| `nonRetryableErrorCodes` | 不可重试错误码集合 |
+| `allowQualityDowngrade` | 是否允许降级模型兜底 |
+
+### 23.10 验收要点
+
+- 同一用户请求只生成一条主单和一条用户冻结。
+- 单个 attempt 失败不会释放冻结，不会把主任务置为最终失败。
+- 同供应商渠道重试、跨供应商 fallback、并发 hedging 均可记录独立 attempt。
+- 并发成功时只有一个 winner 写主单结果。
+- loser 晚到回调不会覆盖 winner 结果。
+- 最终成功只确认扣费一次。
+- 所有已产生成本的 attempt 均有成本记录。
+- 全部尝试失败时释放用户冻结，主单和任务进入最终失败/退款状态。
+- 管理端可查看主单下所有 attempt、错误原因、成本和 winner。
