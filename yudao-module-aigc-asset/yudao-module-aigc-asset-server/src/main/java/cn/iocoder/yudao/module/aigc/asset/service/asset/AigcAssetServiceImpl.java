@@ -353,19 +353,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
 
     @Override
     public AigcAssetCategoryCountRespDTO getUserAssetCategoryCounts(AigcAssetPageReqVO reqVO, Long userId) {
-        AigcAssetPageReqVO baseReqVO = buildUserAssetCountReqVO(reqVO, userId);
-        return new AigcAssetCategoryCountRespDTO()
-                .setAllCount(assetMapper.selectCount(baseReqVO))
-                .setGeneratedImageCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
-                        .setAssetType(AigcAssetTypeEnum.IMAGE.getCode())
-                        .setSourceType(AigcAssetSourceTypeEnum.GENERATE.getCode())))
-                .setUploadedImageCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
-                        .setAssetType(AigcAssetTypeEnum.IMAGE.getCode())
-                        .setSourceType(AigcAssetSourceTypeEnum.UPLOAD.getCode())))
-                .setVideoCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
-                        .setAssetType(AigcAssetTypeEnum.VIDEO.getCode())))
-                .setOtherCount(assetMapper.selectCount(buildUserAssetCountReqVO(reqVO, userId)
-                        .setCategory("OTHER")));
+        return assetMapper.selectCategoryCounts(buildUserAssetCountReqVO(reqVO, userId));
     }
 
     private AigcAssetPageReqVO buildUserAssetCountReqVO(AigcAssetPageReqVO reqVO, Long userId) {
