@@ -30,6 +30,8 @@ public class AigcModelUsageLogDO extends TenantBaseDO {
 
     private Long providerId;
 
+    private Long channelId;
+
     private String capability;
 
     private String requestId;

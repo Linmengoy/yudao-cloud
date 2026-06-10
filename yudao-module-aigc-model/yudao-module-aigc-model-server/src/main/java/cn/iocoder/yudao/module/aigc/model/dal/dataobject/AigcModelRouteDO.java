@@ -24,11 +24,15 @@ public class AigcModelRouteDO extends BaseDO {
 
     private String taskType;
 
+    private Long modelId;
+
     private String capability;
 
     private String strategy;
 
     private String modelIds;
+
+    private String channelIds;
 
     private String userLevel;
 

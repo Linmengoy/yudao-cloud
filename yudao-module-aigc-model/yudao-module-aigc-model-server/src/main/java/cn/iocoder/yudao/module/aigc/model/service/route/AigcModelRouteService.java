@@ -25,4 +25,6 @@ public interface AigcModelRouteService {
 
     Long route(String taskType, String capability);
 
+    Long routeChannel(Long modelId, String taskType, String capability);
+
 }

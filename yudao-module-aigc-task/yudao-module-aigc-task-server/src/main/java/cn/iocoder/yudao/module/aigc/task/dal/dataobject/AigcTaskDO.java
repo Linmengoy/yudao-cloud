@@ -66,6 +66,11 @@ public class AigcTaskDO extends TenantBaseDO {
     private Long providerId;
 
     /**
+     * 渠道实现ID
+     */
+    private Long channelId;
+
+    /**
      * 任务状态
      */
     private String status;

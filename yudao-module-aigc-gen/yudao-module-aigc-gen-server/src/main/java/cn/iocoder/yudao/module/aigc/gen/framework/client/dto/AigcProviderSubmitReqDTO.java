@@ -12,6 +12,7 @@ public class AigcProviderSubmitReqDTO {
     private Long userId;
     private Long modelId;
     private String modelCode;
+    private Long channelId;
     private String providerModel;
     private Long providerId;
     private String providerCode;

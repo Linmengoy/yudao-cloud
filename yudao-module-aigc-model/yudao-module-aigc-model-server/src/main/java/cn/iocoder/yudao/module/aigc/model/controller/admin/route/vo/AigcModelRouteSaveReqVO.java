@@ -18,6 +18,9 @@ public class AigcModelRouteSaveReqVO {
     @Schema(description = "任务类型", example = "image")
     private String taskType;
 
+    @Schema(description = "业务模型编号", example = "1024")
+    private Long modelId;
+
     @Schema(description = "模型能力", example = "TEXT_TO_IMAGE")
     private String capability;
 
@@ -27,6 +30,9 @@ public class AigcModelRouteSaveReqVO {
 
     @Schema(description = "模型编号集合")
     private String modelIds;
+
+    @Schema(description = "渠道实现编号集合")
+    private String channelIds;
 
     @Schema(description = "用户等级", example = "VIP")
     private String userLevel;
