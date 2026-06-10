@@ -2,7 +2,6 @@ package cn.iocoder.yudao.module.aigc.asset.controller.app;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
-import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.AigcAssetVideoFrameCaptureReqVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetPageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
@@ -47,6 +46,7 @@ public class AigcAssetAppController {
     @Resource
     private AigcAssetService assetService;
 
+    // get
     @GetMapping("/my-get")
     @Operation(summary = "获取我的资产详情")
     @Parameter(name = "id", description = "资产编号", required = true)
@@ -58,8 +58,9 @@ public class AigcAssetAppController {
     @Operation(summary = "获取我的资产分页")
     public CommonResult<PageResult<AigcAssetRespDTO>> getMyAssetPage(@Valid AigcAssetPageReqVO reqVO) {
         PageResult<AigcAssetDO> pageResult = assetService.getUserAssetPage(reqVO, getLoginUserId());
-        PageResult<AigcAssetRespDTO> respPage = BeanUtils.toBean(pageResult, AigcAssetRespDTO.class);
-        respPage.setList(assetService.getAssetRespList(pageResult.getList().stream().map(AigcAssetDO::getId).toList(), getLoginUserId()));
+        PageResult<AigcAssetRespDTO> respPage = new PageResult<>();
+        respPage.setTotal(pageResult.getTotal());
+        respPage.setList(assetService.buildAssetRespList(pageResult.getList(), getLoginUserId()));
         return success(respPage);
     }
 
@@ -67,7 +68,7 @@ public class AigcAssetAppController {
     @Operation(summary = "获取我的资产列表")
     public CommonResult<List<AigcAssetRespDTO>> getMyAssetList(@Valid AigcAssetPageReqVO reqVO) {
         List<AigcAssetDO> list = assetService.getUserAssetList(reqVO, getLoginUserId());
-        return success(assetService.getAssetRespList(list.stream().map(AigcAssetDO::getId).toList(), getLoginUserId()));
+        return success(assetService.buildAssetRespList(list, getLoginUserId()));
     }
 
     @GetMapping("/my-category-counts")

@@ -47,6 +47,8 @@ public interface AigcAssetService {
 
     List<AigcAssetRespDTO> getAssetRespList(Collection<Long> ids, Long userId);
 
+    List<AigcAssetRespDTO> buildAssetRespList(List<AigcAssetDO> assets, Long userId);
+
     AigcAssetDO validateAssetExists(Long id);
 
     AigcAssetDO getAssetByTaskId(Long taskId);

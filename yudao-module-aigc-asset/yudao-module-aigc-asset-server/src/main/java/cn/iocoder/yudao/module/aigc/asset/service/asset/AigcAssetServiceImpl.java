@@ -270,6 +270,15 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     @Override
     public List<AigcAssetRespDTO> getAssetRespList(Collection<Long> ids, Long userId) {
         List<AigcAssetDO> assets = getAssetList(ids);
+        return buildAssetRespList(assets, userId);
+    }
+
+    @Override
+    public List<AigcAssetRespDTO> buildAssetRespList(List<AigcAssetDO> assets, Long userId) {
+        if (assets == null || assets.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> ids = assets.stream().map(AigcAssetDO::getId).toList();
         Map<Long, List<AigcAssetFileDO>> fileMap = assetFileMapper.selectListByAssetIds(ids).stream()
                 .collect(Collectors.groupingBy(AigcAssetFileDO::getAssetId));
         return assets.stream().map(asset -> buildAssetRespDTO(asset, fileMap.get(asset.getId()), userId))
