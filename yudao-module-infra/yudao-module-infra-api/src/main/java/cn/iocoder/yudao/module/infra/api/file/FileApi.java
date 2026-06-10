@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateReqDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignReqDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignPutRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.enums.ApiConstants;
 import io.swagger.v3.oas.annotations.Operation;
@@ -71,6 +72,16 @@ public interface FileApi {
     @PostMapping(PREFIX + "/create-v2")
     @Operation(summary = "保存文件，并返回文件信息")
     CommonResult<FileCreateRespDTO> createFileV2(@Valid @RequestBody FileCreateReqDTO createReqDTO);
+
+    @PostMapping(PREFIX + "/create-record-v2")
+    @Operation(summary = "创建文件记录，并返回文件信息")
+    CommonResult<FileCreateRespDTO> createFileRecordV2(@Valid @RequestBody FileCreateRespDTO createRespDTO);
+
+    @GetMapping(PREFIX + "/presigned-put-url-v2")
+    @Operation(summary = "生成文件预签名地址，用于上传")
+    CommonResult<FilePresignPutRespDTO> presignPutUrlV2(
+            @NotEmpty(message = "文件名不能为空") @RequestParam("name") String name,
+            @RequestParam(value = "directory", required = false) String directory);
 
     /**
      * 生成文件预签名地址，用于读取

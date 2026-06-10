@@ -155,7 +155,5 @@ export function getFilesFromDrop(e: React.DragEvent | DragEvent): File[] {
   return files;
 }
 
-// TODO: upload images to /app-api/infra/file/upload and store fileId/url instead of dataUrl
-// POST /app-api/infra/file/upload — multipart form with file
-// Response: { data: { url: string } }
-// Then store only the URL in ImageNodeData instead of the full dataUrl
+// Asset uploads are handled through /aigc/asset/upload -> direct storage PUT -> /aigc/asset/upload/complete.
+// Keep local dataUrl conversion here for immediate canvas preview and offline-friendly node state.

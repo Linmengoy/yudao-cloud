@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.aigc.asset.service.asset;
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.asset.dal.redis.RedisKeyConstants.ASSET_ACCESS_URL;
 import static cn.iocoder.yudao.module.aigc.asset.dal.redis.RedisKeyConstants.ASSET_ACCESS_URL_LOCK;
+import static cn.iocoder.yudao.module.aigc.asset.dal.redis.RedisKeyConstants.ASSET_UPLOAD_TOKEN;
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_AUDIT_NOT_PASS;
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_DOWNLOAD_FAILED;
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_FILE_EMPTY;
@@ -12,6 +13,7 @@ import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_NO_PERMISSION;
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_STATUS_INVALID;
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_TASK_NOT_EXISTS;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_UPLOAD_FAILED;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -56,12 +58,16 @@ import cn.iocoder.yudao.module.aigc.asset.dal.mysql.AigcAssetDownloadLogMapper;
 import cn.iocoder.yudao.module.aigc.asset.dal.mysql.AigcAssetFileMapper;
 import cn.iocoder.yudao.module.aigc.asset.dal.mysql.AigcAssetMapper;
 import cn.iocoder.yudao.module.aigc.asset.dal.redis.AigcAssetAccessUrlRedisDAO;
+import cn.iocoder.yudao.module.aigc.asset.dal.redis.AigcAssetUploadTokenRedisDAO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAuditUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCategoryCountRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateRespDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDirectUploadCompleteReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDirectUploadPrepareReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDirectUploadPrepareRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetFileRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetPageReqDTO;
@@ -83,6 +89,7 @@ import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
 import cn.iocoder.yudao.module.infra.api.file.FileApi;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignReqDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignPutRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -108,11 +115,14 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     @Resource
     private AigcAssetAccessUrlRedisDAO accessUrlRedisDAO;
     @Resource
+    private AigcAssetUploadTokenRedisDAO uploadTokenRedisDAO;
+    @Resource
     private AigcTaskApi taskApi;
     @Resource
     private FileApi fileApi;
 
     private static final long MAX_FILE_SIZE = 200L * 1024 * 1024;
+    private static final int UPLOAD_TOKEN_EXPIRE_SECONDS = 24 * 60 * 60;
 
     @Override
     public Long createAsset(AigcAssetSaveReqVO reqVO) {
@@ -150,6 +160,65 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         Long assetId = createAsset(reqVO);
         assetFileMapper.insert(
                 buildAssetFileDO(assetId, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null, null, null, null));
+        return assetId;
+    }
+
+    @Override
+    public AigcAssetDirectUploadPrepareRespDTO prepareDirectUpload(Long userId,
+            AigcAssetDirectUploadPrepareReqDTO reqDTO) {
+        if (reqDTO.getFileSize() == null || reqDTO.getFileSize() <= 0) {
+            throw exception(ASSET_FILE_EMPTY);
+        }
+        validateFileSize(reqDTO.getFileSize());
+        String storageFileName = uniqueAssetStorageFileName(reqDTO.getFileName(), reqDTO.getMimeType());
+        FilePresignPutRespDTO presign = fileApi.presignPutUrlV2(storageFileName, "aigc/asset").getCheckedData();
+        String uploadToken = UUID.fastUUID().toString(true);
+        String key = buildUploadTokenKey(uploadToken);
+        uploadTokenRedisDAO.set(key,
+                AigcAssetUploadTokenRedisDAO.UploadToken.of(userId, reqDTO, presign),
+                UPLOAD_TOKEN_EXPIRE_SECONDS);
+        return new AigcAssetDirectUploadPrepareRespDTO()
+                .setUploadToken(uploadToken)
+                .setUploadUrl(presign.getUploadUrl())
+                .setUrl(presign.getUrl())
+                .setConfigId(presign.getConfigId())
+                .setStorageType(presign.getStorageType())
+                .setBucket(presign.getBucket())
+                .setObjectKey(presign.getObjectKey())
+                .setPath(presign.getPath())
+                .setPublicAccess(presign.getPublicAccess());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long completeDirectUpload(Long userId, AigcAssetDirectUploadCompleteReqDTO reqDTO) {
+        String key = buildUploadTokenKey(reqDTO.getUploadToken());
+        AigcAssetUploadTokenRedisDAO.UploadToken token = uploadTokenRedisDAO.get(key);
+        if (token == null || !Objects.equals(token.getUserId(), userId)) {
+            throw exception(ASSET_UPLOAD_FAILED);
+        }
+        FileCreateRespDTO file = fileApi.createFileRecordV2(new FileCreateRespDTO()
+                .setConfigId(token.getConfigId())
+                .setStorageType(token.getStorageType())
+                .setBucket(token.getBucket())
+                .setObjectKey(token.getObjectKey())
+                .setPath(token.getPath())
+                .setName(token.getFileName())
+                .setUrl(token.getUrl())
+                .setType(token.getMimeType())
+                .setSize(token.getFileSize())
+                .setPublicAccess(token.getPublicAccess())).getCheckedData();
+        AigcAssetSaveReqVO assetReqVO = new AigcAssetSaveReqVO()
+                .setUserId(userId)
+                .setAssetType(token.getAssetType())
+                .setSourceType(AigcAssetSourceTypeEnum.UPLOAD.getCode())
+                .setTitle(StrUtil.blankToDefault(token.getTitle(), token.getFileName()))
+                .setVisibility(AigcAssetVisibilityEnum.PRIVATE.getCode())
+                .setAuditStatus(AigcAssetAuditStatusEnum.PENDING.getCode());
+        Long assetId = createAsset(assetReqVO);
+        assetFileMapper.insert(buildAssetFileDO(assetId, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null,
+                reqDTO.getWidth(), reqDTO.getHeight(), reqDTO.getDuration()).setMetadata(reqDTO.getMetadata()));
+        uploadTokenRedisDAO.delete(key);
         return assetId;
     }
 
@@ -1028,6 +1097,11 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         String userKey = AigcAssetAccessTypeEnum.DOWNLOAD.getCode().equals(accessType) ? String.valueOf(userId)
                 : "PUBLIC";
         return String.format(ASSET_ACCESS_URL_LOCK, tenantId, file.getId(), file.getFileRole(), accessType, userKey);
+    }
+
+    private String buildUploadTokenKey(String uploadToken) {
+        Long tenantId = TenantContextHolder.getTenantId() == null ? 0L : TenantContextHolder.getTenantId();
+        return String.format(ASSET_UPLOAD_TOKEN, tenantId, uploadToken);
     }
 
     private void validateFileSize(long fileSize) {

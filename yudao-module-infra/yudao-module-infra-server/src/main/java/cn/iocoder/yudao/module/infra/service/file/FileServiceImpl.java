@@ -11,6 +11,7 @@ import cn.iocoder.yudao.framework.common.util.http.HttpUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignReqDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignPutRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FileCreateReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePageReqVO;
@@ -160,14 +161,33 @@ public class FileServiceImpl implements FileService {
     @SneakyThrows
     public FilePresignedUrlRespVO presignPutUrl(String name, String directory) {
         // 1. 生成上传的 path，需要保证唯一
-        String path = generateUploadPath(name, directory);
+        FilePresignPutRespDTO presign = presignPutUrlV2(name, directory);
 
         // 2. 获取文件预签名地址
+        return new FilePresignedUrlRespVO().setConfigId(presign.getConfigId())
+                .setPath(presign.getPath()).setUploadUrl(presign.getUploadUrl()).setUrl(presign.getUrl());
+    }
+
+    @Override
+    @SneakyThrows
+    public FilePresignPutRespDTO presignPutUrlV2(String name, String directory) {
+        String path = generateUploadPath(name, directory);
         FileClient fileClient = fileConfigService.getMasterFileClient();
-        String uploadUrl = fileClient.presignPutUrl(path);
-        String visitUrl = fileClient.presignGetUrl(path, null);
-        return new FilePresignedUrlRespVO().setConfigId(fileClient.getId())
-                .setPath(path).setUploadUrl(uploadUrl).setUrl(visitUrl);
+        Assert.notNull(fileClient, "master file client must not be null");
+        Long configId = fileClient.getId();
+        FileConfigDO config = fileConfigService.getFileConfig(configId);
+        FileStorageEnum storage = config == null ? null : FileStorageEnum.getByStorage(config.getStorage());
+        S3FileClientConfig s3Config = config != null && config.getConfig() instanceof S3FileClientConfig
+                ? (S3FileClientConfig) config.getConfig() : null;
+        return new FilePresignPutRespDTO()
+                .setConfigId(configId)
+                .setStorageType(storage == null ? null : storage.name())
+                .setBucket(s3Config == null ? null : s3Config.getBucket())
+                .setObjectKey(path)
+                .setPath(path)
+                .setUploadUrl(fileClient.presignPutUrl(path))
+                .setUrl(fileClient.presignGetUrl(path, null))
+                .setPublicAccess(isPublicAccess(configId));
     }
 
     @Override
@@ -212,6 +232,20 @@ public class FileServiceImpl implements FileService {
         FileDO file = BeanUtils.toBean(createReqVO, FileDO.class);
         fileMapper.insert(file);
         return file.getId();
+    }
+
+    @Override
+    public FileCreateRespDTO createFileRecordV2(FileCreateRespDTO createRespDTO) {
+        String url = HttpUtils.removeUrlQuery(createRespDTO.getUrl());
+        FileDO file = new FileDO()
+                .setConfigId(createRespDTO.getConfigId())
+                .setName(createRespDTO.getName())
+                .setPath(createRespDTO.getPath())
+                .setUrl(url)
+                .setType(createRespDTO.getType())
+                .setSize(createRespDTO.getSize());
+        fileMapper.insert(file);
+        return buildCreateRespDTO(file, file.getConfigId());
     }
 
     @Override

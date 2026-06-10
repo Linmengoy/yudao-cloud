@@ -109,6 +109,18 @@ export interface AigcAssetAccessUrlResp {
   cacheHit?: boolean;
 }
 
+export interface AigcAssetDirectUploadPrepareResp {
+  uploadToken: string;
+  uploadUrl: string;
+  url?: string;
+  configId?: number;
+  storageType?: string;
+  bucket?: string;
+  objectKey?: string;
+  path?: string;
+  publicAccess?: boolean;
+}
+
 export interface AigcAssetUpdateReq {
   id: number | string;
   title?: string;
