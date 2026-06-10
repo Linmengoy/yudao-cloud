@@ -56,6 +56,8 @@ import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -70,11 +72,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
+import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.invalidParamException;
 import static cn.iocoder.yudao.module.aigc.gen.enums.ErrorCodeConstants.GENERATE_PROMPT_NOT_PASS;
 import static cn.iocoder.yudao.module.aigc.gen.enums.ErrorCodeConstants.GENERATE_PROVIDER_CALLBACK_INVALID;
 import static cn.iocoder.yudao.module.aigc.gen.enums.ErrorCodeConstants.GENERATE_PROVIDER_RESULT_INVALID;
+import static cn.iocoder.yudao.module.aigc.gen.enums.ErrorCodeConstants.GENERATE_RECORD_NO_DUPLICATE;
 import static cn.iocoder.yudao.module.aigc.gen.enums.ErrorCodeConstants.GENERATE_RECORD_NOT_EXISTS;
 
 @Service
@@ -83,7 +88,7 @@ import static cn.iocoder.yudao.module.aigc.gen.enums.ErrorCodeConstants.GENERATE
 public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService {
 
     private static final Set<String> FILE_TYPES = Set.of("IMAGE", "VIDEO", "AUDIO", "DOCUMENT");
-    private static final Set<String> WAITING_STATUSES = Set.of(AigcGenerateStatusEnum.SUBMITTED.getCode(), AigcGenerateStatusEnum.CALLBACK_WAITING.getCode(), AigcGenerateStatusEnum.SYNCING.getCode());
+    private static final Set<String> WAITING_STATUSES = Set.of(AigcGenerateStatusEnum.SUBMITTING.getCode(), AigcGenerateStatusEnum.SUBMITTED.getCode(), AigcGenerateStatusEnum.CALLBACK_WAITING.getCode(), AigcGenerateStatusEnum.SYNCING.getCode());
 
     @Resource
     private AigcGenerateRecordMapper generateRecordMapper;
@@ -107,6 +112,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     private AigcProviderClientFactory providerClientFactory;
     @Resource
     private ObjectProvider<MeterRegistry> meterRegistryProvider;
+    @Resource
+    private ObjectProvider<TaskExecutor> taskExecutorProvider;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -121,8 +128,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setInputParams(sanitizeInputParamsSnapshot(reqDTO.getInputParams()))
                 .setGenerateNo(generateGenerateNo())
                 .setStatus(AigcGenerateStatusEnum.CREATED.getCode());
-        generateRecordMapper.insert(record);
-        return record;
+        return insertRecordHandlingDuplicate(record);
     }
 
     @Override
@@ -136,35 +142,38 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         recordMetric("gen_submit_total");
         Map<String, Object> inputParams = parseInputParams(reqDTO.getInputParams());
         String inputParamsSnapshot = sanitizeInputParamsSnapshot(reqDTO.getInputParams());
+        String generateNo = generateGenerateNo();
         AigcModelSubmitPrepareRespDTO prepare = modelApi.prepareSubmit(new AigcModelPriceCalculateReqDTO()
                 .setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode()).setTaskType(reqDTO.getGenerateType()).setParams(inputParams)).getCheckedData();
         AigcModelRespDTO model = prepare.getModel();
-        Long businessModelId = model.getId();
         AigcModelProviderRespDTO provider = prepare.getProvider();
         AigcModelPriceCalculateRespDTO price = prepare.getPrice();
         AigcBillingFreezeRespDTO freeze = billingApi.freeze(new AigcBillingFreezeReqDTO()
-                .setUserId(reqDTO.getUserId()).setBizType("AIGC_GENERATE").setBizId(reqDTO.getClientRequestId() == null ? generateGenerateNo() : reqDTO.getClientRequestId())
+                .setUserId(reqDTO.getUserId()).setBizType("AIGC_GENERATE").setBizId(resolveBillingBizId(reqDTO, generateNo))
                 .setAmount(price.getSalePrice()).setTitle(reqDTO.getGenerateType() + "生成冻结").setPriceSnapshot(JsonUtils.toJsonString(price))).getCheckedData();
-        Long estimatedDurationMillis = resolveEstimatedDurationMillis(model, provider, reqDTO.getGenerateMode());
-        Long taskId = taskApi.createTask(new AigcTaskCreateReqDTO()
-                .setClientRequestId(reqDTO.getClientRequestId()).setUserId(reqDTO.getUserId()).setTaskType(reqDTO.getGenerateType())
-                .setCapability(reqDTO.getGenerateMode()).setModelId(businessModelId).setProviderId(model.getProviderId()).setChannelId(model.getChannelId()).setRequestParams(inputParamsSnapshot)
-                .setEstimatedDurationMillis(estimatedDurationMillis).setPriceSnapshot(JsonUtils.toJsonString(price)).setFreezeId(freeze.getId())
-                .setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
-        AigcGenerateRecordDO record = BeanUtils.toBean(reqDTO, AigcGenerateRecordDO.class)
-                .setInputParams(inputParamsSnapshot)
-                .setModelId(businessModelId).setChannelId(model.getChannelId()).setProviderModel(model.getProviderModel())
-                .setGenerateNo(generateGenerateNo()).setTaskId(taskId).setModelCode(model.getCode()).setProviderId(model.getProviderId())
-                .setProviderCode(resolveProviderCode(provider)).setFreezeId(freeze.getId())
-                .setPriceAmount(price.getSalePrice()).setCostAmount(price.getCostPrice()).setStatus(AigcGenerateStatusEnum.SUBMITTING.getCode()).setSubmitTime(LocalDateTime.now());
-        generateRecordMapper.insert(record);
-        taskApi.markQueued(taskId).getCheckedData();
-        taskApi.markRunning(taskId).getCheckedData();
+        Long taskId = null;
+        AigcGenerateRecordDO record = null;
+        try {
+            taskId = createTask(reqDTO, model, provider, price, freeze, inputParamsSnapshot);
+            record = buildSubmittingRecord(reqDTO, inputParamsSnapshot, generateNo, taskId, model, provider, price, freeze);
+            AigcGenerateRecordDO inserted = insertRecordHandlingDuplicate(record);
+            if (!Objects.equals(inserted.getId(), record.getId())) {
+                return inserted;
+            }
+            taskApi.markQueued(taskId).getCheckedData();
+            taskApi.markRunning(taskId).getCheckedData();
+        } catch (Exception ex) {
+            markTaskFailedQuietly(taskId, "SUBMIT_PREPARE_FAILED", ex.getMessage());
+            if (releaseFreezeQuietly(freeze.getId(), taskId, ex.getMessage())) {
+                markTaskRefundedQuietly(taskId);
+            }
+            throw ex;
+        }
         if (!Boolean.TRUE.equals(reqDTO.getSync())) {
             submitProviderAfterCommit(record, reqDTO, provider);
             return generateRecordMapper.selectById(record.getId());
         }
-        return processProviderSubmit(record, reqDTO, provider);
+        return processProviderSubmitSafely(record, reqDTO, provider);
     }
 
     private AigcGenerateRecordDO processProviderSubmit(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {
@@ -187,6 +196,15 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             taskApi.markCallbackWaiting(new AigcTaskStatusUpdateReqDTO().setTaskId(record.getTaskId()).setExternalTaskId(providerResp.getProviderTaskId()).setProgress(30)).getCheckedData();
         }
         return generateRecordMapper.selectById(record.getId());
+    }
+
+    private AigcGenerateRecordDO processProviderSubmitSafely(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {
+        try {
+            return processProviderSubmit(record, reqDTO, provider);
+        } catch (Exception ex) {
+            failRecord(record, "SUBMIT_EXCEPTION", ex.getMessage());
+            return generateRecordMapper.selectById(record.getId());
+        }
     }
 
     private Long resolveEstimatedDurationMillis(AigcModelRespDTO model, AigcModelProviderRespDTO provider, String capability) {
@@ -220,6 +238,112 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         return statistics.getAvgDurationMillis();
     }
 
+    private Long createTask(AigcGenerateSubmitReqDTO reqDTO, AigcModelRespDTO model, AigcModelProviderRespDTO provider,
+                            AigcModelPriceCalculateRespDTO price, AigcBillingFreezeRespDTO freeze, String inputParamsSnapshot) {
+        Long estimatedDurationMillis = resolveEstimatedDurationMillis(model, provider, reqDTO.getGenerateMode());
+        return taskApi.createTask(new AigcTaskCreateReqDTO()
+                .setClientRequestId(reqDTO.getClientRequestId()).setUserId(reqDTO.getUserId()).setTaskType(reqDTO.getGenerateType())
+                .setCapability(reqDTO.getGenerateMode()).setModelId(model.getId()).setProviderId(model.getProviderId()).setChannelId(model.getChannelId()).setRequestParams(inputParamsSnapshot)
+                .setEstimatedDurationMillis(estimatedDurationMillis).setPriceSnapshot(JsonUtils.toJsonString(price)).setFreezeId(freeze.getId())
+                .setSalePrice(price.getSalePrice()).setCostPrice(price.getCostPrice()).setCurrencyType(price.getCurrencyType())).getCheckedData();
+    }
+
+    private AigcGenerateRecordDO buildSubmittingRecord(AigcGenerateSubmitReqDTO reqDTO, String inputParamsSnapshot, String generateNo, Long taskId,
+                                                       AigcModelRespDTO model, AigcModelProviderRespDTO provider,
+                                                       AigcModelPriceCalculateRespDTO price, AigcBillingFreezeRespDTO freeze) {
+        return new AigcGenerateRecordDO()
+                .setUserId(reqDTO.getUserId())
+                .setClientRequestId(reqDTO.getClientRequestId())
+                .setGenerateType(reqDTO.getGenerateType())
+                .setGenerateMode(reqDTO.getGenerateMode())
+                .setPrompt(reqDTO.getPrompt())
+                .setInputParams(inputParamsSnapshot)
+                .setModelId(model.getId())
+                .setChannelId(model.getChannelId())
+                .setProviderModel(model.getProviderModel())
+                .setGenerateNo(generateNo)
+                .setTaskId(taskId)
+                .setModelCode(model.getCode())
+                .setProviderId(model.getProviderId())
+                .setProviderCode(resolveProviderCode(provider))
+                .setFreezeId(freeze.getId())
+                .setPriceAmount(price.getSalePrice())
+                .setCostAmount(price.getCostPrice())
+                .setStatus(AigcGenerateStatusEnum.SUBMITTING.getCode())
+                .setSubmitTime(LocalDateTime.now());
+    }
+
+    private String resolveBillingBizId(AigcGenerateSubmitReqDTO reqDTO, String generateNo) {
+        return reqDTO.getClientRequestId() == null ? generateNo : reqDTO.getClientRequestId();
+    }
+
+    private AigcGenerateRecordDO insertRecordHandlingDuplicate(AigcGenerateRecordDO record) {
+        try {
+            generateRecordMapper.insert(record);
+            return record;
+        } catch (DuplicateKeyException ex) {
+            AigcGenerateRecordDO exists = resolveDuplicateRecord(record);
+            if (exists != null) {
+                return exists;
+            }
+            throw exception(GENERATE_RECORD_NO_DUPLICATE);
+        }
+    }
+
+    private AigcGenerateRecordDO resolveDuplicateRecord(AigcGenerateRecordDO record) {
+        if (record.getClientRequestId() != null) {
+            AigcGenerateRecordDO exists = generateRecordMapper.selectByClientRequestId(record.getUserId(), record.getClientRequestId());
+            if (exists != null) {
+                return exists;
+            }
+        }
+        if (record.getTaskId() != null) {
+            AigcGenerateRecordDO exists = generateRecordMapper.selectByTaskId(record.getTaskId());
+            if (exists != null) {
+                return exists;
+            }
+        }
+        if (record.getGenerateNo() != null) {
+            return generateRecordMapper.selectByGenerateNo(record.getGenerateNo());
+        }
+        return null;
+    }
+
+    private boolean releaseFreezeQuietly(Long freezeId, Long taskId, String reason) {
+        if (freezeId == null) {
+            return false;
+        }
+        try {
+            billingApi.releaseFreeze(new AigcBillingReleaseReqDTO().setFreezeId(freezeId).setTaskId(taskId).setReason(StrUtil.maxLength(Objects.toString(reason, ""), 512))).getCheckedData();
+            return true;
+        } catch (Exception releaseEx) {
+            log.warn("[releaseFreezeQuietly][freezeId({}) taskId({}) release failed]", freezeId, taskId, releaseEx);
+            return false;
+        }
+    }
+
+    private void markTaskFailedQuietly(Long taskId, String failCode, String failReason) {
+        if (taskId == null) {
+            return;
+        }
+        try {
+            taskApi.markFailed(new AigcTaskStatusUpdateReqDTO().setTaskId(taskId).setFailCode(failCode).setFailReason(StrUtil.maxLength(Objects.toString(failReason, ""), 512))).getCheckedData();
+        } catch (Exception markEx) {
+            log.warn("[markTaskFailedQuietly][taskId({}) mark failed]", taskId, markEx);
+        }
+    }
+
+    private void markTaskRefundedQuietly(Long taskId) {
+        if (taskId == null) {
+            return;
+        }
+        try {
+            taskApi.markRefunded(taskId).getCheckedData();
+        } catch (Exception markEx) {
+            log.warn("[markTaskRefundedQuietly][taskId({}) mark refunded failed]", taskId, markEx);
+        }
+    }
+
     private void submitProviderAfterCommit(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO, AigcModelProviderRespDTO provider) {
         Runnable task = () -> CompletableFuture.runAsync(() -> {
             try {
@@ -227,7 +351,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             } catch (Exception ex) {
                 failRecord(record, "SUBMIT_EXCEPTION", ex.getMessage());
             }
-        });
+        }, resolveAsyncExecutor());
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             task.run();
             return;
@@ -238,6 +362,11 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 task.run();
             }
         });
+    }
+
+    private Executor resolveAsyncExecutor() {
+        TaskExecutor taskExecutor = taskExecutorProvider.getIfUnique();
+        return taskExecutor == null ? CompletableFuture.delayedExecutor(0, java.util.concurrent.TimeUnit.MILLISECONDS) : taskExecutor::execute;
     }
 
     @Override
@@ -276,16 +405,22 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> parseInputParams(String inputParams) {
-        if (StrUtil.isBlank(inputParams) || !JsonUtils.isJsonObject(inputParams)) {
+        if (StrUtil.isBlank(inputParams)) {
             return Map.of();
+        }
+        if (!JsonUtils.isJsonObject(inputParams)) {
+            throw invalidParamException("输入参数必须是 JSON 对象");
         }
         Map<String, Object> params = JsonUtils.parseObject(inputParams, Map.class);
         return params == null ? Map.of() : params;
     }
 
     private String sanitizeInputParamsSnapshot(String inputParams) {
-        if (StrUtil.isBlank(inputParams) || !JSONUtil.isTypeJSON(inputParams)) {
+        if (StrUtil.isBlank(inputParams)) {
             return inputParams;
+        }
+        if (!JSONUtil.isTypeJSONObject(inputParams)) {
+            throw invalidParamException("输入参数必须是 JSON 对象");
         }
         JSONObject params = JSONUtil.parseObj(inputParams);
         JSONArray inputImages = params.getJSONArray("inputImages");

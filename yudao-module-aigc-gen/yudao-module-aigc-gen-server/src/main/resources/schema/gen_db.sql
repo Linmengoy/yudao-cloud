@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS `aigc_gen_record` (
   KEY `idx_tenant_user_type_time` (`tenant_id`, `user_id`, `generate_type`, `create_time`),
   KEY `idx_tenant_status_time` (`tenant_id`, `status`, `create_time`),
   KEY `idx_tenant_provider_task` (`tenant_id`, `provider_code`, `provider_task_id`),
-  KEY `idx_tenant_client_request` (`tenant_id`, `user_id`, `client_request_id`)
+  UNIQUE KEY `uk_tenant_client_request` (`tenant_id`, `user_id`, `client_request_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC 生成记录表';
 
 CREATE TABLE IF NOT EXISTS `aigc_gen_callback` (
