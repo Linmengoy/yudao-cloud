@@ -1420,6 +1420,17 @@ function summarizeCanvas(nodes: AppNode[]): { nodeCount: number; assetCount: num
   };
 }
 
+async function bindUploadedNodeAsset(projectId: string | null, node: AppNode, usageType = "source") {
+  if (!projectId) return;
+  const mediaData = node.data as ImageNodeData | VideoNodeData;
+  if (!mediaData.assetId) return;
+  await canvasApi.bindNodeAsset(projectId, node.id, {
+    assetId: mediaData.assetId,
+    assetVersionId: mediaData.assetVersionId ?? null,
+    usageType,
+  });
+}
+
 function isServerProjectId(projectId: string | null | undefined): projectId is string {
   return typeof projectId === "string" && /^\d+$/.test(projectId);
 }
@@ -2815,10 +2826,7 @@ function CanvasFlow() {
           };
           if (isAcceptedImageType(file.type)) {
             let imageData: ImageNodeData = await fileToImageNodeData(file);
-            try {
-              imageData = await attachImageAsset(file, imageData);
-            } catch {
-            }
+            imageData = await attachImageAsset(file, imageData);
             imageData = {
               ...imageData,
               projectId: activeProjectId,
@@ -2839,11 +2847,7 @@ function CanvasFlow() {
           }
           if (isAcceptedVideoFile(file)) {
             const { data, blob } = await fileToVideoNodeData(file);
-            let videoData = data;
-            try {
-              videoData = await attachVideoAsset(file, videoData);
-            } catch {
-            }
+            let videoData = await attachVideoAsset(file, data);
             videoData = {
               ...videoData,
               projectId: activeProjectId,
@@ -2868,17 +2872,18 @@ function CanvasFlow() {
       }
       if (newNodes.length > 0) {
         if (!activeProjectId) return;
+        if (serverProjectId) {
+          try {
+            await Promise.all(newNodes.map((node) => bindUploadedNodeAsset(serverProjectId, node)));
+          } catch (error) {
+            setPasteToast(error instanceof Error ? error.message : "资产绑定失败");
+            setTimeout(() => setPasteToast(""), 2500);
+            return;
+          }
+        }
         setNodes((nds) => [...nds, ...newNodes]);
         for (const node of newNodes) {
           canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(node) });
-          if (serverProjectId && (node.data as ImageNodeData | VideoNodeData).assetId) {
-            const mediaData = node.data as ImageNodeData | VideoNodeData;
-            canvasApi.bindNodeAsset(serverProjectId, node.id, {
-              assetId: mediaData.assetId!,
-              assetVersionId: mediaData.assetVersionId ?? null,
-              usageType: "source",
-            }).catch(() => undefined);
-          }
         }
       }
     },
@@ -2956,15 +2961,15 @@ function CanvasFlow() {
         selected: false,
       });
 
-      setNodes((nodes) => [...nodes, newNode]);
-      canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
       if (serverProjectId && imageData.assetId) {
-        canvasApi.bindNodeAsset(serverProjectId, newNode.id, {
+        await canvasApi.bindNodeAsset(serverProjectId, newNode.id, {
           assetId: imageData.assetId,
           assetVersionId: imageData.assetVersionId ?? null,
           usageType: "source",
-        }).catch(() => undefined);
+        });
       }
+      setNodes((nodes) => [...nodes, newNode]);
+      canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     }
 
     window.addEventListener("copse:video-frame-capture", handleVideoFrameCapture);

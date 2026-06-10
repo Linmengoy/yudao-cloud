@@ -90,7 +90,7 @@ public class AigcAssetAppController {
 
     @PostMapping("/upload/complete")
     @Operation(summary = "完成资产直传并创建资产")
-    public CommonResult<Long> completeUploadAsset(@Valid @RequestBody AigcAssetDirectUploadCompleteReqDTO reqDTO) {
+    public CommonResult<AigcAssetRespDTO> completeUploadAsset(@Valid @RequestBody AigcAssetDirectUploadCompleteReqDTO reqDTO) {
         return success(assetService.completeDirectUpload(getLoginUserId(), reqDTO));
     }
 
@@ -117,6 +117,7 @@ public class AigcAssetAppController {
         return success(true);
     }
 
+    // 如果删除资产的话，是否需要先判断在项目中是否使用？若是项目中未使用，则允许删除
     @DeleteMapping("/delete")
     @Operation(summary = "删除我的资产")
     @Parameter(name = "id", description = "资产编号", required = true)

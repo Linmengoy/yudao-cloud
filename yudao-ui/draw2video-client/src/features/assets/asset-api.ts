@@ -69,27 +69,88 @@ export function captureVideoFrameAsset(data: {
   return api.post<number>("/aigc/asset/capture-video-frame", data);
 }
 
-export async function uploadAsset(file: File, assetType: AigcAssetType, title?: string) {
+export interface UploadAssetOptions {
+  title?: string;
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
+  metadata?: string | Record<string, unknown> | null;
+}
+
+function normalizeUploadOptions(optionsOrTitle?: string | UploadAssetOptions): UploadAssetOptions {
+  return typeof optionsOrTitle === "string" ? { title: optionsOrTitle } : optionsOrTitle ?? {};
+}
+
+function finiteInteger(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? Math.round(numberValue) : undefined;
+}
+
+function finiteNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : undefined;
+}
+
+function normalizeMetadata(metadata: UploadAssetOptions["metadata"]) {
+  if (!metadata) return undefined;
+  return typeof metadata === "string" ? metadata : JSON.stringify(metadata);
+}
+
+async function putFileToStorage(uploadUrl: string, file: File) {
+  try {
+    const response = await fetch(uploadUrl, {
+      method: "PUT",
+      body: new Blob([file]),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Storage upload failed: HTTP ${response.status}${body ? ` ${body.slice(0, 160)}` : ""}`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Storage upload failed:")) {
+      throw error;
+    }
+    throw new Error("Storage upload failed before reaching complete step. Check object storage CORS and whether the signed upload URL is reachable from the browser.");
+  }
+}
+
+export async function uploadAssetAndGetInfo(
+  file: File,
+  assetType: AigcAssetType,
+  optionsOrTitle?: string | UploadAssetOptions
+) {
+  const options = normalizeUploadOptions(optionsOrTitle);
   const presign = await api.post<AigcAssetDirectUploadPrepareResp>("/aigc/asset/upload", {
     assetType,
-    title,
+    title: options.title,
     fileName: file.name,
     mimeType: file.type || "application/octet-stream",
     fileSize: file.size,
   });
-
-  const uploadResponse = await fetch(presign.uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-    },
-    body: file,
-  });
-  if (!uploadResponse.ok) {
-    throw new Error(`Upload failed: HTTP ${uploadResponse.status}`);
+  if (!presign.uploadToken || !presign.uploadUrl) {
+    throw new Error("Asset direct upload was not signed correctly");
   }
 
-  return api.post<number>("/aigc/asset/upload/complete", {
+  await putFileToStorage(presign.uploadUrl, file);
+
+  const asset = await api.post<AigcAsset>("/aigc/asset/upload/complete", {
     uploadToken: presign.uploadToken,
+    width: finiteInteger(options.width),
+    height: finiteInteger(options.height),
+    duration: finiteNumber(options.duration),
+    metadata: normalizeMetadata(options.metadata),
   });
+  if (!asset?.id) {
+    throw new Error("Asset creation failed after storage upload");
+  }
+  return asset;
+}
+
+export async function uploadAsset(
+  file: File,
+  assetType: AigcAssetType,
+  optionsOrTitle?: string | UploadAssetOptions
+) {
+  const asset = await uploadAssetAndGetInfo(file, assetType, optionsOrTitle);
+  return asset.id;
 }

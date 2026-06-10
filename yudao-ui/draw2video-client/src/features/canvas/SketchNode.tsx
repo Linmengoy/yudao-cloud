@@ -41,7 +41,7 @@ import { NodeCreateHandle } from "./NodeCreateHandle";
 import type { NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, SketchNodeData } from "./types";
 import { isAcceptedImageType } from "./image-upload";
 import { canvasApi } from "@/features/canvas/canvas-api";
-import { getAssetAccessUrls, getMyAsset, uploadAsset } from "@/features/assets/asset-api";
+import { getAssetAccessUrls, getMyAsset, uploadAssetAndGetInfo } from "@/features/assets/asset-api";
 import { getAssetPreviewExpireTime, getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { compactInfo, downloadMedia } from "@/features/media-preview/media-preview-utils";
@@ -259,19 +259,27 @@ async function buildRemoteImageAsset(editor: Editor, file: File): Promise<{ asse
   if (!assetInfo || assetInfo.type !== "image") {
     throw new Error("Cannot read image metadata");
   }
-  const assetId = await uploadAsset(file, "IMAGE", file.name);
+  const imageAssetInfo = assetInfo as TLImageAsset;
+  const asset = await uploadAssetAndGetInfo(file, "IMAGE", {
+    title: file.name,
+    width: imageAssetInfo.props.w,
+    height: imageAssetInfo.props.h,
+    metadata: {
+      source: "sketch-node",
+    },
+  });
+  const assetId = asset.id;
   const tldrawAssetId = AssetRecordType.createId(`aigc-${assetId}`);
-  const asset = await getMyAsset(assetId);
   const previewUrl = getAssetPreviewUrl(asset);
   if (!previewUrl) {
     throw new Error("Cannot resolve image URL");
   }
   return {
     asset: {
-      ...(assetInfo as TLImageAsset),
+      ...imageAssetInfo,
       id: tldrawAssetId,
       props: {
-        ...(assetInfo as TLImageAsset).props,
+        ...imageAssetInfo.props,
         src: previewUrl,
       },
       meta: {
@@ -468,6 +476,12 @@ export function SketchNodeComponent({ id, data, selected }: SketchNodeProps) {
       if (shapeId) {
         fitUploadedImageNearViewport(editor, shapeId);
         editor.select(shapeId);
+      }
+      if (data.projectId) {
+        await canvasApi.bindNodeAsset(data.projectId, id, {
+          assetId,
+          usageType: "source",
+        });
       }
       updateData({
         assetIds: normalizeAssetIds([...(data.assetIds ?? []), assetId]),

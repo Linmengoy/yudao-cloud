@@ -192,7 +192,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Long completeDirectUpload(Long userId, AigcAssetDirectUploadCompleteReqDTO reqDTO) {
+    public AigcAssetRespDTO completeDirectUpload(Long userId, AigcAssetDirectUploadCompleteReqDTO reqDTO) {
         String key = buildUploadTokenKey(reqDTO.getUploadToken());
         AigcAssetUploadTokenRedisDAO.UploadToken token = uploadTokenRedisDAO.get(key);
         if (token == null || !Objects.equals(token.getUserId(), userId)) {
@@ -220,7 +220,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         assetFileMapper.insert(buildAssetFileDO(assetId, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null,
                 reqDTO.getWidth(), reqDTO.getHeight(), reqDTO.getDuration()).setMetadata(reqDTO.getMetadata()));
         uploadTokenRedisDAO.delete(key);
-        return assetId;
+        return getAssetResp(assetId, userId);
     }
 
     @Override
@@ -902,10 +902,10 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                     .setWidth(file.getWidth())
                     .setHeight(file.getHeight())
                     .setDuration(file.getDuration())
-                    .setAccessUrl(accessUrl.getUrl())
-                    .setExpireSeconds(accessUrl.getExpireSeconds())
-                    .setExpireTime(accessUrl.getExpireTime())
-                    .setPublicAccess(accessUrl.getPublicAccess());
+                    .setAccessUrl(accessUrl == null ? StrUtil.blankToDefault(file.getPublicUrl(), file.getOriginUrl()) : accessUrl.getUrl())
+                    .setExpireSeconds(accessUrl == null ? null : accessUrl.getExpireSeconds())
+                    .setExpireTime(accessUrl == null ? null : accessUrl.getExpireTime())
+                    .setPublicAccess(accessUrl == null ? file.getPublicUrl() != null : accessUrl.getPublicAccess());
 
             if (!filledFileRoles.add(file.getFileRole())) {
                 return fileRespDTO;
@@ -958,7 +958,11 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         respDTO.setFileId(file.getFileId())
                 .setMimeType(file.getMimeType())
                 .setFileExt(file.getFileExt())
-                .setFileSize(file.getFileSize());
+                .setFileSize(file.getFileSize())
+                .setWidth(file.getWidth())
+                .setHeight(file.getHeight())
+                .setDuration(file.getDuration())
+                .setMetadata(file.getMetadata());
         respDTO.setFileUrl(fileRespDTO.getAccessUrl());
     }
 
