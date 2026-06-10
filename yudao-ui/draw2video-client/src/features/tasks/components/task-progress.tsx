@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { canCancelTask, getTaskStatusMeta } from "../task-status";
-import { getDisplayTaskProgress } from "../task-progress-value";
+import { getDisplayTaskProgress, getTaskEstimatedTimeText } from "../task-progress-value";
 import type { AigcTask } from "../task-types";
 import { TaskStatusBadge } from "./task-status-badge";
 
@@ -18,6 +18,7 @@ export function TaskProgress({
   now?: number;
 }) {
   const progress = getDisplayTaskProgress(task, now);
+  const estimatedTime = getTaskEstimatedTimeText(task, now);
   const meta = getTaskStatusMeta(task.status);
 
   return (
@@ -45,7 +46,7 @@ export function TaskProgress({
         <div className="h-full rounded-full bg-charcoal transition-all" style={{ width: `${progress}%` }} />
       </div>
       <div className="mt-2 flex items-center justify-between text-xs text-muted-gray">
-        <span>{meta.polling ? "任务仍在处理中，页面会自动刷新" : "任务已进入终态"}</span>
+        <span>{estimatedTime ?? (meta.polling ? "任务仍在处理中，页面会自动刷新" : "任务已进入终态")}</span>
         <span>{progress}%</span>
       </div>
     </div>
