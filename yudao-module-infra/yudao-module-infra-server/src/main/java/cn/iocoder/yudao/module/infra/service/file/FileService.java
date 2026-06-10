@@ -6,6 +6,7 @@ import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePageReqVO
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePresignedUrlRespVO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignReqDTO;
+import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignPutRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileDO;
 import jakarta.validation.constraints.NotEmpty;
@@ -58,6 +59,9 @@ public interface FileService {
      * @param expirationSeconds 访问有效期，单位秒
      * @return 文件预签名地址
      */
+    FilePresignPutRespDTO presignPutUrlV2(@NotEmpty(message = "文件名不能为空") String name,
+                                          String directory);
+
     String presignGetUrl(String url, Integer expirationSeconds);
 
     FilePresignRespDTO presignGetUrlV2(Long configId, String path, Integer expirationSeconds);
@@ -71,6 +75,9 @@ public interface FileService {
      * @return 编号
      */
     Long createFile(FileCreateReqVO createReqVO);
+
+    FileCreateRespDTO createFileRecordV2(FileCreateRespDTO createRespDTO);
+
     FileDO getFile(Long id);
 
     /**

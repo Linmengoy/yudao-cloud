@@ -8,6 +8,9 @@ import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCategoryCountRespDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDirectUploadCompleteReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDirectUploadPrepareReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDirectUploadPrepareRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetUpdateReqDTO;
@@ -29,9 +32,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
@@ -82,11 +83,15 @@ public class AigcAssetAppController {
 
     @PostMapping("/upload")
     @Operation(summary = "上传资产")
-    public CommonResult<Long> uploadAsset(@RequestParam("file") MultipartFile file,
-                                          @RequestParam("assetType") String assetType,
-                                          @RequestParam(value = "title", required = false) String title) throws IOException {
-        return success(assetService.uploadAsset(getLoginUserId(), assetType, title, file.getOriginalFilename(),
-                file.getContentType(), file.getBytes()));
+    public CommonResult<AigcAssetDirectUploadPrepareRespDTO> prepareUploadAsset(
+            @Valid @RequestBody AigcAssetDirectUploadPrepareReqDTO reqDTO) {
+        return success(assetService.prepareDirectUpload(getLoginUserId(), reqDTO));
+    }
+
+    @PostMapping("/upload/complete")
+    @Operation(summary = "完成资产直传并创建资产")
+    public CommonResult<Long> completeUploadAsset(@Valid @RequestBody AigcAssetDirectUploadCompleteReqDTO reqDTO) {
+        return success(assetService.completeDirectUpload(getLoginUserId(), reqDTO));
     }
 
     @PostMapping("/capture-video-frame")

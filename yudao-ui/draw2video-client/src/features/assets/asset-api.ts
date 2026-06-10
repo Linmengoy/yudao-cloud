@@ -1,10 +1,10 @@
 import { api } from "@/lib/api-client";
-import { API_BASE_URL, API_TENANT_ID, API_TERMINAL, getAccessToken } from "@/lib/api-client";
 import type {
   AigcAsset,
   AigcAssetAccessUrlReq,
   AigcAssetAccessUrlResp,
   AigcAssetCategoryCounts,
+  AigcAssetDirectUploadPrepareResp,
   AigcAssetType,
   AigcAssetDownloadReq,
   AigcAssetPageParams,
@@ -70,27 +70,26 @@ export function captureVideoFrameAsset(data: {
 }
 
 export async function uploadAsset(file: File, assetType: AigcAssetType, title?: string) {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("assetType", assetType);
-  if (title) form.append("title", title);
-
-  const headers: Record<string, string> = {
-    Accept: "*/*",
-    "tenant-id": API_TENANT_ID,
-    terminal: API_TERMINAL,
-  };
-  const token = getAccessToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const response = await fetch(`${API_BASE_URL}/aigc/asset/upload`, {
-    method: "POST",
-    headers,
-    body: form,
+  const presign = await api.post<AigcAssetDirectUploadPrepareResp>("/aigc/asset/upload", {
+    assetType,
+    title,
+    fileName: file.name,
+    mimeType: file.type || "application/octet-stream",
+    fileSize: file.size,
   });
-  const body = await response.json() as { code: number; data: number; msg: string };
-  if (body.code !== 0) {
-    throw new Error(body.msg || `API error ${body.code}`);
+
+  const uploadResponse = await fetch(presign.uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+  if (!uploadResponse.ok) {
+    throw new Error(`Upload failed: HTTP ${uploadResponse.status}`);
   }
-  return body.data;
+
+  return api.post<number>("/aigc/asset/upload/complete", {
+    uploadToken: presign.uploadToken,
+  });
 }

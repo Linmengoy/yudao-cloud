@@ -12,6 +12,9 @@ import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAuditUpdateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCategoryCountRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetCreateRespDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDirectUploadCompleteReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDirectUploadPrepareReqDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDirectUploadPrepareRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetDownloadReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetPageReqDTO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
@@ -26,6 +29,10 @@ public interface AigcAssetService {
     Long createAsset(AigcAssetSaveReqVO reqVO);
 
     Long uploadAsset(Long userId, String assetType, String title, String fileName, String mimeType, byte[] content);
+
+    AigcAssetDirectUploadPrepareRespDTO prepareDirectUpload(Long userId, AigcAssetDirectUploadPrepareReqDTO reqDTO);
+
+    Long completeDirectUpload(Long userId, AigcAssetDirectUploadCompleteReqDTO reqDTO);
 
     Long captureVideoFrame(Long userId, Long videoAssetId, String capturedAt, java.math.BigDecimal timeSec, String title);
 
