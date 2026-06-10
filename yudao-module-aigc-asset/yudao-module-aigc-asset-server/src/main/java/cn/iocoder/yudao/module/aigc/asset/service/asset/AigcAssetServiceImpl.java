@@ -121,7 +121,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     @Resource
     private FileApi fileApi;
 
-    private static final long MAX_FILE_SIZE = 200L * 1024 * 1024;
+    private static final long MAX_FILE_SIZE = 2048L * 1024 * 1024;
     private static final int UPLOAD_TOKEN_EXPIRE_SECONDS = 24 * 60 * 60;
 
     @Override
@@ -169,6 +169,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         if (reqDTO.getFileSize() == null || reqDTO.getFileSize() <= 0) {
             throw exception(ASSET_FILE_EMPTY);
         }
+        // 后期考虑此处进行优化（如对视频、图片压缩等）
         validateFileSize(reqDTO.getFileSize());
         String storageFileName = uniqueAssetStorageFileName(reqDTO.getFileName(), reqDTO.getMimeType());
         FilePresignPutRespDTO presign = fileApi.presignPutUrlV2(storageFileName, "aigc/asset").getCheckedData();
@@ -856,7 +857,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     }
 
     private String uniqueAssetStorageFileName(String fileName, String mimeType) {
-        String normalizedFileName = StrUtil.blankToDefault(fileName, "aigc-asset");
+        String normalizedFileName = StrUtil.blankToDefault(fileName, "asset");
         String fileExt = fileExtFromFileName(normalizedFileName);
         if (StrUtil.isBlank(fileExt) && StrUtil.isNotBlank(mimeType)) {
             fileExt = fileExtFromMimeType(mimeType);
@@ -865,8 +866,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         if (StrUtil.isNotBlank(fileExt)) {
             fileBaseName = StrUtil.removeSuffixIgnoreCase(fileBaseName, "." + fileExt);
         }
-        fileBaseName = StrUtil.blankToDefault(fileBaseName.replaceAll("[\\\\/:*?\"<>|\\s]+", "-"), "aigc-asset");
-        String uniqueName = fileBaseName + "-" + UUID.fastUUID().toString(true);
+        fileBaseName = StrUtil.blankToDefault(fileBaseName.replaceAll("[\\\\/:*?\"<>|\\s]+", "-"), "asset");
+        String uniqueName = fileBaseName + "-" + UUID.fastUUID().toString(true).substring(0, 6);
         return StrUtil.isBlank(fileExt) ? uniqueName : uniqueName + "." + fileExt;
     }
 

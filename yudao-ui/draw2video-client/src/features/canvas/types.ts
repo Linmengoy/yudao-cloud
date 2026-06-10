@@ -155,6 +155,7 @@ export interface SketchNodeData {
   [key: string]: unknown;
   sketchId: string;
   projectId?: string | number | null;
+  assetIds?: number[];
   fileName: string;
   sceneJson?: unknown;
   previewUrl?: string | null;
@@ -279,6 +280,7 @@ export const SYNCABLE_NODE_DATA_KEYS = [
   "childNodeIds",
   "projectId",
   "assetId",
+  "assetIds",
   "assetVersionId",
   "background",
   "fileName",
