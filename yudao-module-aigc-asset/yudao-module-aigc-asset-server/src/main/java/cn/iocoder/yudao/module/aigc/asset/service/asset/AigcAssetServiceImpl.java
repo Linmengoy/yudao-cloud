@@ -1,5 +1,38 @@
 package cn.iocoder.yudao.module.aigc.asset.service.asset;
 
+import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
+import static cn.iocoder.yudao.module.aigc.asset.dal.redis.RedisKeyConstants.ASSET_ACCESS_URL;
+import static cn.iocoder.yudao.module.aigc.asset.dal.redis.RedisKeyConstants.ASSET_ACCESS_URL_LOCK;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_AUDIT_NOT_PASS;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_DOWNLOAD_FAILED;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_FILE_EMPTY;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_FILE_SIZE_EXCEED;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_FILE_TYPE_UNSUPPORTED;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_NOT_EXISTS;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_NO_PERMISSION;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_STATUS_INVALID;
+import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_TASK_NOT_EXISTS;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
+
 import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
@@ -17,8 +50,8 @@ import cn.iocoder.yudao.module.aigc.asset.controller.admin.vo.AigcAssetSaveReqVO
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetDownloadLogDO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcAssetFileDO;
-import cn.iocoder.yudao.module.aigc.asset.dal.mysql.AigcAssetFileMapper;
 import cn.iocoder.yudao.module.aigc.asset.dal.mysql.AigcAssetDownloadLogMapper;
+import cn.iocoder.yudao.module.aigc.asset.dal.mysql.AigcAssetFileMapper;
 import cn.iocoder.yudao.module.aigc.asset.dal.mysql.AigcAssetMapper;
 import cn.iocoder.yudao.module.aigc.asset.dal.redis.AigcAssetAccessUrlRedisDAO;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetAccessUrlReqDTO;
@@ -50,28 +83,6 @@ import cn.iocoder.yudao.module.infra.api.file.dto.FileCreateRespDTO;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.validation.annotation.Validated;
-
-import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.math.RoundingMode;
-import java.util.Base64;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-
-import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
-import static cn.iocoder.yudao.module.aigc.asset.dal.redis.RedisKeyConstants.ASSET_ACCESS_URL;
-import static cn.iocoder.yudao.module.aigc.asset.dal.redis.RedisKeyConstants.ASSET_ACCESS_URL_LOCK;
-import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.*;
 
 @Service
 @Validated
@@ -106,8 +117,9 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setAssetNo(generateAssetNo(reqVO.getUserId()))
                 .setSourceType(StrUtil.blankToDefault(reqVO.getSourceType(), AigcAssetSourceTypeEnum.UPLOAD.getCode()))
                 .setVisibility(StrUtil.blankToDefault(reqVO.getVisibility(), AigcAssetVisibilityEnum.PRIVATE.getCode()))
+                // 暂时无需审核，故默认为审核通过
                 .setAuditStatus(
-                        StrUtil.blankToDefault(reqVO.getAuditStatus(), AigcAssetAuditStatusEnum.PENDING.getCode()))
+                        StrUtil.blankToDefault(reqVO.getAuditStatus(), AigcAssetAuditStatusEnum.PASS.getCode()))
                 .setStatus(AigcAssetStatusEnum.NORMAL.getCode())
                 .setViewCount(0)
                 .setDownloadCount(0)
@@ -800,7 +812,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         List<AigcAssetFileRespDTO> fileRespDTOs = files.stream().map(file -> {
             AigcAssetAccessUrlRespDTO accessUrl = getAccessUrl(asset, file, accessTypeForRole(file.getFileRole()),
                     userId);
-            return new AigcAssetFileRespDTO()
+            Set<String> filledFileRoles = new HashSet<>();
+            AigcAssetFileRespDTO fileRespDTO = new AigcAssetFileRespDTO()
                     .setAssetFileId(file.getId())
                     .setFileRole(file.getFileRole())
                     .setFileName(file.getFileName())
@@ -814,29 +827,31 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                     .setExpireSeconds(accessUrl.getExpireSeconds())
                     .setExpireTime(accessUrl.getExpireTime())
                     .setPublicAccess(accessUrl.getPublicAccess());
+
+            if (!filledFileRoles.add(file.getFileRole())) {
+                return fileRespDTO;
+            }
+            if (AigcAssetFileRoleEnum.ORIGINAL.getCode().equals(file.getFileRole())) {
+                fillLegacyFileFields(respDTO, file, fileRespDTO);
+            } else if (AigcAssetFileRoleEnum.COVER.getCode().equals(file.getFileRole())) {
+                respDTO.setCoverUrl(fileRespDTO.getAccessUrl());
+            } else if (AigcAssetFileRoleEnum.THUMBNAIL.getCode().equals(file.getFileRole())) {
+                respDTO.setThumbnailUrl(fileRespDTO.getAccessUrl());
+            }
+            return fileRespDTO;
         }).collect(Collectors.toList());
+
         respDTO.setFiles(fileRespDTOs);
-        files.stream().filter(file -> AigcAssetFileRoleEnum.ORIGINAL.getCode().equals(file.getFileRole())).findFirst()
-                .ifPresent(file -> fillLegacyFileFields(respDTO, file, fileRespDTOs));
-        files.stream().filter(file -> AigcAssetFileRoleEnum.COVER.getCode().equals(file.getFileRole())).findFirst()
-                .ifPresent(file -> fileRespDTOs.stream()
-                        .filter(resp -> Objects.equals(resp.getAssetFileId(), file.getId())).findFirst()
-                        .ifPresent(resp -> respDTO.setCoverUrl(resp.getAccessUrl())));
-        files.stream().filter(file -> AigcAssetFileRoleEnum.THUMBNAIL.getCode().equals(file.getFileRole())).findFirst()
-                .ifPresent(file -> fileRespDTOs.stream()
-                        .filter(resp -> Objects.equals(resp.getAssetFileId(), file.getId())).findFirst()
-                        .ifPresent(resp -> respDTO.setThumbnailUrl(resp.getAccessUrl())));
         return respDTO;
     }
 
     private void fillLegacyFileFields(AigcAssetRespDTO respDTO, AigcAssetFileDO file,
-            List<AigcAssetFileRespDTO> fileRespDTOs) {
+            AigcAssetFileRespDTO fileRespDTO) {
         respDTO.setFileId(file.getFileId())
                 .setMimeType(file.getMimeType())
                 .setFileExt(file.getFileExt())
                 .setFileSize(file.getFileSize());
-        fileRespDTOs.stream().filter(resp -> Objects.equals(resp.getAssetFileId(), file.getId())).findFirst()
-                .ifPresent(resp -> respDTO.setFileUrl(resp.getAccessUrl()));
+        respDTO.setFileUrl(fileRespDTO.getAccessUrl());
     }
 
     private String accessTypeForRole(String fileRole) {
