@@ -705,6 +705,14 @@ AigcProviderClient
 
 当前已实现 `mock` 与 `gpt-image-2` 两个客户端。`cancel`、独立回调解析、结果下载等能力属于后续渠道增强项，可在真实渠道接入时扩展。
 
+HKCopp OpenAPI Seedance 视频渠道已按异步任务接入：
+
+- 提交接口使用 `POST /openapi/v1/generations`，查询接口使用 `GET /openapi/v1/generations/{id}`。
+- 文生视频、图生视频、首尾帧、多参考分别映射到平台能力 `TEXT_TO_VIDEO`、`IMAGE_TO_VIDEO`、`FIRST_LAST_FRAME_VIDEO`、`MULTI_REF_VIDEO`。
+- 中转站任务失败时必须把上游错误消息映射回生成记录和画布节点 patch，例如人脸审核错误 `The uploaded image may contain a real human face. Please replace the image and try again.`，不能让本地任务长期停留在生成中。
+- Official/Official2/Intl 等需要素材库规避人脸拦截的 Seedance 模型，应先创建或复用匹配区域的 asset group，上传参考素材并轮询到 `Active`，再在生成 payload 中使用 `asset://officialId`。`seedance-2`、`seedance-2-fast`、`seedance-2-official2`、`seedance-2-official2-fast` 使用 `cn` group；`seedance-2-intl*` 使用 `intl` group。
+- Beta Face 系列不走 reviewed asset 规避人脸流程；是否可用由渠道商权限和模型配置决定。
+
 ### 9.2 渠道适配原则
 
 - 请求参数在进入客户端前先转换为平台统一 DTO

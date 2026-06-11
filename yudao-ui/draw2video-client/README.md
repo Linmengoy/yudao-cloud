@@ -145,16 +145,18 @@ Current video behavior:
 
 - `/app` quick video generation uses the same reference-image cache and multi-image payload. Providers that only support one image use the first reference image.
 - New video nodes are draft placeholders.
-- Video generation should use AIGC model capability lists and parameter templates for `TEXT_TO_VIDEO` / `IMAGE_TO_VIDEO` instead of relying on hardcoded frontend model buttons.
+- Video generation should use AIGC model capability lists and parameter templates for `TEXT_TO_VIDEO`, `IMAGE_TO_VIDEO`, `FIRST_LAST_FRAME_VIDEO`, and `MULTI_REF_VIDEO` instead of relying on hardcoded frontend model buttons.
+- Seedance video models expose persistent mode controls in the composer. The visible modes are derived from the selected model capabilities; connected image references determine which modes are currently selectable.
 - Selecting a draft/generated video opens a composer below the fixed preview slot.
 - The video placeholder changes aspect ratio when video params change.
 - Uploaded video nodes are media-only nodes and do not open a prompt composer.
 - Video upload accepts MP4/MOV clips, validates 2 seconds to 3 minutes, and rejects files over 200MB.
-- MVP video references only support `image -> video`.
-- `Seedance 2.0` uses the Ark async task API.
+- Video references support `image -> video`, first/last frame, and multi-reference payloads when the selected model advertises those capabilities.
+- `Seedance 2.0` models use the backend AIGC model/channel configuration and HKCopp OpenAPI generation flow.
 - `Wan 2.2` uses the custom Wan server proxy and supports no-reference text-to-video plus single-reference image-to-video.
 - Successful video task creation keeps the node in a loading state and polls until a video URL is available. Queued video jobs show `排队中` and do not start elapsed timing until the upstream job becomes `running`.
 - Server-backed video nodes persist the returned `taskId` immediately after task creation and resume pending polling after refresh.
+- Server-backed video runs apply the final operation patch from `run/sync`, then refresh the current playable URL from `assetId` / `outputAssetId` before clearing the user's visible result. A successful run must not leave the node blank until the next page refresh.
 - Video card titles are part of the zoomed canvas content; selected media toolbar, selected-node composer, and side create handles keep stable screen size while zoom changes.
 
 Canvas history:

@@ -176,6 +176,12 @@ function getVideoAssetId(data: VideoNodeData) {
   return null;
 }
 
+function getPatchVideoAssetId(patch: Record<string, unknown>) {
+  const value = patch.outputAssetId ?? patch.assetId;
+  const assetId = Number(value);
+  return Number.isFinite(assetId) && assetId > 0 ? assetId : null;
+}
+
 function stopCanvasSelection(event: React.SyntheticEvent) {
   event.stopPropagation();
 }
@@ -477,7 +483,24 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
         nodeType: "video",
       });
       const patch = getCanvasNodeRunPatch(result, id);
-      if (patch) updateData(patch as Partial<VideoNodeData>, { flush: true });
+      if (patch) {
+        const nextPatch = { ...patch } as Partial<VideoNodeData>;
+        const assetId = getPatchVideoAssetId(patch);
+        if (assetId && !nextPatch.videoUrl && !nextPatch.previewUrl) {
+          try {
+            const asset = await getMyAsset(assetId);
+            const videoUrl = getAssetPreviewUrl(asset) || asset.fileUrl;
+            if (videoUrl) {
+              nextPatch.videoUrl = videoUrl;
+              nextPatch.previewUrl = videoUrl;
+              nextPatch.assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
+            }
+          } catch {
+            // Keep the stable asset id from the server; project hydration can recover the preview URL later.
+          }
+        }
+        updateData(nextPatch, { flush: true });
+      }
     } catch (error) {
       updateData({
         status: "failed",
