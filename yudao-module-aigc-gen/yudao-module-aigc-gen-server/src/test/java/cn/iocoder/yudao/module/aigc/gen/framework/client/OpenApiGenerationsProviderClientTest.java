@@ -220,6 +220,186 @@ public class OpenApiGenerationsProviderClientTest {
     }
 
     @Test
+    public void testSubmit_officialSeedanceReviewsImageUrls() throws Exception {
+        AtomicReference<String> assetUploadBody = new AtomicReference<>();
+        AtomicReference<String> generationBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/openapi/v1/assets", exchange -> {
+            assetUploadBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"officialId":"asset-cn-001","status":"Active"}
+                    """);
+        });
+        server.createContext("/openapi/v1/generations", exchange -> {
+            generationBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"id":"gen-official-cn","status":"pending"}
+                    """);
+        });
+        server.start();
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2-official2")
+                    .setProviderExtraConfig("{\"seedanceAssetGroupCn\":\"ag-cn\",\"seedanceAssetReviewPollIntervalMillis\":0}")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("MULTI_REF_VIDEO")
+                    .setPrompt("官方模型素材提审")
+                    .setInputParams("""
+                            {"referenceImages":["https://example.com/ref.jpg"],"duration":6}
+                            """));
+
+            assertTrue(resp.getSuccess(), resp.getErrorCode() + ": " + resp.getErrorMessage());
+            JSONObject assetBody = JSONUtil.parseObj(assetUploadBody.get());
+            assertEquals("ag-cn", assetBody.getStr("groupId"));
+            assertEquals("https://example.com/ref.jpg", assetBody.getStr("url"));
+
+            JSONObject body = JSONUtil.parseObj(generationBody.get());
+            assertEquals("seedance-2-official2", body.getStr("model"));
+            assertEquals("asset://asset-cn-001", body.getJSONArray("image_urls").getStr(0));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_intlSeedanceCreatesIntlAssetGroup() throws Exception {
+        AtomicReference<String> groupBody = new AtomicReference<>();
+        AtomicReference<String> assetUploadBody = new AtomicReference<>();
+        AtomicReference<String> generationBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/openapi/v1/asset-groups", exchange -> {
+            groupBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"officialId":"ag-intl"}
+                    """);
+        });
+        server.createContext("/openapi/v1/assets", exchange -> {
+            assetUploadBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"officialId":"asset-intl-001","status":"Active"}
+                    """);
+        });
+        server.createContext("/openapi/v1/generations", exchange -> {
+            generationBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"id":"gen-official-intl","status":"pending"}
+                    """);
+        });
+        server.start();
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2-intl-xl-fast")
+                    .setProviderExtraConfig("{\"seedanceAssetReviewPollIntervalMillis\":0}")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setPrompt("国际模型素材提审")
+                    .setInputParams("""
+                            {"image_url":"https://example.com/intl.jpg","duration":6}
+                            """));
+
+            assertTrue(resp.getSuccess(), resp.getErrorCode() + ": " + resp.getErrorMessage());
+            assertEquals("intl", JSONUtil.parseObj(groupBody.get()).getStr("region"));
+            JSONObject assetBody = JSONUtil.parseObj(assetUploadBody.get());
+            assertEquals("ag-intl", assetBody.getStr("groupId"));
+            assertEquals("https://example.com/intl.jpg", assetBody.getStr("url"));
+
+            JSONObject body = JSONUtil.parseObj(generationBody.get());
+            assertEquals("asset://asset-intl-001", body.getStr("image_url"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_officialSeedanceSkipsExistingAssetUrls() throws Exception {
+        AtomicReference<String> generationBody = new AtomicReference<>();
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> {
+            generationBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"id":"gen-existing-asset","status":"pending"}
+                    """);
+        });
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2")
+                    .setProviderExtraConfig("{\"assetGroupCn\":\"ag-cn\",\"seedanceAssetReviewPollIntervalMillis\":0}")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setPrompt("已有 asset 引用")
+                    .setInputParams("""
+                            {"image_url":"asset://asset-existing"}
+                            """));
+
+            assertTrue(resp.getSuccess(), resp.getErrorCode() + ": " + resp.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(generationBody.get());
+            assertEquals("asset://asset-existing", body.getStr("image_url"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_officialSeedanceFailsWhenAssetReviewFails() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/openapi/v1/assets", exchange -> sendJson(exchange, 200, """
+                {"officialId":"asset-failed","status":"Processing"}
+                """));
+        server.createContext("/openapi/v1/assets/asset-failed", exchange -> sendJson(exchange, 200, """
+                {"officialId":"asset-failed","status":"Failed"}
+                """));
+        server.createContext("/openapi/v1/generations", exchange -> sendJson(exchange, 200, """
+                {"id":"should-not-submit","status":"pending"}
+                """));
+        server.start();
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2-fast")
+                    .setProviderExtraConfig("""
+                            {"assetGroupCn":"ag-cn","seedanceAssetReviewMaxPolls":1,"seedanceAssetReviewPollIntervalMillis":0}
+                            """)
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setPrompt("审核失败")
+                    .setInputParams("""
+                            {"image_url":"https://example.com/face.jpg"}
+                            """));
+
+            assertFalse(resp.getSuccess());
+            assertEquals("ASSET_REVIEW_FAILED", resp.getErrorCode());
+            assertTrue(resp.getErrorMessage().contains("Failed"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_nonOfficialSeedanceKeepsDirectImageUrl() throws Exception {
+        AtomicReference<String> generationBody = new AtomicReference<>();
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> {
+            generationBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"id":"gen-beta","status":"pending"}
+                    """);
+        });
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2-beta-face")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setPrompt("beta 模型不走素材库")
+                    .setInputParams("""
+                            {"image_url":"https://example.com/direct.jpg"}
+                            """));
+
+            assertTrue(resp.getSuccess(), resp.getErrorCode() + ": " + resp.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(generationBody.get());
+            assertEquals("https://example.com/direct.jpg", body.getStr("image_url"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void testSubmit_completedWithResultUrls() throws Exception {
         HttpServer server = startServer("/openapi/v1/generations", exchange -> sendJson(exchange, 200, """
                 {"id":"gen-task-sync","status":"success","result_urls":["https://cdn.example.com/result-1.mp4","https://cdn.example.com/result-2.mp4"]}
