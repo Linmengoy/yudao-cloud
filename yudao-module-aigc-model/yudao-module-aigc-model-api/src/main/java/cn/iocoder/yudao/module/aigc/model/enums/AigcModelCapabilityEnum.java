@@ -16,6 +16,7 @@ public enum AigcModelCapabilityEnum {
     IMAGE_TO_VIDEO("IMAGE_TO_VIDEO", "图生视频"),
     FIRST_LAST_FRAME_VIDEO("FIRST_LAST_FRAME_VIDEO", "首尾帧视频"),
     VIDEO_EXTEND("VIDEO_EXTEND", "视频延长"),
+    MULTI_REF_VIDEO("MULTI_REF_VIDEO", "多模态参考视频"),
     TTS("TTS", "语音合成"),
     VOICE_CLONE("VOICE_CLONE", "声音克隆"),
     BGM_GENERATE("BGM_GENERATE", "背景音乐生成"),
@@ -32,7 +33,7 @@ public enum AigcModelCapabilityEnum {
     }
 
     public static List<AigcModelCapabilityEnum> getVideoCapabilities() {
-        return Arrays.asList(TEXT_TO_VIDEO, IMAGE_TO_VIDEO, FIRST_LAST_FRAME_VIDEO, VIDEO_EXTEND);
+        return Arrays.asList(TEXT_TO_VIDEO, IMAGE_TO_VIDEO, FIRST_LAST_FRAME_VIDEO, VIDEO_EXTEND, MULTI_REF_VIDEO);
     }
 
     public static List<AigcModelCapabilityEnum> getAudioCapabilities() {
