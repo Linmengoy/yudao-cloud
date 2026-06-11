@@ -21,6 +21,9 @@ public class AigcProviderClientFactory {
     }
 
     public AigcProviderClient getClient(String providerCode) {
+        if ("provider_hkcopp".equals(providerCode)) {
+            return clients.getOrDefault("openapi-generations", defaultClient);
+        }
         return clients.getOrDefault(providerCode, defaultClient);
     }
 }

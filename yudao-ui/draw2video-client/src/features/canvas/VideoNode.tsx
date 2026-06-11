@@ -22,7 +22,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, VideoFrameCaptureEventDetail, VideoNodeData } from "./types";
+import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, VideoFrameCaptureEventDetail, VideoGenerationMode, VideoNodeData } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
@@ -190,6 +190,105 @@ function getDisplaySize(data: VideoNodeData) {
   return ratioToSize(data.ratio);
 }
 
+const VIDEO_MODE_OPTIONS: { mode: VideoGenerationMode; label: string; minRefs: number; maxRefs: number }[] = [
+  { mode: "TEXT_TO_VIDEO", label: "文生视频", minRefs: 0, maxRefs: 0 },
+  { mode: "IMAGE_TO_VIDEO", label: "图生视频", minRefs: 1, maxRefs: 1 },
+  { mode: "FIRST_LAST_FRAME_VIDEO", label: "首尾帧", minRefs: 2, maxRefs: 2 },
+  { mode: "MULTI_REF_VIDEO", label: "多参考", minRefs: 1, maxRefs: 9 },
+];
+
+function deriveVideoMode(explicitMode: VideoGenerationMode | null | undefined, refCount: number): VideoGenerationMode {
+  if (explicitMode) return explicitMode;
+  if (refCount === 0) return "TEXT_TO_VIDEO";
+  if (refCount === 1) return "IMAGE_TO_VIDEO";
+  if (refCount === 2) return "FIRST_LAST_FRAME_VIDEO";
+  return "MULTI_REF_VIDEO";
+}
+
+function validateVideoGeneration(mode: VideoGenerationMode, refCount: number): string | null {
+  switch (mode) {
+    case "TEXT_TO_VIDEO":
+      if (refCount > 0) return "文生视频不支持参考图，请先断开连线或切换模式。";
+      break;
+    case "IMAGE_TO_VIDEO":
+      if (refCount === 0) return "图生视频需要连接 1 张参考图。";
+      if (refCount > 1) return "图生视频仅支持 1 张参考图，请移除多余的连线或切换模式。";
+      break;
+    case "FIRST_LAST_FRAME_VIDEO":
+      if (refCount < 2) return "首尾帧视频需要 2 张图片（首帧 + 尾帧）。";
+      if (refCount > 2) return "首尾帧视频仅支持 2 张图片，请移除多余的连线或切换到多参考模式。";
+      break;
+    case "MULTI_REF_VIDEO":
+      if (refCount === 0) return "多参考模式至少需要 1 张参考图。";
+      if (refCount > 9) return "最多支持 9 张参考图。";
+      break;
+  }
+  return null;
+}
+
+function getModeOption(mode: VideoGenerationMode) {
+  return VIDEO_MODE_OPTIONS.find((option) => option.mode === mode);
+}
+
+function getOrderedReferences(
+  mode: VideoGenerationMode,
+  referenceImages: { edgeId: string; nodeId: string; data: ImageNodeData | SketchNodeData }[],
+  data: VideoNodeData,
+) {
+  if (mode === "FIRST_LAST_FRAME_VIDEO" && referenceImages.length === 2) {
+    const firstEdgeId = data.firstFrameEdgeId;
+    const lastEdgeId = data.lastFrameEdgeId;
+    if (firstEdgeId && lastEdgeId) {
+      const first = referenceImages.find((img) => img.edgeId === firstEdgeId);
+      const last = referenceImages.find((img) => img.edgeId === lastEdgeId);
+      if (first && last) return [first, last];
+    }
+    return referenceImages;
+  }
+  if (mode === "MULTI_REF_VIDEO" && data.referenceImageOrder?.length) {
+    const orderMap = new Map(data.referenceImageOrder.map((nodeId, idx) => [nodeId, idx]));
+    return [...referenceImages].sort((a, b) => (orderMap.get(a.nodeId) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(b.nodeId) ?? Number.MAX_SAFE_INTEGER));
+  }
+  return referenceImages;
+}
+
+function maxRefsForMode(mode: VideoGenerationMode) {
+  return VIDEO_MODE_OPTIONS.find((o) => o.mode === mode)?.maxRefs ?? 9;
+}
+
+function ReferenceThumbnail({ image, label, isGenerating, removeReference }: {
+  image: { edgeId: string; nodeId: string; data: ImageNodeData | SketchNodeData };
+  label?: string;
+  isGenerating: boolean;
+  removeReference: (edgeId: string) => void;
+}) {
+  return (
+    <div className="group relative shrink-0">
+      <div className="size-9 overflow-hidden rounded-lg border border-border-warm bg-muted">
+        {(image.data.previewUrl || image.data.dataUrl) ? (
+          <img src={image.data.previewUrl || image.data.dataUrl} alt={image.data.fileName} className="size-full object-cover" draggable={false} />
+        ) : (
+          <ImageIcon className="m-2 size-5 text-muted-gray/40" />
+        )}
+      </div>
+      {label && (
+        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded bg-charcoal/75 px-1 text-[9px] leading-tight text-off-white">
+          {label}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => removeReference(image.edgeId)}
+        disabled={isGenerating}
+        className="absolute -right-1.5 -top-1.5 flex size-4 items-center justify-center rounded-full bg-charcoal text-off-white opacity-0 shadow transition-opacity group-hover:opacity-100 disabled:cursor-not-allowed"
+        aria-label="移除参考图"
+      >
+        <X className="size-2.5" />
+      </button>
+    </div>
+  );
+}
+
 export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodeProps) {
   const { setNodes, setEdges, getNodes, getEdges, getViewport, setViewport } = useReactFlow();
   const composerWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
@@ -258,17 +357,22 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     }
     return images;
   }, [getEdges, getNodes, id, referenceImagesSignature]);
+  const generationCapability = deriveVideoMode(data.explicitMode, referenceImages.length);
+  const orderedReferenceImages = useMemo(
+    () => getOrderedReferences(generationCapability, referenceImages, data),
+    [data, generationCapability, referenceImages]
+  );
+  const generationValidationMessage = validateVideoGeneration(generationCapability, referenceImages.length);
   const mentionOptions = useMemo<PromptMentionOption[]>(
     () =>
-      referenceImages.map((image, index) => ({
+      orderedReferenceImages.map((image, index) => ({
         id: image.nodeId,
         label: `图片 ${index + 1}`,
         token: createPromptMentionToken(image.nodeId),
         thumbnailUrl: image.data.previewUrl || image.data.dataUrl,
       })),
-    [referenceImages]
+    [orderedReferenceImages]
   );
-  const generationCapability = referenceImages.length > 0 ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO";
   const rawParams = useMemo(() => data.params ?? {}, [data.params]);
   const aigcModels = useAigcModels({ type: 3, capability: generationCapability, preferredModelId: data.aigcModelId, params: rawParams });
   const storedAigcModel = aigcModels.models.find((model) => model.id === data.aigcModelId);
@@ -278,7 +382,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const activeProviderModel = activeAigcModel?.model ?? data.providerModel ?? data.modelId;
   const effectiveParams = useMemo(() => filterModelParams(rawParams, aigcModels.templates), [aigcModels.templates, rawParams]);
   const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
-  const canGenerate = Boolean(data.prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && Boolean(activeAigcModelId);
+  const canGenerate = Boolean(data.prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && Boolean(activeAigcModelId) && !generationValidationMessage;
   const mediaDurationSec = durationSec || data.durationSec || 0;
 
   useEffect(() => {
@@ -642,6 +746,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     const prompt = promptValueToSubmitPrompt(data.prompt, mentionOptions).trim();
     if (!prompt || isGenerating) return;
 
+    if (generationValidationMessage) {
+      updateData({ status: "failed", errorMessage: generationValidationMessage, upstreamStatus: "failed" });
+      return;
+    }
+
     if (!activeAigcModelId) {
       updateData({ status: "failed", errorMessage: "请选择 AIGC 视频模型后再生成。", upstreamStatus: "failed" });
       return;
@@ -662,12 +771,21 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
       elapsedMs: null,
     });
 
+    const resolvedReferenceImages = (await resolveReferenceImagesForSubmit(orderedReferenceImages)).filter(Boolean);
+    const referenceAssetIds = orderedReferenceImages.map((image) => getReferenceAssetId(image.data)).filter((assetId): assetId is number => typeof assetId === "number");
+
+    const inputParamsBase: Record<string, unknown> = {
+      ...effectiveParams,
+      providerModel: activeProviderModel,
+    };
+    if (referenceAssetIds.length > 0) inputParamsBase.referenceAssetIds = referenceAssetIds;
+    if (resolvedReferenceImages.length > 0) inputParamsBase.referenceImages = resolvedReferenceImages;
+    if (orderedReferenceImages.length > 0) inputParamsBase.referenceImageIds = orderedReferenceImages.map((img) => img.nodeId);
+
     const projectId = new URLSearchParams(window.location.search).get("projectId");
     if (isServerCanvasProjectId(projectId)) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
-        const resolvedReferenceImages = (await resolveReferenceImagesForSubmit(referenceImages)).filter(Boolean);
-        const referenceAssetIds = referenceImages.map((image) => getReferenceAssetId(image.data)).filter((assetId): assetId is number => typeof assetId === "number");
         const run = await canvasNodeRunApi.runNode(projectId, id, {
           clientId,
           baseVersion: 0,
@@ -677,13 +795,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
           generateMode: generationCapability,
           modelId: activeAigcModelId,
           prompt,
-          inputParams: JSON.stringify({
-            ...effectiveParams,
-            providerModel: activeProviderModel,
-            referenceImageIds: referenceImages.map((image) => image.nodeId),
-            referenceAssetIds,
-            referenceImages: resolvedReferenceImages,
-          }),
+          inputParams: JSON.stringify(inputParamsBase),
           sync: false,
         });
         updateData({
@@ -706,19 +818,12 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     }
 
     try {
-      const resolvedReferenceImages = (await resolveReferenceImagesForSubmit(referenceImages)).filter(Boolean);
-      const referenceAssetIds = referenceImages.map((image) => getReferenceAssetId(image.data)).filter((assetId): assetId is number => typeof assetId === "number");
       const submit = await generationApi.submit({
         generateType: "VIDEO",
         generateMode: generationCapability,
         modelId: activeAigcModelId,
         prompt,
-        inputParams: JSON.stringify({
-          ...effectiveParams,
-          providerModel: activeProviderModel,
-          referenceAssetIds,
-          referenceImages: resolvedReferenceImages,
-        }),
+        inputParams: JSON.stringify(inputParamsBase),
         sync: false,
       });
       updateData({
@@ -777,7 +882,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [activeAigcModelId, activeProviderModel, data.prompt, effectiveParams, generationCapability, id, isGenerating, mentionOptions, referenceImages, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModelId, activeProviderModel, data.prompt, effectiveParams, generationCapability, generationValidationMessage, id, isGenerating, mentionOptions, orderedReferenceImages, updateData, waitAndApplyServerRun]);
 
   return (
     <>
@@ -1048,26 +1153,33 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               >
                 <Sparkles className="size-4" />
               </button>
-              {referenceImages.map((image) => (
-                <div key={image.edgeId} className="group relative shrink-0">
-                  <div className="size-9 overflow-hidden rounded-lg border border-border-warm bg-muted">
-                    {(image.data.previewUrl || image.data.dataUrl) ? (
-                      <img src={image.data.previewUrl || image.data.dataUrl} alt={image.data.fileName} className="size-full object-cover" draggable={false} />
-                    ) : (
-                      <ImageIcon className="m-2 size-5 text-muted-gray/40" />
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeReference(image.edgeId)}
-                    disabled={isGenerating}
-                    className="absolute -right-1.5 -top-1.5 flex size-4 items-center justify-center rounded-full bg-charcoal text-off-white opacity-0 shadow transition-opacity group-hover:opacity-100 disabled:cursor-not-allowed"
-                    aria-label="移除参考图"
-                  >
-                    <X className="size-2.5" />
-                  </button>
-                </div>
-              ))}
+              {(() => {
+                const showSlots = generationCapability === "FIRST_LAST_FRAME_VIDEO";
+                if (showSlots && orderedReferenceImages.length < 2) {
+                  return (
+                    <>
+                      {orderedReferenceImages.map((image, index) => (
+                        <ReferenceThumbnail key={image.edgeId} image={image} label={index === 0 ? "首帧" : "尾帧"} isGenerating={isGenerating} removeReference={removeReference} />
+                      ))}
+                      {Array.from({ length: 2 - orderedReferenceImages.length }).map((_, i) => (
+                        <div key={`slot-${i}`} className="flex size-9 items-center justify-center rounded-lg border border-dashed border-border-warm bg-muted text-[10px] text-muted-gray">
+                          {orderedReferenceImages.length + i === 0 ? "首帧" : "尾帧"}
+                        </div>
+                      ))}
+                    </>
+                  );
+                }
+                return orderedReferenceImages.map((image, index) => (
+                  <ReferenceThumbnail
+                    key={image.edgeId}
+                    image={image}
+                    label={showSlots ? (index === 0 ? "首帧" : "尾帧") : generationCapability === "MULTI_REF_VIDEO" ? `${index + 1}` : undefined}
+                    isGenerating={isGenerating}
+                    removeReference={removeReference}
+                  />
+                ));
+              })()}
+              {generationCapability !== "TEXT_TO_VIDEO" && referenceImages.length < maxRefsForMode(generationCapability) && (
               <button
                 type="button"
                 onClick={openReferencePicker}
@@ -1080,6 +1192,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               >
                 <Plus className="size-4" />
               </button>
+              )}
             </div>
             {isGenerating && <span className="text-xs text-muted-gray">{progressLabel}</span>}
           </div>
@@ -1165,6 +1278,27 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                 </AnimatePresence>
               </div>
               <span className="h-5 w-px bg-border-warm" />
+              <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+                {VIDEO_MODE_OPTIONS.map((opt) => {
+                  const isActive = generationCapability === opt.mode;
+                  return (
+                    <button
+                      key={opt.mode}
+                      type="button"
+                      disabled={isGenerating}
+                      onClick={() => updateData({ explicitMode: opt.mode })}
+                      className={cn(
+                        "nodrag nowheel rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                        isActive ? "bg-background text-charcoal shadow-sm" : "text-muted-gray hover:text-charcoal"
+                      )}
+                      title={!isActive ? `切换到${opt.label}` : undefined}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="h-5 w-px bg-border-warm" />
               <div className="relative">
                 <button
                   ref={paramsBtnRef}
@@ -1191,7 +1325,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     className="absolute bottom-full left-0 z-[260] mb-2 w-[420px] rounded-2xl border border-border-warm bg-background p-4 shadow-lg"
                   >
                     <div className="mb-3 rounded-xl bg-muted px-3 py-2 text-xs text-muted-gray">
-                      当前能力：{generationCapability}
+                      当前模式：{getModeOption(generationCapability)?.label ?? generationCapability}
                     </div>
                     {aigcModels.templates.length > 0 ? (
                       <DynamicParamForm
@@ -1212,6 +1346,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             </div>
 
             <div className="flex items-center gap-2">
+              {generationValidationMessage && (
+                <span className="max-w-[220px] truncate text-xs text-muted-gray" title={generationValidationMessage}>
+                  {generationValidationMessage}
+                </span>
+              )}
               <span className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-muted-gray">
                 <Gem className="size-3.5" />
                 {costLabel}

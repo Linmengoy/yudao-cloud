@@ -29,7 +29,7 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, NodePositionPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoFrameCaptureEventDetail, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, NodePositionPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoFrameCaptureEventDetail, VideoGenerationMode, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
@@ -1335,9 +1335,31 @@ function migrateEdge(e: AppEdge): AppEdge {
   return e;
 }
 
-function isValidCanvasConnection(connection: { source: string; target: string }, nodes: AppNode[]) {
+const VIDEO_MODE_MAX_REFS: Record<VideoGenerationMode, number> = {
+  TEXT_TO_VIDEO: 0,
+  IMAGE_TO_VIDEO: 1,
+  FIRST_LAST_FRAME_VIDEO: 2,
+  MULTI_REF_VIDEO: 9,
+};
+
+function getVideoNodeAllowedRefCount(targetNode: AppNode | undefined, edges: AppEdge[]): number {
+  if (targetNode?.type !== "video") return 9;
+  const data = targetNode.data as VideoNodeData;
+  const mode = data.explicitMode;
+  const currentCount = edges.filter((e) => e.target === targetNode.id).length;
+  if (mode && mode in VIDEO_MODE_MAX_REFS) return Math.max(0, VIDEO_MODE_MAX_REFS[mode] - currentCount);
+  if (currentCount >= 9) return 0;
+  return 9 - currentCount;
+}
+
+function isValidCanvasConnection(connection: { source: string; target: string }, nodes: AppNode[], edges?: AppEdge[]) {
   const source = nodes.find((n) => n.id === connection.source);
   const target = nodes.find((n) => n.id === connection.target);
+  const isImageToVideo = (source?.type === "image" || source?.type === "sketch") && target?.type === "video";
+  if (isImageToVideo && edges) {
+    const remaining = getVideoNodeAllowedRefCount(target, edges);
+    if (remaining <= 0) return false;
+  }
   return (
     (source?.type === "image" && target?.type === "image" && connection.source !== connection.target) ||
     (source?.type === "image" && target?.type === "video") ||
@@ -1358,6 +1380,17 @@ function isSameCanvasEdge(left: AppEdge, right: AppEdge) {
     left.target === right.target &&
     (left.sourceHandle ?? null) === (right.sourceHandle ?? null) &&
     (left.targetHandle ?? null) === (right.targetHandle ?? null);
+}
+
+function getVideoReferenceCleanupPatch(data: VideoNodeData, removedEdgeIds: Set<string>, remainingReferenceNodeIds: Set<string>) {
+  const patch: Partial<VideoNodeData> = {};
+  if (data.firstFrameEdgeId && removedEdgeIds.has(data.firstFrameEdgeId)) patch.firstFrameEdgeId = null;
+  if (data.lastFrameEdgeId && removedEdgeIds.has(data.lastFrameEdgeId)) patch.lastFrameEdgeId = null;
+  if (data.referenceImageOrder?.length) {
+    const nextOrder = data.referenceImageOrder.filter((nodeId) => remainingReferenceNodeIds.has(nodeId));
+    if (nextOrder.length !== data.referenceImageOrder.length) patch.referenceImageOrder = nextOrder;
+  }
+  return patch;
 }
 
 function getNodeBounds(node: AppNode) {
@@ -1481,6 +1514,7 @@ function CanvasFlow() {
 
   const {
     getNodes,
+    getEdges,
     getViewport,
     screenToFlowPosition,
     flowToScreenPosition,
@@ -1584,6 +1618,40 @@ function CanvasFlow() {
   const canvasRealtime = useCanvasRealtime(serverProjectId, clientId, lastAppliedVersion);
   // 初始化操作操作
   const canvasOperations = useCanvasOperations(serverProjectId, clientId, latestKnownVersion, setLatestKnownVersion, canvasRealtime.sendOperation, canvasRealtime.isConnected);
+  const cleanupVideoReferenceState = useCallback((removedEdges: AppEdge[], remainingEdges: AppEdge[], options?: { submit?: boolean }) => {
+    if (removedEdges.length === 0) return;
+    const removedEdgeIds = new Set(removedEdges.map((edge) => edge.id));
+    const affectedVideoIds = new Set(removedEdges.map((edge) => edge.target));
+    if (affectedVideoIds.size === 0) return;
+
+    const remainingByVideoId = new Map<string, Set<string>>();
+    for (const edge of remainingEdges) {
+      if (!affectedVideoIds.has(edge.target)) continue;
+      const set = remainingByVideoId.get(edge.target) ?? new Set<string>();
+      set.add(edge.source);
+      remainingByVideoId.set(edge.target, set);
+    }
+
+    const patches = (getNodes() as AppNode[]).flatMap((node) => {
+      if (node.type !== "video" || !affectedVideoIds.has(node.id)) return [];
+      const patch = getVideoReferenceCleanupPatch(node.data as VideoNodeData, removedEdgeIds, remainingByVideoId.get(node.id) ?? new Set());
+      return Object.keys(patch).length > 0 ? [{ nodeId: node.id, patch }] : [];
+    });
+
+    if (patches.length === 0) return;
+    setNodes((nds) => nds.map((node) => {
+      const item = patches.find((patch) => patch.nodeId === node.id);
+      return item ? { ...node, data: { ...node.data, ...item.patch } } as AppNode : node;
+    }));
+
+    if (options?.submit === false) return;
+    for (const { nodeId, patch } of patches) {
+      canvasOperations.submitOperation("NODE_UPDATE_DATA", {
+        nodeId,
+        patch,
+      });
+    }
+  }, [canvasOperations, getNodes, setNodes]);
   const mediaStoreScope = useMemo(() => ({
     ownerKey: user?.id ?? null,
     projectId: activeProjectId,
@@ -1764,7 +1832,11 @@ function CanvasFlow() {
     }
     if (operationType === "NODE_DELETE" && typeof payload.nodeId === "string") {
       setNodes((nds) => nds.filter((node) => node.id !== payload.nodeId));
-      setEdges((eds) => eds.filter((edge) => edge.source !== payload.nodeId && edge.target !== payload.nodeId));
+      setEdges((eds) => {
+        const nextEdges = eds.filter((edge) => edge.source !== payload.nodeId && edge.target !== payload.nodeId);
+        cleanupVideoReferenceState(eds.filter((edge) => !nextEdges.includes(edge)), nextEdges, { submit: false });
+        return nextEdges;
+      });
       return;
     }
     if (operationType === "NODE_CREATE" && payload.node) {
@@ -1798,21 +1870,25 @@ function CanvasFlow() {
       const edge = payload.edge as AppEdge;
       setEdges((eds) => {
         const nodes = getNodes() as AppNode[];
-        if (!isValidCanvasConnection(edge, nodes)) return eds;
+        if (!isValidCanvasConnection(edge, nodes, eds)) return eds;
         if (eds.some((item) => item.id === edge.id || isSameCanvasEdge(item, edge))) return eds;
         return addEdge(edge, eds);
       });
       return;
     }
     if (operationType === "EDGE_DELETE" && typeof payload.edgeId === "string") {
-      setEdges((eds) => eds.filter((edge) => edge.id !== payload.edgeId));
+      setEdges((eds) => {
+        const nextEdges = eds.filter((edge) => edge.id !== payload.edgeId);
+        cleanupVideoReferenceState(eds.filter((edge) => edge.id === payload.edgeId), nextEdges, { submit: false });
+        return nextEdges;
+      });
       return;
     }
     if (operationType === "CANVAS_CLEAR") {
       setNodes(defaultNodes());
       setEdges([]);
     }
-  }, [getNodes, refreshAssetUrls, setEdges, setNodes]);
+  }, [cleanupVideoReferenceState, getNodes, refreshAssetUrls, setEdges, setNodes]);
 
   const hydrateRemoteSnapshot = useCallback((snapshot: Parameters<typeof snapshotRecordToCanvasState>[0]) => {
     const state = snapshotRecordToCanvasState(snapshot);
@@ -2002,7 +2078,11 @@ function CanvasFlow() {
       if (isReadOnly) return;
       const detail = (event as CustomEvent<EdgeDeleteEventDetail>).detail;
       if (!detail?.edgeId) return;
-      setEdges((eds) => eds.filter((edge) => edge.id !== detail.edgeId));
+      setEdges((eds) => {
+        const nextEdges = eds.filter((edge) => edge.id !== detail.edgeId);
+        cleanupVideoReferenceState(eds.filter((edge) => edge.id === detail.edgeId), nextEdges, { submit: true });
+        return nextEdges;
+      });
       canvasOperations.submitOperation("EDGE_DELETE", {
         edgeId: detail.edgeId,
       });
@@ -2010,7 +2090,7 @@ function CanvasFlow() {
 
     window.addEventListener("copse:edge-delete", handleEdgeDelete);
     return () => window.removeEventListener("copse:edge-delete", handleEdgeDelete);
-  }, [canvasOperations, isReadOnly, setEdges]);
+  }, [canvasOperations, cleanupVideoReferenceState, isReadOnly, setEdges]);
 
   useEffect(() => {
     function handleGroupUngroup(event: Event) {
@@ -2357,7 +2437,11 @@ function CanvasFlow() {
         if (selectionChanges.length > 0) setEdges((eds) => applyEdgeChanges(selectionChanges, eds));
         return;
       }
-      setEdges((eds) => applyEdgeChanges(changes, eds));
+      setEdges((eds) => {
+        const nextEdges = applyEdgeChanges(changes, eds);
+        cleanupVideoReferenceState(eds.filter((edge) => !nextEdges.some((nextEdge) => nextEdge.id === edge.id)), nextEdges, { submit: true });
+        return nextEdges;
+      });
       for (const change of changes) {
         if (change.type === "remove") {
           canvasOperations.submitOperation("EDGE_DELETE", {
@@ -2366,7 +2450,7 @@ function CanvasFlow() {
         }
       }
     },
-    [canvasOperations, isReadOnly, setEdges]
+    [canvasOperations, cleanupVideoReferenceState, isReadOnly, setEdges]
   );
 
   useEffect(() => {
@@ -2394,14 +2478,44 @@ function CanvasFlow() {
   const onConnect = useCallback((connection: Connection) => {
     if (isReadOnly) return;
     const edge: AppEdge = { ...connection, id: `e-${connection.source}-${connection.target}-${Date.now()}`, type: "signal" };
-    let shouldSubmit = false;
+    const currentEdges = getEdges() as AppEdge[];
+    if (currentEdges.some((item) => isSameCanvasEdge(item, edge))) return;
+
+    let nextVideoPatch: Partial<VideoNodeData> | null = null;
+    const targetNode = getNodes().find((n) => n.id === connection.target);
+    if (targetNode?.type === "video") {
+      const data = targetNode.data as VideoNodeData;
+      const nextIncomingEdges = [...currentEdges.filter((item) => item.target === connection.target), edge];
+      const patch: Partial<VideoNodeData> = {};
+      if (data.explicitMode === "FIRST_LAST_FRAME_VIDEO") {
+        if (nextIncomingEdges.length === 1 && !data.firstFrameEdgeId) {
+          patch.firstFrameEdgeId = edge.id;
+        } else if (nextIncomingEdges.length === 2 && !data.lastFrameEdgeId) {
+          patch.lastFrameEdgeId = edge.id;
+        }
+      }
+      if (data.explicitMode === "MULTI_REF_VIDEO") {
+        const connectedNodeIds = new Set(nextIncomingEdges.map((incomingEdge) => incomingEdge.source));
+        const order = (data.referenceImageOrder ?? []).filter((nodeId) => connectedNodeIds.has(nodeId));
+        if (connection.source && !order.includes(connection.source)) {
+          patch.referenceImageOrder = [...order, connection.source];
+        }
+      }
+      if (Object.keys(patch).length > 0) nextVideoPatch = patch;
+    }
+
     setEdges((eds) => {
       if (eds.some((item) => isSameCanvasEdge(item, edge))) return eds;
-      shouldSubmit = true;
       return addEdge(edge, eds);
     });
-    if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge });
-  }, [canvasOperations, isReadOnly, setEdges]);
+    canvasOperations.submitOperation("EDGE_CREATE", { edge });
+    if (nextVideoPatch && connection.target) {
+      setNodes((nds) => nds.map((n) => n.id === connection.target ? { ...n, data: { ...(n.data as Record<string, unknown>), ...nextVideoPatch } } as AppNode : n));
+      window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
+        detail: { nodeId: connection.target, patch: nextVideoPatch, flush: true },
+      }));
+    }
+  }, [canvasOperations, getEdges, getNodes, isReadOnly, setEdges, setNodes]);
 
   // Hydrate from server state when the project changes
   useEffect(() => {
@@ -2657,6 +2771,10 @@ function CanvasFlow() {
       generationRunStartedAt: null,
       elapsedMs: null,
       upstreamStatus: null,
+      explicitMode: null,
+      firstFrameEdgeId: null,
+      lastFrameEdgeId: null,
+      referenceImageOrder: [],
     };
     const newNode: AppNode = withCardNodeInteraction({
       id,
@@ -3467,7 +3585,7 @@ function CanvasFlow() {
         }}
         onConnectStart={() => { if (isReadOnly) return; setPendingConnectionPreview(null); window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
         onConnectEnd={handleConnectEnd}
-        isValidConnection={(connection) => !isReadOnly && isValidCanvasConnection(connection, nodes)}
+        isValidConnection={(connection) => !isReadOnly && isValidCanvasConnection(connection, nodes, edges)}
       >
         <Background variant={BackgroundVariant.Dots} gap={36} size={1.8} color="var(--canvas-dot)" />
         {showMiniMap && (
