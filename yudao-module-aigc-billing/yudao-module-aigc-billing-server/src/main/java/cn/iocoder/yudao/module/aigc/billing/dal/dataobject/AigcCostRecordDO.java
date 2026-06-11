@@ -22,10 +22,13 @@ public class AigcCostRecordDO extends TenantBaseDO {
 
     private String costNo;
     private Long taskId;
+    private Long recordId;
+    private Long attemptId;
     private String taskNo;
     private Long userId;
     private Long modelId;
     private Long providerId;
+    private Long channelId;
     private String capability;
     private String billingUnit;
     private BigDecimal usageAmount;

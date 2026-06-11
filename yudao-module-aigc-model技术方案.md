@@ -2202,3 +2202,84 @@ recordUsage
 ```
 
 就足够支撑 `aigc-gen`、`aigc-task`、`aigc-billing` 跑通第一条赚钱链路。
+
+## 23. 多供应商 Fallback 路由适配
+
+生成服务支持自动切换渠道账号、切换供应商模型和并发兜底后，模型服务不能只返回单个路由结果，还需要提供候选列表能力。
+
+### 23.1 当前能力判断
+
+当前 `prepareSubmit` 会完成模型校验、参数校验、价格计算，并通过 `routeChannel` 返回一个 `channel` 和对应 `provider`。该能力适合首次提交，但不足以支撑以下场景：
+
+- 排除已经尝试失败的 `channel_id`。
+- 排除已经尝试失败的 `provider_id`。
+- 按同供应商优先返回其他渠道账号。
+- 按跨供应商 fallback 返回等价模型。
+- 返回可并发 hedging 的多个候选渠道。
+
+### 23.2 推荐新增 RPC
+
+建议新增候选准备接口：
+
+```text
+prepareSubmitCandidates(modelId, capability, taskType, params, excludeChannelIds, excludeProviderIds, maxCandidates, strategy)
+```
+
+返回：
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `price` | 用户侧销售价，以首次请求模型价格为准 |
+| `candidates` | 候选渠道列表 |
+| `candidate.model` | 带 channel 快照的业务模型 DTO |
+| `candidate.provider` | 供应商连接配置 |
+| `candidate.channelId` | 渠道 ID |
+| `candidate.providerId` | 供应商 ID |
+| `candidate.providerModel` | 上游真实模型名 |
+| `candidate.costPrice` | 当前候选渠道成本价 |
+| `candidate.priority` | 路由优先级 |
+| `candidate.weight` | 权重 |
+| `candidate.healthStatus` | 渠道健康状态 |
+
+### 23.3 候选选择规则
+
+候选选择应按以下顺序：
+
+1. 首次提交使用现有路由策略。
+2. `CHANNEL_RETRY`：同 `model_id`、同 `provider_id` 下选择未尝试过的启用渠道。
+3. `PROVIDER_FALLBACK`：同能力、同任务类型下选择其他启用供应商的等价模型或渠道。
+4. `HEDGING`：返回多个未尝试候选，供生成服务并发提交。
+
+候选过滤条件：
+
+- 必须启用。
+- 必须匹配当前租户授权。
+- 必须支持当前 `capability`。
+- 必须通过参数模板校验。
+- 不能包含 `excludeChannelIds` 和 `excludeProviderIds` 中指定的候选。
+- 如果不允许质量降级，候选模型必须满足同等级输出规格。
+
+### 23.4 健康评分
+
+`aigc_model_channel.health_status` 已具备基础字段，后续建议扩展动态评分：
+
+| 指标 | 说明 |
+| ---- | ---- |
+| `successRate` | 近期成功率 |
+| `avgDurationMillis` | 平均耗时 |
+| `p95DurationMillis` | P95 耗时 |
+| `rateLimitRate` | 限流比例 |
+| `timeoutRate` | 超时比例 |
+| `recentCostAmount` | 近期成本 |
+| `availableQuota` | 渠道账号剩余额度 |
+
+模型服务只负责输出候选和健康信息，不直接执行生成、不创建任务、不扣费。
+
+### 23.5 与 gen 的边界
+
+- `aigc-model` 决定“可以尝试哪些候选”。
+- `aigc-gen` 决定“什么时候尝试、串行还是并发、谁是 winner”。
+- `aigc-billing` 决定“用户扣费和成本记账”。
+- `aigc-task` 决定“用户任务生命周期状态”。
+
+模型服务返回候选时必须带价格和渠道快照，生成服务写入 attempt，避免路由配置变更影响已提交任务的审计和对账。

@@ -50,6 +50,12 @@ public interface AigcGenerateRecordMapper extends BaseMapperX<AigcGenerateRecord
                 .eq(AigcGenerateRecordDO::getStatus, status));
     }
 
+    default int updateByIdAndStatuses(AigcGenerateRecordDO updateObj, Collection<String> statuses) {
+        return update(updateObj, new LambdaUpdateWrapper<AigcGenerateRecordDO>()
+                .eq(AigcGenerateRecordDO::getId, updateObj.getId())
+                .in(AigcGenerateRecordDO::getStatus, statuses));
+    }
+
     default List<AigcGenerateRecordDO> selectTimeoutList(Collection<String> statuses, LocalDateTime beforeTime) {
         return selectList(new LambdaQueryWrapperX<AigcGenerateRecordDO>()
                 .in(AigcGenerateRecordDO::getStatus, statuses)

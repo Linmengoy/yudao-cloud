@@ -25,6 +25,14 @@ public class AigcCostRecordRespVO {
     @ExcelProperty("任务编号")
     private Long taskId;
 
+    @Schema(description = "Generate record id")
+    @ExcelProperty("Generate record id")
+    private Long recordId;
+
+    @Schema(description = "Generate attempt id")
+    @ExcelProperty("Generate attempt id")
+    private Long attemptId;
+
     @Schema(description = "任务单号")
     @ExcelProperty("任务单号")
     private String taskNo;
@@ -40,6 +48,10 @@ public class AigcCostRecordRespVO {
     @Schema(description = "渠道商编号")
     @ExcelProperty("渠道商编号")
     private Long providerId;
+
+    @Schema(description = "Channel id")
+    @ExcelProperty("Channel id")
+    private Long channelId;
 
     @Schema(description = "能力")
     @ExcelProperty("能力")

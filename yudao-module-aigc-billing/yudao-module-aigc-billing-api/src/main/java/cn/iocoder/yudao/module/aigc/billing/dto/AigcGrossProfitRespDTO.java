@@ -24,4 +24,7 @@ public class AigcGrossProfitRespDTO {
     @Schema(description = "毛利率", requiredMode = Schema.RequiredMode.REQUIRED, example = "0.500000")
     private BigDecimal grossProfitRate;
 
+    @Schema(description = "Currency type", example = "POINT")
+    private String currencyType;
+
 }

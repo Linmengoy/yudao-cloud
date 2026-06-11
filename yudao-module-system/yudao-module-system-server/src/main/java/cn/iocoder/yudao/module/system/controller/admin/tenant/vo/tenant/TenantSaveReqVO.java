@@ -4,6 +4,7 @@ import cn.hutool.core.util.ObjectUtil;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -48,6 +49,7 @@ public class TenantSaveReqVO {
 
     @Schema(description = "账号数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "1024")
     @NotNull(message = "账号数量不能为空")
+    @Min(value = 1, message = "账号数量不能小于 1")
     private Integer accountCount;
 
     // ========== 仅【创建】时，需要传递的字段 ==========

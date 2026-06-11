@@ -7,7 +7,7 @@ import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyStatusPill } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
 import { getAigcTaskPage } from "@/features/tasks/task-api";
-import { getDisplayTaskProgress } from "@/features/tasks/task-progress-value";
+import { getDisplayTaskProgress, getTaskEstimatedTimeText } from "@/features/tasks/task-progress-value";
 import { formatDateTime, formatPoints, getTaskTypeLabel, shouldPollTask } from "@/features/tasks/task-status";
 import type { AigcTask } from "@/features/tasks/task-types";
 import { TaskStatusBadge } from "@/features/tasks/components/task-status-badge";
@@ -169,6 +169,7 @@ export default function TasksPage() {
               <tbody className="divide-y divide-border-warm">
                 {tasks.map((task) => {
                   const progress = getTaskProgress(task, now);
+                  const estimatedTime = getTaskEstimatedTimeText(task, now);
                   const safety = getTaskSafety(task);
                   const note = getTaskNote(task);
 
@@ -198,11 +199,14 @@ export default function TasksPage() {
                         {safety.status !== "idle" ? <SafetyStatusPill state={safety} className="whitespace-nowrap" /> : <span className="text-xs text-muted-gray">-</span>}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 align-middle">
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-28 overflow-hidden rounded-full bg-muted">
-                            <div className="h-full rounded-full bg-charcoal" style={{ width: `${progress}%` }} />
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-28 overflow-hidden rounded-full bg-muted">
+                              <div className="h-full rounded-full bg-charcoal" style={{ width: `${progress}%` }} />
+                            </div>
+                            <span className="w-9 text-right text-xs text-muted-gray">{progress}%</span>
                           </div>
-                          <span className="w-9 text-right text-xs text-muted-gray">{progress}%</span>
+                          {estimatedTime && <span className="text-xs text-muted-gray">{estimatedTime}</span>}
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 align-middle text-sm text-charcoal">

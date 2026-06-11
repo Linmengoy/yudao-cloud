@@ -15,6 +15,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingCurrencyTypeEnum.POINT;
@@ -31,15 +32,19 @@ public class AigcCostRecordServiceImpl implements AigcCostRecordService {
 
     @Override
     public Long createCostRecord(AigcCostRecordCreateReqDTO reqDTO) {
-        AigcCostRecordDO exists = costRecordMapper.selectByTaskId(reqDTO.getTaskId());
+        AigcCostRecordDO exists = selectExisting(reqDTO);
         if (exists != null) {
             return exists.getId();
         }
         
         AigcCostRecordDO record = BeanUtils.toBean(reqDTO, AigcCostRecordDO.class);
         record.setCostNo(billingNoGenerator.generateCostRecordNo());
-        record.setGrossProfit(reqDTO.getSaleAmount().subtract(reqDTO.getCostAmount()));
-        record.setGrossProfitRate(calculateRate(record.getGrossProfit(), reqDTO.getSaleAmount()));
+        BigDecimal saleAmount = defaultZero(reqDTO.getSaleAmount());
+        BigDecimal costAmount = defaultZero(reqDTO.getCostAmount());
+        record.setSaleAmount(saleAmount);
+        record.setCostAmount(costAmount);
+        record.setGrossProfit(saleAmount.subtract(costAmount));
+        record.setGrossProfitRate(calculateRate(record.getGrossProfit(), saleAmount));
         if (record.getCurrencyType() == null) {
             record.setCurrencyType(POINT.getCode());
         }
@@ -48,7 +53,7 @@ public class AigcCostRecordServiceImpl implements AigcCostRecordService {
         try {
             costRecordMapper.insert(record);
         } catch (DuplicateKeyException ex) {
-            AigcCostRecordDO duplicateExists = costRecordMapper.selectByTaskId(reqDTO.getTaskId());
+            AigcCostRecordDO duplicateExists = selectExisting(reqDTO);
             if (duplicateExists != null) {
                 return duplicateExists.getId();
             }
@@ -69,11 +74,28 @@ public class AigcCostRecordServiceImpl implements AigcCostRecordService {
 
     @Override
     public AigcGrossProfitRespDTO calculateGrossProfit(Long taskId) {
-        AigcCostRecordDO record = costRecordMapper.selectByTaskId(taskId);
-        if (record == null) {
+        List<AigcCostRecordDO> records = costRecordMapper.selectListByTaskId(taskId);
+        if (records.isEmpty()) {
             throw exception(COST_RECORD_NOT_EXISTS);
         }
-        return BeanUtils.toBean(record, AigcGrossProfitRespDTO.class);
+        BigDecimal costAmount = BigDecimal.ZERO;
+        BigDecimal saleAmount = BigDecimal.ZERO;
+        String currencyType = null;
+        for (AigcCostRecordDO record : records) {
+            costAmount = costAmount.add(defaultZero(record.getCostAmount()));
+            saleAmount = saleAmount.add(defaultZero(record.getSaleAmount()));
+            if (currencyType == null) {
+                currencyType = record.getCurrencyType();
+            }
+        }
+        BigDecimal grossProfit = saleAmount.subtract(costAmount);
+        return new AigcGrossProfitRespDTO()
+                .setTaskId(taskId)
+                .setCostAmount(costAmount)
+                .setSaleAmount(saleAmount)
+                .setGrossProfit(grossProfit)
+                .setGrossProfitRate(calculateRate(grossProfit, saleAmount))
+                .setCurrencyType(currencyType);
     }
 
     @Override
@@ -86,6 +108,17 @@ public class AigcCostRecordServiceImpl implements AigcCostRecordService {
             return BigDecimal.ZERO;
         }
         return grossProfit.divide(saleAmount, 6, RoundingMode.HALF_UP);
+    }
+
+    private AigcCostRecordDO selectExisting(AigcCostRecordCreateReqDTO reqDTO) {
+        if (reqDTO.getAttemptId() != null) {
+            return costRecordMapper.selectByAttemptId(reqDTO.getAttemptId());
+        }
+        return costRecordMapper.selectByTaskId(reqDTO.getTaskId());
+    }
+
+    private BigDecimal defaultZero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 
 }

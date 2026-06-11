@@ -24,7 +24,7 @@
         <el-input v-model="formData.contactName" placeholder="请输入联系人" />
       </el-form-item>
       <el-form-item label="联系手机" prop="contactMobile">
-        <el-input v-model="formData.contactMobile" placeholder="请输入联系手机" />
+        <el-input v-model="formData.contactMobile" maxlength="11" placeholder="请输入联系手机" />
       </el-form-item>
       <el-form-item v-if="formData.id === undefined" label="用户名称" prop="username">
         <el-input v-model="formData.username" placeholder="请输入用户名称" />
@@ -40,7 +40,9 @@
       <el-form-item label="账号额度" prop="accountCount">
         <el-input-number
           v-model="formData.accountCount"
-          :min="0"
+          :min="1"
+          :precision="0"
+          step-strictly
           controls-position="right"
           placeholder="请输入账号额度"
         />
@@ -99,7 +101,7 @@ const formData = ref({
   packageId: undefined,
   contactName: undefined,
   contactMobile: undefined,
-  accountCount: undefined,
+  accountCount: 1,
   expireTime: undefined,
   websites: [],
   status: CommonStatusEnum.ENABLE,
@@ -111,8 +113,18 @@ const formRules = reactive({
   name: [{ required: true, message: '租户名不能为空', trigger: 'blur' }],
   packageId: [{ required: true, message: '租户套餐不能为空', trigger: 'blur' }],
   contactName: [{ required: true, message: '联系人不能为空', trigger: 'blur' }],
+  contactMobile: [
+    {
+      pattern: /^1[3-9]\d{9}$/,
+      message: '请输入正确的手机号码',
+      trigger: 'blur'
+    }
+  ],
   status: [{ required: true, message: '租户状态不能为空', trigger: 'blur' }],
-  accountCount: [{ required: true, message: '账号额度不能为空', trigger: 'blur' }],
+  accountCount: [
+    { required: true, message: '账号额度不能为空', trigger: 'blur' },
+    { type: 'number', min: 1, message: '账号额度不能小于 1', trigger: 'blur' }
+  ],
   expireTime: [{ required: true, message: '过期时间不能为空', trigger: 'blur' }],
   username: [{ required: true, message: '用户名称不能为空', trigger: 'blur' }],
   password: [{ required: true, message: '用户密码不能为空', trigger: 'blur' }]
@@ -174,7 +186,7 @@ const resetForm = () => {
     packageId: undefined,
     contactName: undefined,
     contactMobile: undefined,
-    accountCount: undefined,
+    accountCount: 1,
     expireTime: undefined,
     websites: [],
     status: CommonStatusEnum.ENABLE,

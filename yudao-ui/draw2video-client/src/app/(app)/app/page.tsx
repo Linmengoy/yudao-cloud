@@ -21,8 +21,6 @@ import { listProjects, type ProjectMeta } from "@/features/projects/project-stor
 import { useAuth } from "@/features/auth/auth-store";
 import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache";
 
-import type Muuri from "muuri";
-
 const MODEL_TYPE_LABELS: Record<number, string> = {
   1: "文本",
   2: "图片",
@@ -407,29 +405,15 @@ function projectRoleLabel(project: ProjectListItem) {
   return "可编辑";
 }
 
-function ProjectCover({ project, onLoad }: { project: ProjectListItem; onLoad?: () => void }) {
-  useEffect(() => {
-    if (!project.coverUrl || !onLoad) return;
-    const image = new window.Image();
-    image.onload = onLoad;
-    image.onerror = onLoad;
-    image.src = project.coverUrl;
-    return () => {
-      image.onload = null;
-      image.onerror = null;
-    };
-  }, [onLoad, project.coverUrl]);
-
+function ProjectCover({ project }: { project: ProjectListItem }) {
   if (project.coverUrl) {
     return (
-      <div className="bg-muted">
+      <div className="aspect-square bg-muted">
         <img
           src={project.coverUrl}
           alt={`${project.name} 封面`}
-          onLoad={onLoad}
-          onError={onLoad}
           draggable={false}
-          className="block h-auto w-full"
+          className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
         />
       </div>
     );
@@ -479,8 +463,6 @@ export default function WorkspacePage() {
   const [assetPickerAssets, setAssetPickerAssets] = useState<AigcAsset[]>([]);
   const [assetPickerLoading, setAssetPickerLoading] = useState(false);
   const [assetPickerError, setAssetPickerError] = useState<string | null>(null);
-  const gridElementRef = useRef<HTMLDivElement | null>(null);
-  const muuriRef = useRef<Muuri | null>(null);
   const referenceInputRef = useRef<HTMLInputElement | null>(null);
   const paramsPanelRef = useRef<HTMLDivElement | null>(null);
   const paramsButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -573,34 +555,6 @@ export default function WorkspacePage() {
     const timer = window.setTimeout(refreshProjects, 0);
     return () => window.clearTimeout(timer);
   }, [refreshProjects]);
-
-  useEffect(() => {
-    if (recentProjects.length === 0 || !gridElementRef.current) return;
-    let disposed = false;
-    const element = gridElementRef.current;
-    import("muuri").then(({ default: MuuriGrid }) => {
-      if (disposed || !element) return;
-      muuriRef.current?.destroy(false);
-      muuriRef.current = new MuuriGrid(element, {
-        items: ".project-grid-item",
-        layoutDuration: 180,
-        layoutEasing: "ease",
-      });
-      requestAnimationFrame(() => muuriRef.current?.refreshItems().layout());
-    });
-    const onResize = () => muuriRef.current?.refreshItems().layout();
-    window.addEventListener("resize", onResize);
-    return () => {
-      disposed = true;
-      window.removeEventListener("resize", onResize);
-      muuriRef.current?.destroy(false);
-      muuriRef.current = null;
-    };
-  }, [recentProjects]);
-
-  const refreshProjectWallLayout = useCallback(() => {
-    muuriRef.current?.refreshItems().layout();
-  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -861,7 +815,6 @@ export default function WorkspacePage() {
 
   return (
     <div className="flex flex-col items-center px-4 pt-16 pb-20">
-      {/* Hero text */}
       <div className="flex items-center gap-2 text-lg font-semibold text-charcoal">
         <div className="flex size-8 items-center justify-center rounded-full bg-charcoal text-sm text-off-white">
           C
@@ -872,7 +825,6 @@ export default function WorkspacePage() {
         懂你的创意代理，帮你搞定一切
       </p>
 
-      {/* Prompt input */}
       <div className="mt-8 w-full max-w-[840px]">
         <div className="rounded-[24px] border border-border-warm bg-background p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
           <textarea
@@ -1090,8 +1042,7 @@ export default function WorkspacePage() {
         </div>
       </div>
 
-      {/* Recent projects */}
-      <div className="mt-16 w-full max-w-[840px]">
+      <div className="mt-20 w-full max-w-[840px]">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-medium text-charcoal">最近项目</h2>
           <Link
@@ -1102,25 +1053,18 @@ export default function WorkspacePage() {
           </Link>
         </div>
 
-        <div ref={gridElementRef} className="relative mt-4 -m-2">
+        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {recentProjects.map((project) => (
-            <div
+            <Link
               key={project.id}
-              className="project-grid-item absolute w-1/2 p-2 sm:w-1/3 lg:w-1/4"
+              href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
+              className="group relative block overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
             >
-              <Link
-                href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
-                className="group relative block overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
-              >
-                <ProjectCover project={project} onLoad={refreshProjectWallLayout} />
-                {/* <div className="pointer-events-none absolute inset-x-0 top-0 p-6">
-                  <p className="truncate text-1xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.65)]">{project.name}</p>
-                </div> */}
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pt-10 pb-3 text-center">
-                  <p className="text-[11px] font-medium text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>
-                </div>
-              </Link>
-            </div>
+              <ProjectCover project={project} />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pt-10 pb-3 text-center">
+                <p className="text-[11px] font-medium text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>
+              </div>
+            </Link>
           ))}
         </div>
       </div>

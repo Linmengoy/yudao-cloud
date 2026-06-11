@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcCostRecordDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcCostRecordMapper;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcCostRecordCreateReqDTO;
+import cn.iocoder.yudao.module.aigc.billing.dto.AigcGrossProfitRespDTO;
 import cn.iocoder.yudao.module.aigc.billing.service.no.AigcBillingNoGenerator;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,32 @@ public class AigcCostRecordServiceImplTest extends BaseDbUnitTest {
         Long id2 = costRecordService.createCostRecord(reqDTO);
 
         assertEquals(id1, id2);
+    }
+
+    @Test
+    public void testCalculateGrossProfit_multiAttempt() {
+        AigcCostRecordCreateReqDTO failedAttempt = new AigcCostRecordCreateReqDTO();
+        failedAttempt.setTaskId(202L);
+        failedAttempt.setAttemptId(3001L);
+        failedAttempt.setUserId(100L);
+        failedAttempt.setCostAmount(new BigDecimal("3.000000"));
+        failedAttempt.setSaleAmount(BigDecimal.ZERO);
+        costRecordService.createCostRecord(failedAttempt);
+
+        AigcCostRecordCreateReqDTO successAttempt = new AigcCostRecordCreateReqDTO();
+        successAttempt.setTaskId(202L);
+        successAttempt.setAttemptId(3002L);
+        successAttempt.setUserId(100L);
+        successAttempt.setCostAmount(new BigDecimal("5.000000"));
+        successAttempt.setSaleAmount(new BigDecimal("10.000000"));
+        costRecordService.createCostRecord(successAttempt);
+
+        AigcGrossProfitRespDTO result = costRecordService.calculateGrossProfit(202L);
+
+        assertEquals(new BigDecimal("8.000000"), result.getCostAmount());
+        assertEquals(new BigDecimal("10.000000"), result.getSaleAmount());
+        assertEquals(new BigDecimal("2.000000"), result.getGrossProfit());
+        assertEquals(new BigDecimal("0.200000"), result.getGrossProfitRate());
     }
 
 }

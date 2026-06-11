@@ -158,6 +158,7 @@ public class TenantServiceImplTest extends BaseDbUnitTest {
             o.setPackageId(100L);
             o.setStatus(randomCommonStatus());
             o.setWebsites(singletonList("https://www.iocoder.cn"));
+            o.setAccountCount(20);
             o.setUsername("yunai");
             o.setPassword("yuanma");
         }).setId(null); // 设置为 null，方便后面校验
@@ -186,6 +187,7 @@ public class TenantServiceImplTest extends BaseDbUnitTest {
             o.setId(dbTenant.getId()); // 设置更新的 ID
             o.setStatus(randomCommonStatus());
             o.setWebsites(singletonList(randomString()));
+            o.setAccountCount(20);
         });
 
         // mock 套餐
