@@ -84,6 +84,7 @@ public class AigcSensitiveWordServiceImpl implements AigcSensitiveWordService {
 
     @Override
     public List<AigcSensitiveWordDO> getEnabledSensitiveWords(String scene) {
+        
         return sensitiveWordMapper.selectListBySceneAndStatus(scene, AigcSensitiveWordStatusEnum.ENABLE.getCode());
     }
 

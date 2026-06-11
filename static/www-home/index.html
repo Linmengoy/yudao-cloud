@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Copse AI 是面向创作者的 AIGC 影像创作平台，支持文生图、图生视频、风格化短片和工作流创作。"
+    />
+    <title>Copse AI - 灵感即刻成片</title>
+    <link rel="preload" href="./assets/images/hero-cinema.webp" as="image" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header" data-elevate>
+      <a class="brand" href="#" aria-label="Copse AI 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <span></span>
+          <span></span>
+        </span>
+        <span class="brand-name">Copse AI</span>
+      </a>
+
+      <nav class="nav-links" aria-label="主导航">
+        <a href="#gallery">灵感</a>
+        <a href="#workflow">工作流</a>
+        <a href="#models">模型</a>
+        <a href="#pricing">会员</a>
+      </nav>
+
+      <div class="header-actions">
+        <a class="ghost-button" href="#gallery">作品广场</a>
+        <a class="primary-button" href="/app">开始创作</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-visual">
+          <picture>
+            <source srcset="./assets/images/hero-cinema.webp" type="image/webp" />
+            <img src="./assets/images/hero-cinema.png" alt="" />
+          </picture>
+          <div class="hero-shade"></div>
+        </div>
+
+        <div class="hero-copy">
+          <p class="eyebrow">AI Image & Video Studio</p>
+          <h1 id="hero-title">把灵感，变成会发光的影像。</h1>
+          <p class="hero-text">
+            Copse AI 为创作者、品牌与短片团队提供图像生成、视频成片、风格迁移和工作流协作，一站完成从概念到发布的关键步骤。
+          </p>
+          <div class="hero-actions" aria-label="主要操作">
+            <a class="primary-button large" href="/app">开始创作</a>
+            <a class="outline-button large" href="#gallery">浏览灵感</a>
+          </div>
+        </div>
+
+        <div class="hero-panel" aria-label="平台亮点">
+          <div>
+            <strong>Seedance 2.0</strong>
+            <span>电影级运镜</span>
+          </div>
+          <div>
+            <strong>34%</strong>
+            <span>创作会员低至</span>
+          </div>
+          <div>
+            <strong>4K</strong>
+            <span>高质资产输出</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="quick-start" aria-label="快速入口">
+        <a class="quick-card" href="/app">
+          <span class="quick-icon">+</span>
+          <span>开始创作</span>
+        </a>
+        <a class="quick-card accent" href="/app">
+          <span class="quick-icon">▶</span>
+          <span>快速体验 Seedance 2.0</span>
+        </a>
+      </section>
+
+      <section class="section" id="gallery">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Inspiration</p>
+            <h2>灵感创作</h2>
+          </div>
+          <div class="tabs" aria-label="作品分类">
+            <button class="active" type="button">全部</button>
+            <button type="button">特效</button>
+            <button type="button">风格</button>
+          </div>
+        </div>
+
+        <div class="gallery-grid">
+          <article class="work-card wide">
+            <picture>
+              <source srcset="./assets/images/inspiration-portrait.webp" type="image/webp" />
+              <img src="./assets/images/inspiration-portrait.png" alt="红色棚拍风格人像" />
+            </picture>
+            <div class="work-meta">
+              <span>风格</span>
+              <strong>棚拍人像重塑</strong>
+            </div>
+          </article>
+
+          <article class="work-card">
+            <picture>
+              <source srcset="./assets/images/inspiration-bamboo.webp" type="image/webp" />
+              <img src="./assets/images/inspiration-bamboo.png" alt="竹林武侠动作影像" />
+            </picture>
+            <div class="work-meta">
+              <span>运镜</span>
+              <strong>竹林动作短片</strong>
+            </div>
+          </article>
+
+          <article class="work-card">
+            <picture>
+              <source srcset="./assets/images/inspiration-robots.webp" type="image/webp" />
+              <img src="./assets/images/inspiration-robots.png" alt="未来机器人竞速画面" />
+            </picture>
+            <div class="work-meta">
+              <span>特效</span>
+              <strong>能量轨迹模拟</strong>
+            </div>
+          </article>
+
+          <article class="work-card wide">
+            <picture>
+              <source srcset="./assets/images/inspiration-wave.webp" type="image/webp" />
+              <img src="./assets/images/inspiration-wave.png" alt="抽象声波视觉特效" />
+            </picture>
+            <div class="work-meta">
+              <span>视觉</span>
+              <strong>音频响应光流</strong>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="feature-band" id="workflow">
+        <div class="feature-copy">
+          <p class="eyebrow">Workflow</p>
+          <h2>从提示词到分镜，从素材到成片。</h2>
+          <p>
+            用统一工作台管理参考图、模型参数、镜头版本和资产输出。团队可以围绕同一个创作任务快速迭代，而不把灵感散落在聊天记录里。
+          </p>
+        </div>
+
+        <div class="workflow-board" aria-label="工作流步骤">
+          <div class="flow-item active">
+            <span>01</span>
+            <strong>灵感输入</strong>
+            <small>提示词 / 参考图 / 风格</small>
+          </div>
+          <div class="flow-line"></div>
+          <div class="flow-item">
+            <span>02</span>
+            <strong>模型生成</strong>
+            <small>图像 / 视频 / 特效</small>
+          </div>
+          <div class="flow-line"></div>
+          <div class="flow-item">
+            <span>03</span>
+            <strong>资产沉淀</strong>
+            <small>版本 / 审核 / 发布</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="section compact" id="models">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Models</p>
+            <h2>为真实创作场景准备的模型矩阵</h2>
+          </div>
+        </div>
+
+        <div class="model-grid">
+          <article class="model-card">
+            <span>Image</span>
+            <h3>高质图像生成</h3>
+            <p>适合海报、人像、产品视觉和风格探索。</p>
+          </article>
+          <article class="model-card">
+            <span>Video</span>
+            <h3>图生视频</h3>
+            <p>把关键画面扩展为有运动、有节奏的短片。</p>
+          </article>
+          <article class="model-card">
+            <span>Effect</span>
+            <h3>创意特效</h3>
+            <p>快速生成转场、光流、粒子和视觉包装。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="cta" id="pricing">
+        <div>
+          <p class="eyebrow">Creator Plan</p>
+          <h2>现在就让 www.copse.online 成为创作入口。</h2>
+          <p>会员权益、创作者挑战赛、作品广场和模型体验都可以继续接入到现有应用。</p>
+        </div>
+        <a class="primary-button large" href="/app">进入 Copse AI</a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>© 2026 Copse AI</span>
+      <span>AI creative studio for image and video makers.</span>
+    </footer>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

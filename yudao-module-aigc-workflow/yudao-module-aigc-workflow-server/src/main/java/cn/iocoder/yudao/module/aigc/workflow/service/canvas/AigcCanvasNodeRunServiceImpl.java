@@ -40,8 +40,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     private static final Set<String> PROVIDER_SYNC_STATUSES = Set.of(
             AigcGenerateStatusEnum.SUBMITTED.getCode(),
             AigcGenerateStatusEnum.CALLBACK_WAITING.getCode(),
-            AigcGenerateStatusEnum.SYNCING.getCode()
-    );
+            AigcGenerateStatusEnum.SYNCING.getCode());
 
     @Resource
     private AigcCanvasProjectService projectService;
@@ -59,8 +58,15 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AigcCanvasNodeRunRespVO runNode(AigcCanvasNodeRunReqVO reqVO, Long userId) {
+        // 校验项目是否存在，且用户是否有编辑权限
         projectService.validateEditableProject(reqVO.getProjectId(), userId);
-        String runId = StrUtil.blankToDefault(reqVO.getRunId(), "run_" + System.currentTimeMillis());
+
+        Long userFlag = userId + 15;
+        // 生成runId
+        String runId = StrUtil.blankToDefault(reqVO.getRunId(),
+                "run_" + userFlag + "_" + System.currentTimeMillis());
+
+        // 提交请求返回
         CommonResult<AigcGenerateSubmitRespDTO> submitResult = generateApi.submit(new AigcGenerateSubmitReqDTO()
                 .setUserId(userId)
                 .setClientRequestId("canvas_" + reqVO.getProjectId() + "_" + reqVO.getNodeId() + "_" + runId)
@@ -70,10 +76,16 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
                 .setPrompt(reqVO.getPrompt())
                 .setInputParams(reqVO.getInputParams())
                 .setSync(Boolean.TRUE.equals(reqVO.getSync())));
+
+        // 返回结果
         AigcGenerateSubmitRespDTO submit = submitResult.getCheckedData();
-        AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(), reqVO.getBaseVersion(), userId,
+        // 提交任务状态更新
+        AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(),
+                reqVO.getBaseVersion(), userId,
                 "task_status_" + reqVO.getNodeId() + "_" + runId, buildSubmitPatch(submit));
+        // 广播操作日志
         roomService.broadcast(operation.getProjectId(), "canvas-op-applied", buildAppliedMessage(operation), null);
+        // 返回结果
         return new AigcCanvasNodeRunRespVO()
                 .setTaskId(submit.getTaskId())
                 .setGenerateRecordId(submit.getId())
@@ -88,8 +100,10 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         projectService.validateEditableProject(reqVO.getProjectId(), userId);
         AigcGenerateResultRespDTO result = getResultReadyForCanvas(reqVO.getTaskId());
         applySuccessfulAssetSideEffects(reqVO, result);
-        AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(), reqVO.getBaseVersion(), userId,
-                "task_result_" + reqVO.getNodeId() + "_" + reqVO.getTaskId() + "_" + result.getStatus(), buildResultPatch(reqVO.getNodeType(), result));
+        AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(),
+                reqVO.getBaseVersion(), userId,
+                "task_result_" + reqVO.getNodeId() + "_" + reqVO.getTaskId() + "_" + result.getStatus(),
+                buildResultPatch(reqVO.getNodeType(), result));
         roomService.broadcast(operation.getProjectId(), "canvas-op-applied", buildAppliedMessage(operation), null);
         return new AigcCanvasNodeRunRespVO()
                 .setTaskId(result.getTaskId())
@@ -162,7 +176,8 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
 
     private JSONObject buildResultPatch(String nodeType, AigcGenerateResultRespDTO result) {
         boolean success = "SUCCESS".equals(result.getStatus());
-        boolean failed = "FAILED".equals(result.getStatus()) || "CANCELED".equals(result.getStatus()) || "CANCELLED".equals(result.getStatus());
+        boolean failed = "FAILED".equals(result.getStatus()) || "CANCELED".equals(result.getStatus())
+                || "CANCELLED".equals(result.getStatus());
         JSONObject patch = new JSONObject()
                 .set("taskId", String.valueOf(result.getTaskId()))
                 .set("taskStatus", result.getStatus())
@@ -172,8 +187,11 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         if (success) {
             patch.set("status", "video".equals(nodeType) ? "complete" : "idle")
                     .set("errorMessage", null)
-                    .set("generationCompletedAt", result.getFinishTime() == null ? LocalDateTime.now().toString() : result.getFinishTime().toString())
-                    .set("elapsedMs", result.getCreateTime() == null || result.getFinishTime() == null ? null : java.time.Duration.between(result.getCreateTime(), result.getFinishTime()).toMillis());
+                    .set("generationCompletedAt",
+                            result.getFinishTime() == null ? LocalDateTime.now().toString()
+                                    : result.getFinishTime().toString())
+                    .set("elapsedMs", result.getCreateTime() == null || result.getFinishTime() == null ? null
+                            : java.time.Duration.between(result.getCreateTime(), result.getFinishTime()).toMillis());
             if (StrUtil.isNotBlank(result.getOutputText())) {
                 patch.set("content", result.getOutputText());
             }
@@ -187,7 +205,8 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         if (failed) {
             patch.set("status", "failed")
                     .set("errorMessage", StrUtil.blankToDefault(result.getFailMessage(), "生成失败，请稍后重试。"))
-                    .set("generationCompletedAt", result.getFinishTime() == null ? LocalDateTime.now().toString() : result.getFinishTime().toString());
+                    .set("generationCompletedAt", result.getFinishTime() == null ? LocalDateTime.now().toString()
+                            : result.getFinishTime().toString());
             return patch;
         }
         patch.set("status", "pending");
@@ -240,7 +259,8 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         return JSONUtil.parseArray(value).toList(Long.class);
     }
 
-    private AigcCanvasOperationLogDO submitTaskStatusPatch(Long projectId, String nodeId, Long baseVersion, Long userId, String opId, JSONObject patch) {
+    private AigcCanvasOperationLogDO submitTaskStatusPatch(Long projectId, String nodeId, Long baseVersion, Long userId,
+            String opId, JSONObject patch) {
         JSONObject payload = new JSONObject()
                 .set("nodeId", nodeId)
                 .set("patch", patch);
@@ -250,7 +270,8 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         operationReq.setOpId(opId);
         operationReq.setBaseVersion(baseVersion);
         operationReq.setOperationType("TASK_STATUS_PATCH");
-        operationReq.setOperationJson(new JSONObject().set("type", "TASK_STATUS_PATCH").set("payload", payload).toString());
+        operationReq
+                .setOperationJson(new JSONObject().set("type", "TASK_STATUS_PATCH").set("payload", payload).toString());
         return operationService.submitOperation(operationReq, userId);
     }
 

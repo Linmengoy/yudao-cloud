@@ -23,6 +23,7 @@ public class AigcSafetyCheckServiceImpl implements AigcSafetyCheckService {
 
     @Override
     public AigcSafetyPromptCheckRespDTO checkPrompt(AigcSafetyPromptCheckReqDTO reqDTO) {
+        // 审核提示词是否违规(可以考虑用redis缓存敏感词)
         List<AigcSensitiveWordDO> sensitiveWords = sensitiveWordService.getEnabledSensitiveWords(reqDTO.getScene());
         List<String> hitWords = new ArrayList<>();
         Integer riskLevel = 0;
