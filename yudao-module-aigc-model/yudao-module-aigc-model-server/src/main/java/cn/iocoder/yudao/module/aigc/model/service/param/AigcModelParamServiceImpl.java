@@ -8,6 +8,8 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelParamTemplateCopyReqVO;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelParamTemplateCopyRespVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelParamTemplateSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelParamTemplateDO;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelMapper;
@@ -20,8 +22,11 @@ import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.*;
@@ -45,6 +50,48 @@ public class AigcModelParamServiceImpl implements AigcModelParamService {
         template.setOptions(normalizeOptions(reqVO.getOptions()));
         paramTemplateMapper.insert(template);
         return template.getId();
+    }
+
+    @Override
+    public AigcModelParamTemplateCopyRespVO copyParamTemplates(AigcModelParamTemplateCopyReqVO reqVO) {
+        validateModelExists(reqVO.getSourceModelId());
+        List<Long> targetModelIds = new LinkedHashSet<>(reqVO.getTargetModelIds()).stream().toList();
+        targetModelIds.forEach(this::validateModelExists);
+        Set<String> capabilitySet = CollUtil.isEmpty(reqVO.getCapabilities()) ? null : reqVO.getCapabilities().stream()
+                .filter(StrUtil::isNotBlank)
+                .collect(Collectors.toSet());
+        List<AigcModelParamTemplateDO> sourceTemplates = paramTemplateMapper.selectListByModelIdAndCapability(reqVO.getSourceModelId(), null).stream()
+                .filter(template -> capabilitySet == null || capabilitySet.contains(template.getCapability()))
+                .toList();
+        boolean overwrite = Boolean.TRUE.equals(reqVO.getOverwrite());
+        int createdCount = 0;
+        int updatedCount = 0;
+        int skippedCount = 0;
+        for (Long targetModelId : targetModelIds) {
+            if (ObjectUtil.equal(targetModelId, reqVO.getSourceModelId())) {
+                skippedCount += sourceTemplates.size();
+                continue;
+            }
+            for (AigcModelParamTemplateDO source : sourceTemplates) {
+                AigcModelParamTemplateDO existing = paramTemplateMapper.selectByModelIdAndCapabilityAndParamKey(targetModelId,
+                        source.getCapability(), source.getParamKey());
+                if (existing == null) {
+                    paramTemplateMapper.insert(copyTemplate(source, targetModelId, null));
+                    createdCount++;
+                    continue;
+                }
+                if (!overwrite) {
+                    skippedCount++;
+                    continue;
+                }
+                paramTemplateMapper.updateById(copyTemplate(source, targetModelId, existing.getId()));
+                updatedCount++;
+            }
+        }
+        return new AigcModelParamTemplateCopyRespVO()
+                .setCreatedCount(createdCount)
+                .setUpdatedCount(updatedCount)
+                .setSkippedCount(skippedCount);
     }
 
     @Override
@@ -152,6 +199,24 @@ public class AigcModelParamServiceImpl implements AigcModelParamService {
                 .filter(StrUtil::isNotBlank)
                 .toList();
         return CollUtil.isEmpty(optionList) ? null : JSONUtil.toJsonStr(optionList);
+    }
+
+    private AigcModelParamTemplateDO copyTemplate(AigcModelParamTemplateDO source, Long targetModelId, Long id) {
+        return new AigcModelParamTemplateDO()
+                .setId(id)
+                .setModelId(targetModelId)
+                .setCapability(source.getCapability())
+                .setParamKey(source.getParamKey())
+                .setParamName(source.getParamName())
+                .setParamType(source.getParamType())
+                .setRequiredStatus(source.getRequiredStatus())
+                .setDefaultValue(source.getDefaultValue())
+                .setOptions(source.getOptions())
+                .setMinValue(source.getMinValue())
+                .setMaxValue(source.getMaxValue())
+                .setRegexPattern(source.getRegexPattern())
+                .setSort(source.getSort())
+                .setStatus(source.getStatus());
     }
 
     private void validateModelExists(Long modelId) {

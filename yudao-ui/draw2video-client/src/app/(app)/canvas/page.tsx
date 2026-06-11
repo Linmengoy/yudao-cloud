@@ -1269,6 +1269,7 @@ function migrateNode(n: AppNode): AppNode {
     return withCardNodeInteraction({
       ...n,
       data: {
+        ...n.data,
         videoId: typeof d.videoId === "string" ? d.videoId : undefined,
         fileName: typeof d.fileName === "string" ? d.fileName : "Video",
         mimeType: typeof d.mimeType === "string" ? d.mimeType : "video/mp4",
@@ -1931,6 +1932,16 @@ function CanvasFlow() {
       .catch(() => undefined);
   }, [serverProjectId, applyOperationRecord, hydrateRemoteSnapshot]);
 
+  const refreshVisibleAssetUrlsRef = useRef(refreshVisibleAssetUrls);
+  useEffect(() => {
+    refreshVisibleAssetUrlsRef.current = refreshVisibleAssetUrls;
+  }, [refreshVisibleAssetUrls]);
+
+  const syncFromVersionRef = useRef(syncFromVersion);
+  useEffect(() => {
+    syncFromVersionRef.current = syncFromVersion;
+  }, [syncFromVersion]);
+
   useEffect(() => {
     const newMessages = canvasRealtime.messages.slice(processedRealtimeMessageCountRef.current);
     processedRealtimeMessageCountRef.current = canvasRealtime.messages.length;
@@ -2555,7 +2566,7 @@ function CanvasFlow() {
             setViewport(DEFAULT_CANVAS_VIEWPORT);
             setIsHydrated(true);
           }
-          if (currentVersion > snapshotVersion) syncFromVersion(snapshotVersion);
+          if (currentVersion > snapshotVersion) syncFromVersionRef.current(snapshotVersion);
           return;
         }
 
@@ -2579,10 +2590,10 @@ function CanvasFlow() {
           setEdges(migratedEdges);
           setViewport(saved.viewport ?? DEFAULT_CANVAS_VIEWPORT);
           setIsHydrated(true);
-          window.requestAnimationFrame(() => refreshVisibleAssetUrls(migratedNodes));
+          window.requestAnimationFrame(() => refreshVisibleAssetUrlsRef.current(migratedNodes));
         }
 
-        if (currentVersion > snapshotVersion) syncFromVersion(snapshotVersion);
+        if (currentVersion > snapshotVersion) syncFromVersionRef.current(snapshotVersion);
       } catch {
         if (!cancelled) {
           setIsHydrated(true);
@@ -2594,7 +2605,7 @@ function CanvasFlow() {
 
     hydrate();
     return () => { cancelled = true; };
-  }, [activeProjectId, loadProject, markAppliedVersion, refreshVisibleAssetUrls, resetAppliedVersion, router, setNodes, setEdges, setViewport, syncFromVersion]);
+  }, [activeProjectId, loadProject, markAppliedVersion, resetAppliedVersion, router, setNodes, setEdges, setViewport]);
 
   // Debounced save — only after hydration completes
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);

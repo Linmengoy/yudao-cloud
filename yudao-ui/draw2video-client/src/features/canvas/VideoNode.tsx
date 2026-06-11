@@ -197,12 +197,44 @@ const VIDEO_MODE_OPTIONS: { mode: VideoGenerationMode; label: string; minRefs: n
   { mode: "MULTI_REF_VIDEO", label: "多参考", minRefs: 1, maxRefs: 9 },
 ];
 
-function deriveVideoMode(explicitMode: VideoGenerationMode | null | undefined, refCount: number): VideoGenerationMode {
-  if (explicitMode) return explicitMode;
+function modelSupportsVideoMode(capabilities: string[] | null | undefined, mode: VideoGenerationMode) {
+  return !capabilities?.length || capabilities.includes(mode);
+}
+
+function isVideoModeSelectable(mode: VideoGenerationMode, refCount: number) {
+  if (mode === "TEXT_TO_VIDEO") return refCount === 0;
+  if (mode === "FIRST_LAST_FRAME_VIDEO") return refCount >= 1 && refCount <= 2;
+  const option = VIDEO_MODE_OPTIONS.find((item) => item.mode === mode);
+  if (!option) return false;
+  return refCount >= option.minRefs && refCount <= option.maxRefs;
+}
+
+function deriveVideoMode(
+  explicitMode: VideoGenerationMode | null | undefined,
+  refCount: number,
+  capabilities?: string[] | null,
+): VideoGenerationMode {
+  if (
+    explicitMode &&
+    modelSupportsVideoMode(capabilities, explicitMode) &&
+    isVideoModeSelectable(explicitMode, refCount)
+  ) {
+    return explicitMode;
+  }
+  const candidates: VideoGenerationMode[] = refCount === 0
+    ? ["TEXT_TO_VIDEO"]
+    : refCount === 1
+      ? ["IMAGE_TO_VIDEO", "MULTI_REF_VIDEO", "FIRST_LAST_FRAME_VIDEO"]
+      : ["MULTI_REF_VIDEO", "FIRST_LAST_FRAME_VIDEO"];
+  const supported = candidates.find((mode) => modelSupportsVideoMode(capabilities, mode));
+  if (supported) return supported;
   if (refCount === 0) return "TEXT_TO_VIDEO";
   if (refCount === 1) return "IMAGE_TO_VIDEO";
-  if (refCount === 2) return "FIRST_LAST_FRAME_VIDEO";
   return "MULTI_REF_VIDEO";
+}
+
+function isVideoModeAvailable(mode: VideoGenerationMode, refCount: number) {
+  return isVideoModeSelectable(mode, refCount);
 }
 
 function validateVideoGeneration(mode: VideoGenerationMode, refCount: number): string | null {
@@ -311,7 +343,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const [paramsOpen, setParamsOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [startedAtMs, setStartedAtMs] = useState(() =>
-    data.generationRunStartedAt ? new Date(data.generationRunStartedAt).getTime() : 0
+    data.generationRunStartedAt || data.generationStartedAt ? new Date(data.generationRunStartedAt ?? data.generationStartedAt ?? "").getTime() : 0
   );
   const [now, setNow] = useState(startedAtMs);
   const paramsRef = useRef<HTMLDivElement>(null);
@@ -335,8 +367,16 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   const isRunning = isGenerating && isRunningStatus(upstreamStatus);
   const canCompose = kind !== "uploaded";
   const pickerActiveForThisNode = referencePickerPromptId === id;
-  const elapsedMs = isRunning && startedAtMs > 0 ? now - startedAtMs : data.elapsedMs;
-  const progressLabel = isQueued ? "排队中" : isRunning ? `生成中 ${formatElapsed(elapsedMs)}` : "提交中";
+  const dataStartedAtMs = data.generationRunStartedAt || data.generationStartedAt ? new Date(data.generationRunStartedAt ?? data.generationStartedAt ?? "").getTime() : 0;
+  const effectiveStartedAtMs = startedAtMs > 0 ? startedAtMs : dataStartedAtMs;
+  const elapsedMs = data.elapsedMs ?? (isGenerating && Number.isFinite(effectiveStartedAtMs) && effectiveStartedAtMs > 0 ? Math.max(0, now - effectiveStartedAtMs) : null);
+  const progressLabel = isQueued
+    ? `排队中 ${formatElapsed(elapsedMs)}`
+    : isRunning
+      ? `生成中 ${formatElapsed(elapsedMs)}`
+      : isGenerating
+        ? `提交中 ${formatElapsed(elapsedMs)}`
+        : "提交中";
   const previewItem = useMemo(() => videoNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
   const displaySize = getDisplaySize(data);
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
@@ -357,7 +397,12 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
     }
     return images;
   }, [getEdges, getNodes, id, referenceImagesSignature]);
-  const generationCapability = deriveVideoMode(data.explicitMode, referenceImages.length);
+  const rawParams = useMemo(() => data.params ?? {}, [data.params]);
+  const modelListCapability = data.explicitMode ?? deriveVideoMode(null, referenceImages.length);
+  const aigcModels = useAigcModels({ type: 3, capability: modelListCapability, listCapability: null, preferredModelId: data.aigcModelId, params: rawParams });
+  const storedAigcModel = aigcModels.models.find((model) => model.id === data.aigcModelId);
+  const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
+  const generationCapability = deriveVideoMode(data.explicitMode, referenceImages.length, activeAigcModel?.capabilities);
   const orderedReferenceImages = useMemo(
     () => getOrderedReferences(generationCapability, referenceImages, data),
     [data, generationCapability, referenceImages]
@@ -373,10 +418,6 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
       })),
     [orderedReferenceImages]
   );
-  const rawParams = useMemo(() => data.params ?? {}, [data.params]);
-  const aigcModels = useAigcModels({ type: 3, capability: generationCapability, preferredModelId: data.aigcModelId, params: rawParams });
-  const storedAigcModel = aigcModels.models.find((model) => model.id === data.aigcModelId);
-  const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
   const activeAigcModelId = activeAigcModel?.id ?? data.aigcModelId;
   const activeModelName = activeAigcModel?.name ?? data.modelName ?? SEEDANCE_MODEL_NAME;
   const activeProviderModel = activeAigcModel?.model ?? data.providerModel ?? data.modelId;
@@ -518,10 +559,10 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
   }, []);
 
   useEffect(() => {
-    if (!isRunning) return;
+    if (!isGenerating) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [isRunning]);
+  }, [isGenerating]);
 
   useEffect(() => {
     if (!selected && pickerActiveForThisNode) {
@@ -1143,23 +1184,39 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
               pointerEvents: "auto",
             }}
           >
+          <div className="mb-3 flex items-center gap-2">
+            {VIDEO_MODE_OPTIONS.map((opt) => {
+              const isActive = generationCapability === opt.mode;
+              const isSupported = modelSupportsVideoMode(activeAigcModel?.capabilities, opt.mode);
+              const isAvailable = isSupported && isVideoModeAvailable(opt.mode, referenceImages.length);
+              return (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  disabled={isGenerating || !isAvailable}
+                  onClick={() => updateData({ explicitMode: opt.mode })}
+                  className={cn(
+                    "nodrag nowheel rounded-lg border bg-transparent px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+                    isActive
+                      ? "border-charcoal/40 bg-charcoal/10 text-charcoal shadow-[0_1px_2px_rgba(28,28,28,0.08)] dark:border-[#f4efe6]/35 dark:bg-[#f4efe6]/10 dark:text-[#f4efe6]"
+                      : "border-border-warm text-muted-gray/55 hover:border-charcoal/25 hover:text-muted-gray dark:border-[#f4efe6]/14 dark:text-[#f4efe6]/35 dark:hover:border-[#f4efe6]/24 dark:hover:text-[#f4efe6]/55"
+                  )}
+                  title={isSupported && isAvailable && !isActive ? `切换到${opt.label}` : undefined}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
           <div className="mb-3 flex items-start justify-between gap-3">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={isGenerating}
-                className="flex size-9 items-center justify-center rounded-lg border border-border-warm bg-muted text-muted-gray"
-                aria-label="视频工具"
-              >
-                <Sparkles className="size-4" />
-              </button>
               {(() => {
                 const showSlots = generationCapability === "FIRST_LAST_FRAME_VIDEO";
                 if (showSlots && orderedReferenceImages.length < 2) {
                   return (
                     <>
-                      {orderedReferenceImages.map((image, index) => (
-                        <ReferenceThumbnail key={image.edgeId} image={image} label={index === 0 ? "首帧" : "尾帧"} isGenerating={isGenerating} removeReference={removeReference} />
+                      {orderedReferenceImages.map((image) => (
+                        <ReferenceThumbnail key={image.edgeId} image={image} isGenerating={isGenerating} removeReference={removeReference} />
                       ))}
                       {Array.from({ length: 2 - orderedReferenceImages.length }).map((_, i) => (
                         <div key={`slot-${i}`} className="flex size-9 items-center justify-center rounded-lg border border-dashed border-border-warm bg-muted text-[10px] text-muted-gray">
@@ -1169,11 +1226,11 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                     </>
                   );
                 }
-                return orderedReferenceImages.map((image, index) => (
+                return orderedReferenceImages.map((image) => (
                   <ReferenceThumbnail
                     key={image.edgeId}
                     image={image}
-                    label={showSlots ? (index === 0 ? "首帧" : "尾帧") : generationCapability === "MULTI_REF_VIDEO" ? `${index + 1}` : undefined}
+                    label={undefined}
                     isGenerating={isGenerating}
                     removeReference={removeReference}
                   />
@@ -1278,27 +1335,6 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                 </AnimatePresence>
               </div>
               <span className="h-5 w-px bg-border-warm" />
-              <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-                {VIDEO_MODE_OPTIONS.map((opt) => {
-                  const isActive = generationCapability === opt.mode;
-                  return (
-                    <button
-                      key={opt.mode}
-                      type="button"
-                      disabled={isGenerating}
-                      onClick={() => updateData({ explicitMode: opt.mode })}
-                      className={cn(
-                        "nodrag nowheel rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-                        isActive ? "bg-background text-charcoal shadow-sm" : "text-muted-gray hover:text-charcoal"
-                      )}
-                      title={!isActive ? `切换到${opt.label}` : undefined}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <span className="h-5 w-px bg-border-warm" />
               <div className="relative">
                 <button
                   ref={paramsBtnRef}
@@ -1346,12 +1382,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
             </div>
 
             <div className="flex items-center gap-2">
-              {generationValidationMessage && (
-                <span className="max-w-[220px] truncate text-xs text-muted-gray" title={generationValidationMessage}>
-                  {generationValidationMessage}
-                </span>
-              )}
-              <span className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-muted-gray">
+              <span className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-charcoal dark:text-[#f4efe6]">
                 <Gem className="size-3.5" />
                 {costLabel}
               </span>
@@ -1359,7 +1390,7 @@ export function VideoNodeComponent({ id, data, selected, dragging }: VideoNodePr
                 type="button"
                 onClick={handleGenerate}
                 disabled={!canGenerate}
-                className="flex size-10 items-center justify-center rounded-full bg-charcoal text-off-white shadow-sm transition-opacity active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex size-10 items-center justify-center rounded-full bg-charcoal text-[#fcfbf8] shadow-sm transition-opacity active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-black/80 dark:text-[#f4efe6]"
                 aria-label={isGenerating ? "生成中" : "生成视频"}
               >
                 {isGenerating ? <Loader2 className="size-5 animate-spin" /> : <ArrowUp className="size-5" />}

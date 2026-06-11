@@ -8,6 +8,10 @@ public interface AigcProviderClient {
 
     String getProviderCode();
 
+    default String getClientType() {
+        return getProviderCode();
+    }
+
     AigcProviderSubmitRespDTO submit(AigcProviderSubmitReqDTO reqDTO);
 
     AigcProviderSubmitRespDTO query(String providerTaskId);

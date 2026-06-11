@@ -1,6 +1,9 @@
 package cn.iocoder.yudao.module.aigc.model.service.param;
 
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
+import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelParamTemplateCopyReqVO;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelParamTemplateCopyRespVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelParamTemplateSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelDO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelParamTemplateDO;
@@ -13,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServiceException;
@@ -55,6 +59,57 @@ public class AigcModelParamServiceImplTest extends BaseDbUnitTest {
         Long id = paramService.createParamTemplate(reqVO);
 
         assertEquals("[\"1:1\",\"2:3\"]", paramTemplateMapper.selectById(id).getOptions());
+    }
+
+    @Test
+    public void testCopyParamTemplates_skipExisting() {
+        AigcModelDO sourceModel = createModel();
+        AigcModelDO targetModel = createModel();
+        paramTemplateMapper.insert(createTemplate(sourceModel.getId(), "duration", AigcModelParamTypeEnum.NUMBER.getCode(), o -> o
+                .setCapability(AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode()).setDefaultValue("5")));
+        paramTemplateMapper.insert(createTemplate(targetModel.getId(), "duration", AigcModelParamTypeEnum.NUMBER.getCode(), o -> o
+                .setCapability(AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode()).setDefaultValue("10")));
+
+        AigcModelParamTemplateCopyRespVO result = paramService.copyParamTemplates(new AigcModelParamTemplateCopyReqVO()
+                .setSourceModelId(sourceModel.getId())
+                .setTargetModelIds(List.of(targetModel.getId()))
+                .setCapabilities(List.of(AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode()))
+                .setOverwrite(false));
+
+        assertEquals(0, result.getCreatedCount());
+        assertEquals(0, result.getUpdatedCount());
+        assertEquals(1, result.getSkippedCount());
+        AigcModelParamTemplateDO targetTemplate = paramTemplateMapper.selectByModelIdAndCapabilityAndParamKey(targetModel.getId(),
+                AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode(), "duration");
+        assertEquals("10", targetTemplate.getDefaultValue());
+    }
+
+    @Test
+    public void testCopyParamTemplates_overwriteExistingAndCreateMissing() {
+        AigcModelDO sourceModel = createModel();
+        AigcModelDO targetModel = createModel();
+        paramTemplateMapper.insert(createTemplate(sourceModel.getId(), "duration", AigcModelParamTypeEnum.NUMBER.getCode(), o -> o
+                .setCapability(AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode()).setDefaultValue("5")));
+        paramTemplateMapper.insert(createTemplate(sourceModel.getId(), "ratio", AigcModelParamTypeEnum.SELECT.getCode(), o -> o
+                .setCapability(AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode()).setOptions("[\"1:1\",\"16:9\"]")));
+        paramTemplateMapper.insert(createTemplate(targetModel.getId(), "duration", AigcModelParamTypeEnum.NUMBER.getCode(), o -> o
+                .setCapability(AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode()).setDefaultValue("10")));
+
+        AigcModelParamTemplateCopyRespVO result = paramService.copyParamTemplates(new AigcModelParamTemplateCopyReqVO()
+                .setSourceModelId(sourceModel.getId())
+                .setTargetModelIds(List.of(targetModel.getId()))
+                .setCapabilities(List.of(AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode()))
+                .setOverwrite(true));
+
+        assertEquals(1, result.getCreatedCount());
+        assertEquals(1, result.getUpdatedCount());
+        assertEquals(0, result.getSkippedCount());
+        AigcModelParamTemplateDO duration = paramTemplateMapper.selectByModelIdAndCapabilityAndParamKey(targetModel.getId(),
+                AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode(), "duration");
+        AigcModelParamTemplateDO ratio = paramTemplateMapper.selectByModelIdAndCapabilityAndParamKey(targetModel.getId(),
+                AigcModelCapabilityEnum.TEXT_TO_VIDEO.getCode(), "ratio");
+        assertEquals("5", duration.getDefaultValue());
+        assertEquals("[\"1:1\",\"16:9\"]", ratio.getOptions());
     }
 
     @Test
@@ -131,7 +186,7 @@ public class AigcModelParamServiceImplTest extends BaseDbUnitTest {
         AigcModelParamTemplateDO template = new AigcModelParamTemplateDO()
                 .setModelId(modelId).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())
                 .setParamKey(paramKey).setParamName(paramKey).setParamType(paramType)
-                .setRequiredStatus(false).setSort(1).setStatus(1);
+                .setRequiredStatus(false).setSort(1).setStatus(CommonStatusEnum.ENABLE.getStatus());
         consumer.accept(template);
         return template;
     }

@@ -22,6 +22,11 @@ type PromptMentionInputProps = {
   onSubmit?: () => void;
 };
 
+type MentionMenuPosition = {
+  left: number;
+  top: number;
+};
+
 const LEGACY_TOKEN_PATTERN = /^\{\{Image\s+(\d+)}}$/;
 const ANY_TOKEN_PATTERN = /\{\{[^{}]+}}/g;
 
@@ -167,6 +172,141 @@ function placeCaretAtEnd(element: HTMLElement) {
   selection?.addRange(range);
 }
 
+function serializedLength(node: ChildNode): number {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent?.length ?? 0;
+  if (!(node instanceof HTMLElement)) return 0;
+  if (node.dataset.mentionToken) return node.dataset.mentionToken.length;
+  if (node.tagName === "BR") return 1;
+  return Array.from(node.childNodes).reduce((sum, child) => sum + serializedLength(child), 0);
+}
+
+function getCaretSerializedOffset(root: HTMLElement) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return serializePrompt(root).length;
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.startContainer)) return serializePrompt(root).length;
+
+  let offset = 0;
+  let found = false;
+
+  function walk(node: ChildNode) {
+    if (found) return;
+    if (node === range.startContainer) {
+      offset += range.startOffset;
+      found = true;
+      return;
+    }
+    if (node.nodeType === Node.TEXT_NODE) {
+      offset += node.textContent?.length ?? 0;
+      return;
+    }
+    if (!(node instanceof HTMLElement)) return;
+    if (node.dataset.mentionToken || node.tagName === "BR") {
+      offset += serializedLength(node);
+      return;
+    }
+    const children = Array.from(node.childNodes);
+    if (node === range.startContainer) {
+      for (let i = 0; i < Math.min(range.startOffset, children.length); i += 1) {
+        offset += serializedLength(children[i]);
+      }
+      found = true;
+      return;
+    }
+    for (const child of children) walk(child);
+  }
+
+  for (const child of Array.from(root.childNodes)) walk(child);
+  return offset;
+}
+
+function placeCaretAtSerializedOffset(root: HTMLElement, targetOffset: number) {
+  const range = document.createRange();
+  let offset = 0;
+  let placed = false;
+
+  function placeAfter(node: ChildNode) {
+    range.setStartAfter(node);
+    range.collapse(true);
+    placed = true;
+  }
+
+  function walk(node: ChildNode) {
+    if (placed) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const textLength = node.textContent?.length ?? 0;
+      if (offset + textLength >= targetOffset) {
+        range.setStart(node, Math.max(0, targetOffset - offset));
+        range.collapse(true);
+        placed = true;
+        return;
+      }
+      offset += textLength;
+      return;
+    }
+    if (!(node instanceof HTMLElement)) return;
+    const token = node.dataset.mentionToken;
+    if (token || node.tagName === "BR") {
+      const length = serializedLength(node);
+      if (offset + length >= targetOffset) {
+        placeAfter(node);
+        return;
+      }
+      offset += length;
+      return;
+    }
+    for (const child of Array.from(node.childNodes)) walk(child);
+  }
+
+  for (const child of Array.from(root.childNodes)) walk(child);
+  if (!placed) {
+    range.selectNodeContents(root);
+    range.collapse(false);
+  }
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function getMentionTriggerBeforeCaret(value: string, caretOffset: number) {
+  const beforeCaret = value.slice(0, caretOffset);
+  const match = beforeCaret.match(/(?:^|\s)@([^\s{}]*)$/);
+  if (!match) return null;
+  const triggerStart = beforeCaret.length - match[0].length + (match[0].startsWith(" ") ? 1 : 0);
+  return {
+    query: match[1],
+    atIndex: triggerStart,
+    queryEnd: caretOffset,
+  };
+}
+
+function getCaretMenuPosition(root: HTMLElement): MentionMenuPosition {
+  const rootRect = root.getBoundingClientRect();
+  const selection = window.getSelection();
+  const fallback = { left: 0, top: 36 };
+  if (!selection || selection.rangeCount === 0) return fallback;
+  const range = selection.getRangeAt(0).cloneRange();
+  if (!root.contains(range.startContainer)) return fallback;
+
+  let rect = range.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) {
+    const probe = document.createElement("span");
+    probe.textContent = "\u200b";
+    range.insertNode(probe);
+    rect = probe.getBoundingClientRect();
+    probe.remove();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  const menuWidth = 252;
+  const left = Math.min(Math.max(0, rect.left - rootRect.left), Math.max(0, rootRect.width - menuWidth));
+  return {
+    left,
+    top: Math.max(36, rect.bottom - rootRect.top + 8),
+  };
+}
+
 export function PromptMentionInput({
   value,
   onChange,
@@ -179,13 +319,21 @@ export function PromptMentionInput({
   const editorRef = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<MentionMenuPosition>({ left: 0, top: 36 });
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
 
   const html = useMemo(() => renderPromptHtml(value, mentions), [mentions, value]);
   const filteredMentions = useMemo(() => {
     if (query == null) return [];
     const normalized = query.trim().toLowerCase();
-    return mentions.filter((mention) => mention.label.toLowerCase().includes(normalized) || mention.token.toLowerCase().includes(normalized));
+    if (!normalized) return mentions;
+    const matches = mentions.filter((mention) => mention.label.toLowerCase().includes(normalized) || mention.token.toLowerCase().includes(normalized));
+    return matches.length > 0 ? matches : mentions;
   }, [mentions, query]);
+
+  useEffect(() => {
+    setActiveMentionIndex(0);
+  }, [query, filteredMentions.length]);
 
   useLayoutEffect(() => {
     const nextValue = removeMissingMentionTokens(value, mentions);
@@ -208,22 +356,31 @@ export function PromptMentionInput({
     const editor = editorRef.current;
     if (!editor) return;
     const nextValue = serializePrompt(editor);
+    const caretOffset = getCaretSerializedOffset(editor);
     onChange(nextValue);
-    const tail = nextValue.match(/(?:^|\s)@([^\s{}]*)$/);
-    setQuery(tail ? tail[1] : null);
+    const trigger = getMentionTriggerBeforeCaret(nextValue, caretOffset);
+    if (trigger) setMenuPosition(getCaretMenuPosition(editor));
+    setQuery(trigger ? trigger.query : null);
   }, [onChange]);
 
   const insertMention = useCallback((mention: PromptMentionOption) => {
     const editor = editorRef.current;
     if (!editor) return;
     const current = serializePrompt(editor);
-    const next = current.replace(/(?:^|\s)@[^\s{}]*$/, (match) => (match.startsWith(" ") ? " " : "") + `${mention.token} `);
+    const caretOffset = getCaretSerializedOffset(editor);
+    const trigger = getMentionTriggerBeforeCaret(current, caretOffset);
+    if (!trigger) return;
+    const normalized = trigger.query.trim().toLowerCase();
+    const queryMatchesMention = !normalized || mention.label.toLowerCase().includes(normalized) || mention.token.toLowerCase().includes(normalized);
+    const next = queryMatchesMention
+      ? `${current.slice(0, trigger.atIndex)}${mention.token} ${current.slice(trigger.queryEnd)}`
+      : `${current.slice(0, trigger.atIndex)}${mention.token} ${current.slice(trigger.atIndex + 1)}`;
     editor.innerHTML = renderPromptHtml(next, mentions);
     onChange(next);
     setQuery(null);
     requestAnimationFrame(() => {
       if (!editorRef.current) return;
-      placeCaretAtEnd(editorRef.current);
+      placeCaretAtSerializedOffset(editorRef.current, trigger.atIndex + mention.token.length + 1);
     });
   }, [mentions, onChange]);
 
@@ -233,9 +390,17 @@ export function PromptMentionInput({
       setQuery(null);
       return;
     }
+    if (query != null && filteredMentions.length > 0 && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      event.preventDefault();
+      setActiveMentionIndex((index) => {
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        return (index + delta + filteredMentions.length) % filteredMentions.length;
+      });
+      return;
+    }
     if (event.key === "Enter" && query != null && filteredMentions[0]) {
       event.preventDefault();
-      insertMention(filteredMentions[0]);
+      insertMention(filteredMentions[Math.min(activeMentionIndex, filteredMentions.length - 1)]);
       return;
     }
     if (event.key === "Enter" && query != null) {
@@ -249,9 +414,12 @@ export function PromptMentionInput({
       return;
     }
     if (event.key === "@" && mentions.length > 0) {
+      requestAnimationFrame(() => {
+        if (editorRef.current) setMenuPosition(getCaretMenuPosition(editorRef.current));
+      });
       setQuery("");
     }
-  }, [disabled, filteredMentions, insertMention, mentions.length, onSubmit, query, syncValue]);
+  }, [activeMentionIndex, disabled, filteredMentions, insertMention, mentions.length, onSubmit, query, syncValue]);
 
   return (
     <div className="relative">
@@ -281,16 +449,21 @@ export function PromptMentionInput({
       />
       {query != null && (
         <div
-          className="absolute left-0 top-9 z-[280] w-[252px] rounded-lg border border-border-warm bg-background p-2 shadow-lg"
+          className="absolute z-[280] w-[252px] rounded-lg border border-border-warm bg-background p-2 shadow-lg"
+          style={{ left: menuPosition.left, top: menuPosition.top }}
           onMouseDown={(event) => event.preventDefault()}
         >
           {filteredMentions.length > 0 ? (
-            filteredMentions.map((mention) => (
+            filteredMentions.map((mention, index) => (
               <button
                 key={mention.id}
                 type="button"
+                onMouseEnter={() => setActiveMentionIndex(index)}
                 onClick={() => insertMention(mention)}
-                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-charcoal hover:bg-muted"
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-charcoal",
+                  index === activeMentionIndex ? "bg-muted" : "hover:bg-muted"
+                )}
               >
                 <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-warm bg-muted">
                   {mention.thumbnailUrl ? (

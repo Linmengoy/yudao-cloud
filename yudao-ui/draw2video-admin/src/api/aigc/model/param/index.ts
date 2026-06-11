@@ -5,6 +5,19 @@ export type AigcModelParamTemplateSaveReqVO = Omit<AigcModelParamTemplateRespVO,
   capability?: string | string[]
 }
 
+export interface AigcModelParamTemplateCopyReqVO {
+  sourceModelId?: number
+  targetModelIds: number[]
+  capabilities?: string[]
+  overwrite?: boolean
+}
+
+export interface AigcModelParamTemplateCopyRespVO {
+  createdCount: number
+  updatedCount: number
+  skippedCount: number
+}
+
 export const AigcModelParamApi = {
   getParamList: async (params: { modelId?: number; capability?: string }) => {
     return await request.get({ url: '/aigc/model/param/list', params })
@@ -14,6 +27,9 @@ export const AigcModelParamApi = {
   },
   createParam: async (data: AigcModelParamTemplateSaveReqVO) => {
     return await request.post({ url: '/aigc/model/param/create', data })
+  },
+  copyParams: async (data: AigcModelParamTemplateCopyReqVO) => {
+    return await request.post<AigcModelParamTemplateCopyRespVO>({ url: '/aigc/model/param/copy', data })
   },
   updateParam: async (data: AigcModelParamTemplateSaveReqVO) => {
     return await request.put({ url: '/aigc/model/param/update', data })

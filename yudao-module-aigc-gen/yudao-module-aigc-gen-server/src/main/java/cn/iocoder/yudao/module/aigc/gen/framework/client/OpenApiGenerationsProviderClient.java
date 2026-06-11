@@ -18,6 +18,7 @@ import java.util.Map;
 @Component
 public class OpenApiGenerationsProviderClient implements AigcProviderClient {
 
+    public static final String CLIENT_TYPE = "OPENAPI_GENERATIONS";
     private static final String PROVIDER_CODE = "openapi-generations";
 
     private static final String MODE_TEXT_TO_VIDEO = "text_to_video";
@@ -28,6 +29,11 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
     @Override
     public String getProviderCode() {
         return PROVIDER_CODE;
+    }
+
+    @Override
+    public String getClientType() {
+        return CLIENT_TYPE;
     }
 
     @Override
@@ -47,7 +53,7 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
                 return failed("HTTP_" + response.getStatus(), safeBody(response.body()))
                         .setDurationMillis(System.currentTimeMillis() - start);
             }
-            return parseSubmitResponse(response.body()).setDurationMillis(System.currentTimeMillis() - start);
+            return parseSubmitResponse(response.body(), reqDTO).setDurationMillis(System.currentTimeMillis() - start);
         } catch (Exception ex) {
             return failed("REQUEST_EXCEPTION", ex.getMessage())
                     .setDurationMillis(System.currentTimeMillis() - start);
@@ -90,8 +96,6 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         return true;
     }
 
-    // ========== submit helpers ==========
-
     private JSONObject buildSubmitBody(AigcProviderSubmitReqDTO reqDTO) {
         String model = StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode());
         JSONObject body = JSONUtil.createObj()
@@ -113,6 +117,11 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
     }
 
     private String resolveMode(AigcProviderSubmitReqDTO reqDTO) {
+        JSONObject params = parseParams(reqDTO.getInputParams());
+        String explicitMode = params.getStr("mode");
+        if (StrUtil.isNotBlank(explicitMode)) {
+            return explicitMode;
+        }
         String mode = reqDTO.getGenerateMode();
         if (mode == null) {
             return MODE_TEXT_TO_VIDEO;
@@ -121,22 +130,21 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
             case "TEXT_TO_VIDEO" -> MODE_TEXT_TO_VIDEO;
             case "IMAGE_TO_VIDEO" -> MODE_IMAGE_TO_VIDEO;
             case "FIRST_LAST_FRAME_VIDEO" -> MODE_FIRST_LAST_FRAME;
-            case "MULTI_REF_VIDEO" -> MODE_MULTI_REF;
+            case "MULTI_REF_VIDEO", "MULTI_REFERENCE_VIDEO" -> MODE_MULTI_REF;
             default -> MODE_TEXT_TO_VIDEO;
         };
     }
 
     private void applyReferences(JSONObject body, JSONObject params, String generateMode) {
-        // image_url (single string)
-        String imageUrl = params.getStr("image_url");
+        String imageUrl = firstNonBlank(params.getStr("image_url"), params.getStr("image"));
         if (StrUtil.isNotBlank(imageUrl)) {
             body.set("image_url", imageUrl);
         }
 
-        // image_urls (array from referenceImages)
-        JSONArray referenceImages = params.getJSONArray("referenceImages");
-        if (referenceImages != null && !referenceImages.isEmpty()) {
-            if ("MULTI_REF_VIDEO".equals(generateMode)) {
+        JSONArray referenceImages = firstNonEmptyArray(params, "image_urls", "referenceImages", "inputImageUrls");
+        if (referenceImages != null) {
+            if ("MULTI_REF_VIDEO".equals(generateMode) || "MULTI_REFERENCE_VIDEO".equals(generateMode)
+                    || "FIRST_LAST_FRAME_VIDEO".equals(generateMode)) {
                 body.set("image_urls", referenceImages);
             } else if (!body.containsKey("image_url") && referenceImages.size() == 1) {
                 body.set("image_url", referenceImages.getStr(0));
@@ -145,34 +153,27 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
             }
         }
 
-        // video_urls
-        JSONArray referenceVideos = params.getJSONArray("referenceVideos");
-        if (referenceVideos != null && !referenceVideos.isEmpty()) {
-            body.set("video_urls", referenceVideos);
-        }
-
-        // audio_urls
-        JSONArray referenceAudios = params.getJSONArray("referenceAudios");
-        if (referenceAudios != null && !referenceAudios.isEmpty()) {
-            body.set("audio_urls", referenceAudios);
-        }
+        copyFirstNonEmptyArray(body, params, "video_urls", "referenceVideos", "inputVideoUrls");
+        copyFirstNonEmptyArray(body, params, "audio_urls", "referenceAudios", "inputAudioUrls");
     }
 
-    // ========== response parsing ==========
-
-    private AigcProviderSubmitRespDTO parseSubmitResponse(String responseBody) {
+    private AigcProviderSubmitRespDTO parseSubmitResponse(String responseBody, AigcProviderSubmitReqDTO reqDTO) {
         JSONObject json = JSONUtil.parseObj(responseBody);
-        String taskId = firstNonBlank(json.getStr("id"), json.getStr("task_id"));
-        if (StrUtil.isBlank(taskId)) {
-            return failed("TASK_ID_EMPTY", "OpenAPI Generations 提交未返回任务编号");
-        }
+        String taskId = resolveProviderTaskId(json, null);
         String status = json.getStr("status", "pending");
-        boolean completed = isCompleted(status);
-        String outputUrls = null;
-        if (completed) {
-            JSONArray urls = extractOutputUrls(json);
-            outputUrls = urls.isEmpty() ? null : urls.toString();
+        if (isFailed(status)) {
+            return failed(json.getStr("error_code", "PROVIDER_FAILED"), resolveErrorMessage(json))
+                    .setProviderTaskId(taskId)
+                    .setProviderStatus(status)
+                    .setOutputData(responseBody);
         }
+        boolean completed = isCompleted(status);
+        if (!completed && StrUtil.isBlank(taskId)) {
+            return failed("MISSING_PROVIDER_TASK_ID", "OpenAPI Generations 提交响应缺少上游任务编号")
+                    .setProviderStatus(status)
+                    .setOutputData(responseBody);
+        }
+        String outputUrls = completed ? outputUrls(json) : null;
         return new AigcProviderSubmitRespDTO()
                 .setProviderTaskId(taskId)
                 .setProviderStatus(status)
@@ -184,27 +185,18 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
 
     private AigcProviderSubmitRespDTO parseQueryResponse(String responseBody, String fallbackTaskId) {
         JSONObject json = JSONUtil.parseObj(responseBody);
-        String taskId = firstNonBlank(json.getStr("id"), json.getStr("task_id"), fallbackTaskId);
+        String taskId = resolveProviderTaskId(json, fallbackTaskId);
         String status = json.getStr("status", "pending");
 
         if (isFailed(status)) {
-            String error = firstNonBlank(
-                    json.getByPath("error.message", String.class),
-                    json.getStr("error"),
-                    json.getStr("message"),
-                    "OpenAPI Generations 任务失败");
-            return failed("PROVIDER_FAILED", error)
+            return failed(json.getStr("error_code", "PROVIDER_FAILED"), resolveErrorMessage(json))
                     .setProviderTaskId(taskId)
                     .setProviderStatus(status)
                     .setOutputData(responseBody);
         }
 
         boolean completed = isCompleted(status);
-        String outputUrls = null;
-        if (completed) {
-            JSONArray urls = extractOutputUrls(json);
-            outputUrls = urls.isEmpty() ? null : urls.toString();
-        }
+        String outputUrls = completed ? outputUrls(json) : null;
         return new AigcProviderSubmitRespDTO()
                 .setProviderTaskId(taskId)
                 .setProviderStatus(status)
@@ -214,15 +206,18 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
                 .setSuccess(true);
     }
 
+    private String outputUrls(JSONObject json) {
+        JSONArray urls = extractOutputUrls(json);
+        return urls.isEmpty() ? null : urls.toString();
+    }
+
     private JSONArray extractOutputUrls(JSONObject json) {
         JSONArray urls = new JSONArray();
-        // output.video_url (single)
         String videoUrl = json.getByPath("output.video_url", String.class);
         if (StrUtil.isNotBlank(videoUrl)) {
             urls.add(videoUrl);
             return urls;
         }
-        // top-level result_urls/result_url (HKCOPP OpenAPI response)
         JSONArray resultUrls = json.getJSONArray("result_urls");
         if (resultUrls != null && !resultUrls.isEmpty()) {
             return resultUrls;
@@ -232,18 +227,15 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
             urls.add(resultUrl);
             return urls;
         }
-        // output.video_urls (array)
         JSONArray videoUrls = json.getByPath("output.video_urls", JSONArray.class);
         if (videoUrls != null && !videoUrls.isEmpty()) {
             return videoUrls;
         }
-        // top-level video_url
         String topVideoUrl = json.getStr("video_url");
         if (StrUtil.isNotBlank(topVideoUrl)) {
             urls.add(topVideoUrl);
             return urls;
         }
-        // results array
         JSONArray results = json.getJSONArray("results");
         if (results != null) {
             for (Object item : results) {
@@ -257,14 +249,25 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         return urls;
     }
 
-    // ========== endpoint resolution ==========
+    private String resolveErrorMessage(JSONObject json) {
+        Object error = json.get("error");
+        if (error == null) {
+            return json.getStr("message", "OpenAPI Generations 任务失败");
+        }
+        if (error instanceof JSONObject errorObj) {
+            return StrUtil.blankToDefault(errorObj.getStr("message"), errorObj.toString());
+        }
+        return String.valueOf(error);
+    }
+
+    private String resolveProviderTaskId(JSONObject json, String fallbackTaskId) {
+        return firstNonBlank(json.getStr("id"), json.getStr("provider_task_id"), json.getStr("providerTaskId"),
+                json.getStr("task_id"), json.getStr("taskId"), fallbackTaskId);
+    }
 
     private String resolveSubmitEndpoint(AigcProviderSubmitReqDTO reqDTO) {
         String baseUrl = StrUtil.removeSuffix(reqDTO.getProviderBaseUrl(), "/");
-        if (baseUrl.endsWith("/generations")) {
-            return baseUrl;
-        }
-        return baseUrl + "/generations";
+        return baseUrl.endsWith("/generations") ? baseUrl : baseUrl + "/generations";
     }
 
     private String resolveQueryEndpoint(AigcProviderSubmitReqDTO reqDTO) {
@@ -279,22 +282,21 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         return baseUrl + "/generations/" + taskId;
     }
 
-    // ========== internal param filter ==========
-
     private boolean isInternalParam(String key) {
         return "providerModel".equals(key)
                 || "referenceImages".equals(key)
                 || "referenceImageIds".equals(key)
+                || "referenceAssetIds".equals(key)
                 || "referenceVideos".equals(key)
                 || "referenceVideoIds".equals(key)
                 || "referenceAudios".equals(key)
                 || "referenceAudioIds".equals(key)
                 || "inputImages".equals(key)
                 || "inputImageIds".equals(key)
-                || "inputImageUrls".equals(key);
+                || "inputImageUrls".equals(key)
+                || "inputVideoUrls".equals(key)
+                || "inputAudioUrls".equals(key);
     }
-
-    // ========== status helpers ==========
 
     private boolean isCompleted(String status) {
         return "completed".equalsIgnoreCase(status)
@@ -309,8 +311,6 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
                 || "canceled".equalsIgnoreCase(status);
     }
 
-    // ========== utility ==========
-
     private JSONObject parseParams(String inputParams) {
         if (StrUtil.isBlank(inputParams) || !JSONUtil.isTypeJSON(inputParams)) {
             return JSONUtil.createObj();
@@ -318,8 +318,28 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         return JSONUtil.parseObj(inputParams);
     }
 
+    private JSONArray firstNonEmptyArray(JSONObject params, String... keys) {
+        for (String key : keys) {
+            JSONArray array = params.getJSONArray(key);
+            if (array != null && !array.isEmpty()) {
+                return array;
+            }
+        }
+        return null;
+    }
+
+    private void copyFirstNonEmptyArray(JSONObject body, JSONObject params, String targetKey, String... sourceKeys) {
+        if (body.containsKey(targetKey)) {
+            return;
+        }
+        JSONArray value = firstNonEmptyArray(params, sourceKeys);
+        if (value != null) {
+            body.set(targetKey, value);
+        }
+    }
+
     private int timeoutMillis(AigcProviderSubmitReqDTO reqDTO) {
-        return (reqDTO.getProviderTimeoutSeconds() == null ? 120 : reqDTO.getProviderTimeoutSeconds()) * 1000;
+        return (reqDTO.getProviderTimeoutSeconds() == null || reqDTO.getProviderTimeoutSeconds() <= 0 ? 120 : reqDTO.getProviderTimeoutSeconds()) * 1000;
     }
 
     private AigcProviderSubmitRespDTO failed(String code, String message) {
@@ -334,7 +354,7 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         if (body == null) {
             return null;
         }
-        return body.length() <= 512 ? body : body.substring(0, 512);
+        return StrUtil.maxLength(body, 1000);
     }
 
     private String firstNonBlank(String... values) {

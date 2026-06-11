@@ -7,6 +7,7 @@
         <el-button @click="handleQuery"><Icon icon="ep:search" class="mr-5px" /> 搜索</el-button>
         <el-button @click="resetQuery"><Icon icon="ep:refresh" class="mr-5px" /> 重置</el-button>
         <el-button type="primary" plain @click="openForm('create')" v-hasPermi="['aigc:model:param:create']"><Icon icon="ep:plus" class="mr-5px" /> 新增</el-button>
+        <el-button type="success" plain @click="openCopyForm" v-hasPermi="['aigc:model:param:create']"><Icon icon="ep:copy-document" class="mr-5px" /> 复制参数</el-button>
       </el-form-item>
     </el-form>
   </ContentWrap>
@@ -30,6 +31,7 @@
     </el-table>
   </ContentWrap>
   <ParamForm ref="formRef" @success="getList" />
+  <ParamCopyForm ref="copyFormRef" @success="getList" />
 </template>
 <script setup lang="ts">
 import { DICT_TYPE } from '@/utils/dict'
@@ -37,6 +39,7 @@ import { AigcModelApi } from '@/api/aigc/model/model'
 import { AigcModelParamApi } from '@/api/aigc/model/param'
 import type { AigcModelParamTemplateRespVO, AigcModelRespVO } from '@/api/aigc/model/types'
 import ParamForm from './ParamForm.vue'
+import ParamCopyForm from './ParamCopyForm.vue'
 import { AIGC_MODEL_CAPABILITIES, AIGC_PARAM_TYPES, getOptionLabel } from '../constants'
 
 defineOptions({ name: 'AigcModelParam' })
@@ -65,7 +68,7 @@ const loadModelList = async () => {
 const getModelName = (model: AigcModelRespVO) => {
   return model.name || `模型 ${model.id}`
 }
-const getModelById = (modelId?: number) => modelList.value.find((item) => item.id === modelId)
+const getModelById = (modelId?: number) => modelList.value.find((item) => Number(item.id) === Number(modelId))
 const getModelNameById = (modelId?: number) => {
   const model = getModelById(modelId)
   return model ? getModelName(model) : `模型 ${modelId}`
@@ -76,6 +79,8 @@ const getModelIdentifierById = (modelId?: number) => {
 const getModelOptionValue = (model: AigcModelRespVO) => Number(model.id)
 const formRef = ref()
 const openForm = (type: string, id?: number) => formRef.value.open(type, id)
+const copyFormRef = ref()
+const openCopyForm = () => copyFormRef.value.open(modelList.value, queryParams.modelId, queryParams.capability)
 const handleDelete = async (id: number) => {
   try {
     await message.delConfirm()
