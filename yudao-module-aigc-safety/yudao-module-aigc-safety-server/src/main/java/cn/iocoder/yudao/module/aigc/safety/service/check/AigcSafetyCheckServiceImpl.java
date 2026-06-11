@@ -21,6 +21,9 @@ public class AigcSafetyCheckServiceImpl implements AigcSafetyCheckService {
     @Resource
     private AigcSensitiveWordService sensitiveWordService;
 
+    /**
+     * 审核提示词是否违规（这里后期可以额外新增东西，当然，正常提示词都是可以绕开的）
+     */
     @Override
     public AigcSafetyPromptCheckRespDTO checkPrompt(AigcSafetyPromptCheckReqDTO reqDTO) {
         // 审核提示词是否违规(可以考虑用redis缓存敏感词)
@@ -28,6 +31,7 @@ public class AigcSafetyCheckServiceImpl implements AigcSafetyCheckService {
         List<String> hitWords = new ArrayList<>();
         Integer riskLevel = 0;
         for (AigcSensitiveWordDO sensitiveWord : sensitiveWords) {
+            // 匹配敏感词是否违规（这里应该用小模型而非关键字）
             if (!match(reqDTO.getPrompt(), sensitiveWord)) {
                 continue;
             }
