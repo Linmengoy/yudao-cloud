@@ -14,7 +14,9 @@ export const generateModeOptions = [
   { label: '文生图', value: 'TEXT_TO_IMAGE' },
   { label: '图生图', value: 'IMAGE_TO_IMAGE' },
   { label: '文生视频', value: 'TEXT_TO_VIDEO' },
-  { label: '图生视频', value: 'IMAGE_TO_VIDEO' }
+  { label: '图生视频', value: 'IMAGE_TO_VIDEO' },
+  { label: '首尾帧视频', value: 'FIRST_LAST_FRAME_VIDEO' },
+  { label: '多参考视频', value: 'MULTI_REF_VIDEO' }
 ]
 
 export const generateStatusOptions = [
