@@ -31,6 +31,7 @@ import cn.iocoder.yudao.module.aigc.gen.dal.mysql.AigcGenerateRecordMapper;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateCallbackReqDTO;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateSubmitReqDTO;
 import cn.iocoder.yudao.module.aigc.gen.enums.AigcGenerateAttemptStatusEnum;
+import cn.iocoder.yudao.module.aigc.gen.enums.AigcGenerateMetricEnum;
 import cn.iocoder.yudao.module.aigc.gen.enums.AigcGenerateStatusEnum;
 import cn.iocoder.yudao.module.aigc.gen.framework.client.AigcProviderClient;
 import cn.iocoder.yudao.module.aigc.gen.framework.client.AigcProviderClientFactory;
@@ -175,9 +176,13 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return exists;
         }
 
+        // 提示词审核
         checkPrompt(reqDTO);
-        recordMetric("gen_submit_total");
+        // 服务端统计埋点
+        recordMetric(AigcGenerateMetricEnum.GEN_SUBMIT_TOTAL);
+
         Map<String, Object> inputParams = parseInputParams(reqDTO.getInputParams());
+        // 关联的图片需要看看传的什么（尽量传资源ID，由我方获取ID进行上传）
         String inputParamsSnapshot = sanitizeInputParamsSnapshot(reqDTO.getInputParams());
         String generateNo = generateGenerateNo();
         AigcModelSubmitPrepareRespDTO prepare = modelApi.prepareSubmit(new AigcModelPriceCalculateReqDTO()
@@ -223,11 +228,11 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             AigcGenerateAttemptDO attempt, AigcModelProviderRespDTO provider) {
         AigcProviderSubmitRespDTO providerResp = submitProvider(record, reqDTO, attempt, provider);
         if (!Boolean.TRUE.equals(providerResp.getSuccess())) {
-            recordMetric("aigc_gen_submit_failed_total");
+            recordMetric(AigcGenerateMetricEnum.SUBMIT_FAILED_TOTAL);
             handleAttemptFailure(record, reqDTO, attempt, providerResp.getErrorCode(), providerResp.getErrorMessage());
             return generateRecordMapper.selectById(record.getId());
         }
-        recordMetric("aigc_gen_submit_success_total");
+        recordMetric(AigcGenerateMetricEnum.SUBMIT_SUCCESS_TOTAL);
         AigcGenerateRecordDO freshRecord = generateRecordMapper.selectById(record.getId());
         AigcGenerateAttemptDO freshAttempt = attemptMapper.selectById(attempt.getId());
         if (freshRecord == null || freshAttempt == null) {
@@ -732,7 +737,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 && callbackMapper.selectByCallbackNo(reqDTO.getProviderCode(), reqDTO.getCallbackNo()) != null) {
             return;
         }
-        recordMetric("aigc_gen_callback_total");
+        recordMetric(AigcGenerateMetricEnum.CALLBACK_TOTAL);
         AigcGenerateAttemptDO attempt = attemptMapper.selectByProviderTask(reqDTO.getProviderCode(),
                 reqDTO.getProviderTaskId());
         AigcGenerateRecordDO record = attempt == null
@@ -750,7 +755,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setProcessTime(LocalDateTime.now());
         callbackMapper.insert(callback);
         if (!signatureValid) {
-            recordMetric("aigc_gen_callback_invalid_total");
+            recordMetric(AigcGenerateMetricEnum.CALLBACK_INVALID_TOTAL);
             throw exception(GENERATE_PROVIDER_CALLBACK_INVALID);
         }
         if (record == null) {
@@ -862,7 +867,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 LocalDateTime.now().minusMinutes(5));
         records.forEach(record -> syncTask(record.getTaskId()));
         if (!records.isEmpty()) {
-            recordMetric("aigc_gen_timeout_total", records.size());
+            recordMetric(AigcGenerateMetricEnum.TIMEOUT_TOTAL, records.size());
         }
         return records.size();
     }
@@ -912,7 +917,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         if (meterRegistry == null) {
             resp = providerClientFactory.getClient(attempt.getProviderCode()).submit(providerReq);
         } else {
-            resp = Timer.builder("aigc_gen_provider_duration_ms")
+            resp = Timer.builder(AigcGenerateMetricEnum.PROVIDER_DURATION_MS.getName())
                     .tag("provider", attempt.getProviderCode() == null ? "unknown" : attempt.getProviderCode())
                     .register(meterRegistry)
                     .record(() -> providerClientFactory.getClient(attempt.getProviderCode()).submit(providerReq));
@@ -1014,7 +1019,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setCompletionTokens(resp.getCompletionTokens()).setTotalTokens(resp.getTotalTokens())
                 .setCostPrice(record.getCostAmount()).setSalePrice(record.getPriceAmount()).setCurrencyType("POINT")
                 .setStatus(0).setDurationMillis(resp.getDurationMillis())).getCheckedData();
-        recordMetric("aigc_gen_success_total");
+        recordMetric(AigcGenerateMetricEnum.SUCCESS_TOTAL);
     }
 
     private void finishAttemptSuccess(AigcGenerateRecordDO record, AigcGenerateAttemptDO attempt,
@@ -1264,7 +1269,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         generateRecordMapper.updateById(
                 new AigcGenerateRecordDO().setId(record.getId()).setStatus(AigcGenerateStatusEnum.FAILED.getCode())
                         .setFailReason(failCode).setFailMessage(failReason).setFinishTime(LocalDateTime.now()));
-        recordMetric("aigc_gen_failed_total");
+        recordMetric(AigcGenerateMetricEnum.FAILED_TOTAL);
         taskApi.markFailed(new AigcTaskStatusUpdateReqDTO().setTaskId(record.getTaskId()).setFailCode(failCode)
                 .setFailReason(failReason)).getCheckedData();
         if (record.getFreezeId() != null) {
@@ -1284,7 +1289,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         if (updated <= 0) {
             return;
         }
-        recordMetric("aigc_gen_failed_total");
+        recordMetric(AigcGenerateMetricEnum.FAILED_TOTAL);
         taskApi.markFailed(new AigcTaskStatusUpdateReqDTO().setTaskId(record.getTaskId()).setFailCode(failCode)
                 .setFailReason(failReason)).getCheckedData();
         if (record.getFreezeId() != null) {
@@ -1305,14 +1310,14 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         return "mock";
     }
 
-    private void recordMetric(String name) {
-        recordMetric(name, 1D);
+    private void recordMetric(AigcGenerateMetricEnum metric) {
+        recordMetric(metric, 1D);
     }
 
-    private void recordMetric(String name, double amount) {
+    private void recordMetric(AigcGenerateMetricEnum metric, double amount) {
         MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
         if (meterRegistry != null) {
-            counter(meterRegistry, name).increment(amount);
+            counter(meterRegistry, metric.getName()).increment(amount);
         }
     }
 
