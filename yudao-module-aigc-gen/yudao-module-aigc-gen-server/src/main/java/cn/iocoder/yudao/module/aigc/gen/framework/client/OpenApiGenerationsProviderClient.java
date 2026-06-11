@@ -14,6 +14,7 @@ import cn.iocoder.yudao.module.aigc.gen.framework.client.dto.AigcProviderSubmitR
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class OpenApiGenerationsProviderClient implements AigcProviderClient {
@@ -25,6 +26,15 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
     private static final String MODE_IMAGE_TO_VIDEO = "image_to_video";
     private static final String MODE_FIRST_LAST_FRAME = "first_last_frame";
     private static final String MODE_MULTI_REF = "multi_ref";
+    private static final Set<String> REVIEWED_ASSET_MODELS = Set.of(
+            "seedance-2",
+            "seedance-2-fast",
+            "seedance-2-official2",
+            "seedance-2-official2-fast",
+            "seedance-2-intl",
+            "seedance-2-intl-fast",
+            "seedance-2-intl-xl",
+            "seedance-2-intl-xl-fast");
 
     @Override
     public String getProviderCode() {
@@ -42,18 +52,24 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
             return failed("CONFIG_INVALID", "OpenAPI Generations 渠道未配置 API 地址或 API Key");
         }
         long start = System.currentTimeMillis();
-        try (HttpResponse response = AigcProviderProxyUtils.execute(
+        try {
+            JSONObject body = buildSubmitBody(reqDTO);
+            prepareReviewedAssets(reqDTO, body);
+            try (HttpResponse response = AigcProviderProxyUtils.execute(
                 HttpRequest.post(resolveSubmitEndpoint(reqDTO))
                         .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
                         .contentType(ContentType.JSON.getValue())
-                        .body(buildSubmitBody(reqDTO).toString())
+                        .body(body.toString())
                         .timeout(timeoutMillis(reqDTO)),
-                reqDTO)) {
-            if (!response.isOk()) {
-                return failed("HTTP_" + response.getStatus(), safeBody(response.body()))
-                        .setDurationMillis(System.currentTimeMillis() - start);
+                    reqDTO)) {
+                if (!response.isOk()) {
+                    return failed("HTTP_" + response.getStatus(), safeBody(response.body()))
+                            .setDurationMillis(System.currentTimeMillis() - start);
+                }
+                return parseSubmitResponse(response.body(), reqDTO).setDurationMillis(System.currentTimeMillis() - start);
             }
-            return parseSubmitResponse(response.body(), reqDTO).setDurationMillis(System.currentTimeMillis() - start);
+        } catch (AssetReviewException ex) {
+            return failed(ex.code, ex.getMessage()).setDurationMillis(System.currentTimeMillis() - start);
         } catch (Exception ex) {
             return failed("REQUEST_EXCEPTION", ex.getMessage())
                     .setDurationMillis(System.currentTimeMillis() - start);
@@ -155,6 +171,122 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
 
         copyFirstNonEmptyArray(body, params, "video_urls", "referenceVideos", "inputVideoUrls");
         copyFirstNonEmptyArray(body, params, "audio_urls", "referenceAudios", "inputAudioUrls");
+    }
+
+    private void prepareReviewedAssets(AigcProviderSubmitReqDTO reqDTO, JSONObject body) {
+        String model = StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode());
+        if (!requiresReviewedAssets(model)) {
+            return;
+        }
+        String region = reviewedAssetRegion(model);
+        String groupId = resolveReviewedAssetGroup(reqDTO, region);
+        if (body.containsKey("image_url")) {
+            body.set("image_url", reviewAssetUrl(reqDTO, groupId, body.getStr("image_url")));
+        }
+        JSONArray imageUrls = body.getJSONArray("image_urls");
+        if (imageUrls != null && !imageUrls.isEmpty()) {
+            JSONArray reviewed = new JSONArray();
+            for (Object imageUrl : imageUrls) {
+                reviewed.add(reviewAssetUrl(reqDTO, groupId, String.valueOf(imageUrl)));
+            }
+            body.set("image_urls", reviewed);
+        }
+    }
+
+    private boolean requiresReviewedAssets(String model) {
+        return StrUtil.isNotBlank(model) && REVIEWED_ASSET_MODELS.contains(model.trim().toLowerCase());
+    }
+
+    private String reviewedAssetRegion(String model) {
+        return model != null && model.trim().toLowerCase().startsWith("seedance-2-intl") ? "intl" : "cn";
+    }
+
+    private String resolveReviewedAssetGroup(AigcProviderSubmitReqDTO reqDTO, String region) {
+        JSONObject extraConfig = parseParams(reqDTO.getProviderExtraConfig());
+        String configured = "intl".equals(region)
+                ? firstNonBlank(extraConfig.getStr("seedanceAssetGroupIntl"), extraConfig.getStr("assetGroupIntl"))
+                : firstNonBlank(extraConfig.getStr("seedanceAssetGroupCn"), extraConfig.getStr("assetGroupCn"));
+        if (StrUtil.isNotBlank(configured)) {
+            return configured;
+        }
+        JSONObject body = JSONUtil.createObj()
+                .set("name", "Copse Seedance " + region)
+                .set("description", "Reviewed references for Copse Seedance " + region)
+                .set("region", region);
+        JSONObject response = postJson(reqDTO, resolveAssetGroupsEndpoint(reqDTO), body);
+        String groupId = firstNonBlank(response.getStr("officialId"), response.getStr("id"));
+        if (StrUtil.isBlank(groupId)) {
+            throw new AssetReviewException("ASSET_GROUP_CREATE_FAILED", "OpenAPI reviewed asset group response missing officialId");
+        }
+        return groupId;
+    }
+
+    private String reviewAssetUrl(AigcProviderSubmitReqDTO reqDTO, String groupId, String url) {
+        if (StrUtil.startWithIgnoreCase(url, "asset://")) {
+            return url;
+        }
+        if (!StrUtil.startWithIgnoreCase(url, "http://") && !StrUtil.startWithIgnoreCase(url, "https://")) {
+            throw new AssetReviewException("ASSET_REVIEW_URL_INVALID", "Reviewed asset requires a public HTTP URL");
+        }
+        JSONObject uploadBody = JSONUtil.createObj()
+                .set("groupId", groupId)
+                .set("url", url)
+                .set("name", "Copse reference asset");
+        JSONObject upload = postJson(reqDTO, resolveAssetsEndpoint(reqDTO), uploadBody);
+        String officialId = firstNonBlank(upload.getStr("officialId"), upload.getStr("id"));
+        if (StrUtil.isBlank(officialId)) {
+            throw new AssetReviewException("ASSET_UPLOAD_FAILED", "OpenAPI asset upload response missing officialId");
+        }
+        waitReviewedAssetActive(reqDTO, officialId, upload.getStr("status"));
+        return "asset://" + officialId;
+    }
+
+    private void waitReviewedAssetActive(AigcProviderSubmitReqDTO reqDTO, String officialId, String initialStatus) {
+        String status = initialStatus;
+        int maxPolls = reviewedAssetMaxPolls(reqDTO);
+        for (int i = 0; i <= maxPolls; i++) {
+            if ("Active".equalsIgnoreCase(status)) {
+                return;
+            }
+            if ("Failed".equalsIgnoreCase(status) || "Rejected".equalsIgnoreCase(status)) {
+                throw new AssetReviewException("ASSET_REVIEW_FAILED", "Reviewed asset " + officialId + " status is " + status);
+            }
+            if (i == maxPolls) {
+                break;
+            }
+            sleepQuietly(reviewedAssetPollIntervalMillis(reqDTO));
+            JSONObject detail = getJson(reqDTO, resolveAssetDetailEndpoint(reqDTO, officialId));
+            status = detail.getStr("status");
+        }
+        throw new AssetReviewException("ASSET_REVIEW_TIMEOUT", "Reviewed asset " + officialId + " did not become Active");
+    }
+
+    private JSONObject postJson(AigcProviderSubmitReqDTO reqDTO, String endpoint, JSONObject body) {
+        try (HttpResponse response = AigcProviderProxyUtils.execute(
+                HttpRequest.post(endpoint)
+                        .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
+                        .contentType(ContentType.JSON.getValue())
+                        .body(body.toString())
+                        .timeout(timeoutMillis(reqDTO)),
+                reqDTO)) {
+            if (!response.isOk()) {
+                throw new AssetReviewException("HTTP_" + response.getStatus(), safeBody(response.body()));
+            }
+            return JSONUtil.parseObj(response.body());
+        }
+    }
+
+    private JSONObject getJson(AigcProviderSubmitReqDTO reqDTO, String endpoint) {
+        try (HttpResponse response = AigcProviderProxyUtils.execute(
+                HttpRequest.get(endpoint)
+                        .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
+                        .timeout(timeoutMillis(reqDTO)),
+                reqDTO)) {
+            if (!response.isOk()) {
+                throw new AssetReviewException("HTTP_" + response.getStatus(), safeBody(response.body()));
+            }
+            return JSONUtil.parseObj(response.body());
+        }
     }
 
     private AigcProviderSubmitRespDTO parseSubmitResponse(String responseBody, AigcProviderSubmitReqDTO reqDTO) {
@@ -270,6 +402,26 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         return baseUrl.endsWith("/generations") ? baseUrl : baseUrl + "/generations";
     }
 
+    private String resolveAssetGroupsEndpoint(AigcProviderSubmitReqDTO reqDTO) {
+        return resolveOpenApiBase(reqDTO) + "/asset-groups";
+    }
+
+    private String resolveAssetsEndpoint(AigcProviderSubmitReqDTO reqDTO) {
+        return resolveOpenApiBase(reqDTO) + "/assets";
+    }
+
+    private String resolveAssetDetailEndpoint(AigcProviderSubmitReqDTO reqDTO, String officialId) {
+        return resolveAssetsEndpoint(reqDTO) + "/" + officialId;
+    }
+
+    private String resolveOpenApiBase(AigcProviderSubmitReqDTO reqDTO) {
+        String baseUrl = StrUtil.removeSuffix(reqDTO.getProviderBaseUrl(), "/");
+        if (baseUrl.endsWith("/generations")) {
+            return StrUtil.removeSuffix(baseUrl, "/generations");
+        }
+        return baseUrl;
+    }
+
     private String resolveQueryEndpoint(AigcProviderSubmitReqDTO reqDTO) {
         String baseUrl = StrUtil.removeSuffix(reqDTO.getProviderBaseUrl(), "/");
         String taskId = reqDTO.getProviderTaskId();
@@ -342,6 +494,30 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         return (reqDTO.getProviderTimeoutSeconds() == null || reqDTO.getProviderTimeoutSeconds() <= 0 ? 120 : reqDTO.getProviderTimeoutSeconds()) * 1000;
     }
 
+    private int reviewedAssetMaxPolls(AigcProviderSubmitReqDTO reqDTO) {
+        JSONObject extraConfig = parseParams(reqDTO.getProviderExtraConfig());
+        Integer configured = extraConfig.getInt("seedanceAssetReviewMaxPolls");
+        return configured == null || configured < 0 ? 30 : configured;
+    }
+
+    private long reviewedAssetPollIntervalMillis(AigcProviderSubmitReqDTO reqDTO) {
+        JSONObject extraConfig = parseParams(reqDTO.getProviderExtraConfig());
+        Integer configured = extraConfig.getInt("seedanceAssetReviewPollIntervalMillis");
+        return configured == null || configured < 0 ? 1000L : configured.longValue();
+    }
+
+    private void sleepQuietly(long millis) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new AssetReviewException("ASSET_REVIEW_INTERRUPTED", "Reviewed asset polling was interrupted");
+        }
+    }
+
     private AigcProviderSubmitRespDTO failed(String code, String message) {
         return new AigcProviderSubmitRespDTO()
                 .setSuccess(false)
@@ -364,6 +540,17 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
             }
         }
         return null;
+    }
+
+    private static class AssetReviewException extends RuntimeException {
+
+        private final String code;
+
+        AssetReviewException(String code, String message) {
+            super(message);
+            this.code = code;
+        }
+
     }
 
 }
