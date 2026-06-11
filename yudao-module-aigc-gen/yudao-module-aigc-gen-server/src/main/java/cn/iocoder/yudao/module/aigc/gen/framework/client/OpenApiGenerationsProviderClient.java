@@ -13,7 +13,6 @@ import cn.iocoder.yudao.module.aigc.gen.framework.client.dto.AigcProviderSubmitR
 import cn.iocoder.yudao.module.aigc.gen.framework.client.dto.AigcProviderSubmitRespDTO;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
 import java.util.Map;
 
 @Component
@@ -21,9 +20,11 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
 
     public static final String CLIENT_TYPE = "OPENAPI_GENERATIONS";
     private static final String PROVIDER_CODE = "openapi-generations";
-    private static final List<String> INTERNAL_PARAMS = List.of(
-            "providerModel", "referenceImageIds", "referenceAssetIds", "inputImages", "inputImageIds",
-            "referenceImages", "inputImageUrls", "referenceVideos", "inputVideoUrls", "referenceAudios", "inputAudioUrls");
+
+    private static final String MODE_TEXT_TO_VIDEO = "text_to_video";
+    private static final String MODE_IMAGE_TO_VIDEO = "image_to_video";
+    private static final String MODE_FIRST_LAST_FRAME = "first_last_frame";
+    private static final String MODE_MULTI_REF = "multi_ref";
 
     @Override
     public String getProviderCode() {
@@ -41,17 +42,21 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
             return failed("CONFIG_INVALID", "OpenAPI Generations 渠道未配置 API 地址或 API Key");
         }
         long start = System.currentTimeMillis();
-        try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.post(resolveGenerationsEndpoint(reqDTO))
-                .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
-                .contentType(ContentType.JSON.getValue())
-                .body(buildSubmitBody(reqDTO).toString())
-                .timeout(timeoutMillis(reqDTO)), reqDTO)) {
+        try (HttpResponse response = AigcProviderProxyUtils.execute(
+                HttpRequest.post(resolveSubmitEndpoint(reqDTO))
+                        .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
+                        .contentType(ContentType.JSON.getValue())
+                        .body(buildSubmitBody(reqDTO).toString())
+                        .timeout(timeoutMillis(reqDTO)),
+                reqDTO)) {
             if (!response.isOk()) {
-                return failed("HTTP_" + response.getStatus(), safeBody(response.body())).setDurationMillis(System.currentTimeMillis() - start);
+                return failed("HTTP_" + response.getStatus(), safeBody(response.body()))
+                        .setDurationMillis(System.currentTimeMillis() - start);
             }
-            return parseResponse(response.body(), reqDTO).setDurationMillis(System.currentTimeMillis() - start);
+            return parseSubmitResponse(response.body(), reqDTO).setDurationMillis(System.currentTimeMillis() - start);
         } catch (Exception ex) {
-            return failed("REQUEST_EXCEPTION", ex.getMessage()).setDurationMillis(System.currentTimeMillis() - start);
+            return failed("REQUEST_EXCEPTION", ex.getMessage())
+                    .setDurationMillis(System.currentTimeMillis() - start);
         }
     }
 
@@ -69,15 +74,20 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
             return failed("TASK_ID_EMPTY", "OpenAPI Generations 查询缺少任务编号");
         }
         long start = System.currentTimeMillis();
-        try (HttpResponse response = AigcProviderProxyUtils.execute(HttpRequest.get(resolveGenerationQueryEndpoint(reqDTO))
-                .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
-                .timeout(timeoutMillis(reqDTO)), reqDTO)) {
+        try (HttpResponse response = AigcProviderProxyUtils.execute(
+                HttpRequest.get(resolveQueryEndpoint(reqDTO))
+                        .header(Header.AUTHORIZATION, "Bearer " + reqDTO.getProviderApiKey())
+                        .timeout(timeoutMillis(reqDTO)),
+                reqDTO)) {
             if (!response.isOk()) {
-                return failed("HTTP_" + response.getStatus(), safeBody(response.body())).setDurationMillis(System.currentTimeMillis() - start);
+                return failed("HTTP_" + response.getStatus(), safeBody(response.body()))
+                        .setDurationMillis(System.currentTimeMillis() - start);
             }
-            return parseResponse(response.body(), reqDTO).setDurationMillis(System.currentTimeMillis() - start);
+            return parseQueryResponse(response.body(), reqDTO.getProviderTaskId())
+                    .setDurationMillis(System.currentTimeMillis() - start);
         } catch (Exception ex) {
-            return failed("REQUEST_EXCEPTION", ex.getMessage()).setDurationMillis(System.currentTimeMillis() - start);
+            return failed("REQUEST_EXCEPTION", ex.getMessage())
+                    .setDurationMillis(System.currentTimeMillis() - start);
         }
     }
 
@@ -87,114 +97,156 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
     }
 
     private JSONObject buildSubmitBody(AigcProviderSubmitReqDTO reqDTO) {
-        JSONObject params = parseParams(reqDTO.getInputParams());
+        String model = StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode());
         JSONObject body = JSONUtil.createObj()
-                .set("model", StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode()))
-                .set("mode", resolveMode(reqDTO.getGenerateMode(), params))
+                .set("model", model)
+                .set("mode", resolveMode(reqDTO))
                 .set("prompt", StrUtil.blankToDefault(reqDTO.getPrompt(), ""));
+
+        JSONObject params = parseParams(reqDTO.getInputParams());
         for (Map.Entry<String, Object> entry : params.entrySet()) {
-            if (entry.getValue() != null && !isInternalParam(entry.getKey())) {
-                body.set(entry.getKey(), entry.getValue());
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            if (value != null && !isInternalParam(key)) {
+                body.set(key, value);
             }
         }
-        applyReferenceAliases(body, params, reqDTO.getGenerateMode());
+
+        applyReferences(body, params, reqDTO.getGenerateMode());
         return body;
     }
 
-    private void applyReferenceAliases(JSONObject body, JSONObject params, String generateMode) {
-        if ("IMAGE_TO_VIDEO".equals(generateMode)) {
-            String image = firstNonBlank(params.getStr("image_url"), params.getStr("image"), firstArrayValue(params, "referenceImages"),
-                    firstArrayValue(params, "inputImageUrls"));
-            if (StrUtil.isNotBlank(image)) {
-                body.set("image_url", image);
-            }
-            return;
-        }
-        if ("FIRST_LAST_FRAME_VIDEO".equals(generateMode)) {
-            JSONArray images = firstNonEmptyArray(params, "image_urls", "referenceImages", "inputImageUrls");
-            if (images != null) {
-                body.set("image_urls", images);
-            }
-            return;
-        }
-        if ("MULTI_REF_VIDEO".equals(generateMode) || "MULTI_REFERENCE_VIDEO".equals(generateMode)) {
-            copyFirstNonEmptyArray(body, params, "image_urls", "referenceImages", "inputImageUrls");
-            copyFirstNonEmptyArray(body, params, "video_urls", "referenceVideos", "inputVideoUrls");
-            copyFirstNonEmptyArray(body, params, "audio_urls", "referenceAudios", "inputAudioUrls");
-        }
-    }
-
-    private void copyFirstNonEmptyArray(JSONObject body, JSONObject params, String targetKey, String... sourceKeys) {
-        if (body.containsKey(targetKey)) {
-            return;
-        }
-        JSONArray value = firstNonEmptyArray(params, sourceKeys);
-        if (value != null) {
-            body.set(targetKey, value);
-        }
-    }
-
-    private String resolveMode(String generateMode, JSONObject params) {
+    private String resolveMode(AigcProviderSubmitReqDTO reqDTO) {
+        JSONObject params = parseParams(reqDTO.getInputParams());
         String explicitMode = params.getStr("mode");
         if (StrUtil.isNotBlank(explicitMode)) {
             return explicitMode;
         }
-        if ("TEXT_TO_VIDEO".equals(generateMode)) {
-            return "text_to_video";
+        String mode = reqDTO.getGenerateMode();
+        if (mode == null) {
+            return MODE_TEXT_TO_VIDEO;
         }
-        if ("IMAGE_TO_VIDEO".equals(generateMode)) {
-            return "image_to_video";
-        }
-        if ("FIRST_LAST_FRAME_VIDEO".equals(generateMode)) {
-            return "first_last_frame";
-        }
-        if ("MULTI_REF_VIDEO".equals(generateMode) || "MULTI_REFERENCE_VIDEO".equals(generateMode)) {
-            return "multi_ref";
-        }
-        return StrUtil.blankToDefault(generateMode, "text_to_video").toLowerCase();
+        return switch (mode) {
+            case "TEXT_TO_VIDEO" -> MODE_TEXT_TO_VIDEO;
+            case "IMAGE_TO_VIDEO" -> MODE_IMAGE_TO_VIDEO;
+            case "FIRST_LAST_FRAME_VIDEO" -> MODE_FIRST_LAST_FRAME;
+            case "MULTI_REF_VIDEO", "MULTI_REFERENCE_VIDEO" -> MODE_MULTI_REF;
+            default -> MODE_TEXT_TO_VIDEO;
+        };
     }
 
-    private AigcProviderSubmitRespDTO parseResponse(String body, AigcProviderSubmitReqDTO reqDTO) {
-        JSONObject json = JSONUtil.parseObj(body);
-        String status = json.getStr("status", "queued");
-        String providerTaskId = resolveProviderTaskId(json, reqDTO);
+    private void applyReferences(JSONObject body, JSONObject params, String generateMode) {
+        String imageUrl = firstNonBlank(params.getStr("image_url"), params.getStr("image"));
+        if (StrUtil.isNotBlank(imageUrl)) {
+            body.set("image_url", imageUrl);
+        }
+
+        JSONArray referenceImages = firstNonEmptyArray(params, "image_urls", "referenceImages", "inputImageUrls");
+        if (referenceImages != null) {
+            if ("MULTI_REF_VIDEO".equals(generateMode) || "MULTI_REFERENCE_VIDEO".equals(generateMode)
+                    || "FIRST_LAST_FRAME_VIDEO".equals(generateMode)) {
+                body.set("image_urls", referenceImages);
+            } else if (!body.containsKey("image_url") && referenceImages.size() == 1) {
+                body.set("image_url", referenceImages.getStr(0));
+            } else {
+                body.set("image_urls", referenceImages);
+            }
+        }
+
+        copyFirstNonEmptyArray(body, params, "video_urls", "referenceVideos", "inputVideoUrls");
+        copyFirstNonEmptyArray(body, params, "audio_urls", "referenceAudios", "inputAudioUrls");
+    }
+
+    private AigcProviderSubmitRespDTO parseSubmitResponse(String responseBody, AigcProviderSubmitReqDTO reqDTO) {
+        JSONObject json = JSONUtil.parseObj(responseBody);
+        String taskId = resolveProviderTaskId(json, null);
+        String status = json.getStr("status", "pending");
         if (isFailed(status)) {
             return failed(json.getStr("error_code", "PROVIDER_FAILED"), resolveErrorMessage(json))
-                    .setProviderTaskId(providerTaskId)
+                    .setProviderTaskId(taskId)
                     .setProviderStatus(status)
-                    .setOutputData(json.toString());
+                    .setOutputData(responseBody);
         }
-        JSONArray resultUrls = resolveResultUrls(json);
         boolean completed = isCompleted(status);
-        if (!completed && StrUtil.isBlank(providerTaskId)) {
+        if (!completed && StrUtil.isBlank(taskId)) {
             return failed("MISSING_PROVIDER_TASK_ID", "OpenAPI Generations 提交响应缺少上游任务编号")
                     .setProviderStatus(status)
-                    .setOutputData(json.toString());
+                    .setOutputData(responseBody);
         }
+        String outputUrls = completed ? outputUrls(json) : null;
         return new AigcProviderSubmitRespDTO()
-                .setProviderTaskId(providerTaskId)
+                .setProviderTaskId(taskId)
                 .setProviderStatus(status)
+                .setOutputData(responseBody)
+                .setOutputUrls(outputUrls)
                 .setFinished(completed)
-                .setSuccess(true)
-                .setOutputData(json.toString())
-                .setOutputUrls(resultUrls == null || resultUrls.isEmpty() ? null : resultUrls.toString());
+                .setSuccess(true);
     }
 
-    private String resolveProviderTaskId(JSONObject json, AigcProviderSubmitReqDTO reqDTO) {
-        return firstNonBlank(json.getStr("id"), json.getStr("provider_task_id"), json.getStr("providerTaskId"),
-                json.getStr("task_id"), json.getStr("taskId"), reqDTO.getProviderTaskId());
+    private AigcProviderSubmitRespDTO parseQueryResponse(String responseBody, String fallbackTaskId) {
+        JSONObject json = JSONUtil.parseObj(responseBody);
+        String taskId = resolveProviderTaskId(json, fallbackTaskId);
+        String status = json.getStr("status", "pending");
+
+        if (isFailed(status)) {
+            return failed(json.getStr("error_code", "PROVIDER_FAILED"), resolveErrorMessage(json))
+                    .setProviderTaskId(taskId)
+                    .setProviderStatus(status)
+                    .setOutputData(responseBody);
+        }
+
+        boolean completed = isCompleted(status);
+        String outputUrls = completed ? outputUrls(json) : null;
+        return new AigcProviderSubmitRespDTO()
+                .setProviderTaskId(taskId)
+                .setProviderStatus(status)
+                .setOutputData(responseBody)
+                .setOutputUrls(outputUrls)
+                .setFinished(completed)
+                .setSuccess(true);
     }
 
-    private JSONArray resolveResultUrls(JSONObject json) {
+    private String outputUrls(JSONObject json) {
+        JSONArray urls = extractOutputUrls(json);
+        return urls.isEmpty() ? null : urls.toString();
+    }
+
+    private JSONArray extractOutputUrls(JSONObject json) {
+        JSONArray urls = new JSONArray();
+        String videoUrl = json.getByPath("output.video_url", String.class);
+        if (StrUtil.isNotBlank(videoUrl)) {
+            urls.add(videoUrl);
+            return urls;
+        }
         JSONArray resultUrls = json.getJSONArray("result_urls");
         if (resultUrls != null && !resultUrls.isEmpty()) {
             return resultUrls;
         }
         String resultUrl = json.getStr("result_url");
         if (StrUtil.isNotBlank(resultUrl)) {
-            return new JSONArray().put(resultUrl);
+            urls.add(resultUrl);
+            return urls;
         }
-        return null;
+        JSONArray videoUrls = json.getByPath("output.video_urls", JSONArray.class);
+        if (videoUrls != null && !videoUrls.isEmpty()) {
+            return videoUrls;
+        }
+        String topVideoUrl = json.getStr("video_url");
+        if (StrUtil.isNotBlank(topVideoUrl)) {
+            urls.add(topVideoUrl);
+            return urls;
+        }
+        JSONArray results = json.getJSONArray("results");
+        if (results != null) {
+            for (Object item : results) {
+                JSONObject result = JSONUtil.parseObj(item);
+                String url = firstNonBlank(result.getStr("video_url"), result.getStr("url"));
+                if (StrUtil.isNotBlank(url)) {
+                    urls.add(url);
+                }
+            }
+        }
+        return urls;
     }
 
     private String resolveErrorMessage(JSONObject json) {
@@ -208,28 +260,62 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         return String.valueOf(error);
     }
 
-    private String resolveGenerationsEndpoint(AigcProviderSubmitReqDTO reqDTO) {
+    private String resolveProviderTaskId(JSONObject json, String fallbackTaskId) {
+        return firstNonBlank(json.getStr("id"), json.getStr("provider_task_id"), json.getStr("providerTaskId"),
+                json.getStr("task_id"), json.getStr("taskId"), fallbackTaskId);
+    }
+
+    private String resolveSubmitEndpoint(AigcProviderSubmitReqDTO reqDTO) {
         String baseUrl = StrUtil.removeSuffix(reqDTO.getProviderBaseUrl(), "/");
         return baseUrl.endsWith("/generations") ? baseUrl : baseUrl + "/generations";
     }
 
-    private String resolveGenerationQueryEndpoint(AigcProviderSubmitReqDTO reqDTO) {
+    private String resolveQueryEndpoint(AigcProviderSubmitReqDTO reqDTO) {
         String baseUrl = StrUtil.removeSuffix(reqDTO.getProviderBaseUrl(), "/");
-        if (baseUrl.endsWith("/generations/" + reqDTO.getProviderTaskId())) {
+        String taskId = reqDTO.getProviderTaskId();
+        if (baseUrl.endsWith("/generations/" + taskId)) {
             return baseUrl;
         }
         if (baseUrl.endsWith("/generations")) {
-            return baseUrl + "/" + reqDTO.getProviderTaskId();
+            return baseUrl + "/" + taskId;
         }
-        return baseUrl + "/generations/" + reqDTO.getProviderTaskId();
-    }
-
-    private JSONObject parseParams(String inputParams) {
-        return StrUtil.isBlank(inputParams) || !JSONUtil.isTypeJSON(inputParams) ? new JSONObject() : JSONUtil.parseObj(inputParams);
+        return baseUrl + "/generations/" + taskId;
     }
 
     private boolean isInternalParam(String key) {
-        return INTERNAL_PARAMS.contains(key);
+        return "providerModel".equals(key)
+                || "referenceImages".equals(key)
+                || "referenceImageIds".equals(key)
+                || "referenceAssetIds".equals(key)
+                || "referenceVideos".equals(key)
+                || "referenceVideoIds".equals(key)
+                || "referenceAudios".equals(key)
+                || "referenceAudioIds".equals(key)
+                || "inputImages".equals(key)
+                || "inputImageIds".equals(key)
+                || "inputImageUrls".equals(key)
+                || "inputVideoUrls".equals(key)
+                || "inputAudioUrls".equals(key);
+    }
+
+    private boolean isCompleted(String status) {
+        return "completed".equalsIgnoreCase(status)
+                || "success".equalsIgnoreCase(status)
+                || "succeeded".equalsIgnoreCase(status);
+    }
+
+    private boolean isFailed(String status) {
+        return "failed".equalsIgnoreCase(status)
+                || "error".equalsIgnoreCase(status)
+                || "cancelled".equalsIgnoreCase(status)
+                || "canceled".equalsIgnoreCase(status);
+    }
+
+    private JSONObject parseParams(String inputParams) {
+        if (StrUtil.isBlank(inputParams) || !JSONUtil.isTypeJSON(inputParams)) {
+            return JSONUtil.createObj();
+        }
+        return JSONUtil.parseObj(inputParams);
     }
 
     private JSONArray firstNonEmptyArray(JSONObject params, String... keys) {
@@ -242,9 +328,33 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         return null;
     }
 
-    private String firstArrayValue(JSONObject params, String key) {
-        JSONArray array = params.getJSONArray(key);
-        return array == null || array.isEmpty() ? null : array.getStr(0);
+    private void copyFirstNonEmptyArray(JSONObject body, JSONObject params, String targetKey, String... sourceKeys) {
+        if (body.containsKey(targetKey)) {
+            return;
+        }
+        JSONArray value = firstNonEmptyArray(params, sourceKeys);
+        if (value != null) {
+            body.set(targetKey, value);
+        }
+    }
+
+    private int timeoutMillis(AigcProviderSubmitReqDTO reqDTO) {
+        return (reqDTO.getProviderTimeoutSeconds() == null || reqDTO.getProviderTimeoutSeconds() <= 0 ? 120 : reqDTO.getProviderTimeoutSeconds()) * 1000;
+    }
+
+    private AigcProviderSubmitRespDTO failed(String code, String message) {
+        return new AigcProviderSubmitRespDTO()
+                .setSuccess(false)
+                .setFinished(true)
+                .setErrorCode(code)
+                .setErrorMessage(message);
+    }
+
+    private String safeBody(String body) {
+        if (body == null) {
+            return null;
+        }
+        return StrUtil.maxLength(body, 1000);
     }
 
     private String firstNonBlank(String... values) {
@@ -254,26 +364,6 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
             }
         }
         return null;
-    }
-
-    private boolean isCompleted(String status) {
-        return "completed".equalsIgnoreCase(status) || "success".equalsIgnoreCase(status) || "succeeded".equalsIgnoreCase(status);
-    }
-
-    private boolean isFailed(String status) {
-        return "failed".equalsIgnoreCase(status) || "error".equalsIgnoreCase(status) || "cancelled".equalsIgnoreCase(status) || "canceled".equalsIgnoreCase(status);
-    }
-
-    private int timeoutMillis(AigcProviderSubmitReqDTO reqDTO) {
-        return (reqDTO.getProviderTimeoutSeconds() == null || reqDTO.getProviderTimeoutSeconds() <= 0 ? 120 : reqDTO.getProviderTimeoutSeconds()) * 1000;
-    }
-
-    private String safeBody(String body) {
-        return StrUtil.maxLength(body, 1000);
-    }
-
-    private AigcProviderSubmitRespDTO failed(String code, String message) {
-        return new AigcProviderSubmitRespDTO().setSuccess(false).setFinished(true).setErrorCode(code).setErrorMessage(message);
     }
 
 }

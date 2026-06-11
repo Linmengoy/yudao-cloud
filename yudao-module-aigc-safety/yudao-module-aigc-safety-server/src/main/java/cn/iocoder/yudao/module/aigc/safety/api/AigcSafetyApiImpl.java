@@ -26,6 +26,9 @@ public class AigcSafetyApiImpl implements AigcSafetyApi {
     @Resource
     private AigcAuditRecordService auditRecordService;
 
+    /**
+     * 审核提示词是否违规
+     */
     @Override
     public CommonResult<AigcSafetyPromptCheckRespDTO> checkPrompt(AigcSafetyPromptCheckReqDTO reqDTO) {
         return success(safetyCheckService.checkPrompt(reqDTO));

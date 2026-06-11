@@ -77,30 +77,6 @@ type ReferenceImage = {
   mimeType: string;
 };
 
-const QUICK_IMAGE_PARAM_FALLBACKS: Record<string, unknown> = {
-  size: "auto",
-  quality: "auto",
-  output_format: "png",
-  output_compression: null,
-  moderation: "auto",
-  n: 1,
-  ratio: "1:1",
-  aspectRatio: "1:1",
-  imageSize: "1K",
-  resolution: "1K",
-};
-
-const QUICK_VIDEO_PARAM_FALLBACKS: Record<string, unknown> = {
-  ratio: "16:9",
-  aspectRatio: "16:9",
-  resolution: "1080p",
-  duration: 5,
-  size: "1280*704",
-  generateAudio: true,
-  audio: true,
-  watermark: false,
-};
-
 function imageExtensionFromMimeType(mimeType: string) {
   if (mimeType === "image/jpeg") return "jpg";
   if (mimeType === "image/webp") return "webp";
@@ -158,21 +134,11 @@ function hasUsableParamValue(value: unknown) {
   return true;
 }
 
-function getKnownParamFallback(paramKey: string, modelType: number) {
-  if (modelType === 3 && paramKey in QUICK_VIDEO_PARAM_FALLBACKS) {
-    return QUICK_VIDEO_PARAM_FALLBACKS[paramKey];
-  }
-  if (paramKey in QUICK_IMAGE_PARAM_FALLBACKS) {
-    return QUICK_IMAGE_PARAM_FALLBACKS[paramKey];
-  }
-  return undefined;
-}
-
-function getRawTemplateDefault(template: AigcModelParamTemplate, modelType: number) {
+function getRawTemplateDefault(template: AigcModelParamTemplate) {
   if (hasUsableParamValue(template.defaultValue)) return template.defaultValue;
   const option = (template.options ?? []).map(normalizeTemplateOption).find(Boolean);
   if (option) return option;
-  return getKnownParamFallback(template.paramKey, modelType);
+  return undefined;
 }
 
 function coerceTemplateValue(template: AigcModelParamTemplate, rawValue: unknown) {
@@ -214,10 +180,10 @@ function coerceTemplateValue(template: AigcModelParamTemplate, rawValue: unknown
   return normalizeTemplateOption(rawValue);
 }
 
-function buildDefaultModelParams(templates: AigcModelParamTemplate[], modelType: number) {
+function buildDefaultModelParams(templates: AigcModelParamTemplate[]) {
   const params: Record<string, unknown> = {};
   for (const template of templates) {
-    const value = coerceTemplateValue(template, getRawTemplateDefault(template, modelType));
+    const value = coerceTemplateValue(template, getRawTemplateDefault(template));
     if (hasUsableParamValue(value)) params[template.paramKey] = value;
   }
   return params;
@@ -225,10 +191,9 @@ function buildDefaultModelParams(templates: AigcModelParamTemplate[], modelType:
 
 function buildEffectiveModelParams(
   templates: AigcModelParamTemplate[],
-  modelType: number,
   currentParams: Record<string, unknown>
 ) {
-  const defaults = buildDefaultModelParams(templates, modelType);
+  const defaults = buildDefaultModelParams(templates);
   const keys = new Set(templates.map((template) => template.paramKey));
   const merged = { ...defaults };
   for (const [key, value] of Object.entries(currentParams)) {
@@ -487,7 +452,6 @@ export default function WorkspacePage() {
     [quickModels, selectedModelId]
   );
   const selectedModelParamId = selectedModel?.id ?? null;
-  const selectedModelParamType = selectedModel?.type ?? null;
   const referenceImage = referenceImages[0] ?? null;
   const hasReferenceImages = referenceImages.length > 0;
   const imageGenerationCapability: QuickGenerationMode = hasReferenceImages ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
@@ -499,7 +463,7 @@ export default function WorkspacePage() {
   const isQuickGenerationModel = Boolean(quickGenerationMode);
   const effectiveModelParams = useMemo(
     () => selectedModel
-      ? buildEffectiveModelParams(paramTemplates, selectedModel.type, modelParams)
+      ? buildEffectiveModelParams(paramTemplates, modelParams)
       : {},
     [modelParams, paramTemplates, selectedModel]
   );
@@ -605,7 +569,7 @@ export default function WorkspacePage() {
   useEffect(() => {
     let ignore = false;
     const timer = window.setTimeout(() => {
-      if (selectedModelParamId == null || selectedModelParamType == null || !quickGenerationMode) {
+      if (selectedModelParamId == null || !quickGenerationMode) {
         setParamTemplates([]);
         setModelParams({});
         setParamsLoading(false);
@@ -623,7 +587,7 @@ export default function WorkspacePage() {
         .then((templates) => {
           if (ignore) return;
           setParamTemplates(templates);
-          setModelParams((current) => buildEffectiveModelParams(templates, selectedModelParamType, current));
+          setModelParams((current) => buildEffectiveModelParams(templates, current));
           setLoadedParamKey(paramKey);
         })
         .catch((error) => {
@@ -641,7 +605,7 @@ export default function WorkspacePage() {
       ignore = true;
       window.clearTimeout(timer);
     };
-  }, [quickGenerationMode, selectedModelParamId, selectedModelParamType]);
+  }, [quickGenerationMode, selectedModelParamId]);
 
   useEffect(() => {
     if (!paramsOpen) return;
@@ -769,7 +733,7 @@ export default function WorkspacePage() {
       return;
     }
 
-    const modelParamsForSubmit = buildEffectiveModelParams(paramTemplates, selectedModel.type, modelParams);
+    const modelParamsForSubmit = buildEffectiveModelParams(paramTemplates, modelParams);
     const missingRequiredParams = getMissingRequiredParamNames(paramTemplates, modelParamsForSubmit);
     if (missingRequiredParams.length > 0) {
       setSubmitError(`请先配置必填参数：${missingRequiredParams.join("、")}`);

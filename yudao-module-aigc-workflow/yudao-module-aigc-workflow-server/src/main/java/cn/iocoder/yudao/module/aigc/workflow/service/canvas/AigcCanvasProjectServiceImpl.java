@@ -1365,19 +1365,31 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
                 .setInverseOperationJson(operation.getInverseOperationJson());
     }
 
+    /**
+     * 校验项目是否存在，且用户是否有编辑权限
+     */
     @Override
     public AigcCanvasProjectDO validateEditableProject(Long projectId, Long userId) {
-        AigcCanvasProjectDO project = validateReadableProject(projectId, userId);
+        AigcCanvasProjectDO project = projectMapper.selectById(projectId);
+        if (project == null) {
+            throw exception(CANVAS_PROJECT_NOT_EXISTS);
+        }
         if (isProjectOwner(project, userId)) {
             return project;
         }
         AigcCanvasMemberDO member = memberMapper.selectByProjectIdAndUserId(projectId, userId);
+        if (member == null) {
+            throw exception(CANVAS_NO_PERMISSION);
+        }
         if (member == null || "viewer".equals(member.getRole())) {
             throw exception(CANVAS_NO_PERMISSION);
         }
         return project;
     }
 
+    /**
+     * 校验项目是否存在，且用户是否有读取权限
+     */
     @Override
     public AigcCanvasProjectDO validateReadableProject(Long projectId, Long userId) {
         AigcCanvasProjectDO project = projectMapper.selectById(projectId);

@@ -1,0 +1,20 @@
+services:
+  www-home-caddy:
+    image: m.daocloud.io/docker.io/library/caddy:2.9-alpine
+    container_name: www-home-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /opt/code/www-home:/srv/www-home:ro
+      - /opt/code/caddy/Caddyfile.www.copse.online:/etc/caddy/Caddyfile:ro
+      - www_home_caddy_data:/data
+      - www_home_caddy_config:/config
+      - /var/log/caddy:/var/log/caddy
+
+volumes:
+  www_home_caddy_data:
+  www_home_caddy_config:

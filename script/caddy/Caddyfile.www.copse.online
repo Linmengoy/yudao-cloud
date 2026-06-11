@@ -1,0 +1,104 @@
+{
+    email admin@copse.online
+}
+
+www.copse.online {
+    encode zstd gzip
+
+    handle /app-api/* {
+        reverse_proxy host.docker.internal:48080 {
+            flush_interval -1
+
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+
+    handle /aigc/workflow/ws* {
+        reverse_proxy host.docker.internal:48080 {
+            flush_interval -1
+
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+
+    handle /app* {
+        reverse_proxy host.docker.internal:13000 {
+            flush_interval -1
+
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+
+    handle /_next/* {
+        reverse_proxy host.docker.internal:13000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+
+    handle /login {
+        reverse_proxy host.docker.internal:13000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+
+    handle /register {
+        reverse_proxy host.docker.internal:13000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+
+    handle {
+        root * /srv/www-home
+        file_server
+    }
+
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    }
+
+    @staticAssets path /assets/*
+    header @staticAssets Cache-Control "public, max-age=31536000, immutable"
+
+    @html path / /index.html
+    header @html Cache-Control "no-cache"
+
+    log {
+        output file /var/log/caddy/www-copse-online.log {
+            roll_size 20mb
+            roll_keep 5
+            roll_keep_for 720h
+        }
+        format json
+        level INFO
+    }
+
+    handle_errors {
+        respond "{err.status_code} {err.status_text}"
+    }
+}
