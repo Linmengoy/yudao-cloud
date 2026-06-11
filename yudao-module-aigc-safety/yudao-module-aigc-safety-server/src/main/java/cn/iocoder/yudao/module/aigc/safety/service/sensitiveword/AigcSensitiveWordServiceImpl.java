@@ -8,9 +8,11 @@ import cn.iocoder.yudao.module.aigc.safety.controller.admin.sensitiveword.vo.Aig
 import cn.iocoder.yudao.module.aigc.safety.controller.admin.sensitiveword.vo.AigcSensitiveWordStatusReqVO;
 import cn.iocoder.yudao.module.aigc.safety.dal.dataobject.AigcSensitiveWordDO;
 import cn.iocoder.yudao.module.aigc.safety.dal.mysql.AigcSensitiveWordMapper;
+import cn.iocoder.yudao.module.aigc.safety.dal.redis.AigcSensitiveWordRedisDAO;
 import cn.iocoder.yudao.module.aigc.safety.enums.AigcSafetySceneEnum;
 import cn.iocoder.yudao.module.aigc.safety.enums.AigcSensitiveWordMatchTypeEnum;
 import cn.iocoder.yudao.module.aigc.safety.enums.AigcSensitiveWordStatusEnum;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -18,6 +20,7 @@ import org.springframework.validation.annotation.Validated;
 import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
+import static cn.iocoder.yudao.module.aigc.safety.dal.redis.RedisKeyConstants.SENSITIVE_WORD_ENABLED;
 import static cn.iocoder.yudao.module.aigc.safety.enums.ErrorCodeConstants.*;
 
 @Service
@@ -26,6 +29,8 @@ public class AigcSensitiveWordServiceImpl implements AigcSensitiveWordService {
 
     @Resource
     private AigcSensitiveWordMapper sensitiveWordMapper;
+    @Resource
+    private AigcSensitiveWordRedisDAO sensitiveWordRedisDAO;
 
     @Override
     public Long createSensitiveWord(AigcSensitiveWordSaveReqVO reqVO) {
@@ -35,6 +40,7 @@ public class AigcSensitiveWordServiceImpl implements AigcSensitiveWordService {
                 .setMatchType(reqVO.getMatchType())
                 .setStatus(reqVO.getStatus());
         sensitiveWordMapper.insert(sensitiveWord);
+        sensitiveWordRedisDAO.delete(buildEnabledSensitiveWordKey(reqVO.getScene()));
         return sensitiveWord.getId();
     }
 
@@ -43,14 +49,18 @@ public class AigcSensitiveWordServiceImpl implements AigcSensitiveWordService {
         validateSensitiveWordExists(reqVO.getId());
         normalizeAndValidate(reqVO);
         validateSensitiveWordDuplicate(reqVO.getId(), reqVO.getWord(), reqVO.getScene());
+        AigcSensitiveWordDO oldSensitiveWord = getSensitiveWord(reqVO.getId());
         AigcSensitiveWordDO updateObj = BeanUtils.toBean(reqVO, AigcSensitiveWordDO.class);
         sensitiveWordMapper.updateById(updateObj);
+        sensitiveWordRedisDAO.delete(buildEnabledSensitiveWordKey(oldSensitiveWord.getScene()));
+        sensitiveWordRedisDAO.delete(buildEnabledSensitiveWordKey(reqVO.getScene()));
     }
 
     @Override
     public void deleteSensitiveWord(Long id) {
-        validateSensitiveWordExists(id);
+        AigcSensitiveWordDO sensitiveWord = validateSensitiveWordExists(id);
         sensitiveWordMapper.deleteById(id);
+        sensitiveWordRedisDAO.delete(buildEnabledSensitiveWordKey(sensitiveWord.getScene()));
     }
 
     @Override
@@ -74,18 +84,30 @@ public class AigcSensitiveWordServiceImpl implements AigcSensitiveWordService {
 
     @Override
     public void updateSensitiveWordStatus(AigcSensitiveWordStatusReqVO reqVO) {
-        validateSensitiveWordExists(reqVO.getId());
+        AigcSensitiveWordDO sensitiveWord = validateSensitiveWordExists(reqVO.getId());
         if (!AigcSensitiveWordStatusEnum.ENABLE.getCode().equals(reqVO.getStatus())
                 && !AigcSensitiveWordStatusEnum.DISABLE.getCode().equals(reqVO.getStatus())) {
             throw exception(SENSITIVE_WORD_STATUS_INVALID);
         }
         sensitiveWordMapper.updateById(new AigcSensitiveWordDO().setId(reqVO.getId()).setStatus(reqVO.getStatus()));
+        sensitiveWordRedisDAO.delete(buildEnabledSensitiveWordKey(sensitiveWord.getScene()));
     }
 
     @Override
     public List<AigcSensitiveWordDO> getEnabledSensitiveWords(String scene) {
-        
-        return sensitiveWordMapper.selectListBySceneAndStatus(scene, AigcSensitiveWordStatusEnum.ENABLE.getCode());
+        String key = buildEnabledSensitiveWordKey(scene);
+        List<AigcSensitiveWordDO> sensitiveWords = sensitiveWordRedisDAO.get(key);
+        if (sensitiveWords != null) {
+            return sensitiveWords;
+        }
+        sensitiveWords = sensitiveWordMapper.selectListBySceneAndStatus(scene, AigcSensitiveWordStatusEnum.ENABLE.getCode());
+        sensitiveWordRedisDAO.set(key, sensitiveWords);
+        return sensitiveWords;
+    }
+
+    private String buildEnabledSensitiveWordKey(String scene) {
+        Long tenantId = TenantContextHolder.getTenantId() == null ? 0L : TenantContextHolder.getTenantId();
+        return String.format(SENSITIVE_WORD_ENABLED, tenantId, scene);
     }
 
     private void validateSensitiveWordDuplicate(Long id, String word, String scene) {
