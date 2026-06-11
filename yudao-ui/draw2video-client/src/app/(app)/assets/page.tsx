@@ -709,14 +709,20 @@ export default function AssetsPage() {
               return (
               <div key={getAssetKey(asset)} data-span={getAssetSpan(asset, measuredRatios[getAssetKey(asset)])} className="asset-grid-item absolute p-0.5">
                 {isMediaAsset(asset) ? (
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => openAssetPreview(asset)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      openAssetPreview(asset);
+                    }}
                     className="block w-full cursor-pointer overflow-hidden text-left"
                     aria-label={`预览资产 ${asset.title || asset.assetNo || asset.id}`}
                   >
                     <AssetWallPreview asset={asset} onLoad={(ratio) => handlePreviewLoad(asset, ratio)} />
-                  </button>
+                  </div>
                 ) : (
                   <Link href={getAssetHref(asset)} className="block" aria-label={`查看资产 ${asset.title || asset.assetNo || asset.id}`}>
                     <AssetWallPreview asset={asset} onLoad={(ratio) => handlePreviewLoad(asset, ratio)} />

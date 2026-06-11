@@ -205,6 +205,12 @@ export type TextNode = Node<TextNodeData, "text">;
 
 // --- Video Node ---
 
+export type VideoGenerationMode =
+  | "TEXT_TO_VIDEO"
+  | "IMAGE_TO_VIDEO"
+  | "FIRST_LAST_FRAME_VIDEO"
+  | "MULTI_REF_VIDEO";
+
 export interface VideoNodeData {
   [key: string]: unknown;
   videoId?: string;
@@ -250,6 +256,10 @@ export interface VideoNodeData {
   generationRunStartedAt?: string | null;
   elapsedMs?: number | null;
   upstreamStatus?: string | null;
+  explicitMode?: VideoGenerationMode | null;
+  firstFrameEdgeId?: string | null;
+  lastFrameEdgeId?: string | null;
+  referenceImageOrder?: string[];
 }
 
 export type VideoNode = Node<VideoNodeData, "video">;
@@ -312,6 +322,10 @@ export const SYNCABLE_NODE_DATA_KEYS = [
   "generationRunStartedAt",
   "elapsedMs",
   "upstreamStatus",
+  "explicitMode",
+  "firstFrameEdgeId",
+  "lastFrameEdgeId",
+  "referenceImageOrder",
   "ratio",
   "resolution",
   "duration",

@@ -2,6 +2,8 @@ package cn.iocoder.yudao.module.aigc.model.controller.admin.param;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelParamTemplateCopyReqVO;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelParamTemplateCopyRespVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.param.vo.AigcModelParamTemplateSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelParamTemplateDO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelParamTemplateRespDTO;
@@ -36,6 +38,13 @@ public class AigcModelParamController {
     public CommonResult<Long> createParamTemplate(@Valid @RequestBody AigcModelParamTemplateSaveReqVO reqVO) {
         Long id = paramService.createParamTemplate(reqVO);
         return success(id);
+    }
+
+    @PostMapping("/copy")
+    @Operation(summary = "复制参数模板")
+    @PreAuthorize("@ss.hasPermission('aigc:model:param:create')")
+    public CommonResult<AigcModelParamTemplateCopyRespVO> copyParamTemplates(@Valid @RequestBody AigcModelParamTemplateCopyReqVO reqVO) {
+        return success(paramService.copyParamTemplates(reqVO));
     }
 
     @PutMapping("/update")

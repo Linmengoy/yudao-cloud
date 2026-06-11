@@ -11,6 +11,8 @@ export const AIGC_MODEL_CAPABILITIES = [
   { label: '图生图', value: 'IMAGE_TO_IMAGE' },
   { label: '文生视频', value: 'TEXT_TO_VIDEO' },
   { label: '图生视频', value: 'IMAGE_TO_VIDEO' },
+  { label: '首尾帧视频', value: 'FIRST_LAST_FRAME_VIDEO' },
+  { label: '多参考视频', value: 'MULTI_REF_VIDEO' },
   { label: '文本生成', value: 'TEXT_GENERATE' },
   { label: '提示词优化', value: 'PROMPT_OPTIMIZE' },
   { label: '剧本生成', value: 'SCRIPT_GENERATE' }

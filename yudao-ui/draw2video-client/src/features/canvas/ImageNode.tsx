@@ -392,6 +392,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const [nodeMenuPos, setNodeMenuPos] = useState<{ x: number; y: number } | null>(null);
   const createdAtMs = useMemo(() => new Date(data.generationStartedAt ?? data.createdAt).getTime(), [data.createdAt, data.generationStartedAt]);
   const [now, setNow] = useState(createdAtMs);
+  const [startedAtMs, setStartedAtMs] = useState(() => Number.isFinite(createdAtMs) ? createdAtMs : Date.now());
+  const effectiveStartedAtMs = startedAtMs > 0 ? startedAtMs : createdAtMs;
 
   const status = data.status ?? "idle";
   const isGenerating = status === "pending";
@@ -721,6 +723,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     if (!cleanPrompt || isGenerating || aigcModels.loading || aigcModels.templateLoading) return;
 
     const startedAt = new Date().toISOString();
+    const runStartedAtMs = Date.now();
+    setStartedAtMs(runStartedAtMs);
+    setNow(runStartedAtMs);
     const ctx = { nodes: getNodes() as AppNode[], edges: getEdges() as AppEdge[] };
     const { snapshots, ids, mode } = resolveInputImages(id, ctx);
     const runModel = activeAigcModel && aigcModels.models.some((model) => model.id === activeAigcModel.id)
@@ -915,7 +920,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     setNodeMenuPos(clampToViewport({ x: nodeMenu.x, y: nodeMenu.y, width, height }));
   }, [nodeMenu.visible, nodeMenu.x, nodeMenu.y]);
 
-  const elapsedMs = data.elapsedMs ?? (isGenerating ? now - createdAtMs : null);
+  const elapsedMs = data.elapsedMs ?? (isGenerating && Number.isFinite(effectiveStartedAtMs) ? Math.max(0, now - effectiveStartedAtMs) : null);
   const safetyStatus = normalizeSafetyStatus(data.safetyStatus) !== "idle" ? normalizeSafetyStatus(data.safetyStatus) : normalizeSafetyStatusFromError(data.safetyReason ?? data.errorMessage);
   const safety = getSafetyCopy(safetyStatus, "generation");
   const previewItem = useMemo(() => imageNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
@@ -1361,13 +1366,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                   type="button"
                   onClick={handleGenerate}
                   disabled={!canGenerate}
-                  className="flex h-11 items-center gap-3 rounded-full bg-charcoal/90 py-1 pl-4 pr-1 text-off-white shadow-[0_4px_12px_rgba(0,0,0,0.18)] transition-opacity active:opacity-85 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-black/80"
+                  className="flex h-11 items-center gap-3 rounded-full bg-charcoal/90 py-1 pl-4 pr-1 text-[#fcfbf8] shadow-[0_4px_12px_rgba(0,0,0,0.18)] transition-opacity active:opacity-85 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-black/80 dark:text-[#f4efe6]"
                   aria-label={isGenerating ? "生成中" : "开始生成"}
                 >
                   <span
                     className={cn(
-                      "flex items-center gap-2 text-sm font-semibold tabular-nums text-off-white transition-colors duration-200 ease-in-out",
-                      aigcModels.priceLoading && "text-off-white/45"
+                      "flex items-center gap-2 text-sm font-semibold tabular-nums text-[#fcfbf8] transition-colors duration-200 ease-in-out dark:text-[#f4efe6]",
+                      aigcModels.priceLoading && "text-[#fcfbf8]/70 dark:text-[#f4efe6]/70"
                     )}
                   >
                     <Sparkles className="size-4 text-current" />
