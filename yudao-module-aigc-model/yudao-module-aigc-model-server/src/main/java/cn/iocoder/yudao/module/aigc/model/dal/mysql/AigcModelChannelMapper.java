@@ -8,6 +8,7 @@ import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelC
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelChannelDO;
 import org.apache.ibatis.annotations.Mapper;
 
+import java.util.Collection;
 import java.util.List;
 
 @Mapper
@@ -37,6 +38,15 @@ public interface AigcModelChannelMapper extends BaseMapperX<AigcModelChannelDO> 
                 .orderByAsc(AigcModelChannelDO::getPriority)
                 .orderByDesc(AigcModelChannelDO::getWeight)
                 .orderByDesc(AigcModelChannelDO::getId));
+    }
+
+    default List<AigcModelChannelDO> selectEnabledListByModelIds(Collection<Long> modelIds) {
+        if (modelIds.isEmpty()) {
+            return List.of();
+        }
+        return selectList(new LambdaQueryWrapperX<AigcModelChannelDO>()
+                .in(AigcModelChannelDO::getModelId, modelIds)
+                .eq(AigcModelChannelDO::getStatus, CommonStatusEnum.ENABLE.getStatus()));
     }
 
     default Long selectCountByProviderId(Long providerId) {

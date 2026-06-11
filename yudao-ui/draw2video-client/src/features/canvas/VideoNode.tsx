@@ -499,15 +499,22 @@ export function VideoNodeComponent({
       : "提交中";
   const previewElapsedMs = previewOpen ? elapsedMs : data.elapsedMs;
   const previewItem = useMemo(
+    // todo 里面问题还很大
     () => videoNodeToMediaPreview({ ...data, elapsedMs: previewElapsedMs }),
     [data, previewElapsedMs],
   );
+  // todo 历史遗留问题，后续需要调整/ 尺寸用户应该可以自己拖拽比例
   const displaySize = getDisplaySize(data);
+
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
+  // 后期previewUrl 可以考虑gif
   const videoSrc = data.videoUrl || data.previewUrl;
   const videoAssetId = getVideoAssetId(data);
   const fixedUiScale = 1 / zoom;
+  // 后续除了引用图片，视频也可以参与引用
+
+  // 参考图（边及参考图）
   const referenceImages = useMemo(() => {
     void referenceImagesSignature;
     const currentNodes = getNodes() as AppNode[];
@@ -529,18 +536,27 @@ export function VideoNodeComponent({
     }
     return images;
   }, [getEdges, getNodes, id, referenceImagesSignature]);
+
+  // 生成模式
   const generationCapability = deriveVideoMode(
     data.explicitMode,
     referenceImages.length,
   );
+
+
   const orderedReferenceImages = useMemo(
+    // 这个图片排序模式还值得商榷
     () => getOrderedReferences(generationCapability, referenceImages, data),
     [data, generationCapability, referenceImages],
   );
+
+  // 模式校验，感觉是脱裤子放屁多此一举
   const generationValidationMessage = validateVideoGeneration(
     generationCapability,
     referenceImages.length,
   );
+
+  // 参考图提及选项
   const mentionOptions = useMemo<PromptMentionOption[]>(
     () =>
       orderedReferenceImages.map((image, index) => ({
