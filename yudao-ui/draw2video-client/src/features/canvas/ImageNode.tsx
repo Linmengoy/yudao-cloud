@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   X,
+  Expand,
 } from "lucide-react";
 import type {
   AppEdge,
@@ -288,6 +289,16 @@ function buildPrimaryPatch(output: ImageNodeOutput, params: ImageTaskParams): Pa
   };
 }
 
+function isExpiringSoon(value?: string | null) {
+  if (!value) return true;
+  const time = new Date(value).getTime();
+  return !Number.isFinite(time) || time - Date.now() < 60_000;
+}
+
+function needsOutputUrlRefresh(outputs: ImageNodeOutput[], assetUrlExpireTime?: string | null) {
+  return outputs.some((output) => output.assetId && (!output.previewUrl || isExpiringSoon(assetUrlExpireTime)));
+}
+
 function displayImageGenerationPrice(price: number | null | undefined, count: number, templates: AigcModelParamTemplate[]) {
   if (price == null || !Number.isFinite(price)) return price;
   return priceIncludesGenerationCount(templates) ? price : price * count;
@@ -385,15 +396,6 @@ function scaleToPreview(width: number, height: number) {
 }
 
 function getDisplaySize(data: ImageNodeData, measuredSize: { width: number; height: number } | null, sizeParam: string) {
-  const outputCount = data.outputs?.length ?? 0;
-  if (data.outputsExpanded && outputCount > 1) {
-    const single = outputCount === 2 ? { width: 320, height: 320 } : { width: 300, height: 300 };
-    return {
-      width: single.width * 2 + 12,
-      height: single.height * Math.ceil(outputCount / 2) + 12 * (Math.ceil(outputCount / 2) - 1),
-    };
-  }
-
   const width = measuredSize?.width ?? data.width;
   const height = measuredSize?.height ?? data.height;
   const hasImage = Boolean(data.previewUrl || data.dataUrl);
@@ -496,6 +498,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number } | null>(null);
   const [visibleImageInset, setVisibleImageInset] = useState<{ left: number } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewOutputId, setPreviewOutputId] = useState<string | null>(null);
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; visible: boolean }>({
     x: 0,
     y: 0,
@@ -620,6 +623,39 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     },
     [id, setNodes]
   );
+
+  const updateRuntimeData = useCallback(
+    (patch: Partial<ImageNodeData>) => {
+      setNodes((nds) =>
+        nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
+      );
+    },
+    [id, setNodes]
+  );
+
+  useEffect(() => {
+    if (!needsOutputUrlRefresh(outputs, data.assetUrlExpireTime)) return;
+    let cancelled = false;
+    hydrateImageOutputs(outputs, {
+      previewUrl: data.previewUrl ?? data.outputPreviewUrl ?? null,
+      width: data.width,
+      height: data.height,
+      mimeType: data.mimeType,
+      fileName: data.fileName,
+    }).then((hydrated) => {
+      if (cancelled || hydrated.outputs.length === 0) return;
+      const primary = getPrimaryOutput(hydrated.outputs, data.primaryOutputId);
+      updateRuntimeData({
+        outputs: hydrated.outputs,
+        assetUrlExpireTime: hydrated.assetUrlExpireTime,
+        ...(primary ? buildPrimaryPatch(primary, params) : {}),
+        primaryOutputId: primary?.id ?? data.primaryOutputId ?? null,
+      });
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [data.assetUrlExpireTime, data.fileName, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.primaryOutputId, data.width, outputs, params, updateRuntimeData]);
 
   const waitAndApplyServerRun = useCallback(async (projectId: string | number, taskId: number, startedAt: string) => {
     const pollKey = `${projectId}:${id}:${taskId}`;
@@ -1118,7 +1154,33 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const safetyStatus = normalizeSafetyStatus(data.safetyStatus) !== "idle" ? normalizeSafetyStatus(data.safetyStatus) : normalizeSafetyStatusFromError(data.safetyReason ?? data.errorMessage);
   const safety = getSafetyCopy(safetyStatus, "generation");
   const previewItem = useMemo(() => imageNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
+  const previewItems = useMemo(() => {
+    if (!outputs.length) return previewItem ? [previewItem] : [];
+    return outputs
+      .filter((output) => output.previewUrl)
+      .map((output, index) => imageNodeToMediaPreview({
+        ...data,
+        elapsedMs,
+        assetId: output.assetId ?? data.assetId,
+        outputAssetId: output.assetId ?? data.outputAssetId,
+        previewUrl: output.previewUrl,
+        outputPreviewUrl: output.previewUrl,
+        width: output.width ?? data.width,
+        height: output.height ?? data.height,
+        fileName: output.fileName ?? `${data.fileName || "Image"}-${index + 1}`,
+      }))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }, [data, elapsedMs, outputs, previewItem]);
+  const previewOutputIndex = useMemo(() => {
+    if (!outputs.length || !previewOutputId) return 0;
+    return Math.max(0, outputs.findIndex((output) => output.id === previewOutputId));
+  }, [outputs, previewOutputId]);
+  const activePreviewItem = previewItems[previewOutputIndex] ?? previewItem;
   const displaySize = getDisplaySize(data, measuredSize, params.size);
+  const outputGridGap = 12;
+  const nodeFrameSize = outputsExpanded
+    ? { width: displaySize.width * 2 + outputGridGap, height: displaySize.height * 2 + outputGridGap }
+    : displaySize;
   const displayScale = (measuredSize?.width ?? data.width)
     ? displaySize.width / (measuredSize?.width ?? data.width ?? displaySize.width)
     : 1;
@@ -1133,12 +1195,23 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [displaySize.width, displaySize.height, id, updateNodeInternals]);
+  }, [nodeFrameSize.width, nodeFrameSize.height, id, updateNodeInternals]);
 
   const handlePreviewDownload = useCallback(() => {
     if (!previewItem) return;
     downloadMedia(previewItem);
   }, [previewItem]);
+  const openOutputPreview = useCallback((output?: ImageNodeOutput | null) => {
+    setPreviewOutputId(output?.id ?? primaryOutput?.id ?? null);
+    setPreviewOpen(true);
+  }, [primaryOutput?.id]);
+  const navigateOutputPreview = useCallback((index: number) => {
+    setPreviewOutputId(outputs[index]?.id ?? null);
+  }, [outputs]);
+  const setPreviewOutputAsPrimary = useCallback(() => {
+    const output = outputs[previewOutputIndex];
+    if (output) setPrimaryOutput(output);
+  }, [outputs, previewOutputIndex, setPrimaryOutput]);
 
   return (
     <>
@@ -1165,15 +1238,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           "relative",
           referencePickerPromptId && referencePickerPromptId !== id ? "cursor-pointer" : ""
         )}
-        style={{ width: displaySize.width, height: displaySize.height }}
+        style={{ width: nodeFrameSize.width, height: nodeFrameSize.height }}
       >
-        <div className="relative overflow-visible" style={{ width: displaySize.width, height: displaySize.height }}>
+        <div className="relative overflow-visible" style={{ width: nodeFrameSize.width, height: nodeFrameSize.height }}>
           <AnimatePresence>
             {isOnlySelectedNode && !dragging && !outputsExpanded && previewItem && (
               <SelectedMediaToolbar
                 canDownload={Boolean(previewItem.url)}
                 onDownload={handlePreviewDownload}
-                onOpenPreview={() => setPreviewOpen(true)}
+                onOpenPreview={() => openOutputPreview(primaryOutput)}
                 uiScale={fixedUiScale}
                 wheelRef={toolbarWheelRef}
                 style={{
@@ -1199,8 +1272,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             style={{
               left: 0,
               top: 0,
-              width: displaySize.width,
-              height: displaySize.height,
+              width: nodeFrameSize.width,
+              height: nodeFrameSize.height,
             }}
           >
             {isReferencedByActivePrompt && (
@@ -1224,14 +1297,14 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 selected && (imageSrc ? "ring-2 ring-off-white/80" : "border-charcoal/60 ring-2 ring-charcoal/35"),
                 isReferencedByActivePrompt && (imageSrc ? "ring-2 ring-off-white" : "border-charcoal ring-2 ring-charcoal/30")
               )}
-              style={{ width: displaySize.width, height: displaySize.height, pointerEvents: "auto" }}
+              style={{ width: nodeFrameSize.width, height: nodeFrameSize.height, pointerEvents: "auto" }}
             >
               {!outputsExpanded && hasOutputGroup && (
                 <div className="pointer-events-none absolute inset-0 -z-10">
                   {outputs.slice(1, 4).map((output, index) => (
                     <div
                       key={output.id}
-                      className="absolute inset-0 overflow-hidden rounded-[inherit] border border-off-white/20 bg-charcoal shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+                      className="absolute inset-0 overflow-hidden rounded-xl border border-off-white/20 bg-charcoal shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
                       style={{
                         transform: `translate(${(index + 1) * 10}px, ${(index + 1) * 6}px) rotate(${(index + 1) * 1.4}deg)`,
                         zIndex: -index - 1,
@@ -1243,15 +1316,19 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 </div>
               )}
 
-              <div className={cn("absolute inset-0 overflow-hidden rounded-[inherit]", outputsExpanded ? "grid gap-3 p-0" : "flex items-center justify-center")}>
+              <div className={cn("absolute inset-0 overflow-hidden rounded-[inherit]", outputsExpanded ? "p-0" : "flex items-center justify-center")}>
                 {outputsExpanded ? (
-                  <div className="grid size-full grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2" style={{ gap: outputGridGap }}>
                     {outputs.map((output, index) => {
                       const isPrimary = output.id === primaryOutput?.id;
                       return (
-                        <div key={output.id} className="group relative overflow-hidden rounded-xl border border-border-warm bg-charcoal">
+                        <div
+                          key={output.id}
+                          className="group relative overflow-hidden rounded-xl border border-off-white/15 bg-charcoal shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
+                          style={{ width: displaySize.width, height: displaySize.height }}
+                        >
                           <img src={output.previewUrl} alt={output.fileName ?? `生成图片 ${index + 1}`} className="size-full object-cover" draggable={false} />
-                          <div className="absolute right-3 top-3 flex gap-2 opacity-100 transition-opacity">
+                          <div className="absolute right-3 top-3 z-10 flex gap-2 opacity-100 transition-opacity">
                             <button
                               type="button"
                               onClick={(event) => {
@@ -1264,7 +1341,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                   information: [],
                                 });
                               }}
-                              className="nodrag flex h-9 items-center rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                              className="nodrag flex h-9 items-center rounded-lg bg-charcoal/75 px-3 text-sm font-medium text-off-white shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-charcoal/90"
                             >
                               下载
                             </button>
@@ -1275,7 +1352,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                   event.stopPropagation();
                                   toggleOutputsExpanded();
                                 }}
-                                className="nodrag flex h-9 items-center gap-1 rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                                className="nodrag flex h-9 items-center gap-1 rounded-lg bg-charcoal/75 px-3 text-sm font-medium text-off-white shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-charcoal/90"
                               >
                                 <Shrink className="size-4" />
                                 收起
@@ -1287,7 +1364,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                   event.stopPropagation();
                                   setPrimaryOutput(output);
                                 }}
-                                className="nodrag flex h-9 items-center rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                                className="nodrag flex h-9 items-center rounded-lg bg-charcoal/75 px-3 text-sm font-medium text-off-white shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-charcoal/90"
                               >
                                 设为主图
                               </button>
@@ -1368,10 +1445,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     event.stopPropagation();
                     toggleOutputsExpanded();
                   }}
-                  className="nodrag absolute right-3 top-3 z-20 flex h-10 items-center gap-1 rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                  className="nodrag absolute right-3 top-3 z-20 flex h-10 items-center gap-1 rounded-lg bg-charcoal/75 px-3 text-sm font-medium text-off-white shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-charcoal/90"
                   aria-label={`展开 ${outputs.length} 张图片`}
                 >
-                  <Shrink className="size-4 rotate-180" />
+                  <Expand className="size-4" />
                   {outputs.length}张
                 </button>
               )}
@@ -1780,7 +1857,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         </motion.div>,
         document.body
       )}
-      <MediaPreviewDialog item={previewItem} open={previewOpen} onClose={() => setPreviewOpen(false)} />
+      <MediaPreviewDialog
+        item={activePreviewItem}
+        items={previewItems}
+        currentIndex={previewOutputIndex}
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        onNavigate={navigateOutputPreview}
+        onSetPrimary={previewItems.length > 1 ? setPreviewOutputAsPrimary : undefined}
+      />
     </>
   );
 }
