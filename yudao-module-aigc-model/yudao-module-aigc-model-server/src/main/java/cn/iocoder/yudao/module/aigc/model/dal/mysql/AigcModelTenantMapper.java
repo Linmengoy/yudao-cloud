@@ -28,6 +28,15 @@ public interface AigcModelTenantMapper extends BaseMapperX<AigcModelTenantDO> {
                 .orderByDesc(AigcModelTenantDO::getId));
     }
 
+    default List<AigcModelTenantDO> selectListByEnabledTrueAndPublicVisibleTrue() {
+        return selectList(new LambdaQueryWrapperX<AigcModelTenantDO>()
+                .eq(AigcModelTenantDO::getEnabled, true)
+                .eq(AigcModelTenantDO::getPublicVisible, true)
+                .isNotNull(AigcModelTenantDO::getModelId)
+                .orderByAsc(AigcModelTenantDO::getSort)
+                .orderByDesc(AigcModelTenantDO::getId));
+    }
+
     default List<AigcModelTenantDO> selectListByEnabledTrue(Long tenantId) {
         return selectList(new LambdaQueryWrapperX<AigcModelTenantDO>()
                 .eq(AigcModelTenantDO::getTenantId, tenantId)

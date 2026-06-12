@@ -7,6 +7,7 @@ import cn.iocoder.yudao.module.aigc.model.controller.admin.model.vo.AigcModelPag
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelDO;
 import org.apache.ibatis.annotations.Mapper;
 
+import java.util.Collection;
 import java.util.List;
 
 @Mapper
@@ -36,6 +37,16 @@ public interface AigcModelMapper extends BaseMapperX<AigcModelDO> {
                 .eq(AigcModelDO::getStatus, status)
                 .orderByAsc(AigcModelDO::getSort)
                 .orderByDesc(AigcModelDO::getId));
+    }
+
+    default List<AigcModelDO> selectListByIdsAndTypeAndStatus(Collection<Long> ids, Integer type, Integer status) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return selectList(new LambdaQueryWrapperX<AigcModelDO>()
+                .in(AigcModelDO::getId, ids)
+                .eqIfPresent(AigcModelDO::getType, type)
+                .eq(AigcModelDO::getStatus, status));
     }
 
     default List<AigcModelDO> selectListByType(Integer type) {

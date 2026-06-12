@@ -14,6 +14,7 @@ import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcRechargeOrderDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcWalletDO;
 import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcBillingRecordMapper;
 import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcRechargeOrderMapper;
+import cn.iocoder.yudao.module.aigc.billing.dal.mysql.AigcWalletMapper;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcBillingRecordCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.billing.dto.AigcRechargeNotifyReqDTO;
 import cn.iocoder.yudao.module.aigc.billing.enums.AigcBillingRecordTypeEnum;
@@ -57,6 +58,8 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
     private AigcRechargeOrderMapper rechargeOrderMapper;
     @Resource
     private AigcBillingRecordMapper billingRecordMapper;
+    @Resource
+    private AigcWalletMapper walletMapper;
     @Resource
     private AigcWalletService walletService;
     @Resource
@@ -323,12 +326,17 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
     }
 
     private boolean rechargeWalletIfRecordCreated(AigcRechargeOrderDO order, String title) {
-        if (billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo()) != null) {
-            return false;
-        }
         AigcWalletDO wallet = walletService.getWallet(order.getUserId());
         if (wallet == null) {
             throw exception(WALLET_NOT_EXISTS);
+        }
+        AigcBillingRecordDO existingRecord = billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo());
+        if (isRechargeWalletUpdated(wallet, existingRecord)) {
+            return false;
+        }
+        if (existingRecord != null) {
+            // 兼容历史异常：流水已写入但钱包未入账时，按累计充值流水补齐差额。
+            return rechargeWalletToRecordedTotal(wallet.getId());
         }
         AigcBillingRecordDO record = new AigcBillingRecordDO();
         record.setRecordNo(billingNoGenerator.generateBillingRecordNo());
@@ -345,13 +353,29 @@ public class AigcRechargeOrderServiceImpl implements AigcRechargeOrderService {
         try {
             billingRecordMapper.insert(record);
         } catch (DuplicateKeyException ex) {
-            if (billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo()) != null) {
+            existingRecord = billingRecordMapper.selectByBiz(WALLET_RECHARGE.getCode(), order.getRechargeNo());
+            if (isRechargeWalletUpdated(wallet, existingRecord)) {
                 return false;
             }
-            throw ex;
+            if (existingRecord == null) {
+                throw ex;
+            }
         }
         walletService.recharge(order.getWalletId(), order.getTotalPointAmount());
         return true;
+    }
+
+    private boolean isRechargeWalletUpdated(AigcWalletDO wallet, AigcBillingRecordDO record) {
+        if (record == null) {
+            return false;
+        }
+        BigDecimal totalRecordedRecharge = billingRecordMapper.sumAmountByWalletIdAndBizType(wallet.getId(), WALLET_RECHARGE.getCode());
+        return wallet.getTotalRecharge().compareTo(totalRecordedRecharge) >= 0;
+    }
+
+    private boolean rechargeWalletToRecordedTotal(Long walletId) {
+        BigDecimal totalRecordedRecharge = billingRecordMapper.sumAmountByWalletIdAndBizType(walletId, WALLET_RECHARGE.getCode());
+        return walletMapper.rechargeToRecordedTotal(walletId, totalRecordedRecharge) > 0;
     }
 
     @Override

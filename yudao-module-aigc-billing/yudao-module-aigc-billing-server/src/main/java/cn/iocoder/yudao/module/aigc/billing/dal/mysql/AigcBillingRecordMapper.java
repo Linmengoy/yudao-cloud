@@ -7,6 +7,8 @@ import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.module.aigc.billing.dal.dataobject.AigcBillingRecordDO;
 import org.apache.ibatis.annotations.Mapper;
 
+import java.math.BigDecimal;
+
 @Mapper
 public interface AigcBillingRecordMapper extends BaseMapperX<AigcBillingRecordDO> {
 
@@ -25,6 +27,14 @@ public interface AigcBillingRecordMapper extends BaseMapperX<AigcBillingRecordDO
         return selectOne(new LambdaQueryWrapperX<AigcBillingRecordDO>()
                 .eq(AigcBillingRecordDO::getBizType, bizType)
                 .eq(AigcBillingRecordDO::getBizId, bizId));
+    }
+
+    default BigDecimal sumAmountByWalletIdAndBizType(Long walletId, String bizType) {
+        return selectList(new LambdaQueryWrapperX<AigcBillingRecordDO>()
+                .eq(AigcBillingRecordDO::getWalletId, walletId)
+                .eq(AigcBillingRecordDO::getBizType, bizType)).stream()
+                .map(AigcBillingRecordDO::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
 }

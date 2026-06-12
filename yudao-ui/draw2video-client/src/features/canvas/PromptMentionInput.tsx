@@ -47,8 +47,10 @@ export function handleComposerWheelPan(
   setViewport: (viewport: { x: number; y: number; zoom: number }) => void
 ) {
   const target = event.target;
+  // 提示词滚动区域
   const isPromptScrollArea = target instanceof Element && Boolean(target.closest("[data-prompt-scroll-area='true']"));
   const isLocalWheelArea = target instanceof Element && Boolean(target.closest("[data-composer-local-wheel='true']"));
+  // 在提示词滚动区域，如果是垂直滚动（deltaY更大），则允许默认行为，不阻止滚动
   if (isPromptScrollArea && Math.abs(event.deltaY) >= Math.abs(event.deltaX)) return;
   if (isLocalWheelArea) {
     if (Math.abs(event.deltaY) >= Math.abs(event.deltaX)) return;
@@ -56,7 +58,7 @@ export function handleComposerWheelPan(
     event.stopPropagation();
     return;
   }
-
+  // 非以上情况，画布就可以移动了
   event.preventDefault();
   event.stopPropagation();
   const viewport = getViewport();
@@ -72,12 +74,15 @@ export function useComposerWheelPan<T extends HTMLElement>(
   setViewport: (viewport: { x: number; y: number; zoom: number }) => void
 ) {
   const [element, setElement] = useState<T | null>(null);
+  // 只会触发一次
   const ref = useCallback((nextElement: T | null) => {
     setElement(nextElement);
   }, []);
 
   useEffect(() => {
+    // element 为空时，不添加事件监听器
     if (!element) return;
+    // 监听 鼠标滚轮 事件
     const handleWheel = (event: WheelEvent) => handleComposerWheelPan(event, getViewport, setViewport);
     element.addEventListener("wheel", handleWheel, { capture: true, passive: false });
     return () => {

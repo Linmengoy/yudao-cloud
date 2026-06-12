@@ -57,6 +57,15 @@ public interface AigcWalletMapper extends BaseMapperX<AigcWalletDO> {
                 .eq(AigcWalletDO::getId, id));
     }
 
+    default int rechargeToRecordedTotal(Long id, BigDecimal recordedTotalRecharge) {
+        return update(null, new LambdaUpdateWrapper<AigcWalletDO>()
+                .setSql("balance = balance + (" + recordedTotalRecharge + " - total_recharge)")
+                .setSql("total_recharge = " + recordedTotalRecharge)
+                .setSql("last_trans_time = NOW()")
+                .eq(AigcWalletDO::getId, id)
+                .lt(AigcWalletDO::getTotalRecharge, recordedTotalRecharge));
+    }
+
     default int gift(Long id, BigDecimal amount) {
         return update(null, new LambdaUpdateWrapper<AigcWalletDO>()
                 .setSql("balance = balance + " + amount)

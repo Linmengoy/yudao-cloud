@@ -29,7 +29,9 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.*;
@@ -185,22 +187,26 @@ public class AigcModelServiceImpl implements AigcModelService {
 
     @Override
     public List<AigcModelDO> listTenantAvailableModels(Integer type) {
-        List<AigcModelTenantDO> tenantModels = tenantMapper.selectListByEnabledTrue();
-        tenantModels = tenantModels.stream()
-                .filter(tenantModel -> Boolean.TRUE.equals(tenantModel.getPublicVisible()))
-                .toList();
+        List<AigcModelTenantDO> tenantModels = tenantMapper.selectListByEnabledTrueAndPublicVisibleTrue();
         if (tenantModels.isEmpty()) {
             return Collections.emptyList();
         }
         Map<Long, AigcModelTenantDO> tenantModelMap = tenantModels.stream()
                 .collect(toMap(AigcModelTenantDO::getModelId, Function.identity(), (first, second) -> first));
-        List<Long> modelIds = tenantModels.stream().map(AigcModelTenantDO::getModelId).toList();
-        List<AigcModelDO> models = TenantUtils.executeIgnore(() -> modelMapper.selectByIds(modelIds));
+        List<AigcModelDO> models = TenantUtils.executeIgnore(() -> modelMapper.selectListByIdsAndTypeAndStatus(
+                tenantModelMap.keySet(), type, CommonStatusEnum.ENABLE.getStatus()));
+        if (models.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Set<Long> enabledModelIds = getModelIdsWithEnabledChannel(models.stream()
+                .map(AigcModelDO::getId)
+                .collect(Collectors.toSet()));
         return models.stream()
-                .filter(model -> type == null || ObjectUtil.equal(model.getType(), type))
-                .filter(model -> CommonStatusEnum.isEnable(model.getStatus()))
-                .filter(this::hasEnabledChannel)
-                .peek(model -> fillTenantModelFields(model, tenantModelMap.get(model.getId())))
+                .filter(model -> enabledModelIds.contains(model.getId()))
+                .map(model -> {
+                    fillTenantModelFields(model, tenantModelMap.get(model.getId()));
+                    return model;
+                })
                 .sorted(Comparator.comparing(AigcModelDO::getSort, Comparator.nullsLast(Integer::compareTo)))
                 .toList();
     }
@@ -273,6 +279,30 @@ public class AigcModelServiceImpl implements AigcModelService {
     private boolean hasEnabledChannel(AigcModelDO model) {
         List<AigcModelChannelDO> channels = TenantUtils.executeIgnore(() -> channelMapper.selectEnabledListByModelId(model.getId()));
         return channels.stream().anyMatch(channel -> isProviderEnable(channel.getProviderId()));
+    }
+
+    private Set<Long> getModelIdsWithEnabledChannel(Set<Long> modelIds) {
+        if (modelIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        List<AigcModelChannelDO> channels = TenantUtils.executeIgnore(() -> channelMapper.selectEnabledListByModelIds(modelIds));
+        if (channels.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<Long> providerIds = channels.stream()
+                .map(AigcModelChannelDO::getProviderId)
+                .filter(ObjectUtil::isNotNull)
+                .collect(Collectors.toSet());
+        if (providerIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<Long> enabledProviderIds = TenantUtils.executeIgnore(() -> providerMapper.selectEnabledListByIds(providerIds)).stream()
+                .map(AigcModelProviderDO::getId)
+                .collect(Collectors.toSet());
+        return channels.stream()
+                .filter(channel -> enabledProviderIds.contains(channel.getProviderId()))
+                .map(AigcModelChannelDO::getModelId)
+                .collect(Collectors.toSet());
     }
 
     private boolean isProviderEnable(Long providerId) {
