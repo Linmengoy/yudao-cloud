@@ -225,6 +225,18 @@ export type VideoGenerationMode =
   | "FIRST_LAST_FRAME_VIDEO"
   | "MULTI_REF_VIDEO";
 
+export interface VideoNodeOutput {
+  id: string;
+  videoUrl: string;
+  previewUrl?: string | null;
+  assetId?: number | null;
+  width?: number;
+  height?: number;
+  durationSec?: number;
+  fileName?: string;
+  mimeType?: string;
+}
+
 export interface VideoNodeData {
   [key: string]: unknown;
   videoId?: string;
@@ -254,6 +266,9 @@ export interface VideoNodeData {
   progress?: number | null;
   outputAssetId?: number | null;
   outputPreviewUrl?: string | null;
+  outputs?: VideoNodeOutput[];
+  primaryOutputId?: string | null;
+  outputsExpanded?: boolean;
   assetUrlExpireTime?: string | null;
   sourceTaskId?: number | null;
   safetyStatus?: string | null;
