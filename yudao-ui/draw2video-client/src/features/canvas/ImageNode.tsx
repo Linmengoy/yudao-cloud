@@ -35,6 +35,7 @@ import { createGenerationTask, resolveInputImages } from "./use-generation";
 import type { ImageModeration, ImageOutputFormat, ImageQuality, ImageTaskParams } from "@/features/image-generation/types";
 import { getGenerationStatusLabel } from "@/features/generation/generation-status";
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
+import { filterAigcModelParams } from "@/features/generation/aigc-model-param-utils";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getMyAsset } from "@/features/assets/asset-api";
@@ -182,15 +183,8 @@ function formatModelSizeSummary(params: Record<string, unknown>, templates: Aigc
   return "参数";
 }
 
-function modelParamKeys(templates: AigcModelParamTemplate[]) {
-  return new Set(templates.map((template) => template.paramKey));
-}
-
 function filterModelParams(params: ImageTaskParams, templates: AigcModelParamTemplate[]): ImageTaskParams {
-  const keys = modelParamKeys(templates);
-  return Object.fromEntries(
-    Object.entries(params).filter(([key, value]) => value !== undefined && value !== null && value !== "" && keys.has(key))
-  ) as ImageTaskParams;
+  return filterAigcModelParams(params, templates) as ImageTaskParams;
 }
 
 function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {

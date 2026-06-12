@@ -37,6 +37,7 @@ import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
+import { filterAigcModelParams } from "@/features/generation/aigc-model-param-utils";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import {
@@ -125,19 +126,6 @@ function formatCost(value: number | null | undefined) {
   return Number.isInteger(value)
     ? String(value)
     : value.toFixed(2).replace(/\.?0+$/, "");
-}
-
-function filterModelParams(
-  params: Record<string, unknown>,
-  templates: AigcModelParamTemplate[],
-) {
-  const keys = new Set(templates.map((template) => template.paramKey));
-  return Object.fromEntries(
-    Object.entries(params).filter(
-      ([key, value]) =>
-        keys.has(key) && value !== undefined && value !== null && value !== "",
-    ),
-  );
 }
 
 function getReferenceAssetId(data: ImageNodeData | SketchNodeData) {
@@ -284,6 +272,7 @@ const VIDEO_MODE_OPTIONS: {
   { mode: "MULTI_REF_VIDEO", label: "多参考", minRefs: 1, maxRefs: 9 },
 ];
 
+/* 判断模型是否支持各种模式 */
 function deriveVideoMode(
   explicitMode: VideoGenerationMode | null | undefined,
   refCount: number,
@@ -595,8 +584,14 @@ export function VideoNodeComponent({
   }, [getEdges, getNodes, id, referenceImagesSignature]);
 
   const rawParams = useMemo(() => data.params ?? {}, [data.params]);
+  /**
+   * 这里模型过滤的方式是否需要考虑？ 是否需要给用户说明一下当前的列表为什么模式可用？
+   */
   const modelListCapability =
     data.explicitMode ?? deriveVideoMode(null, referenceImages.length);
+  /**
+   * 获取当前模型的能力？ - _ - 如果明确能够选择某个模型，模型的能力变化量会很小，可以在进入画布的时候将所有模型的能力在本地存储一份吧
+   */
   const aigcModels = useAigcModels({
     type: 3,
     capability: modelListCapability,
@@ -644,7 +639,7 @@ export function VideoNodeComponent({
   const activeProviderModel =
     activeAigcModel?.model ?? data.providerModel ?? data.modelId;
   const effectiveParams = useMemo(
-    () => filterModelParams(rawParams, aigcModels.templates),
+    () => filterAigcModelParams(rawParams, aigcModels.templates),
     [aigcModels.templates, rawParams],
   );
   const costLabel = aigcModels.priceLoading
