@@ -199,6 +199,10 @@ function modelSupportsGenerationCount(templates: AigcModelParamTemplate[]) {
   return templates.some((template) => template.paramKey === "n" || template.paramKey === "batchSize");
 }
 
+function priceIncludesGenerationCount(templates: AigcModelParamTemplate[]) {
+  return modelSupportsGenerationCount(templates);
+}
+
 function applyGenerationCountParam(params: ImageTaskParams, templates: AigcModelParamTemplate[], count: number) {
   if (!modelSupportsGenerationCount(templates)) return params;
   const countKey = templates.some((template) => template.paramKey === "batchSize") ? "batchSize" : "n";
@@ -238,6 +242,38 @@ function buildImageOutputs(
   });
 }
 
+async function hydrateImageOutputs(
+  outputs: ImageNodeOutput[],
+  fallback: Pick<ImageNodeData, "previewUrl" | "width" | "height" | "mimeType" | "fileName">
+) {
+  const hydrated = outputs.slice(0, 4).map((output, index) => ({ ...output, id: output.id || getOutputId(output.assetId, output.previewUrl ?? "", index) }));
+  let assetUrlExpireTime: string | null = null;
+  for (let index = 0; index < hydrated.length; index += 1) {
+    const output = hydrated[index];
+    if (output.assetId) {
+      try {
+        const asset = await getMyAsset(output.assetId);
+        output.previewUrl = getAssetPreviewUrl(asset) || output.previewUrl || fallback.previewUrl || "";
+        output.width = output.width ?? asset.width ?? fallback.width;
+        output.height = output.height ?? asset.height ?? fallback.height;
+        output.mimeType = output.mimeType ?? asset.mimeType ?? fallback.mimeType;
+        output.fileName = output.fileName ?? asset.title ?? fallback.fileName;
+        output.id = getOutputId(output.assetId, output.previewUrl, index);
+        if (index === 0) assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
+      } catch {
+      }
+      continue;
+    }
+    output.previewUrl = output.previewUrl || fallback.previewUrl || "";
+    output.width = output.width ?? fallback.width;
+    output.height = output.height ?? fallback.height;
+    output.mimeType = output.mimeType ?? fallback.mimeType;
+    output.fileName = output.fileName ?? fallback.fileName;
+    output.id = getOutputId(null, output.previewUrl, index);
+  }
+  return { outputs: hydrated.filter((output) => output.previewUrl), assetUrlExpireTime };
+}
+
 function buildPrimaryPatch(output: ImageNodeOutput, params: ImageTaskParams): Partial<ImageNodeData> {
   return {
     assetId: output.assetId ?? null,
@@ -250,6 +286,11 @@ function buildPrimaryPatch(output: ImageNodeOutput, params: ImageTaskParams): Pa
     fileName: output.fileName ?? "generated-image.png",
     mimeType: output.mimeType ?? (params.output_format === "jpeg" ? "image/jpeg" : `image/${params.output_format}`),
   };
+}
+
+function displayImageGenerationPrice(price: number | null | undefined, count: number, templates: AigcModelParamTemplate[]) {
+  if (price == null || !Number.isFinite(price)) return price;
+  return priceIncludesGenerationCount(templates) ? price : price * count;
 }
 
 function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {
@@ -515,7 +556,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const outputsExpanded = Boolean(data.outputsExpanded && hasOutputGroup);
   const primaryOutput = getPrimaryOutput(outputs, data.primaryOutputId);
   const imageSrc = primaryOutput?.previewUrl || data.previewUrl || data.dataUrl;
-  const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
+  const costLabel = aigcModels.priceLoading
+    ? "…"
+    : formatCost(displayImageGenerationPrice(aigcModels.price?.salePrice, generationCount, aigcModels.templates));
   const mediaStoreScope = useMemo(() => {
     const urlProjectId = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("projectId");
     const dataProjectId = typeof data.projectId === "string" || typeof data.projectId === "number" ? data.projectId : null;
@@ -592,6 +635,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       if (patch) {
         const nextPatch = patch as Partial<ImageNodeData>;
         if (nextPatch.outputs?.length) {
+          const hydrated = await hydrateImageOutputs(nextPatch.outputs, {
+            previewUrl: data.previewUrl ?? data.outputPreviewUrl ?? null,
+            width: nextPatch.width ?? data.width,
+            height: nextPatch.height ?? data.height,
+            mimeType: nextPatch.mimeType ?? data.mimeType,
+            fileName: nextPatch.fileName ?? data.fileName,
+          });
+          nextPatch.outputs = hydrated.outputs;
+          nextPatch.assetUrlExpireTime = hydrated.assetUrlExpireTime;
           const primary = getPrimaryOutput(nextPatch.outputs, nextPatch.primaryOutputId);
           if (primary) {
             Object.assign(nextPatch, buildPrimaryPatch(primary, nextPatch.params ?? params));
