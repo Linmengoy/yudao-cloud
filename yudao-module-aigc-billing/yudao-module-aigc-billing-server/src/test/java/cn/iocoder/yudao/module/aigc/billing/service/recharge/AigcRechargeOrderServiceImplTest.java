@@ -84,7 +84,7 @@ public class AigcRechargeOrderServiceImplTest extends BaseDbUnitTest {
     }
 
     @Test
-    public void testNotifyRechargePaid_paidWithExistingRecordNotRechargeAgain() {
+    public void testNotifyRechargePaid_paidWithExistingRecordButWalletNotUpdated_rechargeAgain() {
         AigcWalletDO wallet = createWallet();
         AigcRechargeOrderDO order = createPaidOrder(wallet.getId());
         createBillingRecord(order, wallet);
@@ -93,8 +93,23 @@ public class AigcRechargeOrderServiceImplTest extends BaseDbUnitTest {
         rechargeOrderService.notifyRechargePaid(createNotifyReq(order));
 
         wallet = walletMapper.selectById(wallet.getId());
-        assertEquals(0, BigDecimal.ZERO.compareTo(wallet.getBalance()));
-        assertEquals(0, BigDecimal.ZERO.compareTo(wallet.getTotalRecharge()));
+        assertEquals(0, new BigDecimal("30.000000").compareTo(wallet.getBalance()));
+        assertEquals(0, new BigDecimal("30.000000").compareTo(wallet.getTotalRecharge()));
+    }
+
+    @Test
+    public void testNotifyRechargePaid_paidWithExistingRecordAndWalletUpdatedNotRechargeAgain() {
+        AigcWalletDO wallet = createWallet();
+        AigcRechargeOrderDO order = createPaidOrder(wallet.getId());
+        walletMapper.recharge(wallet.getId(), order.getTotalPointAmount());
+        createBillingRecord(order, wallet);
+        when(payOrderApi.getOrder(eq(order.getPayOrderId()))).thenReturn(cn.iocoder.yudao.framework.common.pojo.CommonResult.success(createSuccessPayOrder(order)));
+
+        rechargeOrderService.notifyRechargePaid(createNotifyReq(order));
+
+        wallet = walletMapper.selectById(wallet.getId());
+        assertEquals(0, new BigDecimal("30.000000").compareTo(wallet.getBalance()));
+        assertEquals(0, new BigDecimal("30.000000").compareTo(wallet.getTotalRecharge()));
     }
 
     @Test
@@ -155,6 +170,7 @@ public class AigcRechargeOrderServiceImplTest extends BaseDbUnitTest {
     public void testSyncPayStatus_payClosedCloseRechargeOrder() {
         AigcWalletDO wallet = createWallet();
         AigcRechargeOrderDO order = createWaitPayOrder(wallet.getId());
+        when(payOrderApi.syncOrder(eq(order.getPayOrderId()))).thenReturn(cn.iocoder.yudao.framework.common.pojo.CommonResult.success(createClosedPayOrder(order)));
         when(payOrderApi.getOrder(eq(order.getPayOrderId()))).thenReturn(cn.iocoder.yudao.framework.common.pojo.CommonResult.success(createClosedPayOrder(order)));
 
         boolean result = rechargeOrderService.syncPayStatus(order.getId(), order.getUserId());
@@ -172,6 +188,7 @@ public class AigcRechargeOrderServiceImplTest extends BaseDbUnitTest {
         order.setCreateTime(LocalDateTime.now().minusMinutes(31));
         rechargeOrderMapper.updateById(order);
         when(payProperties.getExpireMinutes()).thenReturn(30);
+        when(payOrderApi.syncOrder(eq(order.getPayOrderId()))).thenReturn(cn.iocoder.yudao.framework.common.pojo.CommonResult.success(createWaitingPayOrder(order)));
         when(payOrderApi.getOrder(eq(order.getPayOrderId()))).thenReturn(cn.iocoder.yudao.framework.common.pojo.CommonResult.success(createWaitingPayOrder(order)));
 
         boolean result = rechargeOrderService.syncPayStatus(order.getId(), order.getUserId());
