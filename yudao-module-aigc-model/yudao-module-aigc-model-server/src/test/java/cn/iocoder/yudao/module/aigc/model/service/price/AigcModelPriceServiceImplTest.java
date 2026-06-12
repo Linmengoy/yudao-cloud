@@ -48,13 +48,13 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
     }
 
     @Test
-    public void testCalculatePrice_batchMultiplier() {
+    public void testCalculatePrice_perImageUsesImageCount() {
         AigcModelDO model = createModel();
         priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
-                AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.500000", "1.000000", "{\"batchMultiplier\":true}"));
+                AigcModelBillingUnitEnum.PER_IMAGE.getCode(), "0.500000", "1.000000", null));
         AigcModelPriceCalculateReqDTO reqDTO = new AigcModelPriceCalculateReqDTO()
                 .setModelId(model.getId()).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())
-                .setParams(Map.of("batchSize", 4));
+                .setParams(Map.of("n", 4));
 
         AigcModelPriceCalculateRespDTO respDTO = priceService.calculatePrice(reqDTO);
 
