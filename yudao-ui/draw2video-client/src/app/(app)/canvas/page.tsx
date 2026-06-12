@@ -1122,6 +1122,79 @@ function getNodeAssetAccessRequest(node: AppNode, assetId: number) {
   return { assetId, fileRole: "THUMBNAIL", accessType: "THUMBNAIL" };
 }
 
+function getImageOutputIdentity(output: Record<string, unknown>) {
+  if (typeof output.id === "string" && output.id) return output.id;
+  if (typeof output.assetId === "number") return `asset-${output.assetId}`;
+  if (typeof output.previewUrl === "string" && output.previewUrl) return output.previewUrl;
+  return null;
+}
+
+function getVideoOutputIdentity(output: Record<string, unknown>) {
+  if (typeof output.id === "string" && output.id) return output.id;
+  if (typeof output.assetId === "number") return `asset-${output.assetId}`;
+  if (typeof output.videoUrl === "string" && output.videoUrl) return output.videoUrl;
+  if (typeof output.previewUrl === "string" && output.previewUrl) return output.previewUrl;
+  return null;
+}
+
+function mergeImageOutputPatch(node: AppNode, patch: Record<string, unknown>) {
+  if (node.type !== "image" || !Array.isArray(patch.outputs)) return patch;
+
+  const existingOutputs = Array.isArray((node.data as ImageNodeData).outputs)
+    ? (node.data as ImageNodeData).outputs ?? []
+    : [];
+  const existingByKey = new Map(
+    existingOutputs
+      .map((output) => [getImageOutputIdentity(output as unknown as Record<string, unknown>), output] as const)
+      .filter((entry): entry is [string, typeof existingOutputs[number]] => Boolean(entry[0]))
+  );
+  const seen = new Set<string>();
+  const mergedOutputs = [...patch.outputs, ...existingOutputs].flatMap((rawOutput) => {
+    if (!rawOutput || typeof rawOutput !== "object") return [];
+    const output = rawOutput as Record<string, unknown>;
+    const key = getImageOutputIdentity(output);
+    if (!key || seen.has(key)) return [];
+    seen.add(key);
+    const existingOutput = existingByKey.get(key);
+    return [{ ...existingOutput, ...output, previewUrl: typeof output.previewUrl === "string" && output.previewUrl ? output.previewUrl : existingOutput?.previewUrl }];
+  });
+
+  return { ...patch, outputs: mergedOutputs };
+}
+
+function mergeVideoOutputPatch(node: AppNode, patch: Record<string, unknown>) {
+  if (node.type !== "video" || !Array.isArray(patch.outputs)) return patch;
+
+  const existingOutputs = Array.isArray(node.data.outputs)
+    ? node.data.outputs ?? []
+    : [];
+  const existingByKey = new Map(
+    existingOutputs
+      .map((output) => [getVideoOutputIdentity(output as unknown as Record<string, unknown>), output] as const)
+      .filter((entry): entry is [string, typeof existingOutputs[number]] => Boolean(entry[0]))
+  );
+  const seen = new Set<string>();
+  const mergedOutputs = [...patch.outputs, ...existingOutputs].flatMap((rawOutput) => {
+    if (!rawOutput || typeof rawOutput !== "object") return [];
+    const output = rawOutput as Record<string, unknown>;
+    const key = getVideoOutputIdentity(output);
+    if (!key || seen.has(key)) return [];
+    seen.add(key);
+    const existingOutput = existingByKey.get(key);
+    const videoUrl =
+      typeof output.videoUrl === "string" && output.videoUrl
+        ? output.videoUrl
+        : existingOutput?.videoUrl;
+    const previewUrl =
+      typeof output.previewUrl === "string" && output.previewUrl
+        ? output.previewUrl
+        : existingOutput?.previewUrl ?? videoUrl;
+    return [{ ...existingOutput, ...output, videoUrl, previewUrl }];
+  });
+
+  return { ...patch, outputs: mergedOutputs };
+}
+
 function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | null, assetId = getNodeAssetId(node)): AppNode {
   if (node.type === "video") {
     return {
@@ -1847,7 +1920,12 @@ function CanvasFlow() {
     }
     if ((operationType === "NODE_UPDATE_DATA" || operationType === "TASK_STATUS_PATCH") && typeof payload.nodeId === "string" && payload.patch) {
       const patch = stripRuntimeAssetUrlsFromPatch(payload.patch as Record<string, unknown>);
-      setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? migrateNode({ ...node, data: { ...node.data, ...patch } } as AppNode) : node));
+      setNodes((nds) => nds.map((node) => {
+        if (node.id !== payload.nodeId) return node;
+        const imageMergedPatch = mergeImageOutputPatch(node as AppNode, patch);
+        const mergedPatch = mergeVideoOutputPatch(node as AppNode, imageMergedPatch);
+        return migrateNode({ ...node, data: { ...node.data, ...mergedPatch } } as AppNode);
+      }));
       return;
     }
     if (operationType === "ASSET_ATTACH" && typeof payload.nodeId === "string") {

@@ -224,12 +224,34 @@ function getPrimaryOutput(outputs: ImageNodeOutput[], primaryOutputId?: string |
   return outputs.find((output) => output.id === primaryOutputId) ?? outputs[0] ?? null;
 }
 
+function moveOutputToFront(outputs: ImageNodeOutput[], outputId: string) {
+  const index = outputs.findIndex((output) => output.id === outputId);
+  if (index <= 0) return outputs;
+  const nextOutputs = [...outputs];
+  const [output] = nextOutputs.splice(index, 1);
+  nextOutputs.unshift(output);
+  return nextOutputs;
+}
+
+function mergeImageOutputs(newOutputs: ImageNodeOutput[], previousOutputs: ImageNodeOutput[]) {
+  const seen = new Set<string>();
+  const merged: ImageNodeOutput[] = [];
+  for (const output of [...newOutputs, ...previousOutputs]) {
+    if (!output.previewUrl) continue;
+    const key = output.id || (output.assetId ? `asset-${output.assetId}` : output.previewUrl);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(output);
+  }
+  return merged;
+}
+
 function buildImageOutputs(
   imageUrls: string[],
   assetIds: number[] | undefined,
   fallback: Pick<ImageNodeData, "width" | "height" | "mimeType" | "fileName">
 ): ImageNodeOutput[] {
-  return imageUrls.filter(Boolean).slice(0, 4).map((url, index) => {
+  return imageUrls.filter(Boolean).map((url, index) => {
     const assetId = assetIds?.[index] ?? null;
     return {
       id: getOutputId(assetId, url, index),
@@ -247,7 +269,7 @@ async function hydrateImageOutputs(
   outputs: ImageNodeOutput[],
   fallback: Pick<ImageNodeData, "previewUrl" | "width" | "height" | "mimeType" | "fileName">
 ) {
-  const hydrated = outputs.slice(0, 4).map((output, index) => ({ ...output, id: output.id || getOutputId(output.assetId, output.previewUrl ?? "", index) }));
+  const hydrated = outputs.map((output, index) => ({ ...output, id: output.id || getOutputId(output.assetId, output.previewUrl ?? "", index) }));
   let assetUrlExpireTime: string | null = null;
   for (let index = 0; index < hydrated.length; index += 1) {
     const output = hydrated[index];
@@ -506,9 +528,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   });
   const [nodeMenuPos, setNodeMenuPos] = useState<{ x: number; y: number } | null>(null);
   const createdAtMs = useMemo(() => new Date(data.generationStartedAt ?? data.createdAt).getTime(), [data.createdAt, data.generationStartedAt]);
+  const generationStartedAtMs = useMemo(() => data.generationStartedAt ? new Date(data.generationStartedAt).getTime() : null, [data.generationStartedAt]);
   const [now, setNow] = useState(createdAtMs);
   const [startedAtMs, setStartedAtMs] = useState(() => Number.isFinite(createdAtMs) ? createdAtMs : Date.now());
-  const effectiveStartedAtMs = startedAtMs > 0 ? startedAtMs : createdAtMs;
+  const effectiveStartedAtMs = Number.isFinite(generationStartedAtMs) ? generationStartedAtMs! : startedAtMs > 0 ? startedAtMs : createdAtMs;
 
   const status = data.status ?? "idle";
   const isGenerating = status === "pending";
@@ -554,7 +577,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const formatOptions = useMemo(() => segmentedOptions(formatTemplate, FORMAT_OPTIONS), [formatTemplate]);
   const moderationOptions = useMemo(() => segmentedOptions(moderationTemplate, MODERATION_OPTIONS), [moderationTemplate]);
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
-  const outputs = data.outputs ?? [];
+  const outputs = useMemo(() => data.outputs ?? [], [data.outputs]);
   const hasOutputGroup = outputs.length > 1;
   const outputsExpanded = Boolean(data.outputsExpanded && hasOutputGroup);
   const primaryOutput = getPrimaryOutput(outputs, data.primaryOutputId);
@@ -644,9 +667,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       fileName: data.fileName,
     }).then((hydrated) => {
       if (cancelled || hydrated.outputs.length === 0) return;
-      const primary = getPrimaryOutput(hydrated.outputs, data.primaryOutputId);
+      const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
+      const mergedOutputs = mergeImageOutputs(hydrated.outputs, previousOutputs);
+      const primary = getPrimaryOutput(mergedOutputs, data.primaryOutputId);
       updateRuntimeData({
-        outputs: hydrated.outputs,
+        outputs: mergedOutputs,
         assetUrlExpireTime: hydrated.assetUrlExpireTime,
         ...(primary ? buildPrimaryPatch(primary, params) : {}),
         primaryOutputId: primary?.id ?? data.primaryOutputId ?? null,
@@ -655,7 +680,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     return () => {
       cancelled = true;
     };
-  }, [data.assetUrlExpireTime, data.fileName, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.primaryOutputId, data.width, outputs, params, updateRuntimeData]);
+  }, [data.assetUrlExpireTime, data.fileName, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.primaryOutputId, data.width, getNode, id, outputs, params, updateRuntimeData]);
 
   const waitAndApplyServerRun = useCallback(async (projectId: string | number, taskId: number, startedAt: string) => {
     const pollKey = `${projectId}:${id}:${taskId}`;
@@ -680,12 +705,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           });
           nextPatch.outputs = hydrated.outputs;
           nextPatch.assetUrlExpireTime = hydrated.assetUrlExpireTime;
-          const primary = getPrimaryOutput(nextPatch.outputs, nextPatch.primaryOutputId);
+          const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
+          const mergedOutputs = mergeImageOutputs(nextPatch.outputs, previousOutputs);
+          const primary = getPrimaryOutput(mergedOutputs, nextPatch.primaryOutputId);
           if (primary) {
             Object.assign(nextPatch, buildPrimaryPatch(primary, nextPatch.params ?? params));
+            nextPatch.outputs = mergedOutputs;
             nextPatch.primaryOutputId = primary.id;
             nextPatch.generationCount = normalizeGenerationCount(nextPatch.params?.n ?? data.generationCount);
-            nextPatch.outputsExpanded = nextPatch.outputs.length > 1;
+            nextPatch.outputsExpanded = nextPatch.outputs.length > 1 && hydrated.outputs.length > 1;
           }
         } else if (nextPatch.previewUrl || nextPatch.outputPreviewUrl) {
           const previewUrl = String(nextPatch.previewUrl ?? nextPatch.outputPreviewUrl);
@@ -698,7 +726,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             fileName: nextPatch.fileName,
             mimeType: nextPatch.mimeType,
           };
-          nextPatch.outputs = [output];
+          const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
+          nextPatch.outputs = mergeImageOutputs([output], previousOutputs);
           nextPatch.primaryOutputId = output.id;
           nextPatch.generationCount = normalizeGenerationCount(nextPatch.params?.n ?? data.generationCount);
           nextPatch.outputsExpanded = false;
@@ -720,7 +749,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         activeRunPollRef.current = null;
       }
     }
-  }, [data.generationCount, id, params, updateData]);
+  }, [data.fileName, data.generationCount, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.width, getNode, id, outputs, params, updateData]);
 
   useEffect(() => {
     if (status !== "pending" || !data.taskId) return;
@@ -926,13 +955,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
   const setPrimaryOutput = useCallback(
     (output: ImageNodeOutput) => {
+      const nextOutputs = moveOutputToFront(outputs, output.id);
       updateData({
         ...buildPrimaryPatch(output, params),
+        outputs: nextOutputs,
         primaryOutputId: output.id,
         outputsExpanded: false,
       }, { flush: true });
     },
-    [params, updateData]
+    [outputs, params, updateData]
   );
 
   const handleGenerate = useCallback(async () => {
@@ -988,6 +1019,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       generationStartedAt: startedAt,
       generationCompletedAt: null,
       elapsedMs: null,
+      taskStatus: "SUBMITTING",
+      upstreamStatus: "SUBMITTING",
       generationCount,
       outputsExpanded: false,
     });
@@ -1010,6 +1043,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         });
         updateData({
           taskId: String(run.taskId),
+          taskStatus: run.status,
           upstreamStatus: run.status,
         }, { flush: true });
         await waitAndApplyServerRun(projectId, run.taskId, startedAt);
@@ -1074,8 +1108,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         }
       }
       const primary = outputItems[0];
+      const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
+      const mergedOutputs = mergeImageOutputs(outputItems, previousOutputs);
       nextData.kind = "generated";
-      nextData.outputs = outputItems;
+      nextData.outputs = mergedOutputs;
       nextData.primaryOutputId = primary?.id ?? null;
       nextData.outputsExpanded = outputItems.length > 1;
       nextData.generationCount = generationCount;
@@ -1093,7 +1129,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, generationCount, getEdges, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, generationCount, getEdges, getNode, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, outputs, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen && !countPopoverOpen) return;
@@ -1150,7 +1186,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     setNodeMenuPos(clampToViewport({ x: nodeMenu.x, y: nodeMenu.y, width, height }));
   }, [nodeMenu.visible, nodeMenu.x, nodeMenu.y]);
 
-  const elapsedMs = data.elapsedMs ?? (isGenerating && Number.isFinite(effectiveStartedAtMs) ? Math.max(0, now - effectiveStartedAtMs) : null);
+  const elapsedMs = isGenerating && Number.isFinite(effectiveStartedAtMs)
+    ? Math.max(0, now - effectiveStartedAtMs)
+    : data.elapsedMs ?? null;
   const safetyStatus = normalizeSafetyStatus(data.safetyStatus) !== "idle" ? normalizeSafetyStatus(data.safetyStatus) : normalizeSafetyStatusFromError(data.safetyReason ?? data.errorMessage);
   const safety = getSafetyCopy(safetyStatus, "generation");
   const previewItem = useMemo(() => imageNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
@@ -1178,8 +1216,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const activePreviewItem = previewItems[previewOutputIndex] ?? previewItem;
   const displaySize = getDisplaySize(data, measuredSize, params.size);
   const outputGridGap = 12;
+  const outputGridColumnCount = outputsExpanded ? Math.ceil(Math.sqrt(outputs.length)) : 1;
+  const outputGridRowCount = outputsExpanded ? Math.ceil(outputs.length / outputGridColumnCount) : 1;
   const nodeFrameSize = outputsExpanded
-    ? { width: displaySize.width * 2 + outputGridGap, height: displaySize.height * 2 + outputGridGap }
+    ? {
+        width: displaySize.width * outputGridColumnCount + outputGridGap * (outputGridColumnCount - 1),
+        height: displaySize.height * outputGridRowCount + outputGridGap * (outputGridRowCount - 1),
+      }
     : displaySize;
   const displayScale = (measuredSize?.width ?? data.width)
     ? displaySize.width / (measuredSize?.width ?? data.width ?? displaySize.width)
@@ -1318,7 +1361,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
               <div className={cn("absolute inset-0 overflow-hidden rounded-[inherit]", outputsExpanded ? "p-0" : "flex items-center justify-center")}>
                 {outputsExpanded ? (
-                  <div className="grid grid-cols-2" style={{ gap: outputGridGap }}>
+                  <div
+                    className="grid"
+                    style={{
+                      gap: outputGridGap,
+                      gridTemplateColumns: `repeat(${outputGridColumnCount}, ${displaySize.width}px)`,
+                    }}
+                  >
                     {outputs.map((output, index) => {
                       const isPrimary = output.id === primaryOutput?.id;
                       return (
