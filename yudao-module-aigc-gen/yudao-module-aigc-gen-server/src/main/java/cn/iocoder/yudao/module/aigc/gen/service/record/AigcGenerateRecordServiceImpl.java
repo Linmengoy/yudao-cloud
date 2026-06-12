@@ -1014,7 +1014,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     }
 
     private void finishSuccess(AigcGenerateRecordDO record, AigcProviderSubmitRespDTO resp) {
-        Long assetId = createAssetIfNecessary(record);
+        List<Long> assetIds = createAssetsIfNecessary(record);
+        Long assetId = assetIds.isEmpty() ? null : assetIds.get(0);
         taskApi.markSuccess(new AigcTaskStatusUpdateReqDTO().setTaskId(record.getTaskId())
                 .setExternalTaskId(record.getProviderTaskId()).setOutputText(record.getOutputText())
                 .setOutputData(record.getOutputData()).setOutputAssetId(assetId)
@@ -1167,44 +1168,56 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 new AigcGenerateRecordDO().setId(record.getId()).setCostAmount(sumAttemptCost(record.getId())));
     }
 
-    private Long createAssetIfNecessary(AigcGenerateRecordDO record) {
+    private List<Long> createAssetsIfNecessary(AigcGenerateRecordDO record) {
         if (!FILE_TYPES.contains(record.getGenerateType()) || record.getOutputUrls() == null
                 || record.getOutputUrls().isBlank()) {
-            return null;
+            return Collections.emptyList();
         }
-        String url = firstUrl(record.getOutputUrls());
+        List<String> urls = outputUrlList(record.getOutputUrls());
+        if (urls.isEmpty()) {
+            return Collections.emptyList();
+        }
+        AigcModelProviderRespDTO provider = record.getProviderId() == null ? null
+                : modelApi.getProvider(record.getProviderId()).getCheckedData();
+        List<Long> assetIds = new ArrayList<>();
+        for (int i = 0; i < urls.size(); i++) {
+            AigcAssetCreateRespDTO asset = createAsset(record, provider, urls.get(i), i);
+            assetIds.add(asset.getId());
+        }
+        generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId())
+                .setAssetIds(JSONUtil.toJsonStr(assetIds)));
+        return assetIds;
+    }
+
+    private AigcAssetCreateRespDTO createAsset(AigcGenerateRecordDO record, AigcModelProviderRespDTO provider,
+            String url, int index) {
         boolean dataUrl = StrUtil.startWithIgnoreCase(url, "data:");
         if (!dataUrl && !AigcGenerateFileSecurityUtils.isSafeRemoteUrl(url)) {
             throw exception(GENERATE_PROVIDER_RESULT_INVALID);
         }
         AigcAssetCreateReqDTO reqDTO = new AigcAssetCreateReqDTO().setUserId(record.getUserId())
                 .setAssetType(record.getGenerateType()).setSourceType("GENERATE").setBizType("TASK")
-                .setBizId(record.getGenerateNo()).setTaskId(record.getTaskId()).setModelId(record.getModelId())
+                .setBizId(assetBizId(record, index)).setTaskId(record.getTaskId()).setModelId(record.getModelId())
                 .setProviderId(record.getProviderId()).setTitle(record.getGenerateType() + "生成资产")
                 .setPromptSnapshot(buildPromptSnapshot(record.getPrompt())).setGenerateSnapshot(record.getInputParams())
                 .setVisibility("PRIVATE").setAuditStatus("PENDING");
-        AigcModelProviderRespDTO provider = record.getProviderId() == null ? null
-                : modelApi.getProvider(record.getProviderId()).getCheckedData();
         if (provider != null) {
             reqDTO.setProxyEnabled(provider.getProxyEnabled()).setProxyProtocol(provider.getProxyProtocol())
                     .setProxyHost(provider.getProxyHost()).setProxyPort(provider.getProxyPort())
                     .setProxyUsername(provider.getProxyUsername()).setProxyPassword(provider.getProxyPassword());
         }
-        if (dataUrl) {
-            reqDTO.setOriginUrl(url);
-        } else {
-            reqDTO.setOriginUrl(url);
-        }
-        AigcAssetCreateRespDTO asset = switch (record.getGenerateType()) {
+        reqDTO.setOriginUrl(url);
+        return switch (record.getGenerateType()) {
             case "IMAGE" -> assetApi.createImageAsset(reqDTO).getCheckedData();
             case "VIDEO" -> assetApi.createVideoAsset(reqDTO).getCheckedData();
             case "AUDIO" -> assetApi.createAudioAsset(reqDTO).getCheckedData();
             case "DOCUMENT" -> assetApi.createDocumentAsset(reqDTO).getCheckedData();
             default -> assetApi.createAsset(reqDTO).getCheckedData();
         };
-        generateRecordMapper
-                .updateById(new AigcGenerateRecordDO().setId(record.getId()).setAssetIds("[" + asset.getId() + "]"));
-        return asset.getId();
+    }
+
+    private String assetBizId(AigcGenerateRecordDO record, int index) {
+        return index == 0 ? record.getGenerateNo() : record.getGenerateNo() + "-" + (index + 1);
     }
 
     private String resolveProviderModel(AigcGenerateRecordDO record, AigcModelRespDTO model) {
@@ -1465,5 +1478,23 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return JSONUtil.parseArray(outputUrls).getStr(0, "");
         }
         return outputUrls.replace("[", "").replace("]", "").replace("\"", "").trim();
+    }
+
+    private List<String> outputUrlList(String outputUrls) {
+        if (StrUtil.isBlank(outputUrls)) {
+            return Collections.emptyList();
+        }
+        if (!JSONUtil.isTypeJSONArray(outputUrls)) {
+            return List.of(firstUrl(outputUrls));
+        }
+        List<String> urls = new ArrayList<>();
+        JSONArray array = JSONUtil.parseArray(outputUrls);
+        for (Object item : array) {
+            String url = Objects.toString(item, "").trim();
+            if (StrUtil.isNotBlank(url)) {
+                urls.add(url);
+            }
+        }
+        return urls;
     }
 }

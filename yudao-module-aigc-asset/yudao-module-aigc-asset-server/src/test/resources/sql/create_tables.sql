@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS `aigc_asset` (
   `tenant_id` bigint NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_asset_no` (`asset_no`),
-  UNIQUE KEY `uk_task_type_tenant` (`task_id`, `asset_type`, `tenant_id`)
+  KEY `idx_task_type_tenant` (`task_id`, `asset_type`, `tenant_id`)
 );
 
 CREATE TABLE IF NOT EXISTS `aigc_asset_download_log` (

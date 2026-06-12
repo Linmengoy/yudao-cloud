@@ -46,6 +46,7 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
             "width", "height", "durationSec", "sizeBytes", "kind", "prompt", "content", "modelId",
             "provider", "providerModel", "modelName", "aigcModelId", "params", "status", "taskId",
             "errorMessage", "taskStatus", "progress", "outputAssetId", "sourceTaskId",
+            "assetIds", "assetIdList", "outputs", "primaryOutputId", "outputsExpanded", "generationCount",
             "safetyStatus", "safetyReason", "generationStartedAt", "generationCompletedAt",
             "generationRunStartedAt", "elapsedMs", "upstreamStatus", "ratio", "resolution", "duration",
             "size", "generateAudio", "watermark", "createdAt", "updatedAt"));

@@ -1,8 +1,8 @@
 package cn.iocoder.yudao.module.aigc.workflow.service.canvas;
 
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONUtil;
 import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.gen.api.AigcGenerateApi;
@@ -199,6 +199,9 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             if (!assetIds.isEmpty()) {
                 patch.set("assetId", assetIds.get(0)).set("outputAssetId", assetIds.get(0));
             }
+            if ("image".equals(nodeType)) {
+                applyImageOutputsPatch(patch, assetIds);
+            }
             patch.set("kind", "generated");
             return patch;
         }
@@ -222,13 +225,36 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             return;
         }
         Long assetId = assetIds.get(0);
-        bindOutputAsset(reqVO, assetId, result.getTaskId());
+        bindOutputAssets(reqVO, assetIds, result.getTaskId());
         projectService.refreshProjectStatistics(reqVO.getProjectId());
         if ("image".equals(reqVO.getNodeType())) {
             AigcCanvasProjectDO update = new AigcCanvasProjectDO();
             update.setId(reqVO.getProjectId());
             update.setCoverAssetId(assetId);
             projectMapper.updateById(update);
+        }
+    }
+
+    private void applyImageOutputsPatch(JSONObject patch, List<Long> assetIds) {
+        if (assetIds.isEmpty()) {
+            return;
+        }
+        cn.hutool.json.JSONArray outputs = new cn.hutool.json.JSONArray();
+        for (int i = 0; i < assetIds.size(); i++) {
+            Long assetId = assetIds.get(i);
+            outputs.add(new JSONObject()
+                    .set("id", "asset-" + assetId)
+                    .set("assetId", assetId));
+        }
+        patch.set("assetIds", assetIds)
+                .set("outputs", outputs)
+                .set("primaryOutputId", outputs.getJSONObject(0).getStr("id"))
+                .set("outputsExpanded", outputs.size() > 1);
+    }
+
+    private void bindOutputAssets(AigcCanvasNodeRunSyncReqVO reqVO, List<Long> assetIds, Long taskId) {
+        for (Long assetId : assetIds) {
+            bindOutputAsset(reqVO, assetId, taskId);
         }
     }
 
