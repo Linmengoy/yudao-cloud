@@ -729,6 +729,10 @@ aigc-billing 确认扣费、释放差额
 - 快捷生成的模型参数来自模型配置和参数模板，前端必须提供参数弹窗并随请求提交最终参数，不能只提交 prompt 和参考图。
 - 空 canvas 或无 snapshot 的项目保持空画布，不自动创建默认节点；节点只能来自用户显式创建、上传、粘贴、资产库选择或 `/app` 快捷生成初始化。
 - 画布持久化只保存 `assetId`、`outputAssetId`、`taskId`、节点参数、节点位置等稳定字段，`previewUrl`、`outputPreviewUrl`、`videoUrl`、`assetUrlExpireTime` 等运行时 URL 必须过滤。
+- 图片生成节点已支持 1-4 张输出。节点长期状态使用 `assetIds`、`outputs[{ id, assetId }]`、`primaryOutputId` 和 `outputsExpanded` 表达多图组；`outputs.previewUrl` 只能作为前端运行时字段，保存 snapshot 或提交 operation 时必须递归过滤，避免私有 OSS/S3 签名 URL 过期后覆盖新 URL。
+- 多图输出的首图兼容旧字段：`assetId`、`outputAssetId` 指向当前主图，`assetIds` 保留全部输出资产。切换主图只改变当前节点的主图身份，不复制资产，也不修改生成记录。
+- 前端刷新画布后，如果 `outputs` 只有 `assetId` 或已有签名 URL 缺少有效 `assetUrlExpireTime`，必须重新通过资产详情或访问 URL 接口补齐当前可用预览地址；不能直接复用 snapshot 中可能过期的 URL。
+- 图片预览弹窗支持同一节点多输出左右切换和设为首图；打开入口仍应来自节点工具栏的预览按钮，点击图片本身不触发弹窗，避免和画布选择、拖拽冲突。
 - 项目实体的 `nodeCount`、`assetCount`、`currentVersion`、`latestSnapshotId`、`coverAssetId` 应以服务端持久化状态为准，列表展示不能从前端当前页临时推导。
 - 项目封面以 `coverAssetId` 为长期身份；历史项目读取时如果缺失该字段，可从最新 snapshot、operation log 或 `aigc_canvas_asset_ref` 推导首个图片资产并回写，避免后续接口反复多分支判断。
 - 项目页已支持修改显示图：后端提供项目内图片资源分页和当前用户全部图片资源分页，前端只提交 `coverAssetId`，禁止提交签名 URL。

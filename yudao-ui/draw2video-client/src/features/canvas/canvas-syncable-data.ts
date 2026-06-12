@@ -4,6 +4,20 @@ const syncableKeys = new Set<string>(SYNCABLE_NODE_DATA_KEYS);
 const blockedKeys = new Set<string>(BLOCKED_NODE_DATA_KEYS);
 const runtimeAssetUrlKeys = new Set(["previewUrl", "outputPreviewUrl", "videoUrl", "assetUrlExpireTime"]);
 
+function stripRuntimeAssetUrlsFromValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stripRuntimeAssetUrlsFromValue);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !runtimeAssetUrlKeys.has(key))
+      .map(([key, item]) => [key, stripRuntimeAssetUrlsFromValue(item)])
+  );
+}
+
 function hasLocalMediaValue(value: unknown): boolean {
   if (typeof value === "string") {
     return value.startsWith("data:") || value.startsWith("blob:");
@@ -19,19 +33,26 @@ function hasLocalMediaValue(value: unknown): boolean {
 
 export function filterSyncableNodeDataPatch(patch: Record<string, unknown>) {
   return Object.fromEntries(
-    Object.entries(patch).filter(([key, value]) =>
-      syncableKeys.has(key) && !blockedKeys.has(key) && !runtimeAssetUrlKeys.has(key) && !hasLocalMediaValue(value)
-    )
+    Object.entries(patch).flatMap(([key, value]) => {
+      if (!syncableKeys.has(key) || blockedKeys.has(key) || runtimeAssetUrlKeys.has(key)) return [];
+      const sanitizedValue = stripRuntimeAssetUrlsFromValue(value);
+      if (hasLocalMediaValue(sanitizedValue)) return [];
+      return [[key, sanitizedValue]];
+    })
   );
 }
 
 export function stripRuntimeAssetUrlsFromPatch(patch: Record<string, unknown>) {
-  return Object.fromEntries(Object.entries(patch).filter(([key]) => !runtimeAssetUrlKeys.has(key)));
+  return Object.fromEntries(
+    Object.entries(patch)
+      .filter(([key]) => !runtimeAssetUrlKeys.has(key))
+      .map(([key, value]) => [key, stripRuntimeAssetUrlsFromValue(value)])
+  );
 }
 
 export function sanitizeNodeForCanvasOperation(node: AppNode): AppNode {
   if (node.type !== "image" && node.type !== "video" && node.type !== "sketch") return node;
-  const data = { ...(node.data as Record<string, unknown>) };
+  const data = stripRuntimeAssetUrlsFromValue(node.data) as Record<string, unknown>;
   for (const key of blockedKeys) {
     delete data[key];
   }
