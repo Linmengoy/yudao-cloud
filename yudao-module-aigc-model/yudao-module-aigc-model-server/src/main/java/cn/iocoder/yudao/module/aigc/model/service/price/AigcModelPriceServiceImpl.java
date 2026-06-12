@@ -122,12 +122,16 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
                                               JSONObject params, String priceConfig) {
         BigDecimal multiplier = BigDecimal.ONE;
 
+        if (AigcModelBillingUnitEnum.PER_IMAGE.equals(billingUnit) && params != null) {
+            multiplier = multiplier.multiply(BigDecimal.valueOf(resolveBatchSize(params)));
+        }
+
         if (priceConfig != null) {
             JSONObject config = JSONUtil.parseObj(priceConfig);
 
-            if (Boolean.TRUE.equals(config.getBool("batchMultiplier")) && params != null) {
-                Integer batchSize = params.getInt("batchSize", 1);
-                multiplier = multiplier.multiply(BigDecimal.valueOf(batchSize));
+            if (!AigcModelBillingUnitEnum.PER_IMAGE.equals(billingUnit)
+                    && Boolean.TRUE.equals(config.getBool("batchMultiplier")) && params != null) {
+                multiplier = multiplier.multiply(BigDecimal.valueOf(resolveBatchSize(params)));
             }
 
             if (Boolean.TRUE.equals(config.getBool("durationMultiplier")) && params != null) {
@@ -147,6 +151,11 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
         }
 
         return basePrice.multiply(multiplier);
+    }
+
+    private int resolveBatchSize(JSONObject params) {
+        int batchSize = params.getInt("batchSize", params.getInt("n", 1));
+        return Math.max(1, Math.min(100, batchSize));
     }
 
     private void validateModelExists(Long modelId) {

@@ -111,6 +111,16 @@ export type ResultNode = Node<ResultNodeData, "result">;
 
 // --- Image Node ---
 
+export interface ImageNodeOutput {
+  id: string;
+  previewUrl: string;
+  assetId?: number | null;
+  width?: number;
+  height?: number;
+  fileName?: string;
+  mimeType?: string;
+}
+
 export interface ImageNodeData {
   [key: string]: unknown;
   imageId: string;
@@ -138,6 +148,10 @@ export interface ImageNodeData {
   progress?: number | null;
   outputAssetId?: number | null;
   outputPreviewUrl?: string | null;
+  outputs?: ImageNodeOutput[];
+  primaryOutputId?: string | null;
+  outputsExpanded?: boolean;
+  generationCount?: number;
   assetUrlExpireTime?: string | null;
   sourceTaskId?: number | null;
   safetyStatus?: string | null;
@@ -314,6 +328,10 @@ export const SYNCABLE_NODE_DATA_KEYS = [
   "taskStatus",
   "progress",
   "outputAssetId",
+  "outputs",
+  "primaryOutputId",
+  "outputsExpanded",
+  "generationCount",
   "sourceTaskId",
   "safetyStatus",
   "safetyReason",

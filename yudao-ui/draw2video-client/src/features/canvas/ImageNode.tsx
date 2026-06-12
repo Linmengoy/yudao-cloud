@@ -9,10 +9,12 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowUp,
   Check,
+  ChevronDown,
   Gem,
   ImageIcon,
   Loader2,
   Plus,
+  Shrink,
   SlidersHorizontal,
   Sparkles,
   X,
@@ -20,6 +22,7 @@ import {
 import type {
   AppEdge,
   AppNode,
+  ImageNodeOutput,
   ImageNodeData,
   NodeDataPatchEventDetail,
   PromptNodeData,
@@ -83,6 +86,8 @@ const MODERATION_OPTIONS = [
   { label: "Auto", value: "auto" as ImageModeration },
   { label: "Low", value: "low" as ImageModeration },
 ];
+
+const GENERATION_COUNT_OPTIONS = [1, 2, 3, 4];
 
 const BUILT_IN_IMAGE_PARAM_KEYS = new Set([
   "size",
@@ -184,7 +189,67 @@ function formatModelSizeSummary(params: Record<string, unknown>, templates: Aigc
 }
 
 function filterModelParams(params: ImageTaskParams, templates: AigcModelParamTemplate[]): ImageTaskParams {
-  return filterAigcModelParams(params, templates) as ImageTaskParams;
+  return filterAigcModelParams(params, templates, {
+    extraKeys: BUILT_IN_IMAGE_PARAM_KEYS,
+    excludeKeys: ["n"],
+  }) as ImageTaskParams;
+}
+
+function modelSupportsGenerationCount(templates: AigcModelParamTemplate[]) {
+  return templates.some((template) => template.paramKey === "n" || template.paramKey === "batchSize");
+}
+
+function applyGenerationCountParam(params: ImageTaskParams, templates: AigcModelParamTemplate[], count: number) {
+  if (!modelSupportsGenerationCount(templates)) return params;
+  const countKey = templates.some((template) => template.paramKey === "batchSize") ? "batchSize" : "n";
+  return { ...params, [countKey]: count };
+}
+
+function normalizeGenerationCount(value: unknown) {
+  const count = Number(value);
+  if (!Number.isFinite(count)) return 1;
+  return Math.min(4, Math.max(1, Math.round(count)));
+}
+
+function getOutputId(assetId: number | null | undefined, url: string, index: number) {
+  return assetId ? `asset-${assetId}` : `url-${index}-${url.slice(0, 48)}`;
+}
+
+function getPrimaryOutput(outputs: ImageNodeOutput[], primaryOutputId?: string | null) {
+  return outputs.find((output) => output.id === primaryOutputId) ?? outputs[0] ?? null;
+}
+
+function buildImageOutputs(
+  imageUrls: string[],
+  assetIds: number[] | undefined,
+  fallback: Pick<ImageNodeData, "width" | "height" | "mimeType" | "fileName">
+): ImageNodeOutput[] {
+  return imageUrls.filter(Boolean).slice(0, 4).map((url, index) => {
+    const assetId = assetIds?.[index] ?? null;
+    return {
+      id: getOutputId(assetId, url, index),
+      previewUrl: url,
+      assetId,
+      width: fallback.width,
+      height: fallback.height,
+      mimeType: fallback.mimeType,
+      fileName: imageUrls.length > 1 ? `generated-image-${index + 1}.png` : fallback.fileName,
+    };
+  });
+}
+
+function buildPrimaryPatch(output: ImageNodeOutput, params: ImageTaskParams): Partial<ImageNodeData> {
+  return {
+    assetId: output.assetId ?? null,
+    outputAssetId: output.assetId ?? null,
+    previewUrl: output.previewUrl,
+    outputPreviewUrl: output.previewUrl,
+    dataUrl: "",
+    width: output.width,
+    height: output.height,
+    fileName: output.fileName ?? "generated-image.png",
+    mimeType: output.mimeType ?? (params.output_format === "jpeg" ? "image/jpeg" : `image/${params.output_format}`),
+  };
 }
 
 function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {
@@ -279,6 +344,15 @@ function scaleToPreview(width: number, height: number) {
 }
 
 function getDisplaySize(data: ImageNodeData, measuredSize: { width: number; height: number } | null, sizeParam: string) {
+  const outputCount = data.outputs?.length ?? 0;
+  if (data.outputsExpanded && outputCount > 1) {
+    const single = outputCount === 2 ? { width: 320, height: 320 } : { width: 300, height: 300 };
+    return {
+      width: single.width * 2 + 12,
+      height: single.height * Math.ceil(outputCount / 2) + 12 * (Math.ceil(outputCount / 2) - 1),
+    };
+  }
+
   const width = measuredSize?.width ?? data.width;
   const height = measuredSize?.height ?? data.height;
   const hasImage = Boolean(data.previewUrl || data.dataUrl);
@@ -369,10 +443,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   ));
   const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
   const [paramsPopoverOpen, setParamsPopoverOpen] = useState(false);
+  const [countPopoverOpen, setCountPopoverOpen] = useState(false);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
   const paramsBtnRef = useRef<HTMLButtonElement>(null);
+  const countBtnRef = useRef<HTMLButtonElement>(null);
   const modelPopoverRef = useRef<HTMLDivElement>(null);
   const paramsPopoverRef = useRef<HTMLDivElement>(null);
+  const countPopoverRef = useRef<HTMLDivElement>(null);
   const nodeMenuRef = useRef<HTMLDivElement>(null);
   const activeRunPollRef = useRef<string | null>(null);
   const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number } | null>(null);
@@ -414,6 +491,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     [connectedImages]
   );
   const generationCapability = connectedImages.length > 0 ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
+  const generationCount = normalizeGenerationCount(params.n ?? data.generationCount);
   const aigcModels = useAigcModels({ type: 2, capability: generationCapability, preferredModelId: selectedAigcModelId, params });
   const storedAigcModel = aigcModels.models.find((item) => item.id === selectedAigcModelId);
   const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
@@ -432,8 +510,12 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const formatOptions = useMemo(() => segmentedOptions(formatTemplate, FORMAT_OPTIONS), [formatTemplate]);
   const moderationOptions = useMemo(() => segmentedOptions(moderationTemplate, MODERATION_OPTIONS), [moderationTemplate]);
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
+  const outputs = data.outputs ?? [];
+  const hasOutputGroup = outputs.length > 1;
+  const outputsExpanded = Boolean(data.outputsExpanded && hasOutputGroup);
+  const primaryOutput = getPrimaryOutput(outputs, data.primaryOutputId);
+  const imageSrc = primaryOutput?.previewUrl || data.previewUrl || data.dataUrl;
   const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
-  const imageSrc = data.previewUrl || data.dataUrl;
   const mediaStoreScope = useMemo(() => {
     const urlProjectId = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("projectId");
     const dataProjectId = typeof data.projectId === "string" || typeof data.projectId === "number" ? data.projectId : null;
@@ -444,7 +526,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   }, [data.projectId, user?.id]);
   const generatingStatusLabel = getGenerationStatusLabel(data.taskStatus || data.upstreamStatus || "RUNNING");
   const sizeSelection = useMemo(() => getModelSizeSelection(params, aigcModels.templates), [aigcModels.templates, params]);
-  const effectiveParams = useMemo(() => filterModelParams(params, aigcModels.templates), [aigcModels.templates, params]);
+  const effectiveParams = useMemo(
+    () => applyGenerationCountParam(filterModelParams(params, aigcModels.templates), aigcModels.templates, generationCount),
+    [aigcModels.templates, generationCount, params]
+  );
   const sizeOptions = useMemo(() => templateOptions(sizeTemplate, []), [sizeTemplate]);
   const showSizeSection = Boolean(sizeTemplate || ratioTemplate || imageSizeTemplate);
   const showQualityControl = Boolean(qualityTemplate);
@@ -454,7 +539,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const canGenerate = Boolean(prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && Boolean(activeAigcModelId);
 
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
-  const showNodeActions = selectedNodeCount <= 1;
+  const showNodeActions = selectedNodeCount <= 1 && !outputsExpanded;
   const fixedUiScale = 1 / zoom;
 
   useEffect(() => {
@@ -504,7 +589,34 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         nodeType: "image",
       });
       const patch = getCanvasNodeRunPatch(result, id);
-      if (patch) updateData(patch as Partial<ImageNodeData>, { flush: true });
+      if (patch) {
+        const nextPatch = patch as Partial<ImageNodeData>;
+        if (nextPatch.outputs?.length) {
+          const primary = getPrimaryOutput(nextPatch.outputs, nextPatch.primaryOutputId);
+          if (primary) {
+            Object.assign(nextPatch, buildPrimaryPatch(primary, nextPatch.params ?? params));
+            nextPatch.primaryOutputId = primary.id;
+            nextPatch.generationCount = normalizeGenerationCount(nextPatch.params?.n ?? data.generationCount);
+            nextPatch.outputsExpanded = nextPatch.outputs.length > 1;
+          }
+        } else if (nextPatch.previewUrl || nextPatch.outputPreviewUrl) {
+          const previewUrl = String(nextPatch.previewUrl ?? nextPatch.outputPreviewUrl);
+          const output: ImageNodeOutput = {
+            id: getOutputId(nextPatch.outputAssetId ?? nextPatch.assetId ?? null, previewUrl, 0),
+            previewUrl,
+            assetId: nextPatch.outputAssetId ?? nextPatch.assetId ?? null,
+            width: nextPatch.width,
+            height: nextPatch.height,
+            fileName: nextPatch.fileName,
+            mimeType: nextPatch.mimeType,
+          };
+          nextPatch.outputs = [output];
+          nextPatch.primaryOutputId = output.id;
+          nextPatch.generationCount = normalizeGenerationCount(nextPatch.params?.n ?? data.generationCount);
+          nextPatch.outputsExpanded = false;
+        }
+        updateData(nextPatch, { flush: true });
+      }
     } catch (error) {
       updateData({
         status: "failed",
@@ -520,7 +632,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         activeRunPollRef.current = null;
       }
     }
-  }, [id, updateData]);
+  }, [data.generationCount, id, params, updateData]);
 
   useEffect(() => {
     if (status !== "pending" || !data.taskId) return;
@@ -712,6 +824,29 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     }));
   }, [id, isGenerating]);
 
+  const handleGenerationCountChange = useCallback(
+    (count: number) => {
+      updateParams({ n: normalizeGenerationCount(count) });
+    },
+    [updateParams]
+  );
+
+  const toggleOutputsExpanded = useCallback(() => {
+    if (!hasOutputGroup || isGenerating) return;
+    updateData({ outputsExpanded: !outputsExpanded }, { flush: true });
+  }, [hasOutputGroup, isGenerating, outputsExpanded, updateData]);
+
+  const setPrimaryOutput = useCallback(
+    (output: ImageNodeOutput) => {
+      updateData({
+        ...buildPrimaryPatch(output, params),
+        primaryOutputId: output.id,
+        outputsExpanded: false,
+      }, { flush: true });
+    },
+    [params, updateData]
+  );
+
   const handleGenerate = useCallback(async () => {
     const cleanPrompt = promptValueToSubmitPrompt(prompt, mentionOptions).trim();
     if (!cleanPrompt || isGenerating || aigcModels.loading || aigcModels.templateLoading) return;
@@ -765,6 +900,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       generationStartedAt: startedAt,
       generationCompletedAt: null,
       elapsedMs: null,
+      generationCount,
+      outputsExpanded: false,
     });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
@@ -830,26 +967,34 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     };
 
     if (updates.status === "complete" && updates.imageUrls?.[0]) {
-      const outputAssetId = updates.assetIdList?.[0] ?? null;
-      let previewUrl = updates.imageUrls[0];
+      const outputItems = buildImageOutputs(updates.imageUrls, updates.assetIdList, {
+        width: data.width,
+        height: data.height,
+        mimeType: effectiveParams.output_format === "jpeg" ? "image/jpeg" : `image/${effectiveParams.output_format}`,
+        fileName: "generated-image.png",
+      });
       let assetUrlExpireTime: string | null = null;
-      if (outputAssetId) {
+      for (let index = 0; index < outputItems.length; index += 1) {
+        const output = outputItems[index];
+        if (!output.assetId) continue;
         try {
-          const asset = await getMyAsset(outputAssetId);
-          previewUrl = getAssetPreviewUrl(asset) || previewUrl;
-          assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
+          const asset = await getMyAsset(output.assetId);
+          output.previewUrl = getAssetPreviewUrl(asset) || output.previewUrl;
+          output.id = getOutputId(output.assetId, output.previewUrl, index);
+          if (index === 0) assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
         } catch {
         }
       }
+      const primary = outputItems[0];
       nextData.kind = "generated";
-      nextData.assetId = outputAssetId;
-      nextData.outputAssetId = outputAssetId;
-      nextData.previewUrl = previewUrl;
-      nextData.outputPreviewUrl = previewUrl;
+      nextData.outputs = outputItems;
+      nextData.primaryOutputId = primary?.id ?? null;
+      nextData.outputsExpanded = outputItems.length > 1;
+      nextData.generationCount = generationCount;
       nextData.assetUrlExpireTime = assetUrlExpireTime;
-      nextData.dataUrl = "";
-      nextData.fileName = "generated-image.png";
-      nextData.mimeType = effectiveParams.output_format === "jpeg" ? "image/jpeg" : `image/${effectiveParams.output_format}`;
+      if (primary) {
+        Object.assign(nextData, buildPrimaryPatch(primary, effectiveParams));
+      }
     }
 
     setNodes((nds) =>
@@ -860,22 +1005,25 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, effectiveParams, getEdges, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, generationCount, getEdges, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
-    if (!modelPopoverOpen && !paramsPopoverOpen) return;
+    if (!modelPopoverOpen && !paramsPopoverOpen && !countPopoverOpen) return;
 
     function handlePointerDown(e: PointerEvent) {
       const target = e.target as HTMLElement;
       if (modelPopoverRef.current?.contains(target) || modelBtnRef.current?.contains(target)) return;
       if (paramsPopoverRef.current?.contains(target) || paramsBtnRef.current?.contains(target)) return;
+      if (countPopoverRef.current?.contains(target) || countBtnRef.current?.contains(target)) return;
       setModelPopoverOpen(false);
       setParamsPopoverOpen(false);
+      setCountPopoverOpen(false);
     }
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setModelPopoverOpen(false);
         setParamsPopoverOpen(false);
+        setCountPopoverOpen(false);
       }
     }
     window.addEventListener("pointerdown", handlePointerDown, true);
@@ -884,7 +1032,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       window.removeEventListener("pointerdown", handlePointerDown, true);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [modelPopoverOpen, paramsPopoverOpen]);
+  }, [countPopoverOpen, modelPopoverOpen, paramsPopoverOpen]);
 
   useEffect(() => {
     if (!nodeMenu.visible) return;
@@ -969,7 +1117,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       >
         <div className="relative overflow-visible" style={{ width: displaySize.width, height: displaySize.height }}>
           <AnimatePresence>
-            {isOnlySelectedNode && !dragging && previewItem && (
+            {isOnlySelectedNode && !dragging && !outputsExpanded && previewItem && (
               <SelectedMediaToolbar
                 canDownload={Boolean(previewItem.url)}
                 onDownload={handlePreviewDownload}
@@ -1026,8 +1174,78 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
               )}
               style={{ width: displaySize.width, height: displaySize.height, pointerEvents: "auto" }}
             >
-              <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[inherit]">
-                {imageSrc ? (
+              {!outputsExpanded && hasOutputGroup && (
+                <div className="pointer-events-none absolute inset-0 -z-10">
+                  {outputs.slice(1, 4).map((output, index) => (
+                    <div
+                      key={output.id}
+                      className="absolute inset-0 overflow-hidden rounded-[inherit] border border-off-white/20 bg-charcoal shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+                      style={{
+                        transform: `translate(${(index + 1) * 10}px, ${(index + 1) * 6}px) rotate(${(index + 1) * 1.4}deg)`,
+                        zIndex: -index - 1,
+                      }}
+                    >
+                      <img src={output.previewUrl} alt={output.fileName ?? data.fileName} className="size-full object-cover opacity-65" draggable={false} />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className={cn("absolute inset-0 overflow-hidden rounded-[inherit]", outputsExpanded ? "grid gap-3 p-0" : "flex items-center justify-center")}>
+                {outputsExpanded ? (
+                  <div className="grid size-full grid-cols-2 gap-3">
+                    {outputs.map((output, index) => {
+                      const isPrimary = output.id === primaryOutput?.id;
+                      return (
+                        <div key={output.id} className="group relative overflow-hidden rounded-xl border border-border-warm bg-charcoal">
+                          <img src={output.previewUrl} alt={output.fileName ?? `生成图片 ${index + 1}`} className="size-full object-cover" draggable={false} />
+                          <div className="absolute right-3 top-3 flex gap-2 opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                downloadMedia({
+                                  kind: "image",
+                                  url: output.previewUrl,
+                                  title: output.fileName ?? data.fileName,
+                                  fileName: output.fileName ?? data.fileName,
+                                  information: [],
+                                });
+                              }}
+                              className="nodrag flex h-9 items-center rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                            >
+                              下载
+                            </button>
+                            {isPrimary ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleOutputsExpanded();
+                                }}
+                                className="nodrag flex h-9 items-center gap-1 rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                              >
+                                <Shrink className="size-4" />
+                                收起
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setPrimaryOutput(output);
+                                }}
+                                className="nodrag flex h-9 items-center rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                              >
+                                设为主图
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : imageSrc ? (
                   <img
                     src={imageSrc}
                     alt={data.fileName}
@@ -1091,6 +1309,20 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                   )}
                 </AnimatePresence>
               </div>
+              {!outputsExpanded && hasOutputGroup && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleOutputsExpanded();
+                  }}
+                  className="nodrag absolute right-3 top-3 z-20 flex h-10 items-center gap-1 rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                  aria-label={`展开 ${outputs.length} 张图片`}
+                >
+                  <Shrink className="size-4 rotate-180" />
+                  {outputs.length}张
+                </button>
+              )}
               <NodeCreateHandle nodeId={id} direction="incoming" selected={selected} showButton={showNodeActions} />
               <NodeCreateHandle nodeId={id} direction="outgoing" selected={selected} showButton={showNodeActions} />
             </motion.div>
@@ -1098,7 +1330,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         </div>
 
         <AnimatePresence>
-          {isOnlySelectedNode && !dragging && canCompose && (
+          {isOnlySelectedNode && !dragging && canCompose && !outputsExpanded && (
             <motion.div
               initial={{ opacity: 0, y: -8 * fixedUiScale, scale: 0.99 * fixedUiScale }}
               animate={{ opacity: 1, y: 0, scale: fixedUiScale }}
@@ -1188,6 +1420,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     disabled={isGenerating}
                     onClick={() => {
                       setParamsPopoverOpen(false);
+                      setCountPopoverOpen(false);
                       setModelPopoverOpen((v) => !v);
                     }}
                     className="flex items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-sm font-medium text-charcoal transition-colors hover:border-charcoal/40 hover:bg-background disabled:cursor-not-allowed disabled:opacity-40"
@@ -1244,6 +1477,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     disabled={isGenerating}
                     onClick={() => {
                       setModelPopoverOpen(false);
+                      setCountPopoverOpen(false);
                       setParamsPopoverOpen((v) => !v);
                     }}
                     className="flex items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-sm text-muted-gray transition-colors hover:border-charcoal/40 hover:bg-background hover:text-charcoal disabled:cursor-not-allowed disabled:opacity-40"
@@ -1356,6 +1590,53 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
               </div>
 
               <div className="flex items-center gap-3">
+                <div className="relative">
+                  <button
+                    ref={countBtnRef}
+                    type="button"
+                    disabled={isGenerating}
+                    onClick={() => {
+                      setModelPopoverOpen(false);
+                      setParamsPopoverOpen(false);
+                      setCountPopoverOpen((v) => !v);
+                    }}
+                    className="flex h-11 items-center gap-2 rounded-xl bg-muted px-3 text-sm font-medium text-charcoal transition-colors hover:bg-muted/80 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="选择生成数量"
+                  >
+                    <span>{generationCount}张</span>
+                    <ChevronDown className={cn("size-4 text-muted-gray transition-transform", countPopoverOpen && "rotate-180")} />
+                  </button>
+                  <AnimatePresence>
+                    {countPopoverOpen && (
+                      <motion.div
+                        ref={countPopoverRef}
+                        data-composer-local-wheel="true"
+                        initial={{ opacity: 0, y: 4, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                        transition={{ duration: 0.14, ease: "easeOut" }}
+                        className="absolute bottom-full left-0 z-[260] mb-2 w-full rounded-xl border border-border-warm bg-background p-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
+                      >
+                        {GENERATION_COUNT_OPTIONS.map((count) => (
+                          <button
+                            key={count}
+                            type="button"
+                            onClick={() => {
+                              handleGenerationCountChange(count);
+                              setCountPopoverOpen(false);
+                            }}
+                            className={cn(
+                              "mb-1 flex h-9 w-full items-center justify-center rounded-lg text-sm font-medium text-muted-gray transition-colors last:mb-0 hover:bg-muted hover:text-charcoal",
+                              generationCount === count && "bg-muted text-charcoal"
+                            )}
+                          >
+                            {count}张
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
                 <button
                   type="button"
                   onClick={handleGenerate}
