@@ -281,12 +281,47 @@ const VIDEO_MODE_OPTIONS: {
 function deriveVideoMode(
   explicitMode: VideoGenerationMode | null | undefined,
   refCount: number,
+  capabilities?: string[] | null,
 ): VideoGenerationMode {
-  if (explicitMode) return explicitMode;
+  if (
+    explicitMode &&
+    modelSupportsVideoMode(capabilities, explicitMode) &&
+    isVideoModeSelectable(explicitMode, refCount)
+  ) {
+    return explicitMode;
+  }
+  const candidates: VideoGenerationMode[] =
+    refCount === 0
+      ? ["TEXT_TO_VIDEO"]
+      : refCount === 1
+        ? ["IMAGE_TO_VIDEO", "MULTI_REF_VIDEO", "FIRST_LAST_FRAME_VIDEO"]
+        : ["MULTI_REF_VIDEO", "FIRST_LAST_FRAME_VIDEO"];
+  const supported = candidates.find((mode) =>
+    modelSupportsVideoMode(capabilities, mode),
+  );
+  if (supported) return supported;
   if (refCount === 0) return "TEXT_TO_VIDEO";
   if (refCount === 1) return "IMAGE_TO_VIDEO";
-  if (refCount === 2) return "FIRST_LAST_FRAME_VIDEO";
   return "MULTI_REF_VIDEO";
+}
+
+function modelSupportsVideoMode(
+  capabilities: string[] | null | undefined,
+  mode: VideoGenerationMode,
+) {
+  return !capabilities?.length || capabilities.includes(mode);
+}
+
+function isVideoModeSelectable(mode: VideoGenerationMode, refCount: number) {
+  if (mode === "TEXT_TO_VIDEO") return refCount === 0;
+  if (mode === "FIRST_LAST_FRAME_VIDEO") return refCount >= 1 && refCount <= 2;
+  const option = VIDEO_MODE_OPTIONS.find((item) => item.mode === mode);
+  if (!option) return false;
+  return refCount >= option.minRefs && refCount <= option.maxRefs;
+}
+
+function isVideoModeAvailable(mode: VideoGenerationMode, refCount: number) {
+  return isVideoModeSelectable(mode, refCount);
 }
 
 function validateVideoGeneration(
@@ -459,8 +494,10 @@ export function VideoNodeComponent({
   const [previewOpen, setPreviewOpen] = useState(false);
   // 记录视频生成任务的开始时间 todo:重新提交需要更新
   const [startedAtMs, setStartedAtMs] = useState(() =>
-    data.generationRunStartedAt
-      ? new Date(data.generationRunStartedAt).getTime()
+    data.generationRunStartedAt || data.generationStartedAt
+      ? new Date(
+          data.generationRunStartedAt ?? data.generationStartedAt ?? "",
+        ).getTime()
       : 0,
   );
 
@@ -490,13 +527,27 @@ export function VideoNodeComponent({
   const isRunning = isGenerating && isRunningStatus(upstreamStatus);
   const canCompose = kind !== "uploaded";
   const pickerActiveForThisNode = referencePickerPromptId === id;
+  const dataStartedAtMs =
+    data.generationRunStartedAt || data.generationStartedAt
+      ? new Date(
+          data.generationRunStartedAt ?? data.generationStartedAt ?? "",
+        ).getTime()
+      : 0;
+  const effectiveStartedAtMs = startedAtMs > 0 ? startedAtMs : dataStartedAtMs;
   const elapsedMs =
-    isRunning && startedAtMs > 0 ? now - startedAtMs : data.elapsedMs;
+    data.elapsedMs ??
+    (isGenerating &&
+    Number.isFinite(effectiveStartedAtMs) &&
+    effectiveStartedAtMs > 0
+      ? Math.max(0, now - effectiveStartedAtMs)
+      : null);
   const progressLabel = isQueued
-    ? "排队中"
+    ? `排队中 ${formatElapsed(elapsedMs)}`
     : isRunning
       ? `生成中 ${formatElapsed(elapsedMs)}`
-      : "提交中";
+      : isGenerating
+        ? `提交中 ${formatElapsed(elapsedMs)}`
+        : "提交中";
   const previewElapsedMs = previewOpen ? elapsedMs : data.elapsedMs;
   const previewItem = useMemo(
     // todo 里面问题还很大
@@ -537,12 +588,26 @@ export function VideoNodeComponent({
     return images;
   }, [getEdges, getNodes, id, referenceImagesSignature]);
 
+  const rawParams = useMemo(() => data.params ?? {}, [data.params]);
+  const modelListCapability =
+    data.explicitMode ?? deriveVideoMode(null, referenceImages.length);
+  const aigcModels = useAigcModels({
+    type: 3,
+    capability: modelListCapability,
+    listCapability: null,
+    preferredModelId: data.aigcModelId,
+    params: rawParams,
+  });
+  const storedAigcModel = aigcModels.models.find(
+    (model) => model.id === data.aigcModelId,
+  );
+  const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
   // 生成模式
   const generationCapability = deriveVideoMode(
     data.explicitMode,
     referenceImages.length,
+    activeAigcModel?.capabilities,
   );
-
 
   const orderedReferenceImages = useMemo(
     // 这个图片排序模式还值得商榷
@@ -567,17 +632,6 @@ export function VideoNodeComponent({
       })),
     [orderedReferenceImages],
   );
-  const rawParams = useMemo(() => data.params ?? {}, [data.params]);
-  const aigcModels = useAigcModels({
-    type: 3,
-    capability: generationCapability,
-    preferredModelId: data.aigcModelId,
-    params: rawParams,
-  });
-  const storedAigcModel = aigcModels.models.find(
-    (model) => model.id === data.aigcModelId,
-  );
-  const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
   const activeAigcModelId = activeAigcModel?.id ?? data.aigcModelId;
   const activeModelName =
     activeAigcModel?.name ?? data.modelName ?? SEEDANCE_MODEL_NAME;
@@ -1744,11 +1798,18 @@ export function VideoNodeComponent({
                   <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
                     {VIDEO_MODE_OPTIONS.map((opt) => {
                       const isActive = generationCapability === opt.mode;
+                      const isSupported = modelSupportsVideoMode(
+                        activeAigcModel?.capabilities,
+                        opt.mode,
+                      );
+                      const isAvailable =
+                        isSupported &&
+                        isVideoModeAvailable(opt.mode, referenceImages.length);
                       return (
                         <button
                           key={opt.mode}
                           type="button"
-                          disabled={isGenerating}
+                          disabled={isGenerating || !isAvailable}
                           onClick={() => updateData({ explicitMode: opt.mode })}
                           className={cn(
                             "nodrag nowheel rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
@@ -1756,7 +1817,11 @@ export function VideoNodeComponent({
                               ? "bg-background text-charcoal shadow-sm"
                               : "text-muted-gray hover:text-charcoal",
                           )}
-                          title={!isActive ? `切换到${opt.label}` : undefined}
+                          title={
+                            isSupported && isAvailable && !isActive
+                              ? `切换到${opt.label}`
+                              : undefined
+                          }
                         >
                           {opt.label}
                         </button>

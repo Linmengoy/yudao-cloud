@@ -1,7 +1,7 @@
 "use client";
 
 import { useId } from "react";
-import { BaseEdge, getBezierPath, useReactFlow, type EdgeProps } from "@xyflow/react";
+import { BaseEdge, getBezierPath, useReactFlow, useStore, type EdgeProps } from "@xyflow/react";
 import type { EdgeDeleteEventDetail } from "./types";
 
 export function CanvasSignalEdge({
@@ -12,9 +12,14 @@ export function CanvasSignalEdge({
   targetY,
   sourcePosition,
   targetPosition,
+  source,
+  target,
 }: EdgeProps) {
   const gradientId = useId().replace(/:/g, "");
   const { setEdges } = useReactFlow();
+  const isConnectedCardSelected = useStore((store) =>
+    store.nodes.some((node) => (node.id === source || node.id === target) && node.selected)
+  );
   const gradientDx = targetX - sourceX;
   const gradientDy = targetY - sourceY;
   const [edgePath] = getBezierPath({
@@ -70,7 +75,9 @@ export function CanvasSignalEdge({
         </linearGradient>
       </defs>
       <BaseEdge path={edgePath} />
-      <path className="copse-signal-edge-gradient" d={edgePath} stroke={`url(#${gradientId})`} />
+      {isConnectedCardSelected ? (
+        <path className="copse-signal-edge-gradient" d={edgePath} stroke={`url(#${gradientId})`} />
+      ) : null}
       <path
         d={edgePath}
         fill="none"

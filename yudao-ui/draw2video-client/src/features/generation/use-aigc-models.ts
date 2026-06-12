@@ -6,6 +6,7 @@ import { calculateAigcModelPrice, getAigcModelList, getAigcModelParamList, type 
 type UseAigcModelsOptions = {
   type: number;
   capability: string;
+  listCapability?: string | null;
   preferredModelId?: number | null;
   params?: Record<string, unknown>;
 };
@@ -17,7 +18,7 @@ function filterTemplateParams(params: Record<string, unknown>, templates: AigcMo
   );
 }
 
-export function useAigcModels({ type, capability, preferredModelId, params }: UseAigcModelsOptions) {
+export function useAigcModels({ type, capability, listCapability, preferredModelId, params }: UseAigcModelsOptions) {
   const [models, setModels] = useState<AigcModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<number | null>(preferredModelId ?? null);
   const [templates, setTemplates] = useState<AigcModelParamTemplate[]>([]);
@@ -32,7 +33,8 @@ export function useAigcModels({ type, capability, preferredModelId, params }: Us
     const timer = window.setTimeout(() => {
       setLoading(true);
       setError(null);
-      getAigcModelList(type, capability)
+      const listCap = listCapability === null ? undefined : (listCapability ?? capability);
+      getAigcModelList(type, listCap)
         .then((data) => {
           if (ignore) return;
           setModels(data);
@@ -57,7 +59,7 @@ export function useAigcModels({ type, capability, preferredModelId, params }: Us
       ignore = true;
       window.clearTimeout(timer);
     };
-  }, [capability, preferredModelId, type]);
+  }, [capability, listCapability, preferredModelId, type]);
 
   useEffect(() => {
     if (!selectedModelId) {

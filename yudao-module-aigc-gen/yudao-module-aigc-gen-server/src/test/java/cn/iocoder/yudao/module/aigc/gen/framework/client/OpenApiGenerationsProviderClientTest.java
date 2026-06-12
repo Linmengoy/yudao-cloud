@@ -13,11 +13,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class OpenApiGenerationsProviderClientTest {
@@ -27,6 +29,20 @@ public class OpenApiGenerationsProviderClientTest {
     @Test
     public void testGetProviderCode() {
         assertEquals("openapi-generations", client.getProviderCode());
+        assertEquals("OPENAPI_GENERATIONS", client.getClientType());
+    }
+
+    @Test
+    public void testFactoryUsesClientTypeFromExtraConfig() {
+        OpenApiGenerationsProviderClient openApiClient = new OpenApiGenerationsProviderClient();
+        MockAigcProviderClient mockClient = new MockAigcProviderClient();
+        AigcProviderClientFactory factory = new AigcProviderClientFactory(List.of(openApiClient, mockClient));
+
+        AigcProviderClient resolved = factory.getClient(new AigcProviderSubmitReqDTO()
+                .setProviderCode("any-provider")
+                .setProviderExtraConfig("{\"clientType\":\"OPENAPI_GENERATIONS\"}"));
+
+        assertSame(openApiClient, resolved);
     }
 
     @Test
@@ -53,6 +69,46 @@ public class OpenApiGenerationsProviderClientTest {
             assertEquals("seedance-2.0", body.getStr("model"));
             assertEquals("text_to_video", body.getStr("mode"));
             assertEquals("一只猫在跳舞", body.getStr("prompt"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_processingKeepsProviderTaskId() throws Exception {
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> sendJson(exchange, 200, """
+                {"id":"gen-123","status":"processing"}
+                """));
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("TEXT_TO_VIDEO")
+                    .setPrompt("processing task"));
+
+            assertTrue(resp.getSuccess(), resp.getErrorMessage());
+            assertFalse(resp.getFinished());
+            assertEquals("gen-123", resp.getProviderTaskId());
+            assertEquals("processing", resp.getProviderStatus());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_processingWithoutIdFails() throws Exception {
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> sendJson(exchange, 200, """
+                {"status":"processing"}
+                """));
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("TEXT_TO_VIDEO")
+                    .setPrompt("missing id"));
+
+            assertFalse(resp.getSuccess());
+            assertTrue(resp.getFinished());
+            assertEquals("MISSING_PROVIDER_TASK_ID", resp.getErrorCode());
+            assertEquals("processing", resp.getProviderStatus());
         } finally {
             server.stop(0);
         }
@@ -164,12 +220,190 @@ public class OpenApiGenerationsProviderClientTest {
     }
 
     @Test
-    public void testSubmit_completedWithResultUrls() throws Exception {
-        HttpServer server = startServer("/openapi/v1/generations", exchange -> {
+    public void testSubmit_officialSeedanceReviewsImageUrls() throws Exception {
+        AtomicReference<String> assetUploadBody = new AtomicReference<>();
+        AtomicReference<String> generationBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/openapi/v1/assets", exchange -> {
+            assetUploadBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             sendJson(exchange, 200, """
-                    {"id":"gen-task-sync","status":"success","result_urls":["https://cdn.example.com/result-1.mp4","https://cdn.example.com/result-2.mp4"]}
+                    {"officialId":"asset-cn-001","status":"Active"}
                     """);
         });
+        server.createContext("/openapi/v1/generations", exchange -> {
+            generationBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"id":"gen-official-cn","status":"pending"}
+                    """);
+        });
+        server.start();
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2-official2")
+                    .setProviderExtraConfig("{\"seedanceAssetGroupCn\":\"ag-cn\",\"seedanceAssetReviewPollIntervalMillis\":0}")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("MULTI_REF_VIDEO")
+                    .setPrompt("官方模型素材提审")
+                    .setInputParams("""
+                            {"referenceImages":["https://example.com/ref.jpg"],"duration":6}
+                            """));
+
+            assertTrue(resp.getSuccess(), resp.getErrorCode() + ": " + resp.getErrorMessage());
+            JSONObject assetBody = JSONUtil.parseObj(assetUploadBody.get());
+            assertEquals("ag-cn", assetBody.getStr("groupId"));
+            assertEquals("https://example.com/ref.jpg", assetBody.getStr("url"));
+
+            JSONObject body = JSONUtil.parseObj(generationBody.get());
+            assertEquals("seedance-2-official2", body.getStr("model"));
+            assertEquals("asset://asset-cn-001", body.getJSONArray("image_urls").getStr(0));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_intlSeedanceCreatesIntlAssetGroup() throws Exception {
+        AtomicReference<String> groupBody = new AtomicReference<>();
+        AtomicReference<String> assetUploadBody = new AtomicReference<>();
+        AtomicReference<String> generationBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/openapi/v1/asset-groups", exchange -> {
+            groupBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"officialId":"ag-intl"}
+                    """);
+        });
+        server.createContext("/openapi/v1/assets", exchange -> {
+            assetUploadBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"officialId":"asset-intl-001","status":"Active"}
+                    """);
+        });
+        server.createContext("/openapi/v1/generations", exchange -> {
+            generationBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"id":"gen-official-intl","status":"pending"}
+                    """);
+        });
+        server.start();
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2-intl-xl-fast")
+                    .setProviderExtraConfig("{\"seedanceAssetReviewPollIntervalMillis\":0}")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setPrompt("国际模型素材提审")
+                    .setInputParams("""
+                            {"image_url":"https://example.com/intl.jpg","duration":6}
+                            """));
+
+            assertTrue(resp.getSuccess(), resp.getErrorCode() + ": " + resp.getErrorMessage());
+            assertEquals("intl", JSONUtil.parseObj(groupBody.get()).getStr("region"));
+            JSONObject assetBody = JSONUtil.parseObj(assetUploadBody.get());
+            assertEquals("ag-intl", assetBody.getStr("groupId"));
+            assertEquals("https://example.com/intl.jpg", assetBody.getStr("url"));
+
+            JSONObject body = JSONUtil.parseObj(generationBody.get());
+            assertEquals("asset://asset-intl-001", body.getStr("image_url"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_officialSeedanceSkipsExistingAssetUrls() throws Exception {
+        AtomicReference<String> generationBody = new AtomicReference<>();
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> {
+            generationBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"id":"gen-existing-asset","status":"pending"}
+                    """);
+        });
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2")
+                    .setProviderExtraConfig("{\"assetGroupCn\":\"ag-cn\",\"seedanceAssetReviewPollIntervalMillis\":0}")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setPrompt("已有 asset 引用")
+                    .setInputParams("""
+                            {"image_url":"asset://asset-existing"}
+                            """));
+
+            assertTrue(resp.getSuccess(), resp.getErrorCode() + ": " + resp.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(generationBody.get());
+            assertEquals("asset://asset-existing", body.getStr("image_url"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_officialSeedanceFailsWhenAssetReviewFails() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/openapi/v1/assets", exchange -> sendJson(exchange, 200, """
+                {"officialId":"asset-failed","status":"Processing"}
+                """));
+        server.createContext("/openapi/v1/assets/asset-failed", exchange -> sendJson(exchange, 200, """
+                {"officialId":"asset-failed","status":"Failed"}
+                """));
+        server.createContext("/openapi/v1/generations", exchange -> sendJson(exchange, 200, """
+                {"id":"should-not-submit","status":"pending"}
+                """));
+        server.start();
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2-fast")
+                    .setProviderExtraConfig("""
+                            {"assetGroupCn":"ag-cn","seedanceAssetReviewMaxPolls":1,"seedanceAssetReviewPollIntervalMillis":0}
+                            """)
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setPrompt("审核失败")
+                    .setInputParams("""
+                            {"image_url":"https://example.com/face.jpg"}
+                            """));
+
+            assertFalse(resp.getSuccess());
+            assertEquals("ASSET_REVIEW_FAILED", resp.getErrorCode());
+            assertTrue(resp.getErrorMessage().contains("Failed"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_nonOfficialSeedanceKeepsDirectImageUrl() throws Exception {
+        AtomicReference<String> generationBody = new AtomicReference<>();
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> {
+            generationBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            sendJson(exchange, 200, """
+                    {"id":"gen-beta","status":"pending"}
+                    """);
+        });
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setProviderModel("seedance-2-beta-face")
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("IMAGE_TO_VIDEO")
+                    .setPrompt("beta 模型不走素材库")
+                    .setInputParams("""
+                            {"image_url":"https://example.com/direct.jpg"}
+                            """));
+
+            assertTrue(resp.getSuccess(), resp.getErrorCode() + ": " + resp.getErrorMessage());
+            JSONObject body = JSONUtil.parseObj(generationBody.get());
+            assertEquals("https://example.com/direct.jpg", body.getStr("image_url"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_completedWithResultUrls() throws Exception {
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> sendJson(exchange, 200, """
+                {"id":"gen-task-sync","status":"success","result_urls":["https://cdn.example.com/result-1.mp4","https://cdn.example.com/result-2.mp4"]}
+                """));
         try {
             AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
                     .setGenerateType("VIDEO")
@@ -189,11 +423,9 @@ public class OpenApiGenerationsProviderClientTest {
 
     @Test
     public void testQuery_pendingStatus() throws Exception {
-        HttpServer server = startServer("/openapi/v1/generations/gen-task-001", exchange -> {
-            sendJson(exchange, 200, """
-                    {"id":"gen-task-001","status":"processing"}
-                    """);
-        });
+        HttpServer server = startServer("/openapi/v1/generations/gen-task-001", exchange -> sendJson(exchange, 200, """
+                {"id":"gen-task-001","status":"processing"}
+                """));
         try {
             AigcProviderSubmitRespDTO resp = client.query(baseReq(server).setProviderTaskId("gen-task-001"));
 
@@ -208,11 +440,9 @@ public class OpenApiGenerationsProviderClientTest {
 
     @Test
     public void testQuery_completedWithVideoUrl() throws Exception {
-        HttpServer server = startServer("/openapi/v1/generations/gen-task-001", exchange -> {
-            sendJson(exchange, 200, """
-                    {"id":"gen-task-001","status":"success","output":{"video_url":"https://cdn.example.com/result.mp4","duration":5}}
-                    """);
-        });
+        HttpServer server = startServer("/openapi/v1/generations/gen-task-001", exchange -> sendJson(exchange, 200, """
+                {"id":"gen-task-001","status":"success","output":{"video_url":"https://cdn.example.com/result.mp4","duration":5}}
+                """));
         try {
             AigcProviderSubmitRespDTO resp = client.query(baseReq(server).setProviderTaskId("gen-task-001"));
 
@@ -228,11 +458,9 @@ public class OpenApiGenerationsProviderClientTest {
 
     @Test
     public void testQuery_completedWithTopLevelResultUrl() throws Exception {
-        HttpServer server = startServer("/openapi/v1/generations/gen-task-001", exchange -> {
-            sendJson(exchange, 200, """
-                    {"id":"gen-task-001","status":"success","result_url":"https://cdn.example.com/result.mp4"}
-                    """);
-        });
+        HttpServer server = startServer("/openapi/v1/generations/gen-task-001", exchange -> sendJson(exchange, 200, """
+                {"id":"gen-task-001","status":"success","result_url":"https://cdn.example.com/result.mp4"}
+                """));
         try {
             AigcProviderSubmitRespDTO resp = client.query(baseReq(server).setProviderTaskId("gen-task-001"));
 
@@ -248,11 +476,9 @@ public class OpenApiGenerationsProviderClientTest {
 
     @Test
     public void testQuery_failedStatus() throws Exception {
-        HttpServer server = startServer("/openapi/v1/generations/gen-task-bad", exchange -> {
-            sendJson(exchange, 200, """
-                    {"id":"gen-task-bad","status":"failed","error":"内容审核未通过"}
-                    """);
-        });
+        HttpServer server = startServer("/openapi/v1/generations/gen-task-bad", exchange -> sendJson(exchange, 200, """
+                {"id":"gen-task-bad","status":"failed","error":"内容审核未通过"}
+                """));
         try {
             AigcProviderSubmitRespDTO resp = client.query(baseReq(server).setProviderTaskId("gen-task-bad"));
 
@@ -260,6 +486,25 @@ public class OpenApiGenerationsProviderClientTest {
             assertTrue(resp.getFinished());
             assertEquals("PROVIDER_FAILED", resp.getErrorCode());
             assertTrue(resp.getErrorMessage().contains("内容审核未通过"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testQuery_failedReturnsReadableErrorMessage() throws Exception {
+        HttpServer server = startServer("/openapi/v1/generations/gen-task-face", exchange -> sendJson(exchange, 200, """
+                {"id":"gen-task-face","status":"failed","error":{"message":"The uploaded image may contain a real human face. Please replace the image and try again."}}
+                """));
+        try {
+            AigcProviderSubmitRespDTO resp = client.query(baseReq(server).setProviderTaskId("gen-task-face"));
+
+            assertFalse(resp.getSuccess());
+            assertTrue(resp.getFinished());
+            assertEquals("gen-task-face", resp.getProviderTaskId());
+            assertEquals("failed", resp.getProviderStatus());
+            assertEquals("The uploaded image may contain a real human face. Please replace the image and try again.",
+                    resp.getErrorMessage());
         } finally {
             server.stop(0);
         }
@@ -283,11 +528,9 @@ public class OpenApiGenerationsProviderClientTest {
 
     @Test
     public void testSubmit_httpError() throws Exception {
-        HttpServer server = startServer("/openapi/v1/generations", exchange -> {
-            sendJson(exchange, 429, """
-                    {"error":"rate limit exceeded"}
-                    """);
-        });
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> sendJson(exchange, 429, """
+                {"error":"rate limit exceeded"}
+                """));
         try {
             AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
                     .setGenerateType("VIDEO")
@@ -305,8 +548,6 @@ public class OpenApiGenerationsProviderClientTest {
     public void testVerifyCallback_returnsTrue() {
         assertTrue(client.verifyCallback(null));
     }
-
-    // ========== helpers ==========
 
     private AigcProviderSubmitReqDTO baseReq(HttpServer server) {
         return new AigcProviderSubmitReqDTO()
