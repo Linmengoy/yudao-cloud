@@ -866,10 +866,12 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             if (attempt != null) {
                 attemptMapper.updateById(new AigcGenerateAttemptDO().setId(attempt.getId())
                         .setStatus(AigcGenerateAttemptStatusEnum.CALLBACK_WAITING.getCode())
+                        .setProviderTaskId(resp.getProviderTaskId())
                         .setProviderStatus(resp.getProviderStatus()));
             }
             generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId())
                     .setStatus(AigcGenerateStatusEnum.CALLBACK_WAITING.getCode())
+                    .setProviderTaskId(resp.getProviderTaskId())
                     .setProviderStatus(resp.getProviderStatus()));
         }
     }
