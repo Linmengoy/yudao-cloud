@@ -1753,6 +1753,8 @@ function CanvasFlow() {
   // 初始化最后应用版本
   const lastAppliedVersionRef = useRef(0);
   const syncInFlightVersionsRef = useRef<Set<number>>(new Set());
+  const pendingOperationCountRef = useRef(0);
+  const deferredSyncUntilPendingClearRef = useRef(false);
   const viewportAssetRefreshTimerRef = useRef<number | null>(null);
 
   // 初始化同步状态
@@ -1990,6 +1992,7 @@ function CanvasFlow() {
   }, [markAppliedVersion, refreshVisibleAssetUrls, setEdges, setNodes, setViewport]);
 
   const applyOperationRecord = useCallback((operationRecord: { clientId: string; nextVersion: number; operationType: string; operationJson: string }) => {
+    if (operationRecord.nextVersion <= lastAppliedVersionRef.current) return;
     setLatestKnownVersion((prev) => Math.max(prev, operationRecord.nextVersion));
     if (operationRecord.clientId !== clientId) {
       try {
@@ -2008,6 +2011,12 @@ function CanvasFlow() {
     canvasApi.syncOperations(serverProjectId, afterVersion)
       .then((syncResult) => {
         if (syncResult.mode === "snapshot") {
+          const snapshotVersion = Number(syncResult.snapshot?.version ?? syncResult.toVersion ?? 0);
+          if (Number.isFinite(snapshotVersion) && snapshotVersion <= lastAppliedVersionRef.current) return;
+          if (pendingOperationCountRef.current > 0) {
+            deferredSyncUntilPendingClearRef.current = true;
+            return;
+          }
           hydrateRemoteSnapshot(syncResult.snapshot);
           return;
         }
@@ -2033,6 +2042,13 @@ function CanvasFlow() {
   useEffect(() => {
     syncFromVersionRef.current = syncFromVersion;
   }, [syncFromVersion]);
+
+  useEffect(() => {
+    pendingOperationCountRef.current = canvasOperations.pendingOperationCount;
+    if (canvasOperations.pendingOperationCount !== 0 || !deferredSyncUntilPendingClearRef.current) return;
+    deferredSyncUntilPendingClearRef.current = false;
+    syncFromVersion(lastAppliedVersionRef.current);
+  }, [canvasOperations.pendingOperationCount, syncFromVersion]);
 
   useEffect(() => {
     const newMessages = canvasRealtime.messages.slice(processedRealtimeMessageCountRef.current);
@@ -2723,7 +2739,6 @@ function CanvasFlow() {
             setSaveError("");
           }).catch(() => {
             setSaveError("服务端画布保存失败，请稍后重试");
-            syncFromVersion(lastAppliedVersionRef.current);
           }).finally(() => {
             setIsSavingSnapshot(false);
           });
@@ -2735,7 +2750,7 @@ function CanvasFlow() {
       }
     }, CANVAS_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(saveTimer.current);
-  }, [activeProjectId, canvasOperations.pendingOperationCount, clientId, edges, getViewport, isHydrated, isReadOnly, markAppliedVersion, nodeDragCommitVersion, nodes, saveSnapshot, serverProjectId, syncFromVersion]);
+  }, [activeProjectId, canvasOperations.pendingOperationCount, clientId, edges, getViewport, isHydrated, isReadOnly, markAppliedVersion, nodeDragCommitVersion, nodes, saveSnapshot, serverProjectId]);
 
   // --- Add nodes ---
   const addImageDraftNode = useCallback((position?: { x: number; y: number }) => {
