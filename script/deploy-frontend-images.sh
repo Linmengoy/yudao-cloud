@@ -10,6 +10,7 @@ CLIENT_WS_BASE_URL="wss://beta.copse.top"
 TARGET="all"
 ARCHIVE_NAME=""
 COMPOSE_FILE="docker-compose.frontend.yml"
+SSH_KEY="$HOME/.ssh/jd_ssh_0304.pem"
 SKIP_BUILD=0
 SKIP_SAVE=0
 SKIP_UPLOAD=0
@@ -30,10 +31,11 @@ Options:
   --target all|admin|client    Build/deploy target, default all
   --archive-name NAME          Image archive name
   --compose-file NAME          Compose file name, default docker-compose.frontend.yml
+  --ssh-key PATH               SSH private key, default ~/.ssh/jd_ssh_0304.pem
   --skip-build                 Skip docker buildx build
   --skip-save                  Skip docker save
   --skip-upload                Skip scp and remote restart
-  --no-proxy                   Run ssh/scp without proxy env, ProxyCommand, or ProxyJump
+  --no-proxy                   Run ssh/scp without proxy env or ssh config
   -h, --help                   Show help
 
 Examples:
@@ -79,6 +81,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --compose-file)
       COMPOSE_FILE="${2:-}"
+      shift 2
+      ;;
+    --ssh-key)
+      SSH_KEY="${2:-}"
       shift 2
       ;;
     --skip-build)
@@ -164,18 +170,18 @@ run() {
 ssh_run() {
   if [[ "$NO_PROXY" -eq 1 ]]; then
     run env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy -u SOCKS_PROXY -u socks_proxy \
-      ssh -o ProxyCommand=none -o ProxyJump=none "$@"
+      ssh -F /dev/null -i "$SSH_KEY" -o ProxyCommand=none -o ProxyJump=none "$@"
   else
-    run ssh "$@"
+    run ssh -i "$SSH_KEY" "$@"
   fi
 }
 
 scp_run() {
   if [[ "$NO_PROXY" -eq 1 ]]; then
     run env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy -u SOCKS_PROXY -u socks_proxy \
-      scp -o ProxyCommand=none -o ProxyJump=none "$@"
+      scp -F /dev/null -i "$SSH_KEY" -o ProxyCommand=none -o ProxyJump=none "$@"
   else
-    run scp "$@"
+    run scp -i "$SSH_KEY" "$@"
   fi
 }
 

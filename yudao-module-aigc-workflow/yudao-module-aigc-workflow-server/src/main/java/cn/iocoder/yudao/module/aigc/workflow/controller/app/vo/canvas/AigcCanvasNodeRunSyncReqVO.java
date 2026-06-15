@@ -14,7 +14,6 @@ public class AigcCanvasNodeRunSyncReqVO {
     private Long projectId;
 
     @Schema(description = "节点编号", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "节点编号不能为空")
     private String nodeId;
 
     @Schema(description = "任务编号", requiredMode = Schema.RequiredMode.REQUIRED)
