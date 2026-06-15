@@ -5,12 +5,15 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.monitor.TracerUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.usage.vo.AigcModelUsagePageReqVO;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.usage.vo.AigcModelUsageTypeStatisticsRespVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelUsageLogDO;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelUsageLogMapper;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelUsageRecordReqDTO;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
+
+import java.util.List;
 
 @Service
 @Validated
@@ -38,6 +41,11 @@ public class AigcModelUsageServiceImpl implements AigcModelUsageService {
     @Override
     public PageResult<AigcModelUsageLogDO> getUsageLogPage(AigcModelUsagePageReqVO reqVO) {
         return usageLogMapper.selectPage(reqVO);
+    }
+
+    @Override
+    public List<AigcModelUsageTypeStatisticsRespVO> getUsageTypeStatistics(AigcModelUsagePageReqVO reqVO) {
+        return usageLogMapper.selectTypeStatistics(reqVO);
     }
 
     private Long sumTokens(Long promptTokens, Long completionTokens, Long inputTokens, Long outputTokens) {

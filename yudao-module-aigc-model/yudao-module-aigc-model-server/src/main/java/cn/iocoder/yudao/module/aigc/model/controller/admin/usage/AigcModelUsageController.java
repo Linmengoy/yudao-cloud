@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.aigc.model.controller.admin.usage;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.usage.vo.AigcModelUsagePageReqVO;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.usage.vo.AigcModelUsageTypeStatisticsRespVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelUsageLogDO;
 import cn.iocoder.yudao.module.aigc.model.service.usage.AigcModelUsageService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 
@@ -41,6 +44,14 @@ public class AigcModelUsageController {
     @PreAuthorize("@ss.hasPermission('aigc:model:usage:query')")
     public CommonResult<PageResult<AigcModelUsageLogDO>> getUsagePage(@Valid AigcModelUsagePageReqVO reqVO) {
         return success(usageService.getUsageLogPage(reqVO));
+    }
+
+    @GetMapping("/type-statistics")
+    @Operation(summary = "按模型类型统计用量")
+    @PreAuthorize("@ss.hasPermission('aigc:model:usage:query')")
+    public CommonResult<List<AigcModelUsageTypeStatisticsRespVO>> getUsageTypeStatistics(
+            @Valid AigcModelUsagePageReqVO reqVO) {
+        return success(usageService.getUsageTypeStatistics(reqVO));
     }
 
 }

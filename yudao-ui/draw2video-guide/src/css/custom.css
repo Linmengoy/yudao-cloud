@@ -1,0 +1,23 @@
+:root {
+  --ifm-color-primary: #1f6feb;
+  --ifm-color-primary-dark: #1b62d1;
+  --ifm-color-primary-darker: #185cc4;
+  --ifm-color-primary-darkest: #154b9f;
+  --ifm-color-primary-light: #3b82f6;
+  --ifm-color-primary-lighter: #5896f7;
+  --ifm-color-primary-lightest: #85b5fb;
+  --ifm-font-family-base: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --ifm-code-font-size: 95%;
+}
+
+.hero {
+  padding: 3rem 0;
+}
+
+.navbar__title {
+  font-weight: 700;
+}
+
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--ifm-toc-border-color);
+}

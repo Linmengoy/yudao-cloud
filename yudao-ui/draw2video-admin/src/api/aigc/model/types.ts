@@ -168,3 +168,14 @@ export interface AigcModelUsageLogRespVO {
   errorMessage?: string
   createTime?: Date
 }
+
+export interface AigcModelUsageTypeStatisticsRespVO {
+  modelType?: number
+  usageCount?: number
+  successCount?: number
+  failedCount?: number
+  totalTokens?: number
+  costPrice?: number
+  salePrice?: number
+  avgDurationMillis?: number
+}

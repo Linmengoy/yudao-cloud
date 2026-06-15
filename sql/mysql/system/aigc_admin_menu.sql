@@ -22,6 +22,78 @@ INSERT INTO `system_menu` (
 
 SET @aigcModelParentId := LAST_INSERT_ID();
 
+-- ===================================================================
+-- AIGC 使用指南（Docusaurus 静态站入口）
+-- ===================================================================
+
+SELECT @aigcGuideParentId := `id`
+FROM `system_menu`
+WHERE `deleted` = b'0'
+  AND `name` = 'AIGC 使用指南'
+  AND `type` = 1
+LIMIT 1;
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+)
+SELECT
+    'AIGC 使用指南', '', 1, 97, 0,
+    '/aigc-guide', 'ep:guide', NULL, NULL,
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideParentId IS NULL;
+
+SELECT @aigcGuideParentId := `id`
+FROM `system_menu`
+WHERE `deleted` = b'0'
+  AND `name` = 'AIGC 使用指南'
+  AND `type` = 1
+LIMIT 1;
+
+SELECT @aigcGuideMenuId := `id`
+FROM `system_menu`
+WHERE `deleted` = b'0'
+  AND `permission` = 'aigc:guide:query'
+  AND `type` = 2
+LIMIT 1;
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+)
+SELECT
+    '使用指南', 'aigc:guide:query', 2, 1, @aigcGuideParentId,
+    'guide', 'ep:document', 'aigc/guide/index', 'AigcGuide',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideMenuId IS NULL;
+
+SELECT @aigcGuideMenuId := `id`
+FROM `system_menu`
+WHERE `deleted` = b'0'
+  AND `permission` = 'aigc:guide:query'
+  AND `type` = 2
+LIMIT 1;
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+)
+SELECT '使用指南查询', 'aigc:guide:query', 3, 1, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (
+    SELECT 1 FROM `system_menu`
+    WHERE `deleted` = b'0'
+      AND `permission` = 'aigc:guide:query'
+      AND `type` = 3
+);
+
 -- 模型列表
 INSERT INTO `system_menu` (
     `name`, `permission`, `type`, `sort`, `parent_id`,
@@ -229,6 +301,48 @@ INSERT INTO `system_menu` (
 ('授权新增', 'aigc:model:tenant:create', 3, 2, @modelTenantMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
 ('授权修改', 'aigc:model:tenant:update', 3, 3, @modelTenantMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
 ('授权删除', 'aigc:model:tenant:delete', 3, 4, @modelTenantMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
+-- 调用计量
+SELECT @modelUsageMenuId := `id`
+FROM `system_menu`
+WHERE `deleted` = b'0'
+  AND `permission` = 'aigc:model:usage:query'
+  AND `type` = 2
+LIMIT 1;
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+)
+SELECT
+    '调用计量', 'aigc:model:usage:query', 2, 9, @aigcModelParentId,
+    'usage', 'ep:data-analysis', 'aigc/model/usage/index', 'AigcModelUsage',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @modelUsageMenuId IS NULL;
+
+SELECT @modelUsageMenuId := `id`
+FROM `system_menu`
+WHERE `deleted` = b'0'
+  AND `permission` = 'aigc:model:usage:query'
+  AND `type` = 2
+LIMIT 1;
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+)
+SELECT '调用计量查询', 'aigc:model:usage:query', 3, 1, @modelUsageMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (
+    SELECT 1 FROM `system_menu`
+    WHERE `deleted` = b'0'
+      AND `permission` = 'aigc:model:usage:query'
+      AND `type` = 3
+);
 
 -- ===================================================================
 -- 2. AIGC 生成管理（父级目录，sort=92）

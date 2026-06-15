@@ -14,6 +14,36 @@
     </el-form>
   </ContentWrap>
   <ContentWrap>
+    <div class="usage-statistics-header">
+      <div class="usage-statistics-title">模型种类使用统计</div>
+      <el-button :loading="statisticsLoading" @click="getTypeStatistics">
+        <Icon icon="ep:refresh" class="mr-5px" />刷新图表
+      </el-button>
+    </div>
+    <el-row :gutter="16">
+      <el-col :xs="24" :lg="10">
+        <Echart :height="320" :options="typePieOptions" />
+      </el-col>
+      <el-col :xs="24" :lg="14">
+        <Echart :height="320" :options="typeBarOptions" />
+      </el-col>
+    </el-row>
+    <el-table v-loading="statisticsLoading" :data="typeStatistics" :stripe="true" class="mt-16px">
+      <el-table-column label="模型种类" prop="modelType" min-width="100">
+        <template #default="scope">{{ getModelTypeLabel(scope.row.modelType) }}</template>
+      </el-table-column>
+      <el-table-column label="调用次数" align="center" prop="usageCount" min-width="100" />
+      <el-table-column label="成功" align="center" prop="successCount" min-width="90" />
+      <el-table-column label="失败" align="center" prop="failedCount" min-width="90" />
+      <el-table-column label="总 Tokens" align="center" prop="totalTokens" min-width="110" />
+      <el-table-column label="销售价" align="center" prop="salePrice" min-width="100" />
+      <el-table-column label="成本价" align="center" prop="costPrice" min-width="100" />
+      <el-table-column label="平均耗时" align="center" min-width="110">
+        <template #default="scope">{{ formatDuration(scope.row.avgDurationMillis) }}</template>
+      </el-table-column>
+    </el-table>
+  </ContentWrap>
+  <ContentWrap>
     <el-table v-loading="loading" :data="list" :stripe="true" :show-overflow-tooltip="true">
       <el-table-column label="日志 ID" align="center" prop="id" min-width="90" />
       <el-table-column label="Trace ID" align="center" prop="traceId" min-width="180" />
@@ -63,20 +93,81 @@
   </Dialog>
 </template>
 <script setup lang="ts">
+import type { EChartsOption } from 'echarts'
 import { dateFormatter } from '@/utils/formatTime'
 import { AigcModelUsageApi, type AigcModelUsageLogPageReqVO } from '@/api/aigc/model/usage'
-import type { AigcModelUsageLogRespVO } from '@/api/aigc/model/types'
-import { AIGC_MODEL_CAPABILITIES, AIGC_USAGE_STATUSES, getOptionLabel } from '../constants'
+import { Echart } from '@/components/Echart'
+import type {
+  AigcModelUsageLogRespVO,
+  AigcModelUsageTypeStatisticsRespVO
+} from '@/api/aigc/model/types'
+import { AIGC_MODEL_CAPABILITIES, AIGC_MODEL_TYPES, AIGC_USAGE_STATUSES, getOptionLabel } from '../constants'
 
 defineOptions({ name: 'AigcModelUsage' })
 
 const loading = ref(true)
+const statisticsLoading = ref(false)
 const list = ref<AigcModelUsageLogRespVO[]>([])
+const typeStatistics = ref<AigcModelUsageTypeStatisticsRespVO[]>([])
 const total = ref(0)
 const queryFormRef = ref()
 const queryParams = reactive<AigcModelUsageLogPageReqVO>({ pageNo: 1, pageSize: 10, taskId: undefined, userId: undefined, modelId: undefined, providerId: undefined, capability: undefined, status: undefined })
 const detailVisible = ref(false)
 const detailData = ref<AigcModelUsageLogRespVO>({})
+
+const getModelTypeLabel = (type?: number) => {
+  return AIGC_MODEL_TYPES.find((item) => item.value === type)?.label || '未知'
+}
+
+const formatDuration = (millis?: number) => {
+  if (!millis) {
+    return '0s'
+  }
+  return `${(millis / 1000).toFixed(1)}s`
+}
+
+const typePieOptions = computed<EChartsOption>(() => ({
+  tooltip: { trigger: 'item' },
+  legend: { bottom: 0 },
+  series: [
+    {
+      name: '调用次数',
+      type: 'pie',
+      radius: ['42%', '68%'],
+      center: ['50%', '44%'],
+      data: typeStatistics.value.map((item) => ({
+        name: getModelTypeLabel(item.modelType),
+        value: item.usageCount || 0
+      })),
+      label: { formatter: '{b}: {c}' }
+    }
+  ]
+}))
+
+const typeBarOptions = computed<EChartsOption>(() => ({
+  tooltip: { trigger: 'axis' },
+  legend: { top: 0 },
+  grid: { left: 40, right: 20, top: 40, bottom: 32 },
+  xAxis: {
+    type: 'category',
+    data: typeStatistics.value.map((item) => getModelTypeLabel(item.modelType))
+  },
+  yAxis: { type: 'value' },
+  series: [
+    {
+      name: '成功',
+      type: 'bar',
+      stack: 'usage',
+      data: typeStatistics.value.map((item) => item.successCount || 0)
+    },
+    {
+      name: '失败',
+      type: 'bar',
+      stack: 'usage',
+      data: typeStatistics.value.map((item) => item.failedCount || 0)
+    }
+  ]
+}))
 
 const getList = async () => {
   loading.value = true
@@ -88,11 +179,36 @@ const getList = async () => {
     loading.value = false
   }
 }
-const handleQuery = () => { queryParams.pageNo = 1; getList() }
+const getTypeStatistics = async () => {
+  statisticsLoading.value = true
+  try {
+    typeStatistics.value = await AigcModelUsageApi.getUsageTypeStatistics(queryParams)
+  } finally {
+    statisticsLoading.value = false
+  }
+}
+const handleQuery = () => { queryParams.pageNo = 1; Promise.all([getList(), getTypeStatistics()]) }
 const resetQuery = () => { queryFormRef.value.resetFields(); handleQuery() }
 const openDetail = async (id: number) => {
   detailData.value = await AigcModelUsageApi.getUsage(id)
   detailVisible.value = true
 }
-onMounted(() => getList())
+onMounted(() => {
+  getList()
+  getTypeStatistics()
+})
 </script>
+<style scoped>
+.usage-statistics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.usage-statistics-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+</style>
