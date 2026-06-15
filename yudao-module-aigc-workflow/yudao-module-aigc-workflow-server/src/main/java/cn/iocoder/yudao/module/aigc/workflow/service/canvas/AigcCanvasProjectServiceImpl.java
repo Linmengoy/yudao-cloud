@@ -412,6 +412,19 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     }
 
     @Override
+    public PageResult<AigcCanvasProjectRespVO> getAdminProjectPage(AigcCanvasProjectPageReqVO reqVO, Long ownerUserId) {
+        PageResult<AigcCanvasProjectDO> pageResult = projectMapper.selectAdminPage(reqVO, ownerUserId);
+        if (pageResult.getList() == null || pageResult.getList().isEmpty()) {
+            return PageResult.empty(pageResult.getTotal());
+        }
+        Map<Long, AigcAssetRespDTO> assetMap = getAssetMap(pageResult.getList());
+        List<AigcCanvasProjectRespVO> list = pageResult.getList().stream()
+                .map(project -> buildAdminProjectResp(project, assetMap))
+                .toList();
+        return new PageResult<>(list, pageResult.getTotal());
+    }
+
+    @Override
     public PageResult<AigcCanvasProjectRecycleBinRespVO> getProjectRecycleBinPage(AigcCanvasProjectRecycleBinPageReqVO reqVO, Long userId) {
         PageResult<AigcCanvasProjectRecycleBinDO> pageResult = projectRecycleBinMapper.selectPage(reqVO, userId);
         return new PageResult<>(BeanUtils.toBean(pageResult.getList(), AigcCanvasProjectRecycleBinRespVO.class), pageResult.getTotal());
@@ -591,6 +604,17 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
         AigcCanvasProjectRespVO respVO = BeanUtils.toBean(project, AigcCanvasProjectRespVO.class);
         fillProjectPermissions(respVO, project, userId, member);
         fillProjectCover(respVO, assetMap);
+        return respVO;
+    }
+
+    private AigcCanvasProjectRespVO buildAdminProjectResp(AigcCanvasProjectDO project, Map<Long, AigcAssetRespDTO> assetMap) {
+        AigcCanvasProjectRespVO respVO = BeanUtils.toBean(project, AigcCanvasProjectRespVO.class);
+        respVO.setRole(MEMBER_ROLE_OWNER);
+        respVO.setCanEdit(false);
+        respVO.setReadonly(true);
+        if (project.getCoverAssetId() != null) {
+            respVO.setCoverUrl(getAssetPreviewUrl(assetMap.get(project.getCoverAssetId())));
+        }
         return respVO;
     }
 

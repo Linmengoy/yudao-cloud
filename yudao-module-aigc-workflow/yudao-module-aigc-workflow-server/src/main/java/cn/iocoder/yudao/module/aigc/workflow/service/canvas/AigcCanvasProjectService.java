@@ -58,6 +58,8 @@ public interface AigcCanvasProjectService {
 
     PageResult<AigcCanvasProjectRespVO> getProjectPage(AigcCanvasProjectPageReqVO reqVO, Long userId);
 
+    PageResult<AigcCanvasProjectRespVO> getAdminProjectPage(AigcCanvasProjectPageReqVO reqVO, Long ownerUserId);
+
     PageResult<AigcCanvasProjectRecycleBinRespVO> getProjectRecycleBinPage(AigcCanvasProjectRecycleBinPageReqVO reqVO, Long userId);
 
     PageResult<AigcAssetRespDTO> getProjectAssetPage(Long projectId, AigcCanvasProjectAssetPageReqVO reqVO, Long userId);
