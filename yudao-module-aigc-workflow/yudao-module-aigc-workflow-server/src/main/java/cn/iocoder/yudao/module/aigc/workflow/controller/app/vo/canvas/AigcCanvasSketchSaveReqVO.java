@@ -14,7 +14,6 @@ public class AigcCanvasSketchSaveReqVO {
     private Long projectId;
 
     @Schema(description = "节点编号", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "节点编号不能为空")
     private String nodeId;
 
     @Schema(description = "tldraw 场景 JSON", requiredMode = Schema.RequiredMode.REQUIRED)

@@ -64,8 +64,23 @@ export function sanitizeNodeForCanvasOperation(node: AppNode): AppNode {
   return { ...node, data } as AppNode;
 }
 
+function isUnsyncedLocalMediaNode(node: AppNode): boolean {
+  if (node.type !== "image" && node.type !== "video" && node.type !== "sketch") return false;
+  const data = node.data as Record<string, unknown>;
+  if (data.assetId || data.outputAssetId || data.previewAssetId) return false;
+  return hasLocalMediaValue(data);
+}
+
+export function isCanvasNodeSyncable(node: AppNode): boolean {
+  return !isUnsyncedLocalMediaNode(node);
+}
+
+export function filterSyncableCanvasNodes(nodes: AppNode[]): AppNode[] {
+  return nodes.filter(isCanvasNodeSyncable);
+}
+
 export function sanitizeNodesForCanvasSnapshot(nodes: AppNode[]): AppNode[] {
-  return nodes.map(sanitizeNodeForCanvasOperation);
+  return filterSyncableCanvasNodes(nodes).map(sanitizeNodeForCanvasOperation);
 }
 
 export function sanitizeCanvasStateForPersistence(state: CanvasState): CanvasState {

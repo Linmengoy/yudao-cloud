@@ -1,7 +1,6 @@
 package cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -13,7 +12,6 @@ public class AigcCanvasAssetBindReqVO {
     private Long projectId;
 
     @Schema(description = "节点编号", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "节点编号不能为空")
     private String nodeId;
 
     @Schema(description = "资产编号", requiredMode = Schema.RequiredMode.REQUIRED)

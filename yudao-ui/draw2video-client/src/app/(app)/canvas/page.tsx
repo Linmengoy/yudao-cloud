@@ -41,7 +41,7 @@ import { TextNodeComponent } from "@/features/canvas/TextNode";
 import { VideoNodeComponent } from "@/features/canvas/VideoNode";
 import { GroupNodeComponent } from "@/features/canvas/GroupNode";
 import { CanvasSignalEdge } from "@/features/canvas/CanvasSignalEdge";
-import { filterSyncableNodeDataPatch, sanitizeNodeForCanvasOperation, sanitizeNodesForCanvasSnapshot, stripRuntimeAssetUrlsFromPatch } from "@/features/canvas/canvas-syncable-data";
+import { filterSyncableNodeDataPatch, isCanvasNodeSyncable, sanitizeNodeForCanvasOperation, sanitizeNodesForCanvasSnapshot, stripRuntimeAssetUrlsFromPatch } from "@/features/canvas/canvas-syncable-data";
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
@@ -3038,6 +3038,7 @@ function CanvasFlow() {
 
       const newNodes: AppNode[] = [];
       const existingNodes = getNodes() as AppNode[];
+      let keptLocalFallback = false;
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         try {
@@ -3047,7 +3048,11 @@ function CanvasFlow() {
           };
           if (isAcceptedImageType(file.type)) {
             let imageData: ImageNodeData = await fileToImageNodeData(file);
-            imageData = await attachImageAsset(file, imageData);
+            try {
+              imageData = await attachImageAsset(file, imageData);
+            } catch {
+              keptLocalFallback = true;
+            }
             imageData = {
               ...imageData,
               projectId: activeProjectId,
@@ -3104,7 +3109,12 @@ function CanvasFlow() {
         }
         setNodes((nds) => [...nds, ...newNodes]);
         for (const node of newNodes) {
+          if (!isCanvasNodeSyncable(node)) continue;
           canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(node) });
+        }
+        if (keptLocalFallback) {
+          setPasteToast("图片已添加到当前画布，但云端上传失败；刷新或协作端可能无法看到这张图。");
+          setTimeout(() => setPasteToast(""), 3500);
         }
       }
     },
