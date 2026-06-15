@@ -387,6 +387,46 @@ services:
         condition: service_started
       yudao-infra:
         condition: service_started
+
+  aigc-community:
+    build:
+      context: ../../yudao-module-aigc-community/yudao-module-aigc-community-server
+      dockerfile: Dockerfile
+    image: aigc-community:latest
+    container_name: aigc-community
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: dev
+      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: dev
+      SPRING_CLOUD_NACOS_DISCOVERY_GROUP: DEFAULT_GROUP
+      SPRING_CLOUD_NACOS_CONFIG_GROUP: DEFAULT_GROUP
+      JAVA_OPTS: -Xms512m -Xmx512m
+    networks:
+      - yudao-network
+    ports:
+      - "48097:48097"
+    volumes:
+      - /opt/data/yudao-logs:/root/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_started
+      yudao-system:
+        condition: service_started
+      yudao-infra:
+        condition: service_started
+      aigc-asset:
+        condition: service_started
+      aigc-workflow:
+        condition: service_started
+
   yudao-member:
     build:
       context: ../../yudao-module-member/yudao-module-member-server

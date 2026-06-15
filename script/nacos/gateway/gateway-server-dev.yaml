@@ -229,6 +229,18 @@ spring:
               uri: grayLb://aigc-workflow-server
               predicates:
                 - Path=/aigc/workflow/ws/**
+            - id: aigc-community-admin-api
+              uri: grayLb://aigc-community-server
+              predicates:
+                - Path=/admin-api/aigc/community/**, /admin-api/aigc/guide/**
+              filters:
+                - RewritePath=/admin-api/aigc/community/v3/api-docs, /v3/api-docs
+            - id: aigc-community-app-api
+              uri: grayLb://aigc-community-server
+              predicates:
+                - Path=/app-api/aigc/community/**, /app-api/aigc/guide/**
+              filters:
+                - RewritePath=/app-api/aigc/community/v3/api-docs, /v3/api-docs
             - id: iot-admin-api
               uri: grayLb://iot-server
               predicates:
@@ -359,6 +371,12 @@ knife4j:
       - name: aigc-workflow-app-api
         service-name: aigc-workflow-server
         url: /app-api/aigc/workflow/v3/api-docs
+      - name: aigc-community-admin-api
+        service-name: aigc-community-server
+        url: /admin-api/aigc/community/v3/api-docs
+      - name: aigc-community-app-api
+        service-name: aigc-community-server
+        url: /app-api/aigc/community/v3/api-docs
       - name: iot-admin-api
         service-name: iot-server
         url: /admin-api/iot/v3/api-docs

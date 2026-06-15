@@ -22,6 +22,7 @@ on:
           - aigc-asset
           - aigc-safety
           - aigc-workflow
+          - aigc-community
           - draw2video-admin
           - draw2video-client
 
@@ -83,6 +84,7 @@ jobs:
             aigc-asset) module="yudao-module-aigc-asset/yudao-module-aigc-asset-server" ;;
             aigc-safety) module="yudao-module-aigc-safety/yudao-module-aigc-safety-server" ;;
             aigc-workflow) module="yudao-module-aigc-workflow/yudao-module-aigc-workflow-server" ;;
+            aigc-community) module="yudao-module-aigc-community/yudao-module-aigc-community-server" ;;
             aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
             draw2video-admin) module="frontend" ;;
             draw2video-client) module="frontend" ;;
@@ -139,20 +141,26 @@ jobs:
           docker compose -f script/docker/docker-compose-micro.yml ps
 
           if [ "${BUILD_SERVICE}" = "all" ]; then
-            verify_services="yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen draw2video-admin draw2video-client"
+            verify_services="yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community draw2video-admin draw2video-client"
           else
             verify_services="${BUILD_SERVICE}"
           fi
 
           for service in ${verify_services}; do
+            service_running="false"
             for i in $(seq 1 30); do
               state=$(docker compose -f script/docker/docker-compose-micro.yml ps --status running --services | grep -Fx "${service}" || true)
               echo "${service}: ${state:-not-running}"
               if [ "${state}" = "${service}" ]; then
-                exit 0
+                service_running="true"
+                break
               fi
               sleep 5
             done
+
+            if [ "${service_running}" = "true" ]; then
+              continue
+            fi
 
             docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 "${service}"
             exit 1
