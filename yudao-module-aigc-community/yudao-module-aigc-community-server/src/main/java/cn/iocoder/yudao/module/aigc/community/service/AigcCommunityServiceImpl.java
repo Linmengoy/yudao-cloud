@@ -10,6 +10,7 @@ import cn.iocoder.yudao.module.aigc.asset.api.AigcAssetApi;
 import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.asset.enums.AigcAssetAuditStatusEnum;
 import cn.iocoder.yudao.module.aigc.asset.enums.AigcAssetStatusEnum;
+import cn.iocoder.yudao.module.aigc.workflow.api.AigcWorkflowApi;
 import cn.iocoder.yudao.module.aigc.community.controller.admin.vo.AigcCommunityAdminCommentPageReqVO;
 import cn.iocoder.yudao.module.aigc.community.controller.admin.vo.AigcCommunityAdminPostPageReqVO;
 import cn.iocoder.yudao.module.aigc.community.controller.app.vo.AigcCommunityAuthorPostPageReqVO;
@@ -80,6 +81,8 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
     @Resource
     private AigcAssetApi assetApi;
     @Resource
+    private AigcWorkflowApi workflowApi;
+    @Resource
     private MemberUserApi memberUserApi;
 
     @Override
@@ -88,7 +91,13 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
         if (reqVO.getAssetId() == null && reqVO.getProjectId() == null) {
             throw exception(COMMUNITY_POST_SOURCE_EMPTY);
         }
-        AigcAssetRespDTO asset = reqVO.getAssetId() == null ? null : validateAssetVisible(reqVO.getAssetId());
+        AigcAssetRespDTO asset = reqVO.getAssetId() == null ? null : validatePublishableAsset(reqVO.getAssetId(), userId);
+        if (reqVO.getCoverAssetId() != null && !Objects.equals(reqVO.getCoverAssetId(), reqVO.getAssetId())) {
+            validatePublishableAsset(reqVO.getCoverAssetId(), userId);
+        }
+        if (reqVO.getProjectId() != null) {
+            validateReadableProject(reqVO.getProjectId(), userId);
+        }
         AigcCommunityPostDO post = new AigcCommunityPostDO()
                 .setPostNo("P" + IdUtil.getSnowflakeNextIdStr())
                 .setAuthorUserId(userId)
@@ -464,8 +473,8 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
                             .setAssetType(post.getAssetType())
                             .setProjectId(post.getProjectId())
                             .setCoverAssetId(post.getCoverAssetId())
-                            .setCoverUrl(asset == null ? null : firstNotBlank(asset.getCoverUrl(), asset.getThumbnailUrl(), asset.getFileUrl()))
-                            .setFileUrl(asset == null ? null : asset.getFileUrl())
+                            .setCoverUrl(null)
+                            .setFileUrl(null)
                             .setTitle(post.getTitle())
                             .setSummary(post.getSummary())
                             .setTags(post.getTags())
@@ -604,6 +613,18 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
             throw exception(COMMUNITY_POST_SOURCE_INVALID);
         }
         return asset;
+    }
+
+    private AigcAssetRespDTO validatePublishableAsset(Long assetId, Long userId) {
+        AigcAssetRespDTO asset = validateAssetVisible(assetId);
+        if (!Objects.equals(asset.getUserId(), userId)) {
+            throw exception(COMMUNITY_POST_SOURCE_NO_PERMISSION);
+        }
+        return asset;
+    }
+
+    private void validateReadableProject(Long projectId, Long userId) {
+        workflowApi.validateReadableCanvasProject(projectId, userId).getCheckedData();
     }
 
     private boolean isAssetVisible(AigcAssetRespDTO asset) {

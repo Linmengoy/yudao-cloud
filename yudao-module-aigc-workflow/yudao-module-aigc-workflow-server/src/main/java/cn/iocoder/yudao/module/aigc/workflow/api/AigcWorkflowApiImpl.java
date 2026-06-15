@@ -9,6 +9,7 @@ import cn.iocoder.yudao.module.aigc.workflow.dto.AigcWorkflowExecuteRespDTO;
 import cn.iocoder.yudao.module.aigc.workflow.dto.AigcWorkflowInstanceRespDTO;
 import cn.iocoder.yudao.module.aigc.workflow.dto.AigcWorkflowNodeCallbackReqDTO;
 import cn.iocoder.yudao.module.aigc.workflow.dto.AigcWorkflowRetryNodeReqDTO;
+import cn.iocoder.yudao.module.aigc.workflow.service.canvas.AigcCanvasProjectService;
 import cn.iocoder.yudao.module.aigc.workflow.service.instance.AigcWorkflowInstanceService;
 import jakarta.annotation.Resource;
 import org.springframework.validation.annotation.Validated;
@@ -22,6 +23,8 @@ public class AigcWorkflowApiImpl implements AigcWorkflowApi {
 
     @Resource
     private AigcWorkflowInstanceService workflowInstanceService;
+    @Resource
+    private AigcCanvasProjectService canvasProjectService;
 
     @Override
     public CommonResult<AigcWorkflowExecuteRespDTO> execute(Long userId, AigcWorkflowExecuteReqDTO reqDTO) {
@@ -48,6 +51,12 @@ public class AigcWorkflowApiImpl implements AigcWorkflowApi {
     @Override
     public CommonResult<AigcWorkflowCostEstimateRespDTO> estimateCost(AigcWorkflowCostEstimateReqDTO reqDTO) {
         return success(workflowInstanceService.estimateCost(reqDTO));
+    }
+
+    @Override
+    public CommonResult<Boolean> validateReadableCanvasProject(Long projectId, Long userId) {
+        canvasProjectService.validateReadableProject(projectId, userId);
+        return success(true);
     }
 
     @Override

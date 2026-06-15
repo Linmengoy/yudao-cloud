@@ -10,6 +10,7 @@ public interface ErrorCodeConstants {
     ErrorCode COMMUNITY_POST_AUDIT_REASON_EMPTY = new ErrorCode(1_046_000_003, "Audit reason cannot be empty");
     ErrorCode COMMUNITY_POST_SOURCE_EMPTY = new ErrorCode(1_046_000_004, "Asset or project is required");
     ErrorCode COMMUNITY_POST_SOURCE_INVALID = new ErrorCode(1_046_000_005, "Community source asset is unavailable");
+    ErrorCode COMMUNITY_POST_SOURCE_NO_PERMISSION = new ErrorCode(1_046_000_006, "No permission to publish this community source");
     ErrorCode COMMUNITY_COMMENT_NOT_EXISTS = new ErrorCode(1_046_001_000, "Community comment does not exist");
     ErrorCode COMMUNITY_COMMENT_NO_PERMISSION = new ErrorCode(1_046_001_001, "No permission to operate this comment");
     ErrorCode COMMUNITY_COMMENT_CONTENT_EMPTY = new ErrorCode(1_046_001_002, "Comment content cannot be empty");
