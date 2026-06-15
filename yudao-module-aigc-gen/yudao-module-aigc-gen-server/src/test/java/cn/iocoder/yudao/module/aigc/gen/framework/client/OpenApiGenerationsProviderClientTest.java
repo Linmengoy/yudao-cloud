@@ -570,6 +570,46 @@ public class OpenApiGenerationsProviderClientTest {
     }
 
     @Test
+    public void testSubmit_http400ParameterRejectedClassified() throws Exception {
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> sendJson(exchange, 400, """
+                {"error":{"message":"The request parameters were rejected. Please verify the prompt and media URLs, then try again."}}
+                """));
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("TEXT_TO_VIDEO")
+                    .setPrompt("test"));
+
+            assertFalse(resp.getSuccess());
+            assertEquals("MEDIA_URL_INVALID", resp.getErrorCode());
+            assertEquals("The request parameters were rejected. Please verify the prompt and media URLs, then try again.",
+                    resp.getErrorMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void testSubmit_failedStatusParameterRejectedClassified() throws Exception {
+        HttpServer server = startServer("/openapi/v1/generations", exchange -> sendJson(exchange, 200, """
+                {"id":"gen-rejected","status":"failed","error_code":"INVALID_PARAMETER","message":"invalid parameter: duration"}
+                """));
+        try {
+            AigcProviderSubmitRespDTO resp = client.submit(baseReq(server)
+                    .setGenerateType("VIDEO")
+                    .setGenerateMode("TEXT_TO_VIDEO")
+                    .setPrompt("test"));
+
+            assertFalse(resp.getSuccess());
+            assertEquals("PARAM_REJECTED", resp.getErrorCode());
+            assertEquals("gen-rejected", resp.getProviderTaskId());
+            assertEquals("failed", resp.getProviderStatus());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void testVerifyCallback_returnsTrue() {
         assertTrue(client.verifyCallback(null));
     }

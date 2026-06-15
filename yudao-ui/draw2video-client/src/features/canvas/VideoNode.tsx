@@ -582,7 +582,15 @@ function validateVideoGenerationRequest({
   return validateTemplateParams(params, templates);
 }
 
-function formatVideoGenerationError(message: unknown) {
+function formatVideoGenerationError(message: unknown, reason?: unknown) {
+  const rawReason = typeof reason === "string" ? reason.trim().toUpperCase() : "";
+  if (rawReason === "MEDIA_URL_INVALID") {
+    return "生成参数未通过模型校验，请检查参考图是否可访问，并确认视频模式、比例、分辨率和时长后重试。";
+  }
+  if (rawReason === "PARAM_REJECTED") {
+    return "生成参数未通过模型校验，请检查提示词、参考图和视频参数后重试。";
+  }
+
   const rawMessage = typeof message === "string" ? message.trim() : "";
   const lowerMessage = rawMessage.toLowerCase();
   const isParameterRejected =
@@ -1809,7 +1817,7 @@ export function VideoNodeComponent({
       updateData({
         status: "failed",
         taskId: String(submit.taskId),
-        errorMessage: formatVideoGenerationError(result.failMessage),
+        errorMessage: formatVideoGenerationError(result.failMessage, result.failReason),
         taskStatus: result.status,
         upstreamStatus: result.status,
         generationCompletedAt: completedAt,
