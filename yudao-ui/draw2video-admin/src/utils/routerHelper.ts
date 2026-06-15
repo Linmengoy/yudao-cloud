@@ -6,6 +6,7 @@ import { cloneDeep, omit } from 'lodash-es'
 import qs from 'qs'
 
 const modules = import.meta.glob('../views/**/*.{vue,tsx}')
+const NotFoundComponent = () => import('@/views/Error/404.vue')
 /**
  * 注册一个异步组件
  * @param componentPath 例:/bpm/oa/leave/detail
@@ -119,16 +120,12 @@ export const generateRoute = (routes: AppCustomRouteRecordRaw[]): AppRouteRecord
         redirect: route.redirect,
         meta: meta
       }
-      const index = route?.component
-        ? modulesRoutesKeys.findIndex((ev) => ev.includes(route.component))
-        : modulesRoutesKeys.findIndex((ev) => ev.includes(route.path))
-      childrenData.component = modules[modulesRoutesKeys[index]]
+      childrenData.component = resolveRouteComponent(modulesRoutesKeys, route.component || route.path)
       data.children = [childrenData]
     } else {
       // 菜单。页面菜单可能挂载按钮权限 children，仍应优先加载自身 component。
       if (route.component) {
-        const index = modulesRoutesKeys.findIndex((ev) => ev.includes(route.component))
-        data.component = modules[modulesRoutesKeys[index]]
+        data.component = resolveRouteComponent(modulesRoutesKeys, route.component)
         // 目录
       } else if (routeChildren?.length) {
         // 顶级目录承载后台整体框架；非顶级目录只作为 router-view 占位，避免多级菜单嵌套 Layout。
@@ -150,7 +147,7 @@ export const generateRoute = (routes: AppCustomRouteRecordRaw[]): AppRouteRecord
         const index = route?.component
           ? modulesRoutesKeys.findIndex((ev) => ev.includes(route.component))
           : modulesRoutesKeys.findIndex((ev) => ev.includes(route.path))
-        data.component = modules[modulesRoutesKeys[index]]
+        data.component = modules[modulesRoutesKeys[index]] || NotFoundComponent
       }
       if (routeChildren?.length) {
         data.children = generateRoute(routeChildren)
@@ -190,6 +187,16 @@ const filterRouteChildren = (
   })
   return routeChildren.length > 0 ? routeChildren : undefined
 }
+
+const resolveRouteComponent = (modulesRoutesKeys: string[], componentPath: string) => {
+  const normalizedComponentPath = normalizeComponentPath(componentPath)
+  const index = modulesRoutesKeys.findIndex((ev) =>
+    normalizeComponentPath(ev).includes(normalizedComponentPath)
+  )
+  return modules[modulesRoutesKeys[index]] || NotFoundComponent
+}
+
+const normalizeComponentPath = (componentPath: string) => componentPath.replace(/\s+/g, '')
 
 /**
  * 在已生成的子路由树里查找第一个同名后代路由。
