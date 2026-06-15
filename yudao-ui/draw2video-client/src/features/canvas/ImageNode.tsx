@@ -39,6 +39,7 @@ import { createGenerationTask, resolveInputImages } from "./use-generation";
 import type { ImageModeration, ImageOutputFormat, ImageQuality, ImageTaskParams } from "@/features/image-generation/types";
 import { getGenerationStatusLabel } from "@/features/generation/generation-status";
 import type { AigcModelParamTemplate } from "@/features/generation/model-api";
+import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import { filterAigcModelParams } from "@/features/generation/aigc-model-param-utils";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
@@ -98,6 +99,8 @@ const BUILT_IN_IMAGE_PARAM_KEYS = new Set([
   "moderation",
   "n",
   "ratio",
+  "aspect_ratio",
+  "ar",
   "aspectRatio",
   "imageSize",
   "resolution",
@@ -166,7 +169,7 @@ function hasParamValue(params: Record<string, unknown>, key: string | undefined)
 }
 
 function getModelSizeSelection(params: Record<string, unknown>, templates: AigcModelParamTemplate[]): SizeSelection {
-  const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio"]);
+  const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio", "aspect_ratio", "ar"]);
   const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
   return {
     tier: normalizeTemplateOption(String(params[imageSizeTemplate?.paramKey ?? "imageSize"] ?? templateDefault(imageSizeTemplate, ""))),
@@ -175,7 +178,7 @@ function getModelSizeSelection(params: Record<string, unknown>, templates: AigcM
 }
 
 function formatModelSizeSummary(params: Record<string, unknown>, templates: AigcModelParamTemplate[]) {
-  const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio"]);
+  const ratioTemplate = findTemplate(templates, ["ratio", "aspectRatio", "aspect_ratio", "ar"]);
   const imageSizeTemplate = findTemplate(templates, ["imageSize", "resolution"]);
   if (ratioTemplate || imageSizeTemplate) {
     const ratio = normalizeTemplateOption(String(params[ratioTemplate?.paramKey ?? "ratio"] ?? templateDefault(ratioTemplate, "1:1")));
@@ -565,7 +568,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const activeModelName = activeAigcModel?.name ?? data.modelName ?? "选择模型";
   const activeProviderModel = activeAigcModel?.model ?? data.providerModel ?? modelId;
   const activeAigcModelId = activeAigcModel?.id;
-  const ratioTemplate = useMemo(() => findTemplate(aigcModels.templates, ["ratio", "aspectRatio"]), [aigcModels.templates]);
+  const ratioTemplate = useMemo(() => findTemplate(aigcModels.templates, ["ratio", "aspectRatio", "aspect_ratio", "ar"]), [aigcModels.templates]);
   const imageSizeTemplate = useMemo(() => findTemplate(aigcModels.templates, ["imageSize", "resolution"]), [aigcModels.templates]);
   const sizeTemplate = useMemo(() => findTemplate(aigcModels.templates, ["size"]), [aigcModels.templates]);
   const qualityTemplate = useMemo(() => findTemplate(aigcModels.templates, ["quality"]), [aigcModels.templates]);
@@ -576,6 +579,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const qualityOptions = useMemo(() => segmentedOptions(qualityTemplate, QUALITY_OPTIONS), [qualityTemplate]);
   const formatOptions = useMemo(() => segmentedOptions(formatTemplate, FORMAT_OPTIONS), [formatTemplate]);
   const moderationOptions = useMemo(() => segmentedOptions(moderationTemplate, MODERATION_OPTIONS), [moderationTemplate]);
+  const customParamTemplates = useMemo(
+    () => aigcModels.templates.filter((template) => !BUILT_IN_IMAGE_PARAM_KEYS.has(template.paramKey)),
+    [aigcModels.templates]
+  );
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
   const outputs = useMemo(() => data.outputs ?? [], [data.outputs]);
   const hasOutputGroup = outputs.length > 1;
@@ -605,6 +612,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const showFormatControl = Boolean(formatTemplate);
   const showModerationControl = Boolean(moderationTemplate);
   const showOutputSection = showQualityControl || showFormatControl || showModerationControl;
+  const showCustomParamSection = customParamTemplates.length > 0;
   const canGenerate = Boolean(prompt.trim()) && !isGenerating && !aigcModels.loading && !aigcModels.templateLoading && Boolean(activeAigcModelId);
 
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
@@ -834,7 +842,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     if (aigcModels.templateLoading || aigcModels.templates.length === 0) return;
     const patch: Record<string, unknown> = {};
     for (const template of aigcModels.templates) {
-      if (!BUILT_IN_IMAGE_PARAM_KEYS.has(template.paramKey)) continue;
       if (hasParamValue(params, template.paramKey)) continue;
       const defaultValue = template.defaultValue ? normalizeTemplateOption(template.defaultValue) : "";
       const options = templateOptions(template, []);
@@ -1756,6 +1763,17 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                               <ParamSegmented label="审核" value={params.moderation} options={moderationOptions} onChange={(value) => updateParams({ moderation: value })} />
                             )}
                           </div>
+                        </section>
+                      )}
+                      {showCustomParamSection && (
+                        <section className="mt-5 space-y-3">
+                          <p className="text-xs font-medium text-muted-gray">Advanced</p>
+                          <DynamicParamForm
+                            templates={customParamTemplates}
+                            values={params}
+                            disabled={isGenerating}
+                            onChange={updateParams}
+                          />
                         </section>
                       )}
                       {aigcModels.templateLoading && (

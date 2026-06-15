@@ -218,7 +218,7 @@ public class MidjourneyProviderClient implements AigcProviderClient {
                 .set("prompt", StrUtil.isBlank(image) ? prompt : (image + (StrUtil.isBlank(prompt) ? "" : " " + prompt)))
                 .set("video_type", StrUtil.blankToDefault(params.getStr("video_type"), "vid_1.1_i2v_480"))
                 .set("motion", StrUtil.blankToDefault(params.getStr("motion"), "low"))
-                .set("animate_mode", StrUtil.blankToDefault(params.getStr("animate_mode"), "manual"));
+                .set("animate_mode", StrUtil.blankToDefault(firstNonBlank(params.getStr("animate_mode"), params.getStr("animate_mod")), "manual"));
         copyIfPresent(body, params, "base64", "action", "taskId", "index", "noStorage", "notifyHook", "state");
         return body;
     }

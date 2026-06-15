@@ -44,4 +44,6 @@ public interface AigcModelService {
 
     boolean hasModelCapability(Long modelId, String capability);
 
+    List<String> getModelCapabilities(Long modelId);
+
 }

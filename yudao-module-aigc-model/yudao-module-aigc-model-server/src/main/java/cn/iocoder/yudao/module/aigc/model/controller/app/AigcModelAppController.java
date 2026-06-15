@@ -56,7 +56,8 @@ public class AigcModelAppController {
         List<AigcModelDO> models = modelService.listTenantAvailableModels(type);
         return success(models.stream()
                 .filter(model -> capability == null || modelService.hasModelCapability(model.getId(), capability))
-                .map(model -> BeanUtils.toBean(model, AigcModelRespDTO.class))
+                .map(model -> BeanUtils.toBean(model, AigcModelRespDTO.class,
+                        resp -> resp.setCapabilities(modelService.getModelCapabilities(model.getId()))))
                 .collect(Collectors.toList()));
     }
 
