@@ -199,12 +199,9 @@ const handleImport = async () => {
       const result = await AigcPromptTemplateApi.importAwesomeGptImageFiles(data)
       importResult.value.createCount += result.createCount || 0
       importResult.value.updateCount += result.updateCount || 0
+      importResult.value.skipCount += result.skipCount || 0
       currentBatch.value += 1
     }
-    importResult.value.skipCount = Math.max(
-      0,
-      importResult.value.totalCount - importResult.value.createCount - importResult.value.updateCount
-    )
     message.success('导入完成')
   } finally {
     loading.value = false
