@@ -12,6 +12,7 @@ export const AigcPromptTemplateApi = {
     return await request.post<AigcPromptTemplateImportRespVO>({
       url: '/aigc/asset/prompt-template/import-awesome-gpt-image-files',
       headersType: 'multipart/form-data',
+      timeout: 120000,
       data
     })
   }

@@ -107,7 +107,7 @@ import { AigcPromptTemplateApi, type AigcPromptTemplateImportRespVO } from '@/ap
 defineOptions({ name: 'AigcPromptTemplate' })
 
 const message = useMessage()
-const BATCH_SIZE = 10
+const BATCH_SIZE = 3
 const formRef = ref<FormInstance>()
 const casesUploadRef = ref<UploadInstance>()
 const imagesUploadRef = ref<UploadInstance>()
