@@ -170,10 +170,15 @@ export interface AigcModelUsageLogRespVO {
 }
 
 export interface AigcModelUsageTypeStatisticsRespVO {
+  dimensionType?: 'MODEL_TYPE' | 'CAPABILITY' | 'MODEL_TOP' | 'FAILURE_RATE'
+  modelId?: number
+  modelName?: string
   modelType?: number
+  capability?: string
   usageCount?: number
   successCount?: number
   failedCount?: number
+  failureRate?: number
   totalTokens?: number
   costPrice?: number
   salePrice?: number

@@ -33,7 +33,7 @@ const sidebarLinks = [
 const popoverMenuItems = [
   { href: "/profile", icon: Settings, label: "账户管理" },
   { href: "/wallet", icon: Wallet, label: "钱包 / 用量" },
-  { href: "#", icon: BookOpen, label: "使用指南" },
+  { href: "/guide/", icon: BookOpen, label: "使用指南" },
   { href: "#", icon: MessageCircle, label: "联系我们" },
   { href: "#", icon: Globe, label: "简体中文" },
 ];
