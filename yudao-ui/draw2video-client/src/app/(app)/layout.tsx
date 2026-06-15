@@ -7,6 +7,7 @@ import {
   Home,
   PlusCircle,
   Folder,
+  LayoutTemplate,
   ListChecks,
   Wallet,
   HelpCircle,
@@ -27,6 +28,7 @@ const sidebarLinks = [
   { href: "/app", icon: Home, label: "首页" },
   { href: "/projects", icon: PlusCircle, label: "项目" },
   { href: "/assets", icon: Folder, label: "资产" },
+  { href: "/templates", icon: LayoutTemplate, label: "模板库" },
   { href: "/tasks", icon: ListChecks, label: "任务" },
 ];
 

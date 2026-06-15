@@ -67,22 +67,21 @@ public class AigcPromptTemplateImportServiceImpl implements AigcPromptTemplateIm
         int skipCount = 0;
         for (Object item : cases) {
             JSONObject caseJson = (JSONObject) item;
+            Long caseId = caseJson.getLong("id");
+            AigcPromptTemplateDO exists = promptTemplateMapper.selectBySource(SOURCE_REPO, caseId);
+            if (exists != null) {
+                skipCount++;
+                continue;
+            }
             Path imagePath = resolveImagePath(imageDirPath, caseJson.getStr("image"));
             if (imagePath == null || !Files.isRegularFile(imagePath)) {
                 skipCount++;
-                log.warn("[importAwesomeGptImageCases][caseId({}) 图片不存在，跳过]", caseJson.getLong("id"));
+                log.warn("[importAwesomeGptImageCases][caseId({}) 图片不存在，跳过]", caseId);
                 continue;
             }
             AigcPromptTemplateDO template = buildTemplate(caseJson, imagePath, reqVO.getStorageDirectory());
-            AigcPromptTemplateDO exists = promptTemplateMapper.selectBySource(SOURCE_REPO, template.getSourceCaseId());
-            if (exists == null) {
-                promptTemplateMapper.insert(template);
-                createCount++;
-            } else {
-                template.setId(exists.getId());
-                promptTemplateMapper.updateById(template);
-                updateCount++;
-            }
+            promptTemplateMapper.insert(template);
+            createCount++;
         }
         return new AigcPromptTemplateImportRespVO()
                 .setTotalCount(cases.size())
