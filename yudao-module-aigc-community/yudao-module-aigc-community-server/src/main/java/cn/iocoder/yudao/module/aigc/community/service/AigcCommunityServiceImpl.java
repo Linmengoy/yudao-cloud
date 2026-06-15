@@ -496,7 +496,7 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
                             .setDownloadCount(post.getDownloadCount())
                             .setHotScore(post.getHotScore())
                             .setLikedByCurrentUser(likedPostIds.contains(post.getId()))
-                            .setFollowedAuthor(followMapper.isFollowing(userId, post.getAuthorUserId()))
+                            .setFollowedAuthor(userId != null && followMapper.isFollowing(userId, post.getAuthorUserId()))
                             .setCreateTime(post.getCreateTime());
                 })
                 .toList();
@@ -670,15 +670,6 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
                 .setAction(action)
                 .setReason(reason)
                 .setOperatorUserId(operatorUserId));
-    }
-
-    private String firstNotBlank(String... values) {
-        for (String value : values) {
-            if (StrUtil.isNotBlank(value)) {
-                return value;
-            }
-        }
-        return null;
     }
 
 }
