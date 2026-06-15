@@ -65,6 +65,9 @@ import static cn.iocoder.yudao.module.aigc.community.enums.ErrorCodeConstants.*;
 @Validated
 public class AigcCommunityServiceImpl implements AigcCommunityService {
 
+    private static final List<String> COMMENT_REVIEW_KEYWORDS = List.of(
+            "广告", "色情", "暴力", "赌博", "诈骗", "spam", "illegal", "violation");
+
     @Resource
     private AigcCommunityPostMapper postMapper;
     @Resource
@@ -189,16 +192,20 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
         if (StrUtil.isBlank(content)) {
             throw exception(COMMUNITY_COMMENT_CONTENT_EMPTY);
         }
+        boolean requiresManualReview = requiresManualReview(content);
         AigcCommunityCommentDO comment = new AigcCommunityCommentDO()
                 .setPostId(reqVO.getPostId())
                 .setUserId(userId)
                 .setParentId(0L)
                 .setContent(content)
-                .setAuditStatus(AigcCommunityAuditStatusEnum.PASS.getCode())
+                .setAuditStatus(requiresManualReview ? AigcCommunityAuditStatusEnum.MANUAL_REVIEW.getCode() : AigcCommunityAuditStatusEnum.PASS.getCode())
+                .setAuditReason(requiresManualReview ? "Comment matched basic moderation keywords" : null)
                 .setStatus(AigcCommunityStatusEnum.NORMAL.getCode())
                 .setLikeCount(0);
         commentMapper.insert(comment);
-        postMapper.increaseCommentCount(reqVO.getPostId());
+        if (!requiresManualReview) {
+            postMapper.increaseCommentCount(reqVO.getPostId());
+        }
         return comment.getId();
     }
 
@@ -681,6 +688,11 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
     private boolean isVisibleComment(AigcCommunityCommentDO comment) {
         return AigcCommunityStatusEnum.NORMAL.getCode().equals(comment.getStatus())
                 && AigcCommunityAuditStatusEnum.PASS.getCode().equals(comment.getAuditStatus());
+    }
+
+    private boolean requiresManualReview(String content) {
+        String normalizedContent = StrUtil.trim(content).toLowerCase();
+        return COMMENT_REVIEW_KEYWORDS.stream().anyMatch(normalizedContent::contains);
     }
 
     private void validateAuthorExists(Long authorUserId) {
