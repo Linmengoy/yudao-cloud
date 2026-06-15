@@ -56,6 +56,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.community.enums.ErrorCodeConstants.*;
@@ -132,9 +133,9 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public AigcCommunityPostRespVO getPublicPost(Long id, Long userId) {
-        AigcCommunityPostDO post = validatePublicPost(id);
-        postMapper.increaseViewCount(id);
+    public AigcCommunityPostRespVO getPublicPost(String idOrPostNo, Long userId) {
+        AigcCommunityPostDO post = validatePublicPost(idOrPostNo);
+        postMapper.increaseViewCount(post.getId());
         return buildPostResp(post, userId, true);
     }
 
@@ -458,10 +459,15 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
                 .filter(like -> AigcCommunityStatusEnum.NORMAL.getCode().equals(like.getStatus()))
                 .map(AigcCommunityPostLikeDO::getPostId)
                 .collect(Collectors.toSet());
+        Set<Long> followedAuthorIds = userId == null ? Collections.emptySet() : followMapper.selectListByFollowerAndFollowees(userId,
+                        posts.stream().map(AigcCommunityPostDO::getAuthorUserId).collect(Collectors.toSet())).stream()
+                .map(AigcCommunityFollowDO::getFolloweeUserId)
+                .collect(Collectors.toSet());
         return posts.stream()
                 .filter(post -> !onlyAvailableAssets || post.getAssetId() == null || isAssetVisible(assetMap.get(post.getAssetId())))
                 .map(post -> {
                     AigcAssetRespDTO asset = post.getAssetId() == null ? null : assetMap.get(post.getAssetId());
+                    AigcAssetRespDTO coverAsset = post.getCoverAssetId() == null ? null : assetMap.get(post.getCoverAssetId());
                     MemberUserRespDTO author = userMap.get(post.getAuthorUserId());
                     return new AigcCommunityPostRespVO()
                             .setId(post.getId())
@@ -473,8 +479,14 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
                             .setAssetType(post.getAssetType())
                             .setProjectId(post.getProjectId())
                             .setCoverAssetId(post.getCoverAssetId())
-                            .setCoverUrl(null)
-                            .setFileUrl(null)
+                            .setCoverUrl(firstNotBlank(
+                                    coverAsset == null ? null : coverAsset.getThumbnailUrl(),
+                                    coverAsset == null ? null : coverAsset.getCoverUrl(),
+                                    coverAsset == null ? null : coverAsset.getFileUrl(),
+                                    asset == null ? null : asset.getThumbnailUrl(),
+                                    asset == null ? null : asset.getCoverUrl(),
+                                    asset == null ? null : asset.getFileUrl()))
+                            .setFileUrl(asset == null ? null : asset.getFileUrl())
                             .setTitle(post.getTitle())
                             .setSummary(post.getSummary())
                             .setTags(post.getTags())
@@ -496,7 +508,7 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
                             .setDownloadCount(post.getDownloadCount())
                             .setHotScore(post.getHotScore())
                             .setLikedByCurrentUser(likedPostIds.contains(post.getId()))
-                            .setFollowedAuthor(userId != null && followMapper.isFollowing(userId, post.getAuthorUserId()))
+                            .setFollowedAuthor(followedAuthorIds.contains(post.getAuthorUserId()))
                             .setCreateTime(post.getCreateTime());
                 })
                 .toList();
@@ -532,9 +544,18 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
             return Collections.emptyList();
         }
         Map<Long, MemberUserRespDTO> userMap = getUserMap(authorIds);
+        List<Long> distinctAuthorIds = authorIds.stream().filter(Objects::nonNull).distinct().toList();
+        Map<Long, AigcCommunityAuthorStatsDO> statsMap = authorStatsMapper.selectListByUserIds(distinctAuthorIds).stream()
+                .collect(Collectors.toMap(AigcCommunityAuthorStatsDO::getUserId, Function.identity(), (a, b) -> a));
+        Set<Long> followedAuthorIds = currentUserId == null ? Collections.emptySet() : followMapper.selectListByFollowerAndFollowees(currentUserId, distinctAuthorIds).stream()
+                .map(AigcCommunityFollowDO::getFolloweeUserId)
+                .collect(Collectors.toSet());
         return authorIds.stream().distinct().map(authorId -> {
-            ensureAuthorStats(authorId);
-            AigcCommunityAuthorStatsDO stats = authorStatsMapper.selectByUserId(authorId);
+            AigcCommunityAuthorStatsDO stats = statsMap.get(authorId);
+            if (stats == null) {
+                ensureAuthorStats(authorId);
+                stats = authorStatsMapper.selectByUserId(authorId);
+            }
             MemberUserRespDTO user = userMap.get(authorId);
             return new AigcCommunityAuthorRespVO()
                     .setAuthorUserId(authorId)
@@ -544,13 +565,13 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
                     .setFollowingCount(stats == null ? 0 : stats.getFollowingCount())
                     .setPublicPostCount(stats == null ? 0 : stats.getPublicPostCount())
                     .setLikeReceivedCount(stats == null ? 0 : stats.getLikeReceivedCount())
-                    .setFollowedByCurrentUser(followMapper.isFollowing(currentUserId, authorId));
+                    .setFollowedByCurrentUser(followedAuthorIds.contains(authorId));
         }).toList();
     }
 
     private Map<Long, AigcAssetRespDTO> getAssetMap(List<AigcCommunityPostDO> posts) {
         List<Long> assetIds = posts.stream()
-                .map(AigcCommunityPostDO::getAssetId)
+                .flatMap(post -> Stream.of(post.getAssetId(), post.getCoverAssetId()))
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
@@ -581,6 +602,30 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
 
     private AigcCommunityPostDO validatePublicPost(Long id) {
         AigcCommunityPostDO post = validatePost(id);
+        if (!AigcCommunityPostStatusEnum.PUBLISHED.getCode().equals(post.getPublishStatus())
+                || !AigcCommunityAuditStatusEnum.PASS.getCode().equals(post.getAuditStatus())) {
+            throw exception(COMMUNITY_POST_NOT_VISIBLE);
+        }
+        if (post.getAssetId() != null) {
+            validateAssetVisible(post.getAssetId());
+        }
+        return post;
+    }
+
+    private AigcCommunityPostDO validatePublicPost(String idOrPostNo) {
+        String value = StrUtil.trim(idOrPostNo);
+        if (StrUtil.isBlank(value)) {
+            throw exception(COMMUNITY_POST_NOT_EXISTS);
+        }
+        AigcCommunityPostDO post;
+        try {
+            post = validatePost(Long.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            post = postMapper.selectByPostNo(value);
+            if (post == null) {
+                throw exception(COMMUNITY_POST_NOT_EXISTS);
+            }
+        }
         if (!AigcCommunityPostStatusEnum.PUBLISHED.getCode().equals(post.getPublishStatus())
                 || !AigcCommunityAuditStatusEnum.PASS.getCode().equals(post.getAuditStatus())) {
             throw exception(COMMUNITY_POST_NOT_VISIBLE);
@@ -670,6 +715,15 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
                 .setAction(action)
                 .setReason(reason)
                 .setOperatorUserId(operatorUserId));
+    }
+
+    private String firstNotBlank(String... values) {
+        for (String value : values) {
+            if (StrUtil.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
 }

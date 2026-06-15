@@ -5,6 +5,9 @@ import cn.iocoder.yudao.module.aigc.community.dal.dataobject.AigcCommunityAuthor
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.apache.ibatis.annotations.Mapper;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.time.LocalDateTime;
 
 @Mapper
@@ -12,6 +15,13 @@ public interface AigcCommunityAuthorStatsMapper extends BaseMapperX<AigcCommunit
 
     default AigcCommunityAuthorStatsDO selectByUserId(Long userId) {
         return selectOne(AigcCommunityAuthorStatsDO::getUserId, userId);
+    }
+
+    default List<AigcCommunityAuthorStatsDO> selectListByUserIds(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return selectList(AigcCommunityAuthorStatsDO::getUserId, userIds);
     }
 
     default int increaseFollowerCount(Long userId) {

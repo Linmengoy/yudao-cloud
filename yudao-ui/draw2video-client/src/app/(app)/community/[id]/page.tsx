@@ -20,7 +20,7 @@ import { useAuth } from "@/features/auth/auth-store";
 
 export default function CommunityDetailPage() {
   const params = useParams<{ id: string }>();
-  const postId = Number(params.id);
+  const postKey = params.id;
   const { user } = useAuth();
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [comments, setComments] = useState<CommunityComment[]>([]);
@@ -28,10 +28,8 @@ export default function CommunityDetailPage() {
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    const [postData, commentData] = await Promise.all([
-      getCommunityPost(postId),
-      getCommunityComments({ postId, pageNo: 1, pageSize: 50 }),
-    ]);
+    const postData = await getCommunityPost(postKey);
+    const commentData = await getCommunityComments({ postId: postData.id, pageNo: 1, pageSize: 50 });
     setPost(postData);
     setComments(commentData.list);
   };
@@ -45,7 +43,7 @@ export default function CommunityDetailPage() {
       ignore = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [postId]);
+  }, [postKey]);
 
   const toggleLike = async () => {
     if (!post) return;

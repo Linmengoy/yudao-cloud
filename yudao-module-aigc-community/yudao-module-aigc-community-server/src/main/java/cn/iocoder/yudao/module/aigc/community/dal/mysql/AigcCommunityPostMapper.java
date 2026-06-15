@@ -45,6 +45,10 @@ public interface AigcCommunityPostMapper extends BaseMapperX<AigcCommunityPostDO
                 .orderByDesc(AigcCommunityPostDO::getId));
     }
 
+    default AigcCommunityPostDO selectByPostNo(String postNo) {
+        return selectOne(AigcCommunityPostDO::getPostNo, postNo);
+    }
+
     default LambdaQueryWrapperX<AigcCommunityPostDO> publicWrapper() {
         return new LambdaQueryWrapperX<AigcCommunityPostDO>()
                 .eq(AigcCommunityPostDO::getPublishStatus, AigcCommunityPostStatusEnum.PUBLISHED.getCode())

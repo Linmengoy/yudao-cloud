@@ -52,8 +52,8 @@ public class AigcCommunityAppController {
 
     @GetMapping("/post/get")
     @Operation(summary = "Get public community post")
-    @Parameter(name = "id", required = true)
-    public CommonResult<AigcCommunityPostRespVO> getPost(@RequestParam("id") Long id) {
+    @Parameter(name = "id", required = true, description = "Post ID or post number")
+    public CommonResult<AigcCommunityPostRespVO> getPost(@RequestParam("id") String id) {
         return success(communityService.getPublicPost(id, getLoginUserId()));
     }
 

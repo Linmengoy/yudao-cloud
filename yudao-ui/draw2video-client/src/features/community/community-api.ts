@@ -14,7 +14,7 @@ export function getCommunityPosts(params: { pageNo?: number; pageSize?: number; 
   return api.get<PageResult<CommunityPost>>(`/aigc/community/post/page${query(params)}`);
 }
 
-export function getCommunityPost(id: number) {
+export function getCommunityPost(id: number | string) {
   return api.get<CommunityPost>(`/aigc/community/post/get${query({ id })}`);
 }
 

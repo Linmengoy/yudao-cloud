@@ -21,7 +21,7 @@ public interface AigcCommunityService {
 
     PageResult<AigcCommunityPostRespVO> getPublicPostPage(AigcCommunityPostPageReqVO reqVO, Long userId);
 
-    AigcCommunityPostRespVO getPublicPost(Long id, Long userId);
+    AigcCommunityPostRespVO getPublicPost(String idOrPostNo, Long userId);
 
     void likePost(Long postId, Long userId);
 
