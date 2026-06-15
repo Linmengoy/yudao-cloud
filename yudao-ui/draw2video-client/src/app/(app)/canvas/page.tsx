@@ -1744,6 +1744,7 @@ function CanvasFlow() {
   const nodeDataPatchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // 初始化最后应用版本
   const lastAppliedVersionRef = useRef(0);
+  const syncInFlightVersionsRef = useRef<Set<number>>(new Set());
   const viewportAssetRefreshTimerRef = useRef<number | null>(null);
 
   // 初始化同步状态
@@ -1994,6 +1995,8 @@ function CanvasFlow() {
 
   const syncFromVersion = useCallback((afterVersion: number) => {
     if (!serverProjectId) return;
+    if (syncInFlightVersionsRef.current.has(afterVersion)) return;
+    syncInFlightVersionsRef.current.add(afterVersion);
     canvasApi.syncOperations(serverProjectId, afterVersion)
       .then((syncResult) => {
         if (syncResult.mode === "snapshot") {
@@ -2007,7 +2010,10 @@ function CanvasFlow() {
           setLatestKnownVersion((prev) => Math.max(prev, syncResult.toVersion ?? prev));
         }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        syncInFlightVersionsRef.current.delete(afterVersion);
+      });
   }, [serverProjectId, applyOperationRecord, hydrateRemoteSnapshot]);
 
   const refreshVisibleAssetUrlsRef = useRef(refreshVisibleAssetUrls);

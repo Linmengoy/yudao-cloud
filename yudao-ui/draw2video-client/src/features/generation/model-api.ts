@@ -9,6 +9,8 @@ export type AigcModel = {
   name: string;
   /** 模型标识（提供商侧的模型名） */
   model: string;
+  /** 实际执行的上游模型标识 */
+  providerModel?: string;
   /** 模型类型：1-图片生成，2-文本生成，3-视频生成 */
   type: number;
   /** 是否公开可见 */

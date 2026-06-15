@@ -46,6 +46,31 @@ public class OpenApiGenerationsProviderClientTest {
     }
 
     @Test
+    public void testFactoryUsesModelClientTypeBeforeProviderExtraConfig() {
+        GptImageProviderClient gptImageClient = new GptImageProviderClient();
+        MidjourneyProviderClient midjourneyClient = new MidjourneyProviderClient();
+        VolcImagesGenerationsProviderClient volcClient = new VolcImagesGenerationsProviderClient();
+        MockAigcProviderClient mockClient = new MockAigcProviderClient();
+        AigcProviderClientFactory factory = new AigcProviderClientFactory(List.of(
+                gptImageClient, midjourneyClient, volcClient, mockClient));
+
+        AigcProviderClient resolvedGptImage = factory.getClient(new AigcProviderSubmitReqDTO()
+                .setProviderCode("provider_avman")
+                .setProviderModel("gpt-image-2")
+                .setProviderExtraConfig("{\"clientType\":\"MIDJOURNEY\"}"));
+        AigcProviderClient resolvedMidjourney = factory.getClient(new AigcProviderSubmitReqDTO()
+                .setProviderCode("provider_avman")
+                .setProviderModel("midjourney-fast"));
+        AigcProviderClient resolvedVolc = factory.getClient(new AigcProviderSubmitReqDTO()
+                .setProviderCode("provider_apilio_volcv")
+                .setProviderModel("doubao-seedream-5-0-260128"));
+
+        assertSame(gptImageClient, resolvedGptImage);
+        assertSame(midjourneyClient, resolvedMidjourney);
+        assertSame(volcClient, resolvedVolc);
+    }
+
+    @Test
     public void testSubmit_textToVideo() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
         HttpServer server = startServer("/openapi/v1/generations", exchange -> {
