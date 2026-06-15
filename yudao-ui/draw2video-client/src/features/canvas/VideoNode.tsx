@@ -9,6 +9,8 @@ import {
   ArrowUp,
   Camera,
   Check,
+  Download,
+  Expand,
   Gem,
   ImageIcon,
   Loader2,
@@ -17,6 +19,8 @@ import {
   Plus,
   SlidersHorizontal,
   Sparkles,
+  Star,
+  Shrink,
   Video,
   Volume2,
   VolumeX,
@@ -32,6 +36,7 @@ import type {
   VideoFrameCaptureEventDetail,
   VideoGenerationMode,
   VideoNodeData,
+  VideoNodeOutput,
 } from "./types";
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
@@ -246,6 +251,132 @@ function getPatchVideoAssetId(patch: Record<string, unknown>) {
   return Number.isFinite(assetId) && assetId > 0 ? assetId : null;
 }
 
+function getVideoOutputId(
+  assetId: number | null | undefined,
+  url: string,
+  index: number,
+) {
+  return assetId ? `asset-${assetId}` : `url-${index}-${url.slice(0, 48)}`;
+}
+
+function getPrimaryVideoOutput(
+  outputs: VideoNodeOutput[],
+  primaryOutputId?: string | null,
+) {
+  return outputs.find((output) => output.id === primaryOutputId) ?? outputs[0] ?? null;
+}
+
+function moveVideoOutputToFront(outputs: VideoNodeOutput[], outputId: string) {
+  const index = outputs.findIndex((output) => output.id === outputId);
+  if (index <= 0) return outputs;
+  const nextOutputs = [...outputs];
+  const [output] = nextOutputs.splice(index, 1);
+  nextOutputs.unshift(output);
+  return nextOutputs;
+}
+
+function mergeVideoOutputs(
+  newOutputs: VideoNodeOutput[],
+  previousOutputs: VideoNodeOutput[],
+) {
+  const seen = new Set<string>();
+  const merged: VideoNodeOutput[] = [];
+  for (const output of [...newOutputs, ...previousOutputs]) {
+    const url = output.videoUrl || output.previewUrl || "";
+    if (!url) continue;
+    const key = output.id || (output.assetId ? `asset-${output.assetId}` : url);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ ...output, videoUrl: output.videoUrl || url });
+  }
+  return merged;
+}
+
+function buildVideoOutputs(
+  videoUrls: string[],
+  assetIds: number[] | undefined,
+  fallback: Pick<VideoNodeData, "width" | "height" | "durationSec" | "mimeType" | "fileName">,
+): VideoNodeOutput[] {
+  return videoUrls.filter(Boolean).map((url, index) => {
+    const assetId = assetIds?.[index] ?? null;
+    return {
+      id: getVideoOutputId(assetId, url, index),
+      videoUrl: url,
+      previewUrl: url,
+      assetId,
+      width: fallback.width,
+      height: fallback.height,
+      durationSec: fallback.durationSec,
+      mimeType: fallback.mimeType,
+      fileName: videoUrls.length > 1 ? `generated-video-${index + 1}.mp4` : fallback.fileName,
+    };
+  });
+}
+
+async function hydrateVideoOutputs(
+  outputs: VideoNodeOutput[],
+  fallback: Pick<VideoNodeData, "videoUrl" | "previewUrl" | "width" | "height" | "durationSec" | "mimeType" | "fileName">,
+) {
+  const hydrated = outputs.map((output, index) => {
+    const url = output.videoUrl || output.previewUrl || "";
+    return {
+      ...output,
+      videoUrl: url,
+      previewUrl: output.previewUrl ?? url,
+      id: output.id || getVideoOutputId(output.assetId, url, index),
+    };
+  });
+  let assetUrlExpireTime: string | null = null;
+  for (let index = 0; index < hydrated.length; index += 1) {
+    const output = hydrated[index];
+    if (output.assetId) {
+      try {
+        const asset = await getMyAsset(output.assetId);
+        const videoUrl = getAssetPreviewUrl(asset) || asset.fileUrl || output.videoUrl || fallback.videoUrl || fallback.previewUrl || "";
+        output.videoUrl = videoUrl;
+        output.previewUrl = videoUrl;
+        output.width = output.width ?? asset.width ?? fallback.width;
+        output.height = output.height ?? asset.height ?? fallback.height;
+        output.mimeType = output.mimeType ?? asset.mimeType ?? fallback.mimeType;
+        output.fileName = output.fileName ?? asset.title ?? fallback.fileName;
+        output.durationSec = output.durationSec ?? fallback.durationSec;
+        output.id = getVideoOutputId(output.assetId, output.videoUrl, index);
+        if (index === 0) assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
+      } catch {
+      }
+      continue;
+    }
+    const url = output.videoUrl || output.previewUrl || fallback.videoUrl || fallback.previewUrl || "";
+    output.videoUrl = url;
+    output.previewUrl = output.previewUrl || url;
+    output.width = output.width ?? fallback.width;
+    output.height = output.height ?? fallback.height;
+    output.durationSec = output.durationSec ?? fallback.durationSec;
+    output.mimeType = output.mimeType ?? fallback.mimeType;
+    output.fileName = output.fileName ?? fallback.fileName;
+    output.id = getVideoOutputId(null, output.videoUrl, index);
+  }
+  return {
+    outputs: hydrated.filter((output) => output.videoUrl),
+    assetUrlExpireTime,
+  };
+}
+
+function buildPrimaryVideoPatch(output: VideoNodeOutput): Partial<VideoNodeData> {
+  return {
+    assetId: output.assetId ?? null,
+    outputAssetId: output.assetId ?? null,
+    videoUrl: output.videoUrl,
+    previewUrl: output.previewUrl ?? output.videoUrl,
+    outputPreviewUrl: output.previewUrl ?? output.videoUrl,
+    width: output.width,
+    height: output.height,
+    durationSec: output.durationSec,
+    fileName: output.fileName ?? "generated-video.mp4",
+    mimeType: output.mimeType ?? "video/mp4",
+  };
+}
+
 function stopCanvasSelection(event: React.SyntheticEvent) {
   event.stopPropagation();
 }
@@ -438,7 +569,7 @@ export function VideoNodeComponent({
   selected,
   dragging,
 }: VideoNodeProps) {
-  const { setNodes, setEdges, getNodes, getEdges, getViewport, setViewport } =
+  const { setNodes, setEdges, getNodes, getEdges, getViewport, setViewport, getNode } =
     useReactFlow();
   // 编辑主区域鼠标滚动监控
   const composerWheelRef = useComposerWheelPan<HTMLDivElement>(
@@ -487,6 +618,7 @@ export function VideoNodeComponent({
   const [modelOpen, setModelOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewOutputId, setPreviewOutputId] = useState<string | null>(null);
   // 记录视频生成任务的开始时间 todo:重新提交需要更新
   const [startedAtMs, setStartedAtMs] = useState(() =>
     data.generationRunStartedAt || data.generationStartedAt
@@ -517,6 +649,39 @@ export function VideoNodeComponent({
   // todo 不知道后面要不要调整
   const isGenerating = data.status === "pending";
   const kind = data.kind ?? "draft";
+  const outputs = useMemo(() => {
+    if (data.outputs?.length) return data.outputs;
+    const videoUrl = data.videoUrl || data.previewUrl;
+    if (!videoUrl) return [];
+    const assetId = getVideoAssetId(data);
+    return [
+      {
+        id: getVideoOutputId(assetId, videoUrl, 0),
+        videoUrl,
+        previewUrl: data.previewUrl ?? videoUrl,
+        assetId,
+        width: data.width,
+        height: data.height,
+        durationSec: data.durationSec,
+        fileName: data.fileName,
+        mimeType: data.mimeType,
+      },
+    ];
+  }, [
+    data.assetId,
+    data.durationSec,
+    data.fileName,
+    data.height,
+    data.mimeType,
+    data.outputAssetId,
+    data.outputs,
+    data.previewUrl,
+    data.videoUrl,
+    data.width,
+  ]);
+  const hasOutputGroup = outputs.length > 1;
+  const outputsExpanded = Boolean(data.outputsExpanded && hasOutputGroup);
+  const primaryOutput = getPrimaryVideoOutput(outputs, data.primaryOutputId);
   const upstreamStatus = data.upstreamStatus ?? null;
   const isQueued = isGenerating && isQueuedStatus(upstreamStatus);
   const isRunning = isGenerating && isRunningStatus(upstreamStatus);
@@ -530,12 +695,11 @@ export function VideoNodeComponent({
       : 0;
   const effectiveStartedAtMs = startedAtMs > 0 ? startedAtMs : dataStartedAtMs;
   const elapsedMs =
-    data.elapsedMs ??
-    (isGenerating &&
+    isGenerating &&
     Number.isFinite(effectiveStartedAtMs) &&
     effectiveStartedAtMs > 0
       ? Math.max(0, now - effectiveStartedAtMs)
-      : null);
+      : data.elapsedMs ?? null;
   const progressLabel = isQueued
     ? `排队中 ${formatElapsed(elapsedMs)}`
     : isRunning
@@ -545,18 +709,25 @@ export function VideoNodeComponent({
         : "提交中";
   const previewElapsedMs = previewOpen ? elapsedMs : data.elapsedMs;
   const previewItem = useMemo(
-    // todo 里面问题还很大
-    () => videoNodeToMediaPreview({ ...data, elapsedMs: previewElapsedMs }),
-    [data, previewElapsedMs],
+    () =>
+      videoNodeToMediaPreview({
+        ...data,
+        ...(primaryOutput ? buildPrimaryVideoPatch(primaryOutput) : {}),
+        elapsedMs: previewElapsedMs,
+      }),
+    [data, previewElapsedMs, primaryOutput],
   );
   // todo 历史遗留问题，后续需要调整/ 尺寸用户应该可以自己拖拽比例
-  const displaySize = getDisplaySize(data);
+  const displaySize = getDisplaySize({
+    ...data,
+    ...(primaryOutput ? buildPrimaryVideoPatch(primaryOutput) : {}),
+  });
 
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
-  const showNodeActions = selectedNodeCount <= 1;
+  const showNodeActions = selectedNodeCount <= 1 && !outputsExpanded;
   // 后期previewUrl 可以考虑gif
-  const videoSrc = data.videoUrl || data.previewUrl;
-  const videoAssetId = getVideoAssetId(data);
+  const videoSrc = primaryOutput?.videoUrl || data.videoUrl || data.previewUrl;
+  const videoAssetId = primaryOutput?.assetId ?? getVideoAssetId(data);
   const fixedUiScale = 1 / zoom;
   // 后续除了引用图片，视频也可以参与引用
 
@@ -680,6 +851,17 @@ export function VideoNodeComponent({
     [id, setNodes],
   );
 
+  const updateRuntimeData = useCallback(
+    (patch: Partial<VideoNodeData>) => {
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === id ? { ...node, data: { ...node.data, ...patch } } : node,
+        ),
+      );
+    },
+    [id, setNodes],
+  );
+
   const updateParams = useCallback(
     (patch: Record<string, unknown>) => {
       setNodes((nds) =>
@@ -722,19 +904,59 @@ export function VideoNodeComponent({
         const patch = getCanvasNodeRunPatch(result, id);
         if (patch) {
           const nextPatch = { ...patch } as Partial<VideoNodeData>;
-          const assetId = getPatchVideoAssetId(patch);
-          if (assetId && !nextPatch.videoUrl && !nextPatch.previewUrl) {
-            try {
-              const asset = await getMyAsset(assetId);
-              const videoUrl = getAssetPreviewUrl(asset) || asset.fileUrl;
-              if (videoUrl) {
-                nextPatch.videoUrl = videoUrl;
-                nextPatch.previewUrl = videoUrl;
-                nextPatch.assetUrlExpireTime =
-                  getAssetPreviewExpireTime(asset) ?? null;
+          if (nextPatch.outputs?.length) {
+            const hydrated = await hydrateVideoOutputs(nextPatch.outputs, {
+              videoUrl: nextPatch.videoUrl ?? data.videoUrl ?? null,
+              previewUrl: nextPatch.previewUrl ?? data.previewUrl ?? nextPatch.outputPreviewUrl ?? null,
+              width: nextPatch.width ?? data.width,
+              height: nextPatch.height ?? data.height,
+              durationSec: nextPatch.durationSec ?? data.durationSec,
+              mimeType: nextPatch.mimeType ?? data.mimeType,
+              fileName: nextPatch.fileName ?? data.fileName,
+            });
+            const previousOutputs = (getNode(id)?.data as VideoNodeData | undefined)?.outputs ?? outputs;
+            const mergedOutputs = mergeVideoOutputs(hydrated.outputs, previousOutputs);
+            const primary = getPrimaryVideoOutput(mergedOutputs, nextPatch.primaryOutputId);
+            if (primary) {
+              Object.assign(nextPatch, buildPrimaryVideoPatch(primary));
+              nextPatch.outputs = mergedOutputs;
+              nextPatch.primaryOutputId = primary.id;
+              nextPatch.outputsExpanded = hydrated.outputs.length > 1 && mergedOutputs.length > 1;
+              nextPatch.assetUrlExpireTime = hydrated.assetUrlExpireTime;
+            }
+          } else {
+            const assetId = getPatchVideoAssetId(patch);
+            if (assetId && !nextPatch.videoUrl && !nextPatch.previewUrl) {
+              try {
+                const asset = await getMyAsset(assetId);
+                const videoUrl = getAssetPreviewUrl(asset) || asset.fileUrl;
+                if (videoUrl) {
+                  nextPatch.videoUrl = videoUrl;
+                  nextPatch.previewUrl = videoUrl;
+                  nextPatch.assetUrlExpireTime =
+                    getAssetPreviewExpireTime(asset) ?? null;
+                }
+              } catch {
+                // Keep the stable asset id from the server; project hydration can recover the preview URL later.
               }
-            } catch {
-              // Keep the stable asset id from the server; project hydration can recover the preview URL later.
+            }
+            if (nextPatch.videoUrl || nextPatch.previewUrl) {
+              const videoUrl = String(nextPatch.videoUrl ?? nextPatch.previewUrl);
+              const output: VideoNodeOutput = {
+                id: getVideoOutputId(nextPatch.outputAssetId ?? nextPatch.assetId ?? null, videoUrl, 0),
+                videoUrl,
+                previewUrl: nextPatch.previewUrl ?? videoUrl,
+                assetId: nextPatch.outputAssetId ?? nextPatch.assetId ?? null,
+                width: nextPatch.width,
+                height: nextPatch.height,
+                durationSec: nextPatch.durationSec,
+                fileName: nextPatch.fileName,
+                mimeType: nextPatch.mimeType,
+              };
+              const previousOutputs = (getNode(id)?.data as VideoNodeData | undefined)?.outputs ?? outputs;
+              nextPatch.outputs = mergeVideoOutputs([output], previousOutputs);
+              nextPatch.primaryOutputId = output.id;
+              nextPatch.outputsExpanded = false;
             }
           }
           updateData(nextPatch, { flush: true });
@@ -758,7 +980,7 @@ export function VideoNodeComponent({
         }
       }
     },
-    [id, updateData],
+    [data.durationSec, data.fileName, data.height, data.mimeType, data.previewUrl, data.videoUrl, data.width, getNode, id, outputs, updateData],
   );
 
   useEffect(() => {
@@ -781,6 +1003,37 @@ export function VideoNodeComponent({
     data.taskId,
     waitAndApplyServerRun,
   ]);
+
+  useEffect(() => {
+    if (outputs.length === 0 || data.assetUrlExpireTime) return;
+    let cancelled = false;
+    hydrateVideoOutputs(outputs, {
+      videoUrl: data.videoUrl ?? null,
+      previewUrl: data.previewUrl ?? data.outputPreviewUrl ?? null,
+      width: data.width,
+      height: data.height,
+      durationSec: data.durationSec,
+      mimeType: data.mimeType,
+      fileName: data.fileName,
+    })
+      .then((hydrated) => {
+        if (cancelled || hydrated.outputs.length === 0) return;
+        const previousOutputs =
+          (getNode(id)?.data as VideoNodeData | undefined)?.outputs ?? outputs;
+        const mergedOutputs = mergeVideoOutputs(hydrated.outputs, previousOutputs);
+        const primary = getPrimaryVideoOutput(mergedOutputs, data.primaryOutputId);
+        updateRuntimeData({
+          outputs: mergedOutputs,
+          assetUrlExpireTime: hydrated.assetUrlExpireTime,
+          ...(primary ? buildPrimaryVideoPatch(primary) : {}),
+          primaryOutputId: primary?.id ?? data.primaryOutputId ?? null,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [data.assetUrlExpireTime, data.durationSec, data.fileName, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.primaryOutputId, data.videoUrl, data.width, getNode, id, outputs, updateRuntimeData]);
 
   useEffect(() => {
     if (aigcModels.loading || aigcModels.models.length === 0) return;
@@ -868,10 +1121,10 @@ export function VideoNodeComponent({
   }, []);
 
   useEffect(() => {
-    if (!isRunning) return;
+    if (!isGenerating) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [isRunning]);
+  }, [isGenerating]);
 
   useEffect(() => {
     if (!selected && pickerActiveForThisNode) {
@@ -887,6 +1140,97 @@ export function VideoNodeComponent({
     if (!previewItem) return;
     downloadMedia(previewItem);
   }, [previewItem]);
+
+  const previewItems = useMemo(() => {
+    if (outputs.length === 0) return previewItem ? [previewItem] : [];
+    return outputs.flatMap((output, index) => {
+      const item = videoNodeToMediaPreview({
+        ...data,
+        ...buildPrimaryVideoPatch(output),
+        fileName: output.fileName ?? `${data.fileName ?? "Video"} ${index + 1}`,
+        elapsedMs: previewElapsedMs,
+      });
+      return item ? [item] : [];
+    });
+  }, [data, outputs, previewElapsedMs, previewItem]);
+
+  const previewOutputIndex = useMemo(() => {
+    if (outputs.length === 0) return 0;
+    const outputId = previewOutputId ?? primaryOutput?.id;
+    const index = outputs.findIndex((output) => output.id === outputId);
+    return index >= 0 ? index : 0;
+  }, [outputs, previewOutputId, primaryOutput?.id]);
+
+  const activePreviewItem = previewItems[previewOutputIndex] ?? previewItem;
+
+  const outputGridGap = 12;
+  const outputGridColumnCount = outputsExpanded
+    ? Math.ceil(Math.sqrt(outputs.length))
+    : 1;
+  const outputGridRowCount = outputsExpanded
+    ? Math.ceil(outputs.length / outputGridColumnCount)
+    : 1;
+  const nodeFrameSize = outputsExpanded
+    ? {
+        width:
+          displaySize.width * outputGridColumnCount +
+          outputGridGap * (outputGridColumnCount - 1),
+        height:
+          displaySize.height * outputGridRowCount +
+          outputGridGap * (outputGridRowCount - 1),
+      }
+    : displaySize;
+
+  const toggleOutputsExpanded = useCallback(() => {
+    if (!hasOutputGroup || isGenerating) return;
+    updateData({ outputsExpanded: !outputsExpanded }, { flush: true });
+  }, [hasOutputGroup, isGenerating, outputsExpanded, updateData]);
+
+  const setPrimaryVideoOutput = useCallback(
+    (output: VideoNodeOutput) => {
+      const nextOutputs = moveVideoOutputToFront(outputs, output.id);
+      updateData(
+        {
+          ...buildPrimaryVideoPatch(output),
+          outputs: nextOutputs,
+          primaryOutputId: output.id,
+          outputsExpanded: false,
+        },
+        { flush: true },
+      );
+      setPreviewOutputId(output.id);
+    },
+    [outputs, updateData],
+  );
+
+  const downloadVideoOutput = useCallback(
+    (output: VideoNodeOutput) => {
+      const item = videoNodeToMediaPreview({
+        ...data,
+        ...buildPrimaryVideoPatch(output),
+      });
+      if (item) downloadMedia(item);
+    },
+    [data],
+  );
+
+  const openOutputPreview = useCallback((output: VideoNodeOutput) => {
+    setPreviewOutputId(output.id);
+    setPreviewOpen(true);
+  }, []);
+
+  const navigateOutputPreview = useCallback(
+    (index: number) => {
+      const output = outputs[index];
+      if (output) setPreviewOutputId(output.id);
+    },
+    [outputs],
+  );
+
+  const setPreviewOutputAsPrimary = useCallback(() => {
+    const output = outputs[previewOutputIndex];
+    if (output) setPrimaryVideoOutput(output);
+  }, [outputs, previewOutputIndex, setPrimaryVideoOutput]);
 
   useEffect(() => {
     if (!paramsOpen && !modelOpen) return;
@@ -1156,8 +1500,10 @@ export function VideoNodeComponent({
       generationStartedAt: startedAt,
       generationRunStartedAt: startedAt,
       generationCompletedAt: null,
+      taskStatus: "SUBMITTING",
       upstreamStatus: "SUBMITTING",
       elapsedMs: null,
+      outputsExpanded: false,
     });
 
     const resolvedReferenceImages = (
@@ -1201,6 +1547,7 @@ export function VideoNodeComponent({
         updateData(
           {
             taskId: String(run.taskId),
+            taskStatus: run.status,
             upstreamStatus: run.status,
           },
           { flush: true },
@@ -1239,28 +1586,39 @@ export function VideoNodeComponent({
 
       const result = await waitGenerationResult(submit.taskId);
       const completedAt = result.finishTime ?? new Date().toISOString();
-      const outputAssetId = result.assetIdList[0] ?? null;
-      let videoUrl = result.outputUrlList[0];
-      let assetUrlExpireTime: string | null = null;
-      if (outputAssetId) {
-        try {
-          const asset = await getMyAsset(outputAssetId);
-          videoUrl = getAssetPreviewUrl(asset) || videoUrl;
-          assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
-        } catch {}
-      }
+      const outputItems = buildVideoOutputs(result.outputUrlList, result.assetIdList, {
+        width: data.width,
+        height: data.height,
+        durationSec: data.durationSec,
+        mimeType: data.mimeType,
+        fileName: data.fileName,
+      });
+      const hydrated = await hydrateVideoOutputs(outputItems, {
+        videoUrl: data.videoUrl ?? null,
+        previewUrl: data.previewUrl ?? data.outputPreviewUrl ?? null,
+        width: data.width,
+        height: data.height,
+        durationSec: data.durationSec,
+        mimeType: data.mimeType,
+        fileName: data.fileName,
+      });
 
-      if (result.status === "SUCCESS" && videoUrl) {
+      if (result.status === "SUCCESS" && hydrated.outputs.length > 0) {
+        const previousOutputs =
+          (getNode(id)?.data as VideoNodeData | undefined)?.outputs ?? outputs;
+        const mergedOutputs = mergeVideoOutputs(hydrated.outputs, previousOutputs);
+        const primary = hydrated.outputs[0];
         updateData({
           status: "complete",
           kind: "generated",
           taskId: String(submit.taskId),
-          assetId: outputAssetId,
-          outputAssetId,
-          videoUrl,
-          previewUrl: videoUrl,
-          assetUrlExpireTime,
+          ...buildPrimaryVideoPatch(primary),
+          outputs: mergedOutputs,
+          primaryOutputId: primary.id,
+          outputsExpanded: hydrated.outputs.length > 1 && mergedOutputs.length > 1,
+          assetUrlExpireTime: hydrated.assetUrlExpireTime,
           errorMessage: null,
+          taskStatus: result.status,
           upstreamStatus: result.status,
           generationCompletedAt: completedAt,
           elapsedMs: Date.now() - new Date(startedAt).getTime(),
@@ -1272,6 +1630,7 @@ export function VideoNodeComponent({
         status: "failed",
         taskId: String(submit.taskId),
         errorMessage: result.failMessage ?? "视频生成失败，请稍后重试。",
+        taskStatus: result.status,
         upstreamStatus: result.status,
         generationCompletedAt: completedAt,
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
@@ -1290,13 +1649,23 @@ export function VideoNodeComponent({
     activeAigcModelId,
     activeProviderModel,
     data.prompt,
+    data.durationSec,
+    data.fileName,
+    data.height,
+    data.mimeType,
+    data.outputPreviewUrl,
+    data.previewUrl,
+    data.videoUrl,
+    data.width,
     effectiveParams,
     generationCapability,
     generationValidationMessage,
+    getNode,
     id,
     isGenerating,
     mentionOptions,
     orderedReferenceImages,
+    outputs,
     updateData,
     waitAndApplyServerRun,
   ]);
@@ -1305,14 +1674,14 @@ export function VideoNodeComponent({
     <>
       <div
         className="relative"
-        style={{ width: displaySize.width, height: displaySize.height }}
+        style={{ width: nodeFrameSize.width, height: nodeFrameSize.height }}
       >
         <div
           className="relative overflow-visible"
-          style={{ width: displaySize.width, height: displaySize.height }}
+          style={{ width: nodeFrameSize.width, height: nodeFrameSize.height }}
         >
           <AnimatePresence>
-            {isOnlySelectedNode && !dragging && previewItem && (
+            {isOnlySelectedNode && !dragging && !outputsExpanded && previewItem && (
               <SelectedMediaToolbar
                 canDownload={Boolean(previewItem.url)}
                 onDownload={handlePreviewDownload}
@@ -1327,7 +1696,7 @@ export function VideoNodeComponent({
               />
             )}
           </AnimatePresence>
-          <CanvasNodeTitle maxWidth={displaySize.width}>
+          <CanvasNodeTitle maxWidth={nodeFrameSize.width}>
             <Video className="size-4" />
             <EditableNodeTitle
               value={data.fileName}
@@ -1342,8 +1711,8 @@ export function VideoNodeComponent({
             animate={{
               left: 0,
               top: 0,
-              width: displaySize.width,
-              height: displaySize.height,
+              width: nodeFrameSize.width,
+              height: nodeFrameSize.height,
             }}
             transition={{ type: "spring", stiffness: 360, damping: 34 }}
           >
@@ -1354,8 +1723,8 @@ export function VideoNodeComponent({
               animate={{
                 opacity: 1,
                 scale: 1,
-                width: displaySize.width,
-                height: displaySize.height,
+                width: nodeFrameSize.width,
+                height: nodeFrameSize.height,
               }}
               transition={{
                 opacity: { duration: 0.18, ease: "easeOut" },
@@ -1370,13 +1739,90 @@ export function VideoNodeComponent({
                   : "border-border-warm",
               )}
               style={{
-                width: displaySize.width,
-                height: displaySize.height,
+                width: nodeFrameSize.width,
+                height: nodeFrameSize.height,
                 pointerEvents: "auto",
               }}
             >
-              <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[inherit]">
-                {videoSrc ? (
+              {!outputsExpanded && hasOutputGroup && (
+                <div className="pointer-events-none absolute inset-0 -z-10">
+                  {outputs.slice(1, 4).map((output, index) => (
+                    <div
+                      key={output.id}
+                      className="absolute inset-0 rounded-xl border border-border-warm bg-charcoal/10 shadow-sm"
+                      style={{
+                        transform: `translate(${(index + 1) * 8}px, ${(index + 1) * 8}px) rotate(${(index + 1) * 1.5}deg)`,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className={cn("absolute inset-0 overflow-hidden rounded-[inherit]", outputsExpanded ? "p-0" : "flex items-center justify-center")}>
+                {outputsExpanded ? (
+                  <div
+                    className="grid size-full"
+                    style={{
+                      gap: outputGridGap,
+                      gridTemplateColumns: `repeat(${outputGridColumnCount}, minmax(0, 1fr))`,
+                    }}
+                  >
+                    {outputs.map((output, index) => (
+                      <div
+                        key={output.id}
+                        className="group/output relative overflow-hidden rounded-xl border border-border-warm bg-charcoal"
+                      >
+                        <button
+                          type="button"
+                          className="absolute inset-0"
+                          onClick={() => openOutputPreview(output)}
+                          aria-label={`预览视频 ${index + 1}`}
+                        >
+                          <video
+                            src={output.videoUrl}
+                            className="size-full object-contain"
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                        </button>
+                        <div className="nodrag nowheel absolute inset-x-0 top-0 flex items-center justify-between gap-2 bg-gradient-to-b from-charcoal/75 to-transparent px-3 pb-8 pt-3 text-off-white opacity-0 transition-opacity group-hover/output:opacity-100">
+                          <span className="rounded-full bg-black/35 px-2 py-1 text-[11px] font-medium">
+                            {index + 1} / {outputs.length}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => downloadVideoOutput(output)}
+                              className="flex size-8 items-center justify-center rounded-full bg-black/35 hover:bg-black/55"
+                              aria-label="下载视频"
+                            >
+                              <Download className="size-4" />
+                            </button>
+                            {index === 0 ? (
+                              <button
+                                type="button"
+                                onClick={toggleOutputsExpanded}
+                                className="flex size-8 items-center justify-center rounded-full bg-black/35 hover:bg-black/55"
+                                aria-label="收起视频组"
+                              >
+                                <Shrink className="size-4" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setPrimaryVideoOutput(output)}
+                                className="flex size-8 items-center justify-center rounded-full bg-black/35 hover:bg-black/55"
+                                aria-label="设为主视频"
+                              >
+                                <Star className="size-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : videoSrc ? (
                   <video
                     ref={videoRef}
                     src={videoSrc}
@@ -1464,7 +1910,7 @@ export function VideoNodeComponent({
                   )}
                 </AnimatePresence>
 
-                {videoSrc && !isGenerating && data.status !== "failed" && (
+                {videoSrc && !outputsExpanded && !isGenerating && data.status !== "failed" && (
                   <div
                     className="nodrag nowheel absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-[#1c1c1c]/80 via-[#1c1c1c]/45 to-transparent px-4 pb-3 pt-8 text-[#fcfbf8] opacity-0 transition-opacity group-hover:opacity-100"
                     onPointerDownCapture={stopCanvasSelection}
@@ -1583,6 +2029,18 @@ export function VideoNodeComponent({
                   </div>
                 )}
 
+                {!outputsExpanded && hasOutputGroup && !isGenerating && data.status !== "failed" && (
+                  <button
+                    type="button"
+                    onClick={toggleOutputsExpanded}
+                    className="nodrag nowheel absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-charcoal/70 px-2.5 py-1.5 text-xs font-medium text-off-white shadow backdrop-blur-sm transition-colors hover:bg-charcoal/85"
+                    aria-label={`展开 ${outputs.length} 个视频`}
+                  >
+                    <Expand className="size-3.5" />
+                    {outputs.length} 段
+                  </button>
+                )}
+
                 <AnimatePresence>
                   {captureError && (
                     <motion.div
@@ -1627,8 +2085,8 @@ export function VideoNodeComponent({
               className="nodrag nowheel absolute rounded-xl border border-border-warm bg-background p-4 shadow-[0_8px_24px_rgba(28,28,28,0.08)]"
               style={{
                 width: COMPOSER_WIDTH,
-                left: (displaySize.width - COMPOSER_WIDTH) / 2,
-                top: displaySize.height + 12 * fixedUiScale,
+                left: (nodeFrameSize.width - COMPOSER_WIDTH) / 2,
+                top: nodeFrameSize.height + 12 * fixedUiScale,
                 transformOrigin: "top center",
                 pointerEvents: "auto",
               }}
@@ -1929,9 +2387,13 @@ export function VideoNodeComponent({
         </AnimatePresence>
       </div>
       <MediaPreviewDialog
-        item={previewItem}
+        item={activePreviewItem}
+        items={previewItems}
+        currentIndex={previewOutputIndex}
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
+        onNavigate={navigateOutputPreview}
+        onSetPrimary={previewItems.length > 1 ? setPreviewOutputAsPrimary : undefined}
       />
     </>
   );

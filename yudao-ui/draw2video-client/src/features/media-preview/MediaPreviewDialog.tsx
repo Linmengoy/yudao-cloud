@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { Download, Save, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Save, Star, Trash2, X } from "lucide-react";
 import {
   getAssetAuditStatusLabel,
   getAssetVisibilityLabel,
@@ -17,14 +17,22 @@ import { PreviewVideoPlayer } from "./PreviewVideoPlayer";
 
 type MediaPreviewDialogProps = {
   item: MediaPreviewItem | null;
+  items?: MediaPreviewItem[];
+  currentIndex?: number;
   open: boolean;
   onClose: () => void;
+  onNavigate?: (index: number) => void;
+  onSetPrimary?: () => void;
 };
 
-export function MediaPreviewDialog({ item, open, onClose }: MediaPreviewDialogProps) {
+export function MediaPreviewDialog({ item, items, currentIndex = 0, open, onClose, onNavigate, onSetPrimary }: MediaPreviewDialogProps) {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const information = useMemo(() => compactInfo(item?.information ?? []), [item?.information]);
   const editableAsset = item?.editableAsset;
+  const galleryItems = items?.filter((galleryItem) => galleryItem.url) ?? [];
+  const hasGallery = galleryItems.length > 1;
+  const canSetPrimary = Boolean(onSetPrimary && hasGallery);
+  const activeIndex = Math.min(Math.max(currentIndex, 0), Math.max(0, galleryItems.length - 1));
 
   const handleClose = useCallback(() => {
     setCopyState("idle");
@@ -35,10 +43,12 @@ export function MediaPreviewDialog({ item, open, onClose }: MediaPreviewDialogPr
     if (!open) return;
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") handleClose();
+      if (event.key === "ArrowLeft" && hasGallery) onNavigate?.((activeIndex - 1 + galleryItems.length) % galleryItems.length);
+      if (event.key === "ArrowRight" && hasGallery) onNavigate?.((activeIndex + 1) % galleryItems.length);
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleClose, open]);
+  }, [activeIndex, galleryItems.length, handleClose, hasGallery, onNavigate, open]);
 
   async function copyPrompt() {
     if (!item?.prompt) return;
@@ -76,11 +86,34 @@ export function MediaPreviewDialog({ item, open, onClose }: MediaPreviewDialogPr
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="min-h-[46vh] bg-charcoal p-3 dark:bg-[#11100e] sm:p-4 lg:min-h-0">
-              <div className="flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl bg-black/20 dark:bg-black">
+              <div className="relative flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl bg-black/20 dark:bg-black">
                 {item.kind === "video" ? (
                   <PreviewVideoPlayer src={item.url} />
                 ) : (
                   <img src={item.url} alt={item.title ?? item.fileName ?? ""} className="max-h-full max-w-full object-contain" draggable={false} />
+                )}
+                {hasGallery && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate?.((activeIndex - 1 + galleryItems.length) % galleryItems.length)}
+                      className="absolute left-4 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-off-white shadow-[0_10px_30px_rgba(0,0,0,0.32)] backdrop-blur-md transition-colors hover:bg-black/65"
+                      aria-label="上一张"
+                    >
+                      <ChevronLeft className="size-6" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate?.((activeIndex + 1) % galleryItems.length)}
+                      className="absolute right-4 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-off-white shadow-[0_10px_30px_rgba(0,0,0,0.32)] backdrop-blur-md transition-colors hover:bg-black/65"
+                      aria-label="下一张"
+                    >
+                      <ChevronRight className="size-6" />
+                    </button>
+                    <div className="absolute bottom-4 rounded-full bg-black/45 px-3 py-1 text-xs font-medium text-off-white shadow backdrop-blur-md">
+                      {activeIndex + 1} / {galleryItems.length}
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -232,6 +265,16 @@ export function MediaPreviewDialog({ item, open, onClose }: MediaPreviewDialogPr
                     <Download className="size-4" />
                     下载
                   </button>
+                  {canSetPrimary && (
+                    <button
+                      type="button"
+                      onClick={() => onSetPrimary?.()}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-md border border-border-warm bg-background px-4 py-2.5 text-sm font-medium text-charcoal shadow-[rgba(0,0,0,0.05)_0px_1px_2px_0px] transition-colors hover:bg-muted active:opacity-80 dark:border-white/12 dark:bg-white/6 dark:text-[#f4efe6] dark:hover:bg-white/10"
+                    >
+                      <Star className="size-4" />
+                      设为首图
+                    </button>
+                  )}
                   {editableAsset?.onDelete && (
                     <button
                       type="button"

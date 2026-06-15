@@ -250,10 +250,6 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         AigcAssetFileDO file = prepareFile(reqDTO);
         normalizeSnapshotFields(reqDTO);
         if (reqDTO.getTaskId() != null) {
-            AigcAssetDO existedAsset = assetMapper.selectByTaskIdAndType(reqDTO.getTaskId(), reqDTO.getAssetType());
-            if (existedAsset != null) {
-                return buildCreateRespDTO(existedAsset);
-            }
             validateTaskExists(reqDTO.getTaskId());
         }
         AigcAssetDO asset = BeanUtils.toBean(reqDTO, AigcAssetDO.class)

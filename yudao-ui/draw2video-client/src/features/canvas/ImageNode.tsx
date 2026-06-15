@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   X,
+  Expand,
 } from "lucide-react";
 import type {
   AppEdge,
@@ -199,6 +200,10 @@ function modelSupportsGenerationCount(templates: AigcModelParamTemplate[]) {
   return templates.some((template) => template.paramKey === "n" || template.paramKey === "batchSize");
 }
 
+function priceIncludesGenerationCount(templates: AigcModelParamTemplate[]) {
+  return modelSupportsGenerationCount(templates);
+}
+
 function applyGenerationCountParam(params: ImageTaskParams, templates: AigcModelParamTemplate[], count: number) {
   if (!modelSupportsGenerationCount(templates)) return params;
   const countKey = templates.some((template) => template.paramKey === "batchSize") ? "batchSize" : "n";
@@ -219,12 +224,34 @@ function getPrimaryOutput(outputs: ImageNodeOutput[], primaryOutputId?: string |
   return outputs.find((output) => output.id === primaryOutputId) ?? outputs[0] ?? null;
 }
 
+function moveOutputToFront(outputs: ImageNodeOutput[], outputId: string) {
+  const index = outputs.findIndex((output) => output.id === outputId);
+  if (index <= 0) return outputs;
+  const nextOutputs = [...outputs];
+  const [output] = nextOutputs.splice(index, 1);
+  nextOutputs.unshift(output);
+  return nextOutputs;
+}
+
+function mergeImageOutputs(newOutputs: ImageNodeOutput[], previousOutputs: ImageNodeOutput[]) {
+  const seen = new Set<string>();
+  const merged: ImageNodeOutput[] = [];
+  for (const output of [...newOutputs, ...previousOutputs]) {
+    if (!output.previewUrl) continue;
+    const key = output.id || (output.assetId ? `asset-${output.assetId}` : output.previewUrl);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(output);
+  }
+  return merged;
+}
+
 function buildImageOutputs(
   imageUrls: string[],
   assetIds: number[] | undefined,
   fallback: Pick<ImageNodeData, "width" | "height" | "mimeType" | "fileName">
 ): ImageNodeOutput[] {
-  return imageUrls.filter(Boolean).slice(0, 4).map((url, index) => {
+  return imageUrls.filter(Boolean).map((url, index) => {
     const assetId = assetIds?.[index] ?? null;
     return {
       id: getOutputId(assetId, url, index),
@@ -236,6 +263,38 @@ function buildImageOutputs(
       fileName: imageUrls.length > 1 ? `generated-image-${index + 1}.png` : fallback.fileName,
     };
   });
+}
+
+async function hydrateImageOutputs(
+  outputs: ImageNodeOutput[],
+  fallback: Pick<ImageNodeData, "previewUrl" | "width" | "height" | "mimeType" | "fileName">
+) {
+  const hydrated = outputs.map((output, index) => ({ ...output, id: output.id || getOutputId(output.assetId, output.previewUrl ?? "", index) }));
+  let assetUrlExpireTime: string | null = null;
+  for (let index = 0; index < hydrated.length; index += 1) {
+    const output = hydrated[index];
+    if (output.assetId) {
+      try {
+        const asset = await getMyAsset(output.assetId);
+        output.previewUrl = getAssetPreviewUrl(asset) || output.previewUrl || fallback.previewUrl || "";
+        output.width = output.width ?? asset.width ?? fallback.width;
+        output.height = output.height ?? asset.height ?? fallback.height;
+        output.mimeType = output.mimeType ?? asset.mimeType ?? fallback.mimeType;
+        output.fileName = output.fileName ?? asset.title ?? fallback.fileName;
+        output.id = getOutputId(output.assetId, output.previewUrl, index);
+        if (index === 0) assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
+      } catch {
+      }
+      continue;
+    }
+    output.previewUrl = output.previewUrl || fallback.previewUrl || "";
+    output.width = output.width ?? fallback.width;
+    output.height = output.height ?? fallback.height;
+    output.mimeType = output.mimeType ?? fallback.mimeType;
+    output.fileName = output.fileName ?? fallback.fileName;
+    output.id = getOutputId(null, output.previewUrl, index);
+  }
+  return { outputs: hydrated.filter((output) => output.previewUrl), assetUrlExpireTime };
 }
 
 function buildPrimaryPatch(output: ImageNodeOutput, params: ImageTaskParams): Partial<ImageNodeData> {
@@ -250,6 +309,21 @@ function buildPrimaryPatch(output: ImageNodeOutput, params: ImageTaskParams): Pa
     fileName: output.fileName ?? "generated-image.png",
     mimeType: output.mimeType ?? (params.output_format === "jpeg" ? "image/jpeg" : `image/${params.output_format}`),
   };
+}
+
+function isExpiringSoon(value?: string | null) {
+  if (!value) return true;
+  const time = new Date(value).getTime();
+  return !Number.isFinite(time) || time - Date.now() < 60_000;
+}
+
+function needsOutputUrlRefresh(outputs: ImageNodeOutput[], assetUrlExpireTime?: string | null) {
+  return outputs.some((output) => output.assetId && (!output.previewUrl || isExpiringSoon(assetUrlExpireTime)));
+}
+
+function displayImageGenerationPrice(price: number | null | undefined, count: number, templates: AigcModelParamTemplate[]) {
+  if (price == null || !Number.isFinite(price)) return price;
+  return priceIncludesGenerationCount(templates) ? price : price * count;
 }
 
 function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {
@@ -344,15 +418,6 @@ function scaleToPreview(width: number, height: number) {
 }
 
 function getDisplaySize(data: ImageNodeData, measuredSize: { width: number; height: number } | null, sizeParam: string) {
-  const outputCount = data.outputs?.length ?? 0;
-  if (data.outputsExpanded && outputCount > 1) {
-    const single = outputCount === 2 ? { width: 320, height: 320 } : { width: 300, height: 300 };
-    return {
-      width: single.width * 2 + 12,
-      height: single.height * Math.ceil(outputCount / 2) + 12 * (Math.ceil(outputCount / 2) - 1),
-    };
-  }
-
   const width = measuredSize?.width ?? data.width;
   const height = measuredSize?.height ?? data.height;
   const hasImage = Boolean(data.previewUrl || data.dataUrl);
@@ -455,6 +520,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number } | null>(null);
   const [visibleImageInset, setVisibleImageInset] = useState<{ left: number } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewOutputId, setPreviewOutputId] = useState<string | null>(null);
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; visible: boolean }>({
     x: 0,
     y: 0,
@@ -462,9 +528,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   });
   const [nodeMenuPos, setNodeMenuPos] = useState<{ x: number; y: number } | null>(null);
   const createdAtMs = useMemo(() => new Date(data.generationStartedAt ?? data.createdAt).getTime(), [data.createdAt, data.generationStartedAt]);
+  const generationStartedAtMs = useMemo(() => data.generationStartedAt ? new Date(data.generationStartedAt).getTime() : null, [data.generationStartedAt]);
   const [now, setNow] = useState(createdAtMs);
   const [startedAtMs, setStartedAtMs] = useState(() => Number.isFinite(createdAtMs) ? createdAtMs : Date.now());
-  const effectiveStartedAtMs = startedAtMs > 0 ? startedAtMs : createdAtMs;
+  const effectiveStartedAtMs = Number.isFinite(generationStartedAtMs) ? generationStartedAtMs! : startedAtMs > 0 ? startedAtMs : createdAtMs;
 
   const status = data.status ?? "idle";
   const isGenerating = status === "pending";
@@ -510,12 +577,14 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const formatOptions = useMemo(() => segmentedOptions(formatTemplate, FORMAT_OPTIONS), [formatTemplate]);
   const moderationOptions = useMemo(() => segmentedOptions(moderationTemplate, MODERATION_OPTIONS), [moderationTemplate]);
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
-  const outputs = data.outputs ?? [];
+  const outputs = useMemo(() => data.outputs ?? [], [data.outputs]);
   const hasOutputGroup = outputs.length > 1;
   const outputsExpanded = Boolean(data.outputsExpanded && hasOutputGroup);
   const primaryOutput = getPrimaryOutput(outputs, data.primaryOutputId);
   const imageSrc = primaryOutput?.previewUrl || data.previewUrl || data.dataUrl;
-  const costLabel = aigcModels.priceLoading ? "…" : formatCost(aigcModels.price?.salePrice);
+  const costLabel = aigcModels.priceLoading
+    ? "…"
+    : formatCost(displayImageGenerationPrice(aigcModels.price?.salePrice, generationCount, aigcModels.templates));
   const mediaStoreScope = useMemo(() => {
     const urlProjectId = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("projectId");
     const dataProjectId = typeof data.projectId === "string" || typeof data.projectId === "number" ? data.projectId : null;
@@ -578,6 +647,41 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     [id, setNodes]
   );
 
+  const updateRuntimeData = useCallback(
+    (patch: Partial<ImageNodeData>) => {
+      setNodes((nds) =>
+        nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
+      );
+    },
+    [id, setNodes]
+  );
+
+  useEffect(() => {
+    if (!needsOutputUrlRefresh(outputs, data.assetUrlExpireTime)) return;
+    let cancelled = false;
+    hydrateImageOutputs(outputs, {
+      previewUrl: data.previewUrl ?? data.outputPreviewUrl ?? null,
+      width: data.width,
+      height: data.height,
+      mimeType: data.mimeType,
+      fileName: data.fileName,
+    }).then((hydrated) => {
+      if (cancelled || hydrated.outputs.length === 0) return;
+      const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
+      const mergedOutputs = mergeImageOutputs(hydrated.outputs, previousOutputs);
+      const primary = getPrimaryOutput(mergedOutputs, data.primaryOutputId);
+      updateRuntimeData({
+        outputs: mergedOutputs,
+        assetUrlExpireTime: hydrated.assetUrlExpireTime,
+        ...(primary ? buildPrimaryPatch(primary, params) : {}),
+        primaryOutputId: primary?.id ?? data.primaryOutputId ?? null,
+      });
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [data.assetUrlExpireTime, data.fileName, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.primaryOutputId, data.width, getNode, id, outputs, params, updateRuntimeData]);
+
   const waitAndApplyServerRun = useCallback(async (projectId: string | number, taskId: number, startedAt: string) => {
     const pollKey = `${projectId}:${id}:${taskId}`;
     if (activeRunPollRef.current === pollKey) return;
@@ -592,12 +696,24 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       if (patch) {
         const nextPatch = patch as Partial<ImageNodeData>;
         if (nextPatch.outputs?.length) {
-          const primary = getPrimaryOutput(nextPatch.outputs, nextPatch.primaryOutputId);
+          const hydrated = await hydrateImageOutputs(nextPatch.outputs, {
+            previewUrl: data.previewUrl ?? data.outputPreviewUrl ?? null,
+            width: nextPatch.width ?? data.width,
+            height: nextPatch.height ?? data.height,
+            mimeType: nextPatch.mimeType ?? data.mimeType,
+            fileName: nextPatch.fileName ?? data.fileName,
+          });
+          nextPatch.outputs = hydrated.outputs;
+          nextPatch.assetUrlExpireTime = hydrated.assetUrlExpireTime;
+          const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
+          const mergedOutputs = mergeImageOutputs(nextPatch.outputs, previousOutputs);
+          const primary = getPrimaryOutput(mergedOutputs, nextPatch.primaryOutputId);
           if (primary) {
             Object.assign(nextPatch, buildPrimaryPatch(primary, nextPatch.params ?? params));
+            nextPatch.outputs = mergedOutputs;
             nextPatch.primaryOutputId = primary.id;
             nextPatch.generationCount = normalizeGenerationCount(nextPatch.params?.n ?? data.generationCount);
-            nextPatch.outputsExpanded = nextPatch.outputs.length > 1;
+            nextPatch.outputsExpanded = nextPatch.outputs.length > 1 && hydrated.outputs.length > 1;
           }
         } else if (nextPatch.previewUrl || nextPatch.outputPreviewUrl) {
           const previewUrl = String(nextPatch.previewUrl ?? nextPatch.outputPreviewUrl);
@@ -610,7 +726,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             fileName: nextPatch.fileName,
             mimeType: nextPatch.mimeType,
           };
-          nextPatch.outputs = [output];
+          const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
+          nextPatch.outputs = mergeImageOutputs([output], previousOutputs);
           nextPatch.primaryOutputId = output.id;
           nextPatch.generationCount = normalizeGenerationCount(nextPatch.params?.n ?? data.generationCount);
           nextPatch.outputsExpanded = false;
@@ -632,7 +749,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         activeRunPollRef.current = null;
       }
     }
-  }, [data.generationCount, id, params, updateData]);
+  }, [data.fileName, data.generationCount, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.width, getNode, id, outputs, params, updateData]);
 
   useEffect(() => {
     if (status !== "pending" || !data.taskId) return;
@@ -838,13 +955,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
   const setPrimaryOutput = useCallback(
     (output: ImageNodeOutput) => {
+      const nextOutputs = moveOutputToFront(outputs, output.id);
       updateData({
         ...buildPrimaryPatch(output, params),
+        outputs: nextOutputs,
         primaryOutputId: output.id,
         outputsExpanded: false,
       }, { flush: true });
     },
-    [params, updateData]
+    [outputs, params, updateData]
   );
 
   const handleGenerate = useCallback(async () => {
@@ -900,6 +1019,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       generationStartedAt: startedAt,
       generationCompletedAt: null,
       elapsedMs: null,
+      taskStatus: "SUBMITTING",
+      upstreamStatus: "SUBMITTING",
       generationCount,
       outputsExpanded: false,
     });
@@ -922,6 +1043,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         });
         updateData({
           taskId: String(run.taskId),
+          taskStatus: run.status,
           upstreamStatus: run.status,
         }, { flush: true });
         await waitAndApplyServerRun(projectId, run.taskId, startedAt);
@@ -986,8 +1108,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         }
       }
       const primary = outputItems[0];
+      const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
+      const mergedOutputs = mergeImageOutputs(outputItems, previousOutputs);
       nextData.kind = "generated";
-      nextData.outputs = outputItems;
+      nextData.outputs = mergedOutputs;
       nextData.primaryOutputId = primary?.id ?? null;
       nextData.outputsExpanded = outputItems.length > 1;
       nextData.generationCount = generationCount;
@@ -1005,7 +1129,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, generationCount, getEdges, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, generationCount, getEdges, getNode, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, outputs, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen && !countPopoverOpen) return;
@@ -1062,11 +1186,44 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     setNodeMenuPos(clampToViewport({ x: nodeMenu.x, y: nodeMenu.y, width, height }));
   }, [nodeMenu.visible, nodeMenu.x, nodeMenu.y]);
 
-  const elapsedMs = data.elapsedMs ?? (isGenerating && Number.isFinite(effectiveStartedAtMs) ? Math.max(0, now - effectiveStartedAtMs) : null);
+  const elapsedMs = isGenerating && Number.isFinite(effectiveStartedAtMs)
+    ? Math.max(0, now - effectiveStartedAtMs)
+    : data.elapsedMs ?? null;
   const safetyStatus = normalizeSafetyStatus(data.safetyStatus) !== "idle" ? normalizeSafetyStatus(data.safetyStatus) : normalizeSafetyStatusFromError(data.safetyReason ?? data.errorMessage);
   const safety = getSafetyCopy(safetyStatus, "generation");
   const previewItem = useMemo(() => imageNodeToMediaPreview({ ...data, elapsedMs }), [data, elapsedMs]);
+  const previewItems = useMemo(() => {
+    if (!outputs.length) return previewItem ? [previewItem] : [];
+    return outputs
+      .filter((output) => output.previewUrl)
+      .map((output, index) => imageNodeToMediaPreview({
+        ...data,
+        elapsedMs,
+        assetId: output.assetId ?? data.assetId,
+        outputAssetId: output.assetId ?? data.outputAssetId,
+        previewUrl: output.previewUrl,
+        outputPreviewUrl: output.previewUrl,
+        width: output.width ?? data.width,
+        height: output.height ?? data.height,
+        fileName: output.fileName ?? `${data.fileName || "Image"}-${index + 1}`,
+      }))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }, [data, elapsedMs, outputs, previewItem]);
+  const previewOutputIndex = useMemo(() => {
+    if (!outputs.length || !previewOutputId) return 0;
+    return Math.max(0, outputs.findIndex((output) => output.id === previewOutputId));
+  }, [outputs, previewOutputId]);
+  const activePreviewItem = previewItems[previewOutputIndex] ?? previewItem;
   const displaySize = getDisplaySize(data, measuredSize, params.size);
+  const outputGridGap = 12;
+  const outputGridColumnCount = outputsExpanded ? Math.ceil(Math.sqrt(outputs.length)) : 1;
+  const outputGridRowCount = outputsExpanded ? Math.ceil(outputs.length / outputGridColumnCount) : 1;
+  const nodeFrameSize = outputsExpanded
+    ? {
+        width: displaySize.width * outputGridColumnCount + outputGridGap * (outputGridColumnCount - 1),
+        height: displaySize.height * outputGridRowCount + outputGridGap * (outputGridRowCount - 1),
+      }
+    : displaySize;
   const displayScale = (measuredSize?.width ?? data.width)
     ? displaySize.width / (measuredSize?.width ?? data.width ?? displaySize.width)
     : 1;
@@ -1081,12 +1238,23 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [displaySize.width, displaySize.height, id, updateNodeInternals]);
+  }, [nodeFrameSize.width, nodeFrameSize.height, id, updateNodeInternals]);
 
   const handlePreviewDownload = useCallback(() => {
     if (!previewItem) return;
     downloadMedia(previewItem);
   }, [previewItem]);
+  const openOutputPreview = useCallback((output?: ImageNodeOutput | null) => {
+    setPreviewOutputId(output?.id ?? primaryOutput?.id ?? null);
+    setPreviewOpen(true);
+  }, [primaryOutput?.id]);
+  const navigateOutputPreview = useCallback((index: number) => {
+    setPreviewOutputId(outputs[index]?.id ?? null);
+  }, [outputs]);
+  const setPreviewOutputAsPrimary = useCallback(() => {
+    const output = outputs[previewOutputIndex];
+    if (output) setPrimaryOutput(output);
+  }, [outputs, previewOutputIndex, setPrimaryOutput]);
 
   return (
     <>
@@ -1113,15 +1281,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           "relative",
           referencePickerPromptId && referencePickerPromptId !== id ? "cursor-pointer" : ""
         )}
-        style={{ width: displaySize.width, height: displaySize.height }}
+        style={{ width: nodeFrameSize.width, height: nodeFrameSize.height }}
       >
-        <div className="relative overflow-visible" style={{ width: displaySize.width, height: displaySize.height }}>
+        <div className="relative overflow-visible" style={{ width: nodeFrameSize.width, height: nodeFrameSize.height }}>
           <AnimatePresence>
             {isOnlySelectedNode && !dragging && !outputsExpanded && previewItem && (
               <SelectedMediaToolbar
                 canDownload={Boolean(previewItem.url)}
                 onDownload={handlePreviewDownload}
-                onOpenPreview={() => setPreviewOpen(true)}
+                onOpenPreview={() => openOutputPreview(primaryOutput)}
                 uiScale={fixedUiScale}
                 wheelRef={toolbarWheelRef}
                 style={{
@@ -1147,8 +1315,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
             style={{
               left: 0,
               top: 0,
-              width: displaySize.width,
-              height: displaySize.height,
+              width: nodeFrameSize.width,
+              height: nodeFrameSize.height,
             }}
           >
             {isReferencedByActivePrompt && (
@@ -1172,14 +1340,14 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 selected && (imageSrc ? "ring-2 ring-off-white/80" : "border-charcoal/60 ring-2 ring-charcoal/35"),
                 isReferencedByActivePrompt && (imageSrc ? "ring-2 ring-off-white" : "border-charcoal ring-2 ring-charcoal/30")
               )}
-              style={{ width: displaySize.width, height: displaySize.height, pointerEvents: "auto" }}
+              style={{ width: nodeFrameSize.width, height: nodeFrameSize.height, pointerEvents: "auto" }}
             >
               {!outputsExpanded && hasOutputGroup && (
                 <div className="pointer-events-none absolute inset-0 -z-10">
                   {outputs.slice(1, 4).map((output, index) => (
                     <div
                       key={output.id}
-                      className="absolute inset-0 overflow-hidden rounded-[inherit] border border-off-white/20 bg-charcoal shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+                      className="absolute inset-0 overflow-hidden rounded-xl border border-off-white/20 bg-charcoal shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
                       style={{
                         transform: `translate(${(index + 1) * 10}px, ${(index + 1) * 6}px) rotate(${(index + 1) * 1.4}deg)`,
                         zIndex: -index - 1,
@@ -1191,15 +1359,25 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                 </div>
               )}
 
-              <div className={cn("absolute inset-0 overflow-hidden rounded-[inherit]", outputsExpanded ? "grid gap-3 p-0" : "flex items-center justify-center")}>
+              <div className={cn("absolute inset-0 overflow-hidden rounded-[inherit]", outputsExpanded ? "p-0" : "flex items-center justify-center")}>
                 {outputsExpanded ? (
-                  <div className="grid size-full grid-cols-2 gap-3">
+                  <div
+                    className="grid"
+                    style={{
+                      gap: outputGridGap,
+                      gridTemplateColumns: `repeat(${outputGridColumnCount}, ${displaySize.width}px)`,
+                    }}
+                  >
                     {outputs.map((output, index) => {
                       const isPrimary = output.id === primaryOutput?.id;
                       return (
-                        <div key={output.id} className="group relative overflow-hidden rounded-xl border border-border-warm bg-charcoal">
+                        <div
+                          key={output.id}
+                          className="group relative overflow-hidden rounded-xl border border-off-white/15 bg-charcoal shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
+                          style={{ width: displaySize.width, height: displaySize.height }}
+                        >
                           <img src={output.previewUrl} alt={output.fileName ?? `生成图片 ${index + 1}`} className="size-full object-cover" draggable={false} />
-                          <div className="absolute right-3 top-3 flex gap-2 opacity-100 transition-opacity">
+                          <div className="absolute right-3 top-3 z-10 flex gap-2 opacity-100 transition-opacity">
                             <button
                               type="button"
                               onClick={(event) => {
@@ -1212,7 +1390,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                   information: [],
                                 });
                               }}
-                              className="nodrag flex h-9 items-center rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                              className="nodrag flex h-9 items-center rounded-lg bg-charcoal/75 px-3 text-sm font-medium text-off-white shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-charcoal/90"
                             >
                               下载
                             </button>
@@ -1223,7 +1401,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                   event.stopPropagation();
                                   toggleOutputsExpanded();
                                 }}
-                                className="nodrag flex h-9 items-center gap-1 rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                                className="nodrag flex h-9 items-center gap-1 rounded-lg bg-charcoal/75 px-3 text-sm font-medium text-off-white shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-charcoal/90"
                               >
                                 <Shrink className="size-4" />
                                 收起
@@ -1235,7 +1413,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                                   event.stopPropagation();
                                   setPrimaryOutput(output);
                                 }}
-                                className="nodrag flex h-9 items-center rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                                className="nodrag flex h-9 items-center rounded-lg bg-charcoal/75 px-3 text-sm font-medium text-off-white shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-charcoal/90"
                               >
                                 设为主图
                               </button>
@@ -1316,10 +1494,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     event.stopPropagation();
                     toggleOutputsExpanded();
                   }}
-                  className="nodrag absolute right-3 top-3 z-20 flex h-10 items-center gap-1 rounded-lg bg-black/55 px-3 text-sm font-medium text-off-white shadow backdrop-blur-md transition-colors hover:bg-black/70"
+                  className="nodrag absolute right-3 top-3 z-20 flex h-10 items-center gap-1 rounded-lg bg-charcoal/75 px-3 text-sm font-medium text-off-white shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-charcoal/90"
                   aria-label={`展开 ${outputs.length} 张图片`}
                 >
-                  <Shrink className="size-4 rotate-180" />
+                  <Expand className="size-4" />
                   {outputs.length}张
                 </button>
               )}
@@ -1728,7 +1906,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         </motion.div>,
         document.body
       )}
-      <MediaPreviewDialog item={previewItem} open={previewOpen} onClose={() => setPreviewOpen(false)} />
+      <MediaPreviewDialog
+        item={activePreviewItem}
+        items={previewItems}
+        currentIndex={previewOutputIndex}
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        onNavigate={navigateOutputPreview}
+        onSetPrimary={previewItems.length > 1 ? setPreviewOutputAsPrimary : undefined}
+      />
     </>
   );
 }

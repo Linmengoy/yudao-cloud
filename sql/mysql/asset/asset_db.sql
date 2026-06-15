@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS `aigc_asset` (
   `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_asset_no` (`asset_no`),
-  UNIQUE KEY `uk_task_type_tenant` (`task_id`, `asset_type`, `tenant_id`),
+  KEY `idx_task_type_tenant` (`task_id`, `asset_type`, `tenant_id`),
   KEY `idx_user_type_time` (`user_id`, `asset_type`, `create_time`),
   KEY `idx_task_id` (`task_id`),
   KEY `idx_task_no` (`task_no`),
