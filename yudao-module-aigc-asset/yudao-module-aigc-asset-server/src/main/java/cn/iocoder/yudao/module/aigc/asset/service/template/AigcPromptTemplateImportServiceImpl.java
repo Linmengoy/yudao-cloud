@@ -20,13 +20,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.invalidParamException;
 
@@ -85,6 +89,41 @@ public class AigcPromptTemplateImportServiceImpl implements AigcPromptTemplateIm
                 .setCreateCount(createCount)
                 .setUpdateCount(updateCount)
                 .setSkipCount(skipCount);
+    }
+
+    @Override
+    public AigcPromptTemplateImportRespVO importAwesomeGptImageCaseFiles(MultipartFile casesJson, MultipartFile[] images,
+                                                                        String storageDirectory) {
+        if (casesJson == null || casesJson.isEmpty()) {
+            throw invalidParamException("cases.json 文件不能为空");
+        }
+        if (images == null || images.length == 0) {
+            throw invalidParamException("图片文件不能为空");
+        }
+        Path tempDir = createTempDir();
+        try {
+            Path casesJsonPath = tempDir.resolve("cases.json");
+            Path imageDirPath = tempDir.resolve("images");
+            Files.createDirectories(imageDirPath);
+            transferMultipartFile(casesJson, casesJsonPath);
+            for (MultipartFile image : images) {
+                if (image == null || image.isEmpty()) {
+                    continue;
+                }
+                String fileName = Path.of(image.getOriginalFilename() == null ? image.getName() : image.getOriginalFilename())
+                        .getFileName().toString();
+                transferMultipartFile(image, imageDirPath.resolve(fileName));
+            }
+            AigcPromptTemplateImportReqVO reqVO = new AigcPromptTemplateImportReqVO();
+            reqVO.setCasesJsonPath(casesJsonPath.toString());
+            reqVO.setImageDirPath(imageDirPath.toString());
+            reqVO.setStorageDirectory(storageDirectory);
+            return importAwesomeGptImageCases(reqVO);
+        } catch (IOException ex) {
+            throw invalidParamException("保存上传文件失败：{}", ex.getMessage());
+        } finally {
+            deleteTempDir(tempDir);
+        }
     }
 
     private AigcPromptTemplateDO buildTemplate(JSONObject caseJson, Path imagePath, String storageDirectory) {
@@ -197,6 +236,40 @@ public class AigcPromptTemplateImportServiceImpl implements AigcPromptTemplateIm
             tags.append(',');
         }
         tags.append(tag.trim());
+    }
+
+    private Path createTempDir() {
+        try {
+            return Files.createTempDirectory("aigc-prompt-template-");
+        } catch (IOException ex) {
+            throw invalidParamException("创建临时目录失败：{}", ex.getMessage());
+        }
+    }
+
+    private void transferMultipartFile(MultipartFile file, Path targetPath) throws IOException {
+        try (InputStream inputStream = file.getInputStream();
+             OutputStream outputStream = Files.newOutputStream(targetPath)) {
+            inputStream.transferTo(outputStream);
+        }
+    }
+
+    private void deleteTempDir(Path tempDir) {
+        if (tempDir == null || !Files.exists(tempDir)) {
+            return;
+        }
+        try {
+            Files.walk(tempDir)
+                    .sorted(Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException ex) {
+                            log.warn("[deleteTempDir][path({}) 删除失败]", path, ex);
+                        }
+                    });
+        } catch (IOException ex) {
+            log.warn("[deleteTempDir][tempDir({}) 遍历失败]", tempDir, ex);
+        }
     }
 
     private record ImageSize(Integer width, Integer height) {

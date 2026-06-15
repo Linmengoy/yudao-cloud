@@ -23,7 +23,7 @@ import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 
 @Tag(name = "用户端 - AIGC 提示词模板")
 @RestController
-@RequestMapping("/aigc/prompt-template")
+@RequestMapping("/aigc/asset/prompt-template")
 @Validated
 public class AigcPromptTemplateAppController {
 

@@ -13,21 +13,21 @@ function toQuery(params: object) {
 }
 
 export function getPromptTemplatePage(params: PromptTemplatePageParams) {
-  return api.get<PageResult<PromptTemplate>>(`/aigc/prompt-template/page${toQuery(params)}`);
+  return api.get<PageResult<PromptTemplate>>(`/aigc/asset/prompt-template/page${toQuery(params)}`);
 }
 
 export function getPromptTemplate(id: number | string) {
-  return api.get<PromptTemplate>(`/aigc/prompt-template/get${toQuery({ id })}`);
+  return api.get<PromptTemplate>(`/aigc/asset/prompt-template/get${toQuery({ id })}`);
 }
 
 export function getPromptTemplateCategories() {
-  return api.get<string[]>("/aigc/prompt-template/categories");
+  return api.get<string[]>("/aigc/asset/prompt-template/categories");
 }
 
 export function copyPromptTemplate(id: number | string) {
-  return api.post<boolean>(`/aigc/prompt-template/copy${toQuery({ id })}`);
+  return api.post<boolean>(`/aigc/asset/prompt-template/copy${toQuery({ id })}`);
 }
 
 export function markPromptTemplateUsed(id: number | string) {
-  return api.post<boolean>(`/aigc/prompt-template/use${toQuery({ id })}`);
+  return api.post<boolean>(`/aigc/asset/prompt-template/use${toQuery({ id })}`);
 }
