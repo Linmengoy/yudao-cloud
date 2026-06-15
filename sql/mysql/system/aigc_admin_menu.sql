@@ -708,6 +708,30 @@ INSERT INTO `system_menu` (
 ) VALUES
 ('下载日志查询', 'aigc:asset:query', 3, 1, @assetDownloadLogMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
 
+-- 提示词模板
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '提示词模板', 'aigc:asset:query', 2, 3, @aigcAssetParentId,
+    'prompt-template', 'ep:collection', 'aigc/asset/prompt-template/index', 'AigcPromptTemplate',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @promptTemplateMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('提示词模板查询', 'aigc:asset:query', 3, 1, @promptTemplateMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('提示词模板导入', 'aigc:asset:create', 3, 2, @promptTemplateMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
 -- ===================================================================
 -- 6. AIGC 工作流管理（父级目录，sort=96）
 -- 注意：前端暂无对应页面，仅创建目录 + 按钮权限用于接口鉴权
