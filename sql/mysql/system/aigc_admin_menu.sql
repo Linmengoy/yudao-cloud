@@ -1216,3 +1216,51 @@ INSERT INTO system_menu (
 )
 SELECT '评论审核处理', 'aigc:community-comment:audit', 3, 2, @communityCommentMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
 WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:community-comment:audit' AND deleted = b'0');
+
+-- AIGC Guide content management button permissions
+SELECT @aigcGuideMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:guide:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT 'Guide create', 'aigc:guide:create', 3, 2, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:guide:create' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT 'Guide update', 'aigc:guide:update', 3, 3, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:guide:update' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT 'Guide delete', 'aigc:guide:delete', 3, 4, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:guide:delete' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT 'Guide publish', 'aigc:guide:publish', 3, 5, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:guide:publish' AND deleted = b'0');

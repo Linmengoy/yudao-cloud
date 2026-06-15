@@ -149,3 +149,26 @@ CREATE TABLE IF NOT EXISTS `aigc_community_audit_log` (
   PRIMARY KEY (`id`),
   KEY `idx_object` (`tenant_id`, `object_type`, `object_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC community audit log';
+
+CREATE TABLE IF NOT EXISTS `aigc_guide_content` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Guide content ID',
+  `slug` varchar(128) NOT NULL COMMENT 'Stable URL slug',
+  `title` varchar(128) NOT NULL COMMENT 'Title',
+  `category` varchar(64) DEFAULT NULL COMMENT 'Category',
+  `summary` varchar(512) DEFAULT NULL COMMENT 'Summary',
+  `content` mediumtext NOT NULL COMMENT 'Markdown content',
+  `sort` int NOT NULL DEFAULT 0 COMMENT 'Sort',
+  `publish_status` varchar(32) NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT/PUBLISHED',
+  `publish_time` datetime DEFAULT NULL COMMENT 'Publish time',
+  `publisher_user_id` bigint DEFAULT NULL COMMENT 'Publisher user ID',
+  `creator` varchar(64) DEFAULT '',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updater` varchar(64) DEFAULT '',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted` bit(1) NOT NULL DEFAULT b'0',
+  `tenant_id` bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_slug` (`tenant_id`, `slug`),
+  KEY `idx_publish_snapshot` (`tenant_id`, `publish_status`, `sort`, `id`),
+  KEY `idx_category` (`tenant_id`, `category`, `publish_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC guide content';

@@ -16,5 +16,8 @@ public interface ErrorCodeConstants {
     ErrorCode COMMUNITY_COMMENT_CONTENT_EMPTY = new ErrorCode(1_046_001_002, "Comment content cannot be empty");
     ErrorCode COMMUNITY_FOLLOW_SELF = new ErrorCode(1_046_002_000, "Cannot follow yourself");
     ErrorCode COMMUNITY_AUTHOR_NOT_EXISTS = new ErrorCode(1_046_002_001, "Author does not exist");
+    ErrorCode GUIDE_CONTENT_NOT_EXISTS = new ErrorCode(1_046_003_000, "Guide content does not exist");
+    ErrorCode GUIDE_CONTENT_SLUG_DUPLICATE = new ErrorCode(1_046_003_001, "Guide content slug already exists");
+    ErrorCode GUIDE_CONTENT_NOT_PUBLISHED = new ErrorCode(1_046_003_002, "Guide content is not published");
 
 }
