@@ -70,6 +70,13 @@
         </el-button>
       </el-form-item>
     </el-form>
+    <el-progress
+      v-if="loading"
+      class="max-w-860px"
+      :percentage="importProgress"
+      :stroke-width="10"
+      :format="formatProgress"
+    />
   </ContentWrap>
 
   <ContentWrap v-if="importResult">
@@ -100,10 +107,13 @@ import { AigcPromptTemplateApi, type AigcPromptTemplateImportRespVO } from '@/ap
 defineOptions({ name: 'AigcPromptTemplate' })
 
 const message = useMessage()
+const BATCH_SIZE = 10
 const formRef = ref<FormInstance>()
 const casesUploadRef = ref<UploadInstance>()
 const imagesUploadRef = ref<UploadInstance>()
 const loading = ref(false)
+const currentBatch = ref(0)
+const totalBatch = ref(0)
 const importResult = ref<AigcPromptTemplateImportRespVO>()
 const casesJsonFileList = ref<UploadUserFile[]>([])
 const imageFileList = ref<UploadUserFile[]>([])
@@ -125,6 +135,15 @@ const resultCards = computed(() => [
   { label: '更新数量', value: importResult.value?.updateCount || 0 },
   { label: '跳过数量', value: importResult.value?.skipCount || 0 }
 ])
+
+const importProgress = computed(() => {
+  if (!totalBatch.value) {
+    return 0
+  }
+  return Math.min(100, Math.round((currentBatch.value / totalBatch.value) * 100))
+})
+
+const formatProgress = () => `${currentBatch.value}/${totalBatch.value} 批`
 
 const handleCasesChange = (file: UploadFile) => {
   formData.casesJsonFile = file.raw
@@ -161,17 +180,43 @@ const handleImagesRemove = (_file: UploadFile, files: UploadFiles) => {
 
 const handleImport = async () => {
   await formRef.value?.validate()
-  const data = new FormData()
-  data.append('casesJson', formData.casesJsonFile as File)
-  formData.imageFiles.forEach((file) => data.append('images', file))
-  data.append('storageDirectory', formData.storageDirectory)
+  const imageBatches = chunkFiles(formData.imageFiles, BATCH_SIZE)
+  totalBatch.value = imageBatches.length
+  currentBatch.value = 0
+  importResult.value = {
+    totalCount: formData.imageFiles.length,
+    createCount: 0,
+    updateCount: 0,
+    skipCount: 0
+  }
   loading.value = true
   try {
-    importResult.value = await AigcPromptTemplateApi.importAwesomeGptImageFiles(data)
+    for (const batch of imageBatches) {
+      const data = new FormData()
+      data.append('casesJson', formData.casesJsonFile as File)
+      batch.forEach((file) => data.append('images', file))
+      data.append('storageDirectory', formData.storageDirectory)
+      const result = await AigcPromptTemplateApi.importAwesomeGptImageFiles(data)
+      importResult.value.createCount += result.createCount || 0
+      importResult.value.updateCount += result.updateCount || 0
+      currentBatch.value += 1
+    }
+    importResult.value.skipCount = Math.max(
+      0,
+      importResult.value.totalCount - importResult.value.createCount - importResult.value.updateCount
+    )
     message.success('导入完成')
   } finally {
     loading.value = false
   }
+}
+
+const chunkFiles = (files: File[], size: number) => {
+  const chunks: File[][] = []
+  for (let index = 0; index < files.length; index += size) {
+    chunks.push(files.slice(index, index + size))
+  }
+  return chunks
 }
 
 const resetForm = () => {
@@ -182,6 +227,8 @@ const resetForm = () => {
   formData.imageFiles = []
   casesJsonFileList.value = []
   imageFileList.value = []
+  currentBatch.value = 0
+  totalBatch.value = 0
   importResult.value = undefined
   formRef.value?.clearValidate()
 }
