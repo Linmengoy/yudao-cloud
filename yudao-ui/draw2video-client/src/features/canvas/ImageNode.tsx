@@ -44,7 +44,7 @@ import { filterAigcModelParams } from "@/features/generation/aigc-model-param-ut
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getMyAsset } from "@/features/assets/asset-api";
-import { getAssetPreviewExpireTime, getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
+import { getAssetOriginalExpireTime, getAssetOriginalUrl } from "@/features/assets/asset-dictionaries";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
@@ -240,8 +240,8 @@ function mergeImageOutputs(newOutputs: ImageNodeOutput[], previousOutputs: Image
   const seen = new Set<string>();
   const merged: ImageNodeOutput[] = [];
   for (const output of [...newOutputs, ...previousOutputs]) {
-    if (!output.previewUrl) continue;
     const key = output.id || (output.assetId ? `asset-${output.assetId}` : output.previewUrl);
+    if (!key) continue;
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(output);
@@ -279,13 +279,13 @@ async function hydrateImageOutputs(
     if (output.assetId) {
       try {
         const asset = await getMyAsset(output.assetId);
-        output.previewUrl = getAssetPreviewUrl(asset) || output.previewUrl || fallback.previewUrl || "";
+        output.previewUrl = getAssetOriginalUrl(asset) || output.previewUrl || fallback.previewUrl || "";
         output.width = output.width ?? asset.width ?? fallback.width;
         output.height = output.height ?? asset.height ?? fallback.height;
         output.mimeType = output.mimeType ?? asset.mimeType ?? fallback.mimeType;
         output.fileName = output.fileName ?? asset.title ?? fallback.fileName;
         output.id = getOutputId(output.assetId, output.previewUrl, index);
-        if (index === 0) assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
+        if (index === 0) assetUrlExpireTime = getAssetOriginalExpireTime(asset) ?? null;
       } catch {
       }
       continue;
@@ -297,7 +297,7 @@ async function hydrateImageOutputs(
     output.fileName = output.fileName ?? fallback.fileName;
     output.id = getOutputId(null, output.previewUrl, index);
   }
-  return { outputs: hydrated.filter((output) => output.previewUrl), assetUrlExpireTime };
+  return { outputs: hydrated.filter((output) => output.previewUrl || output.assetId), assetUrlExpireTime };
 }
 
 function buildPrimaryPatch(output: ImageNodeOutput, params: ImageTaskParams): Partial<ImageNodeData> {
@@ -1112,9 +1112,9 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         if (!output.assetId) continue;
         try {
           const asset = await getMyAsset(output.assetId);
-          output.previewUrl = getAssetPreviewUrl(asset) || output.previewUrl;
+          output.previewUrl = getAssetOriginalUrl(asset) || output.previewUrl;
           output.id = getOutputId(output.assetId, output.previewUrl, index);
-          if (index === 0) assetUrlExpireTime = getAssetPreviewExpireTime(asset) ?? null;
+          if (index === 0) assetUrlExpireTime = getAssetOriginalExpireTime(asset) ?? null;
         } catch {
         }
       }

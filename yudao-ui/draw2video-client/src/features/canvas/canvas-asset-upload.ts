@@ -1,5 +1,5 @@
 import { uploadAssetAndGetInfo } from "@/features/assets/asset-api";
-import { getAssetPreviewExpireTime, getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
+import { getAssetOriginalExpireTime, getAssetOriginalUrl, getAssetPreviewExpireTime, getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import type { ImageNodeData, VideoNodeData } from "@/features/canvas/types";
 
 export async function attachImageAsset(file: File, data: ImageNodeData): Promise<ImageNodeData> {
@@ -12,12 +12,12 @@ export async function attachImageAsset(file: File, data: ImageNodeData): Promise
       imageId: data.imageId,
     },
   });
-  const previewUrl = getAssetPreviewUrl(asset);
+  const previewUrl = getAssetOriginalUrl(asset);
   return {
     ...data,
     assetId: asset.id,
     previewUrl: previewUrl ?? data.dataUrl,
-    assetUrlExpireTime: getAssetPreviewExpireTime(asset) ?? null,
+    assetUrlExpireTime: getAssetOriginalExpireTime(asset) ?? null,
   };
 }
 

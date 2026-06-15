@@ -46,6 +46,15 @@ export function getAssetPreviewExpireTime(asset: AigcAsset) {
   return getAssetPreviewFile(asset)?.expireTime;
 }
 
+export function getAssetOriginalUrl(asset: AigcAsset) {
+  const original = asset.files?.find((file) => file.fileRole === "ORIGINAL");
+  return original?.accessUrl || asset.fileUrl || getAssetPreviewUrl(asset);
+}
+
+export function getAssetOriginalExpireTime(asset: AigcAsset) {
+  return asset.files?.find((file) => file.fileRole === "ORIGINAL")?.expireTime ?? getAssetPreviewExpireTime(asset);
+}
+
 function getAssetPreviewFile(asset: AigcAsset) {
   const files = asset.files ?? [];
   return files.find((file) => file.fileRole === "THUMBNAIL")

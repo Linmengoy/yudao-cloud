@@ -49,7 +49,7 @@ import { saveImage, saveVideo } from "@/features/canvas/image-store";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
 import { getAssetAccessUrls, getMyAsset } from "@/features/assets/asset-api";
-import { getAssetPreviewExpireTime, getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
+import { getAssetOriginalExpireTime, getAssetOriginalUrl } from "@/features/assets/asset-dictionaries";
 import { useAuth } from "@/features/auth/auth-store";
 import { ThemeToggle } from "@/features/theme/ThemeToggle";
 import { NotificationBell } from "@/features/notifications/components/notification-bell";
@@ -1119,7 +1119,7 @@ function getNodeAssetAccessRequest(node: AppNode, assetId: number) {
   if (node.type === "video") {
     return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
   }
-  return { assetId, fileRole: "THUMBNAIL", accessType: "THUMBNAIL" };
+  return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
 }
 
 function getImageOutputIdentity(output: Record<string, unknown>) {
@@ -1209,6 +1209,13 @@ function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | nul
     } as AppNode;
   }
   if (node.type === "image") {
+    const outputs = Array.isArray(node.data.outputs)
+      ? node.data.outputs.map((output) => (
+          output.assetId === assetId
+            ? { ...output, previewUrl: url }
+            : output
+        ))
+      : node.data.outputs;
     return {
       ...node,
       data: {
@@ -1216,6 +1223,7 @@ function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | nul
         assetId,
         previewUrl: url,
         outputPreviewUrl: url,
+        outputs,
         assetUrlExpireTime: expireTime ?? null,
       },
     } as AppNode;
@@ -1808,8 +1816,8 @@ function CanvasFlow() {
       const fallbackEntries = await Promise.all(requests.map(async ({ assetId }) => {
           try {
             const asset = await getMyAsset(assetId);
-            const url = getAssetPreviewUrl(asset);
-            return url ? { assetId: Number(assetId), url, expireTime: getAssetPreviewExpireTime(asset) ?? null } : null;
+            const url = getAssetOriginalUrl(asset);
+            return url ? { assetId: Number(assetId), url, expireTime: getAssetOriginalExpireTime(asset) ?? null } : null;
           } catch {
             return null;
           }

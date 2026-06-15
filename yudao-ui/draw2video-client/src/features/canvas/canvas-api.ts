@@ -253,7 +253,11 @@ export const canvasApi = {
     }),
 
   bindNodeAsset: (projectId: string | number, nodeId: string, input: BindCanvasAssetInput) =>
-    api.post<number>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/assets`, input),
+    api.post<number>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/assets`, {
+      ...input,
+      projectId,
+      nodeId,
+    }),
 
   getSketch: (projectId: string | number, nodeId: string) =>
     api.get<CanvasSketchRecord | null>(`/canvas/projects/${projectId}/nodes/${encodeURIComponent(nodeId)}/sketch`),
