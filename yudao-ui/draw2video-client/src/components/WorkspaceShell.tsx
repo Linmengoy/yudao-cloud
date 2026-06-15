@@ -7,6 +7,7 @@ import {
   PlusCircle,
   Folder,
   Image,
+  LayoutTemplate,
   User,
   HelpCircle,
   LogOut,
@@ -18,6 +19,7 @@ import { formatPoints } from "@/features/wallet/wallet-api";
 const sidebarLinks = [
   { href: "/app", icon: Home, label: "首页" },
   { href: "/canvas", icon: PlusCircle, label: "创建" },
+  { href: "/templates", icon: LayoutTemplate, label: "模板" },
   { href: "/tasks", icon: Folder, label: "作品" },
   { href: "/create/video", icon: Image, label: "视频" },
   { href: "/profile", icon: User, label: "设置" },

@@ -10,7 +10,7 @@ CLIENT_WS_BASE_URL="wss://beta.copse.top"
 TARGET="all"
 ARCHIVE_NAME=""
 COMPOSE_FILE="docker-compose.frontend.yml"
-SSH_KEY="$HOME/.ssh/jd_ssh_0304.pem"
+SSH_KEY="$HOME/.ssh/jd_ssh_5675.pem"
 SKIP_BUILD=0
 SKIP_SAVE=0
 SKIP_UPLOAD=0
@@ -31,7 +31,7 @@ Options:
   --target all|admin|client    Build/deploy target, default all
   --archive-name NAME          Image archive name
   --compose-file NAME          Compose file name, default docker-compose.frontend.yml
-  --ssh-key PATH               SSH private key, default ~/.ssh/jd_ssh_0304.pem
+  --ssh-key PATH               SSH private key, default ~/.ssh/jd_ssh_5675.pem
   --skip-build                 Skip docker buildx build
   --skip-save                  Skip docker save
   --skip-upload                Skip scp and remote restart
@@ -119,6 +119,10 @@ if [[ -z "$SERVER" ]]; then
   echo "Missing required --server" >&2
   usage
   exit 1
+fi
+
+if [[ "$SERVER" == "manman" ]]; then
+  SERVER="root@111.228.39.103"
 fi
 
 case "$TARGET" in

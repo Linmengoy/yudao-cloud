@@ -50,6 +50,7 @@ import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedI
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
 import { getAssetAccessUrls, getMyAsset } from "@/features/assets/asset-api";
 import { getAssetOriginalExpireTime, getAssetOriginalUrl } from "@/features/assets/asset-dictionaries";
+import { getPromptTemplate, markPromptTemplateUsed } from "@/features/templates/template-api";
 import { useAuth } from "@/features/auth/auth-store";
 import { ThemeToggle } from "@/features/theme/ThemeToggle";
 import { NotificationBell } from "@/features/notifications/components/notification-bell";
@@ -1576,6 +1577,7 @@ function CanvasFlow() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const routeProjectId = searchParams.get("projectId");
+  const routeTemplateId = searchParams.get("templateId");
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const serverProjectId = isServerProjectId(activeProjectId) ? activeProjectId : null;
   const [nodes, setNodes] = useNodesState<AppNode>([]);
@@ -1774,6 +1776,8 @@ function CanvasFlow() {
   // 初始化最后应用版本
   const lastAppliedVersionRef = useRef(0);
   const syncInFlightVersionsRef = useRef<Set<number>>(new Set());
+  const pendingOperationCountRef = useRef(0);
+  const deferredSyncUntilPendingClearRef = useRef(false);
   const viewportAssetRefreshTimerRef = useRef<number | null>(null);
 
   // 初始化同步状态
@@ -2018,6 +2022,7 @@ function CanvasFlow() {
   }, [markAppliedVersion, refreshVisibleAssetUrls, setEdges, setNodes, setViewport]);
 
   const applyOperationRecord = useCallback((operationRecord: { clientId: string; nextVersion: number; operationType: string; operationJson: string }) => {
+    if (operationRecord.nextVersion <= lastAppliedVersionRef.current) return;
     setLatestKnownVersion((prev) => Math.max(prev, operationRecord.nextVersion));
     if (operationRecord.clientId !== clientId) {
       try {
@@ -2036,6 +2041,12 @@ function CanvasFlow() {
     canvasApi.syncOperations(serverProjectId, afterVersion)
       .then((syncResult) => {
         if (syncResult.mode === "snapshot") {
+          const snapshotVersion = Number(syncResult.snapshot?.version ?? syncResult.toVersion ?? 0);
+          if (Number.isFinite(snapshotVersion) && snapshotVersion <= lastAppliedVersionRef.current) return;
+          if (pendingOperationCountRef.current > 0) {
+            deferredSyncUntilPendingClearRef.current = true;
+            return;
+          }
           hydrateRemoteSnapshot(syncResult.snapshot);
           return;
         }
@@ -2061,6 +2072,13 @@ function CanvasFlow() {
   useEffect(() => {
     syncFromVersionRef.current = syncFromVersion;
   }, [syncFromVersion]);
+
+  useEffect(() => {
+    pendingOperationCountRef.current = canvasOperations.pendingOperationCount;
+    if (canvasOperations.pendingOperationCount !== 0 || !deferredSyncUntilPendingClearRef.current) return;
+    deferredSyncUntilPendingClearRef.current = false;
+    syncFromVersion(lastAppliedVersionRef.current);
+  }, [canvasOperations.pendingOperationCount, syncFromVersion]);
 
   useEffect(() => {
     const newMessages = canvasRealtime.messages.slice(processedRealtimeMessageCountRef.current);
@@ -2751,7 +2769,6 @@ function CanvasFlow() {
             setSaveError("");
           }).catch(() => {
             setSaveError("服务端画布保存失败，请稍后重试");
-            syncFromVersion(lastAppliedVersionRef.current);
           }).finally(() => {
             setIsSavingSnapshot(false);
           });
@@ -2763,7 +2780,7 @@ function CanvasFlow() {
       }
     }, CANVAS_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(saveTimer.current);
-  }, [activeProjectId, canvasOperations.pendingOperationCount, clientId, edges, getViewport, isHydrated, isReadOnly, markAppliedVersion, nodeDragCommitVersion, nodes, saveSnapshot, serverProjectId, syncFromVersion]);
+  }, [activeProjectId, canvasOperations.pendingOperationCount, clientId, edges, getViewport, isHydrated, isReadOnly, markAppliedVersion, nodeDragCommitVersion, nodes, saveSnapshot, serverProjectId]);
 
   // --- Add nodes ---
   const addImageDraftNode = useCallback((position?: { x: number; y: number }) => {
@@ -2790,6 +2807,45 @@ function CanvasFlow() {
         createdAt: new Date().toISOString(),
         kind: "draft",
         prompt: "",
+        modelId: DEFAULT_PROMPT_DATA.modelId,
+        params: { ...DEFAULT_PROMPT_DATA.params },
+        status: "idle",
+        taskId: null,
+        errorMessage: null,
+        elapsedMs: null,
+      },
+      selected: true,
+    });
+    setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
+    return newNode;
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
+
+  const addPromptTemplateNode = useCallback((template: { id: number; title: string; prompt: string }) => {
+    if (isReadOnly) return null;
+    const center = screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const id = `template_${template.id}_${Date.now()}`;
+    const newNode: AppNode = withCardNodeInteraction({
+      id,
+      type: "image",
+      position: findOpenNodePosition(
+        { x: center.x - 190, y: center.y - 150 },
+        { width: 360, height: 340 },
+        getNodes() as AppNode[]
+      ),
+      data: {
+        imageId: id,
+        projectId: serverProjectId,
+        fileName: template.title || "Template",
+        dataUrl: "",
+        mimeType: "image/png",
+        createdAt: new Date().toISOString(),
+        kind: "draft",
+        prompt: template.prompt,
+        sourceTemplateId: template.id,
         modelId: DEFAULT_PROMPT_DATA.modelId,
         params: { ...DEFAULT_PROMPT_DATA.params },
         status: "idle",
@@ -2922,6 +2978,40 @@ function CanvasFlow() {
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+
+  useEffect(() => {
+    if (!routeTemplateId || !isHydrated || isReadOnly) return;
+    const templateId = Number(routeTemplateId);
+    if (!Number.isFinite(templateId) || templateId <= 0) return;
+    const exists = (getNodes() as AppNode[]).some((node) => (
+      node.type === "image" && Number((node.data as Record<string, unknown>).sourceTemplateId) === templateId
+    ));
+    const cleanUrl = routeProjectId
+      ? `/canvas?projectId=${encodeURIComponent(routeProjectId)}`
+      : "/canvas";
+    if (exists) {
+      router.replace(cleanUrl);
+      return;
+    }
+    let cancelled = false;
+    getPromptTemplate(templateId)
+      .then(async (template) => {
+        if (cancelled) return;
+        addPromptTemplateNode({
+          id: template.id,
+          title: template.title,
+          prompt: template.prompt,
+        });
+        await markPromptTemplateUsed(template.id).catch(() => undefined);
+        router.replace(cleanUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setSaveError("模板加载失败，请返回模板库重试");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [addPromptTemplateNode, getNodes, isHydrated, isReadOnly, routeProjectId, routeTemplateId, router]);
 
   const mergeSelectedNodesIntoGroup = useCallback((groupNode: AppNode) => {
     if (isReadOnly || groupNode.type !== "canvasGroup") return false;
