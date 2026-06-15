@@ -590,10 +590,17 @@ function formatVideoGenerationError(message: unknown) {
     lowerMessage.includes("verify the prompt") ||
     lowerMessage.includes("media url") ||
     lowerMessage.includes("invalid parameter") ||
-    lowerMessage.includes("parameter rejected");
+    lowerMessage.includes("invalid params") ||
+    lowerMessage.includes("invalid request") ||
+    lowerMessage.includes("parameter rejected") ||
+    lowerMessage.includes("parameter error") ||
+    lowerMessage.includes("bad request");
   const isReferenceUrlError =
     lowerMessage.includes("image_url") ||
     lowerMessage.includes("image url") ||
+    lowerMessage.includes("media_url") ||
+    lowerMessage.includes("media url") ||
+    lowerMessage.includes("media") ||
     lowerMessage.includes("reference") ||
     lowerMessage.includes("url");
 
