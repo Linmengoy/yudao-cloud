@@ -34,6 +34,13 @@ public class AigcProviderClientFactory {
     }
 
     public AigcProviderClient getClient(AigcProviderSubmitReqDTO reqDTO) {
+        String modelClientType = resolveClientTypeByModel(reqDTO);
+        if (StrUtil.isNotBlank(modelClientType)) {
+            AigcProviderClient client = clientTypes.get(modelClientType);
+            if (client != null) {
+                return client;
+            }
+        }
         String clientType = resolveClientType(reqDTO == null ? null : reqDTO.getProviderExtraConfig());
         if (StrUtil.isNotBlank(clientType)) {
             AigcProviderClient client = clientTypes.get(clientType);
@@ -42,6 +49,27 @@ public class AigcProviderClientFactory {
             }
         }
         return getClient(reqDTO == null ? null : reqDTO.getProviderCode());
+    }
+
+    private String resolveClientTypeByModel(AigcProviderSubmitReqDTO reqDTO) {
+        if (reqDTO == null) {
+            return null;
+        }
+        String model = StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode());
+        if (StrUtil.isBlank(model)) {
+            return null;
+        }
+        String normalized = model.trim().toLowerCase();
+        if (normalized.startsWith("gpt-image-")) {
+            return "gpt-image-2";
+        }
+        if (normalized.startsWith("midjourney")) {
+            return MidjourneyProviderClient.CLIENT_TYPE;
+        }
+        if (normalized.startsWith("doubao-seedream-") || normalized.startsWith("seedream-")) {
+            return VolcImagesGenerationsProviderClient.CLIENT_TYPE;
+        }
+        return null;
     }
 
     private String resolveClientType(String extraConfig) {

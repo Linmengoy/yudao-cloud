@@ -69,7 +69,7 @@ public class VolcImagesGenerationsProviderClient implements AigcProviderClient {
         JSONObject params = parseParams(reqDTO.getInputParams());
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             if (entry.getValue() != null && !isInternalParam(entry.getKey())) {
-                body.set(entry.getKey(), entry.getValue());
+                body.set(entry.getKey(), normalizeParamValue(entry.getKey(), entry.getValue()));
             }
         }
         applyReferenceImages(body, params);
@@ -94,11 +94,45 @@ public class VolcImagesGenerationsProviderClient implements AigcProviderClient {
     private void applyImageCount(JSONObject body, JSONObject params) {
         Object count = firstNonNull(params.get("n"), params.get("max_images"));
         if (count != null) {
-            body.set("n", count);
+            body.set("n", normalizeInteger(count));
         } else if (!body.containsKey("n")) {
             body.set("n", 1);
         }
         body.remove("max_images");
+    }
+
+    private Object normalizeParamValue(String key, Object value) {
+        if ("watermark".equals(key) || "stream".equals(key)) {
+            return normalizeBoolean(value);
+        }
+        if ("n".equals(key) || "max_images".equals(key) || "output_compression".equals(key)) {
+            return normalizeInteger(value);
+        }
+        return value;
+    }
+
+    private Boolean normalizeBoolean(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof String string) {
+            return Boolean.parseBoolean(string);
+        }
+        return Boolean.TRUE.equals(value);
+    }
+
+    private Object normalizeInteger(Object value) {
+        if (value instanceof Number) {
+            return value;
+        }
+        if (value instanceof String string && StrUtil.isNotBlank(string)) {
+            try {
+                return Integer.parseInt(string);
+            } catch (NumberFormatException ignored) {
+                return value;
+            }
+        }
+        return value;
     }
 
     private AigcProviderSubmitRespDTO parseResponse(String body) {

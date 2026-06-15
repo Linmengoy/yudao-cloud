@@ -564,10 +564,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const generationCount = normalizeGenerationCount(params.n ?? data.generationCount);
   const aigcModels = useAigcModels({ type: 2, capability: generationCapability, preferredModelId: selectedAigcModelId, params });
   const storedAigcModel = aigcModels.models.find((item) => item.id === selectedAigcModelId);
-  const activeAigcModel = storedAigcModel ?? aigcModels.selectedModel;
+  const activeAigcModel = storedAigcModel ?? (selectedAigcModelId ? null : aigcModels.selectedModel);
   const activeModelName = activeAigcModel?.name ?? data.modelName ?? "选择模型";
-  const activeProviderModel = activeAigcModel?.model ?? data.providerModel ?? modelId;
-  const activeAigcModelId = activeAigcModel?.id;
+  const activeProviderModel = activeAigcModel?.providerModel ?? activeAigcModel?.model ?? data.providerModel ?? modelId;
+  const activeAigcModelId = activeAigcModel?.id ?? selectedAigcModelId;
   const ratioTemplate = useMemo(() => findTemplate(aigcModels.templates, ["ratio", "aspectRatio", "aspect_ratio", "ar"]), [aigcModels.templates]);
   const imageSizeTemplate = useMemo(() => findTemplate(aigcModels.templates, ["imageSize", "resolution"]), [aigcModels.templates]);
   const sizeTemplate = useMemo(() => findTemplate(aigcModels.templates, ["size"]), [aigcModels.templates]);
@@ -853,15 +853,15 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
   useEffect(() => {
     if (aigcModels.loading || aigcModels.models.length === 0) return;
-    if (selectedAigcModelId && aigcModels.models.some((model) => model.id === selectedAigcModelId)) return;
+    if (selectedAigcModelId) return;
     const nextModel = aigcModels.selectedModel ?? aigcModels.models[0];
     if (!nextModel) return;
     updateData({
       modelId: String(nextModel.id),
-      providerModel: nextModel.model,
+      providerModel: nextModel.providerModel ?? nextModel.model,
       modelName: nextModel.name,
       aigcModelId: nextModel.id,
-    });
+    }, { flush: true });
   }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, selectedAigcModelId, updateData]);
 
   const handleNodeClick = useCallback(
@@ -932,10 +932,10 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       aigcModels.setSelectedModelId(nextModelId);
       updateData({
         modelId: String(nextModelId),
-        providerModel: model.model,
+        providerModel: model.providerModel ?? model.model,
         modelName: model.name,
         aigcModelId: model.id,
-      });
+      }, { flush: true });
       setModelPopoverOpen(false);
     },
     [aigcModels, updateData]
@@ -988,7 +988,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       : aigcModels.selectedModel;
     const runAigcModelId = runModel?.id;
     const runModelName = runModel?.name ?? activeModelName;
-    const runProviderModel = runModel?.model ?? activeProviderModel;
+    const runProviderModel = runModel?.providerModel ?? runModel?.model ?? activeProviderModel;
     const resultDraft: ResultNodeData = {
       taskId: null,
       promptNodeId: id,
@@ -1030,7 +1030,11 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       upstreamStatus: "SUBMITTING",
       generationCount,
       outputsExpanded: false,
-    });
+      modelId: runAigcModelId ? String(runAigcModelId) : modelId,
+      providerModel: runProviderModel,
+      aigcModelId: runAigcModelId,
+      modelName: runModelName,
+    }, { flush: true });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
     if (isServerCanvasProjectId(projectId) && runAigcModelId) {
