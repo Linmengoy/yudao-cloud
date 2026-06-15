@@ -408,10 +408,11 @@ function deriveVideoMode(
   explicitMode: VideoGenerationMode | null | undefined,
   refCount: number,
   capabilities?: string[] | null,
+  fallbackMode?: VideoGenerationMode | null,
 ): VideoGenerationMode {
   if (
     explicitMode &&
-    modelSupportsVideoMode(capabilities, explicitMode) &&
+    modelSupportsVideoMode(capabilities, explicitMode, fallbackMode) &&
     isVideoModeSelectable(explicitMode, refCount)
   ) {
     return explicitMode;
@@ -423,7 +424,7 @@ function deriveVideoMode(
         ? ["IMAGE_TO_VIDEO", "MULTI_REF_VIDEO", "FIRST_LAST_FRAME_VIDEO"]
         : ["MULTI_REF_VIDEO", "FIRST_LAST_FRAME_VIDEO"];
   const supported = candidates.find((mode) =>
-    modelSupportsVideoMode(capabilities, mode),
+    modelSupportsVideoMode(capabilities, mode, fallbackMode),
   );
   if (supported) return supported;
   if (refCount === 0) return "TEXT_TO_VIDEO";
@@ -434,8 +435,10 @@ function deriveVideoMode(
 function modelSupportsVideoMode(
   capabilities: string[] | null | undefined,
   mode: VideoGenerationMode,
+  fallbackMode?: VideoGenerationMode | null,
 ) {
-  return !capabilities?.length || capabilities.includes(mode);
+  if (capabilities?.length) return capabilities.includes(mode);
+  return fallbackMode ? mode === fallbackMode : false;
 }
 
 function isVideoModeSelectable(mode: VideoGenerationMode, refCount: number) {
@@ -779,6 +782,7 @@ export function VideoNodeComponent({
     data.explicitMode,
     referenceImages.length,
     activeAigcModel?.capabilities,
+    modelListCapability,
   );
 
   const orderedReferenceImages = useMemo(
@@ -1162,6 +1166,41 @@ export function VideoNodeComponent({
   }, [outputs, previewOutputId, primaryOutput?.id]);
 
   const activePreviewItem = previewItems[previewOutputIndex] ?? previewItem;
+  const videoModeControls = (
+    <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+      {VIDEO_MODE_OPTIONS.map((opt) => {
+        const isActive = generationCapability === opt.mode;
+        const isSupported = modelSupportsVideoMode(
+          activeAigcModel?.capabilities,
+          opt.mode,
+          modelListCapability,
+        );
+        const isAvailable =
+          isSupported && isVideoModeAvailable(opt.mode, referenceImages.length);
+        return (
+          <button
+            key={opt.mode}
+            type="button"
+            disabled={isGenerating || !isAvailable}
+            onClick={() => updateData({ explicitMode: opt.mode })}
+            className={cn(
+              "nodrag nowheel rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+              isActive
+                ? "bg-background text-charcoal shadow-sm"
+                : "text-muted-gray hover:text-charcoal",
+            )}
+            title={
+              isSupported && isAvailable && !isActive
+                ? `切换到${opt.label}`
+                : undefined
+            }
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   const outputGridGap = 12;
   const outputGridColumnCount = outputsExpanded
@@ -2091,7 +2130,15 @@ export function VideoNodeComponent({
                 pointerEvents: "auto",
               }}
             >
-              <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="mb-3 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  {videoModeControls}
+                  {isGenerating && (
+                    <span className="text-xs text-muted-gray">
+                      {progressLabel}
+                    </span>
+                  )}
+                </div>
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -2107,11 +2154,10 @@ export function VideoNodeComponent({
                     if (showSlots && orderedReferenceImages.length < 2) {
                       return (
                         <>
-                          {orderedReferenceImages.map((image, index) => (
+                          {orderedReferenceImages.map((image) => (
                             <ReferenceThumbnail
                               key={image.edgeId}
                               image={image}
-                              label={index === 0 ? "首帧" : "尾帧"}
                               isGenerating={isGenerating}
                               removeReference={removeReference}
                             />
@@ -2131,19 +2177,10 @@ export function VideoNodeComponent({
                         </>
                       );
                     }
-                    return orderedReferenceImages.map((image, index) => (
+                    return orderedReferenceImages.map((image) => (
                       <ReferenceThumbnail
                         key={image.edgeId}
                         image={image}
-                        label={
-                          showSlots
-                            ? index === 0
-                              ? "首帧"
-                              : "尾帧"
-                            : generationCapability === "MULTI_REF_VIDEO"
-                              ? `${index + 1}`
-                              : undefined
-                        }
                         isGenerating={isGenerating}
                         removeReference={removeReference}
                       />
@@ -2168,11 +2205,6 @@ export function VideoNodeComponent({
                       </button>
                     )}
                 </div>
-                {isGenerating && (
-                  <span className="text-xs text-muted-gray">
-                    {progressLabel}
-                  </span>
-                )}
               </div>
 
               <PromptMentionInput
@@ -2270,40 +2302,6 @@ export function VideoNodeComponent({
                         </motion.div>
                       )}
                     </AnimatePresence>
-                  </div>
-                  <span className="h-5 w-px bg-border-warm" />
-                  <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-                    {VIDEO_MODE_OPTIONS.map((opt) => {
-                      const isActive = generationCapability === opt.mode;
-                      const isSupported = modelSupportsVideoMode(
-                        activeAigcModel?.capabilities,
-                        opt.mode,
-                      );
-                      const isAvailable =
-                        isSupported &&
-                        isVideoModeAvailable(opt.mode, referenceImages.length);
-                      return (
-                        <button
-                          key={opt.mode}
-                          type="button"
-                          disabled={isGenerating || !isAvailable}
-                          onClick={() => updateData({ explicitMode: opt.mode })}
-                          className={cn(
-                            "nodrag nowheel rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-                            isActive
-                              ? "bg-background text-charcoal shadow-sm"
-                              : "text-muted-gray hover:text-charcoal",
-                          )}
-                          title={
-                            isSupported && isAvailable && !isActive
-                              ? `切换到${opt.label}`
-                              : undefined
-                          }
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
                   </div>
                   <span className="h-5 w-px bg-border-warm" />
                   <div className="relative">

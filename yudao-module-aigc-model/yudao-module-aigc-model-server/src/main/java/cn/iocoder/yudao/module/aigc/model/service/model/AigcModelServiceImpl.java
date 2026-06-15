@@ -238,6 +238,13 @@ public class AigcModelServiceImpl implements AigcModelService {
         return capabilityMapper.selectCountByModelIdAndCapability(modelId, capability) > 0;
     }
 
+    @Override
+    public List<String> getModelCapabilities(Long modelId) {
+        return capabilityMapper.selectListByModelId(modelId).stream()
+                .map(AigcModelCapabilityDO::getCapability)
+                .toList();
+    }
+
     private void validateModelCodeUnique(Long id, String code) {
         AigcModelDO model = modelMapper.selectByCode(code);
         if (model == null) {
