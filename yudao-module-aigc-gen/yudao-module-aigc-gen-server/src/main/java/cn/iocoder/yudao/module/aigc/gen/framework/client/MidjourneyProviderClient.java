@@ -343,17 +343,22 @@ public class MidjourneyProviderClient implements AigcProviderClient {
     }
 
     private String resolveActionEndpoint(AigcProviderSubmitReqDTO reqDTO) {
-        return baseUrl(reqDTO) + "/mj/submit/action";
+        return useModeEndpointForFollowup(reqDTO) ? modeBaseUrl(reqDTO) + "/submit/action" : baseUrl(reqDTO) + "/mj/submit/action";
     }
 
     private String resolveTaskEndpoint(AigcProviderSubmitReqDTO reqDTO, String taskId) {
-        return baseUrl(reqDTO) + "/mj/task/" + taskId + "/fetch";
+        String base = useModeEndpointForFollowup(reqDTO) ? modeBaseUrl(reqDTO) : baseUrl(reqDTO) + "/mj";
+        return base + "/task/" + taskId + "/fetch";
     }
 
     private String modeBaseUrl(AigcProviderSubmitReqDTO reqDTO) {
         String base = baseUrl(reqDTO);
+        JSONObject extra = parseParams(reqDTO.getProviderExtraConfig());
         String model = StrUtil.blankToDefault(reqDTO.getProviderModel(), reqDTO.getModelCode());
         String lower = model == null ? "" : model.toLowerCase();
+        if ("MODE_PREFIX".equalsIgnoreCase(extra.getStr("midjourneyEndpointProfile"))) {
+            return base + "/" + resolveModePath(reqDTO, extra, lower) + "/mj";
+        }
         if (lower.contains("video-turbo")) {
             return base + "/mj-relax/mj";
         }
@@ -367,6 +372,28 @@ public class MidjourneyProviderClient implements AigcProviderClient {
             return base + "/mj-fast/mj";
         }
         return base + "/mj";
+    }
+
+    private String resolveModePath(AigcProviderSubmitReqDTO reqDTO, JSONObject extra, String lowerModel) {
+        String configuredMode = extra.getStr("midjourneyDefaultMode");
+        String mode;
+        if (lowerModel.contains("relax") || lowerModel.contains("video-turbo")) {
+            mode = "relax";
+        } else if (lowerModel.contains("turbo")) {
+            mode = "turbo";
+        } else if (lowerModel.contains("fast")) {
+            mode = "fast";
+        } else {
+            mode = StrUtil.blankToDefault(configuredMode, "fast");
+        }
+        String key = "midjourney" + StrUtil.upperFirst(mode) + "Path";
+        return StrUtil.blankToDefault(extra.getStr(key), mode);
+    }
+
+    private boolean useModeEndpointForFollowup(AigcProviderSubmitReqDTO reqDTO) {
+        JSONObject extra = parseParams(reqDTO.getProviderExtraConfig());
+        return "MODE_PREFIX".equalsIgnoreCase(extra.getStr("midjourneyEndpointProfile"))
+                || Boolean.TRUE.equals(extra.getBool("midjourneyUseModeEndpointForFollowup"));
     }
 
     private String baseUrl(AigcProviderSubmitReqDTO reqDTO) {
