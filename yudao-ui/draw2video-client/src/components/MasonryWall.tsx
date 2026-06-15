@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type Muuri from "muuri";
 import type { Item, LayoutFunctionCallback } from "muuri";
 
@@ -80,10 +80,15 @@ export function MasonryWall<T>({
     requestAnimationFrame(() => muuriRef.current?.refreshItems().layout());
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!layoutKey || !gridElementRef.current) return;
     let disposed = false;
     const element = gridElementRef.current;
+    const preserveHeight = () => {
+      const height = element.getBoundingClientRect().height;
+      if (height > 0) element.style.minHeight = `${height}px`;
+    };
+    preserveHeight();
     import("muuri").then(({ default: MuuriGrid }) => {
       if (disposed || !element) return;
       muuriRef.current?.destroy(false);
@@ -92,12 +97,19 @@ export function MasonryWall<T>({
         layout: wallLayout(minColumnWidth),
         layoutDuration: 0,
       });
-      requestAnimationFrame(() => muuriRef.current?.refreshItems().layout());
+      requestAnimationFrame(() => {
+        if (disposed) return;
+        muuriRef.current?.refreshItems().layout();
+        requestAnimationFrame(() => {
+          if (!disposed) element.style.minHeight = "";
+        });
+      });
     });
     const onResize = () => muuriRef.current?.refreshItems().layout();
     window.addEventListener("resize", onResize);
     return () => {
       disposed = true;
+      preserveHeight();
       window.removeEventListener("resize", onResize);
       muuriRef.current?.destroy(false);
       muuriRef.current = null;

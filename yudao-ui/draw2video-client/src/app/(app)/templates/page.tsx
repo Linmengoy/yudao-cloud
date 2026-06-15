@@ -167,6 +167,7 @@ export default function TemplatesPage() {
   const pageNoRef = useRef(1);
   const hasMoreRef = useRef(true);
   const templatesLengthRef = useRef(0);
+  const categoryKeywordFallbackRef = useRef(false);
 
   const loadTemplates = useCallback(async (reset = false) => {
     if (loadingPageRef.current) return;
@@ -180,6 +181,7 @@ export default function TemplatesPage() {
       pageNoRef.current = 1;
       hasMoreRef.current = true;
       templatesLengthRef.current = 0;
+      categoryKeywordFallbackRef.current = false;
       setTemplates([]);
       setMeasuredRatios({});
       setTotal(0);
@@ -187,14 +189,25 @@ export default function TemplatesPage() {
       setPageCursor(1);
     }
     try {
+      const keyword = debouncedQuery.trim() || undefined;
       const data = await getPromptTemplatePage({
         pageNo: nextPageNo,
         pageSize: PAGE_SIZE,
-        keyword: debouncedQuery.trim() || undefined,
-        category: category || undefined,
+        keyword: categoryKeywordFallbackRef.current ? category : keyword,
+        category: categoryKeywordFallbackRef.current ? undefined : category || undefined,
       });
-      const nextList = data.list ?? [];
-      const nextTotal = data.total ?? 0;
+      let nextList = data.list ?? [];
+      let nextTotal = data.total ?? 0;
+      if (reset && category && !keyword && nextList.length === 0) {
+        const fallbackData = await getPromptTemplatePage({
+          pageNo: 1,
+          pageSize: PAGE_SIZE,
+          keyword: category,
+        });
+        nextList = fallbackData.list ?? [];
+        nextTotal = fallbackData.total ?? 0;
+        categoryKeywordFallbackRef.current = nextList.length > 0;
+      }
       const nextPageCursor = nextPageNo + 1;
       const mergedLength = (reset ? 0 : templatesLengthRef.current) + nextList.length;
       const nextHasMore = nextList.length > 0 && mergedLength < nextTotal;
