@@ -1178,6 +1178,15 @@ function mergeImageOutputPatch(node: AppNode, patch: Record<string, unknown>) {
   return { ...patch, outputs: mergedOutputs };
 }
 
+function stripStaleImageOutputUrls(outputs: unknown) {
+  if (!Array.isArray(outputs)) return outputs;
+  return outputs.map((output) => {
+    if (!output || typeof output !== "object") return output;
+    const item = output as Record<string, unknown>;
+    return typeof item.assetId === "number" ? { ...item, previewUrl: "" } : item;
+  });
+}
+
 function mergeVideoOutputPatch(node: AppNode, patch: Record<string, unknown>) {
   if (node.type !== "video" || !Array.isArray(patch.outputs)) return patch;
 
@@ -1320,6 +1329,7 @@ function migrateNode(n: AppNode): AppNode {
         assetId,
         previewUrl: assetId ? null : typeof d.previewUrl === "string" ? d.previewUrl : null,
         outputPreviewUrl: assetId ? null : typeof d.outputPreviewUrl === "string" ? d.outputPreviewUrl : null,
+        outputs: stripStaleImageOutputUrls(d.outputs) as ImageNodeData["outputs"],
         assetUrlExpireTime: null,
       },
     } as AppNode);
@@ -1961,12 +1971,18 @@ function CanvasFlow() {
     }
     if ((operationType === "NODE_UPDATE_DATA" || operationType === "TASK_STATUS_PATCH") && typeof payload.nodeId === "string" && payload.patch) {
       const patch = stripRuntimeAssetUrlsFromPatch(payload.patch as Record<string, unknown>);
+      let nodeToRefresh: AppNode | null = null;
       setNodes((nds) => nds.map((node) => {
         if (node.id !== payload.nodeId) return node;
         const imageMergedPatch = mergeImageOutputPatch(node as AppNode, patch);
         const mergedPatch = mergeVideoOutputPatch(node as AppNode, imageMergedPatch);
-        return migrateNode({ ...node, data: { ...node.data, ...mergedPatch } } as AppNode);
+        const nextNode = migrateNode({ ...node, data: { ...node.data, ...mergedPatch } } as AppNode);
+        nodeToRefresh = nextNode;
+        return nextNode;
       }));
+      if (nodeToRefresh && collectNodeAssetIds(nodeToRefresh).length > 0) {
+        window.requestAnimationFrame(() => refreshAssetUrls([nodeToRefresh as AppNode]));
+      }
       return;
     }
     if (operationType === "ASSET_ATTACH" && typeof payload.nodeId === "string") {
