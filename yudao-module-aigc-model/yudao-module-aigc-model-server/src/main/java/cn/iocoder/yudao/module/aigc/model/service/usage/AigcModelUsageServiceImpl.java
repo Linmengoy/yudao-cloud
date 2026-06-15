@@ -13,7 +13,11 @@ import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @Validated
@@ -45,7 +49,26 @@ public class AigcModelUsageServiceImpl implements AigcModelUsageService {
 
     @Override
     public List<AigcModelUsageTypeStatisticsRespVO> getUsageTypeStatistics(AigcModelUsagePageReqVO reqVO) {
-        return usageLogMapper.selectTypeStatistics(reqVO);
+        int topN = reqVO.getTopN() == null ? 10 : Math.max(1, Math.min(reqVO.getTopN(), 50));
+        List<AigcModelUsageTypeStatisticsRespVO> statistics = usageLogMapper.selectTypeStatistics(reqVO);
+        Map<String, List<AigcModelUsageTypeStatisticsRespVO>> statisticsByDimension = statistics.stream()
+                .collect(Collectors.groupingBy(AigcModelUsageTypeStatisticsRespVO::getDimensionType));
+        List<AigcModelUsageTypeStatisticsRespVO> result = new ArrayList<>();
+        result.addAll(statisticsByDimension.getOrDefault("MODEL_TYPE", List.of()));
+        result.addAll(statisticsByDimension.getOrDefault("CAPABILITY", List.of()));
+        result.addAll(statisticsByDimension.getOrDefault("MODEL_TOP", List.of()).stream()
+                .sorted(Comparator.comparing(AigcModelUsageTypeStatisticsRespVO::getUsageCount,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(topN)
+                .toList());
+        result.addAll(statisticsByDimension.getOrDefault("FAILURE_RATE", List.of()).stream()
+                .sorted(Comparator.comparing(AigcModelUsageTypeStatisticsRespVO::getFailureRate,
+                                Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(AigcModelUsageTypeStatisticsRespVO::getUsageCount,
+                                Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(topN)
+                .toList());
+        return result;
     }
 
     private Long sumTokens(Long promptTokens, Long completionTokens, Long inputTokens, Long outputTokens) {

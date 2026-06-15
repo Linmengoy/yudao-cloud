@@ -5,9 +5,12 @@ export interface AigcModelUsageLogPageReqVO extends PageParam {
   taskId?: number
   userId?: number
   modelId?: number
+  modelType?: number
   providerId?: number
   capability?: string
   status?: number
+  createTime?: string[]
+  topN?: number
 }
 
 export const AigcModelUsageApi = {

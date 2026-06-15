@@ -75,6 +75,10 @@ import {
   useComposerWheelPan,
   type PromptMentionOption,
 } from "./PromptMentionInput";
+import {
+  appendReferenceSubmitParams,
+  getReferenceAssetId,
+} from "./video-reference-submit";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
 
@@ -86,6 +90,7 @@ const COMPOSER_WIDTH = 680;
 const SEEDANCE_MODEL_NAME = "Seedance 2.0";
 const WAN_MODEL_ID = "wan2.2-ti2v-5b";
 const FRAME_CAPTURE_EPSILON_SEC = 0.05;
+const VIDEO_PROMPT_MAX_LENGTH = 2000;
 
 function normalizeTemplateOption(option: unknown) {
   let value = String(option ?? "").trim();
@@ -131,14 +136,6 @@ function formatCost(value: number | null | undefined) {
   return Number.isInteger(value)
     ? String(value)
     : value.toFixed(2).replace(/\.?0+$/, "");
-}
-
-function getReferenceAssetId(data: ImageNodeData | SketchNodeData) {
-  if ("assetId" in data && typeof data.assetId === "number")
-    return data.assetId;
-  if ("outputAssetId" in data && typeof data.outputAssetId === "number")
-    return data.outputAssetId;
-  return null;
 }
 
 async function resolveReferenceImagesForSubmit(
@@ -483,6 +480,139 @@ function getModeOption(mode: VideoGenerationMode) {
   return VIDEO_MODE_OPTIONS.find((option) => option.mode === mode);
 }
 
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function hasSubmittableReference(data: ImageNodeData | SketchNodeData) {
+  if (getReferenceAssetId(data)) return true;
+  const urls = [data.previewUrl, data.dataUrl].filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0,
+  );
+  return urls.some((url) => isHttpUrl(url));
+}
+
+function validateTemplateParams(
+  params: Record<string, unknown>,
+  templates: AigcModelParamTemplate[],
+) {
+  for (const template of templates) {
+    const value = params[template.paramKey];
+    const text = value == null ? "" : Array.isArray(value) ? value.join(",") : String(value);
+    const name = template.paramName || template.paramKey;
+    if (template.requiredStatus && !text.trim()) return `请填写视频参数：${name}。`;
+    if (!text.trim()) continue;
+
+    if (template.paramType === "NUMBER") {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) return `${name} 必须是有效数字。`;
+      if (template.minValue != null && numericValue < template.minValue)
+        return `${name} 不能小于 ${template.minValue}。`;
+      if (template.maxValue != null && numericValue > template.maxValue)
+        return `${name} 不能大于 ${template.maxValue}。`;
+    }
+
+    if (
+      (template.paramType === "SELECT" || template.paramType === "MULTI_SELECT") &&
+      template.options?.length
+    ) {
+      const values = Array.isArray(value)
+        ? value.map(String)
+        : template.paramType === "MULTI_SELECT"
+          ? text.split(",").map((item) => item.trim()).filter(Boolean)
+          : [text];
+      const allowedValues = new Set(template.options.map(normalizeTemplateOption));
+      if (values.some((item) => !allowedValues.has(normalizeTemplateOption(item))))
+        return `${name} 包含模型不支持的选项。`;
+    }
+
+    if (template.paramType === "JSON") {
+      try {
+        JSON.parse(text);
+      } catch {
+        return `${name} 必须是有效 JSON。`;
+      }
+    }
+
+    if (template.regexPattern) {
+      try {
+        if (!new RegExp(template.regexPattern).test(text))
+          return `${name} 格式不符合模型要求。`;
+      } catch {
+        // Invalid backend regex definitions should not block the UI.
+      }
+    }
+  }
+  return null;
+}
+
+function validateVideoGenerationRequest({
+  prompt,
+  mode,
+  references,
+  params,
+  templates,
+}: {
+  prompt: string;
+  mode: VideoGenerationMode;
+  references: { data: ImageNodeData | SketchNodeData }[];
+  params: Record<string, unknown>;
+  templates: AigcModelParamTemplate[];
+}) {
+  const trimmedPrompt = prompt.trim();
+  if (!trimmedPrompt) return "请先填写视频提示词。";
+  if (trimmedPrompt.length > VIDEO_PROMPT_MAX_LENGTH)
+    return `视频提示词不能超过 ${VIDEO_PROMPT_MAX_LENGTH} 个字符。`;
+
+  const modeMessage = validateVideoGeneration(mode, references.length);
+  if (modeMessage) return modeMessage;
+
+  const invalidReferenceIndex = references.findIndex(
+    ({ data }) => !hasSubmittableReference(data),
+  );
+  if (invalidReferenceIndex >= 0) {
+    return `第 ${invalidReferenceIndex + 1} 张参考图没有可提交的资产 ID 或可访问 URL，请重新上传或选择有效参考图。`;
+  }
+
+  return validateTemplateParams(params, templates);
+}
+
+function formatVideoGenerationError(message: unknown) {
+  const rawMessage = typeof message === "string" ? message.trim() : "";
+  const lowerMessage = rawMessage.toLowerCase();
+  const isParameterRejected =
+    lowerMessage.includes("request parameters were rejected") ||
+    lowerMessage.includes("verify the prompt") ||
+    lowerMessage.includes("media url") ||
+    lowerMessage.includes("invalid parameter") ||
+    lowerMessage.includes("invalid params") ||
+    lowerMessage.includes("invalid request") ||
+    lowerMessage.includes("parameter rejected") ||
+    lowerMessage.includes("parameter error") ||
+    lowerMessage.includes("bad request");
+  const isReferenceUrlError =
+    lowerMessage.includes("image_url") ||
+    lowerMessage.includes("image url") ||
+    lowerMessage.includes("media_url") ||
+    lowerMessage.includes("media url") ||
+    lowerMessage.includes("media") ||
+    lowerMessage.includes("reference") ||
+    lowerMessage.includes("url");
+
+  if (isParameterRejected) {
+    return isReferenceUrlError
+      ? "生成参数未通过模型校验，请检查提示词、参考图是否可访问，以及视频模式、比例、分辨率和时长后重试。"
+      : "生成参数未通过模型校验，请检查提示词和视频参数后重试。";
+  }
+
+  return rawMessage || "视频生成失败，请稍后重试。";
+}
+
 function getOrderedReferences(
   mode: VideoGenerationMode,
   referenceImages: {
@@ -656,7 +786,12 @@ export function VideoNodeComponent({
     if (data.outputs?.length) return data.outputs;
     const videoUrl = data.videoUrl || data.previewUrl;
     if (!videoUrl) return [];
-    const assetId = getVideoAssetId(data);
+    const assetId =
+      typeof data.assetId === "number"
+        ? data.assetId
+        : typeof data.outputAssetId === "number"
+          ? data.outputAssetId
+          : null;
     return [
       {
         id: getVideoOutputId(assetId, videoUrl, 0),
@@ -791,12 +926,6 @@ export function VideoNodeComponent({
     [data, generationCapability, referenceImages],
   );
 
-  // 模式校验，感觉是脱裤子放屁多此一举
-  const generationValidationMessage = validateVideoGeneration(
-    generationCapability,
-    referenceImages.length,
-  );
-
   // 参考图提及选项
   const mentionOptions = useMemo<PromptMentionOption[]>(
     () =>
@@ -816,6 +945,23 @@ export function VideoNodeComponent({
   const effectiveParams = useMemo(
     () => filterAigcModelParams(rawParams, aigcModels.templates),
     [aigcModels.templates, rawParams],
+  );
+  const generationValidationMessage = useMemo(
+    () =>
+      validateVideoGenerationRequest({
+        prompt: data.prompt,
+        mode: generationCapability,
+        references: orderedReferenceImages,
+        params: effectiveParams,
+        templates: aigcModels.templates,
+      }),
+    [
+      aigcModels.templates,
+      data.prompt,
+      effectiveParams,
+      generationCapability,
+      orderedReferenceImages,
+    ],
   );
   const costLabel = aigcModels.priceLoading
     ? "…"
@@ -970,8 +1116,9 @@ export function VideoNodeComponent({
           {
             status: "failed",
             taskId: String(taskId),
-            errorMessage:
+            errorMessage: formatVideoGenerationError(
               error instanceof Error ? error.message : "视频任务同步失败",
+            ),
             upstreamStatus: "FAILED",
             generationCompletedAt: new Date().toISOString(),
             elapsedMs: Date.now() - new Date(startedAt).getTime(),
@@ -1548,22 +1695,15 @@ export function VideoNodeComponent({
     const resolvedReferenceImages = (
       await resolveReferenceImagesForSubmit(orderedReferenceImages)
     ).filter(Boolean);
-    const referenceAssetIds = orderedReferenceImages
-      .map((image) => getReferenceAssetId(image.data))
-      .filter((assetId): assetId is number => typeof assetId === "number");
 
-    const inputParamsBase: Record<string, unknown> = {
-      ...effectiveParams,
-      providerModel: activeProviderModel,
-    };
-    if (referenceAssetIds.length > 0)
-      inputParamsBase.referenceAssetIds = referenceAssetIds;
-    if (resolvedReferenceImages.length > 0)
-      inputParamsBase.referenceImages = resolvedReferenceImages;
-    if (orderedReferenceImages.length > 0)
-      inputParamsBase.referenceImageIds = orderedReferenceImages.map(
-        (img) => img.nodeId,
-      );
+    const inputParamsBase = appendReferenceSubmitParams(
+      {
+        ...effectiveParams,
+        providerModel: activeProviderModel,
+      },
+      orderedReferenceImages,
+      resolvedReferenceImages,
+    );
 
     const projectId = new URLSearchParams(window.location.search).get(
       "projectId",
@@ -1597,8 +1737,9 @@ export function VideoNodeComponent({
         updateData({
           status: "failed",
           taskId: null,
-          errorMessage:
+          errorMessage: formatVideoGenerationError(
             error instanceof Error ? error.message : "视频任务提交失败",
+          ),
           upstreamStatus: "FAILED",
           generationCompletedAt: new Date().toISOString(),
           elapsedMs: Date.now() - new Date(startedAt).getTime(),
@@ -1668,7 +1809,7 @@ export function VideoNodeComponent({
       updateData({
         status: "failed",
         taskId: String(submit.taskId),
-        errorMessage: result.failMessage ?? "视频生成失败，请稍后重试。",
+        errorMessage: formatVideoGenerationError(result.failMessage),
         taskStatus: result.status,
         upstreamStatus: result.status,
         generationCompletedAt: completedAt,
@@ -1677,8 +1818,9 @@ export function VideoNodeComponent({
     } catch (error) {
       updateData({
         status: "failed",
-        errorMessage:
+        errorMessage: formatVideoGenerationError(
           error instanceof Error ? error.message : "视频任务提交失败",
+        ),
         upstreamStatus: "FAILED",
         generationCompletedAt: new Date().toISOString(),
         elapsedMs: Date.now() - new Date(startedAt).getTime(),

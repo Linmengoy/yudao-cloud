@@ -5,12 +5,24 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 
-@Schema(description = "管理后台 - AIGC 模型类型用量统计 Response VO")
+@Schema(description = "管理后台 - AIGC 模型用量统计 Response VO")
 @Data
 public class AigcModelUsageTypeStatisticsRespVO {
 
+    @Schema(description = "统计维度", example = "MODEL_TYPE")
+    private String dimensionType;
+
+    @Schema(description = "模型编号", example = "1")
+    private Long modelId;
+
+    @Schema(description = "模型名称", example = "Stable Diffusion")
+    private String modelName;
+
     @Schema(description = "模型类型", example = "2")
     private Integer modelType;
+
+    @Schema(description = "模型能力", example = "TEXT_TO_IMAGE")
+    private String capability;
 
     @Schema(description = "调用次数", example = "1024")
     private Long usageCount;
@@ -20,6 +32,9 @@ public class AigcModelUsageTypeStatisticsRespVO {
 
     @Schema(description = "失败次数", example = "24")
     private Long failedCount;
+
+    @Schema(description = "失败率", example = "2.34")
+    private BigDecimal failureRate;
 
     @Schema(description = "Token 总数", example = "4096")
     private Long totalTokens;

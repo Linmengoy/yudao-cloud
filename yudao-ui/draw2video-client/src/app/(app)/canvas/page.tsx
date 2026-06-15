@@ -854,7 +854,7 @@ function CanvasUtilityBar({ canShare, onShare }: CanvasUtilityBarProps) {
             <div className="py-1">
               <CanvasProfileMenuLink href="/profile" icon={<Settings className="size-4" />} label="账户管理" onClick={() => setProfileOpen(false)} />
               <CanvasProfileMenuLink href="/wallet" icon={<Wallet className="size-4" />} label="钱包 / 用量" onClick={() => setProfileOpen(false)} />
-              <CanvasProfileMenuLink href="#" icon={<BookOpen className="size-4" />} label="使用指南" onClick={() => setProfileOpen(false)} />
+              <CanvasProfileMenuLink href="/guide/" icon={<BookOpen className="size-4" />} label="使用指南" onClick={() => setProfileOpen(false)} />
               <CanvasProfileMenuLink href="#" icon={<MessageCircle className="size-4" />} label="联系我们" onClick={() => setProfileOpen(false)} />
               <CanvasProfileMenuLink href="#" icon={<Globe className="size-4" />} label="简体中文" onClick={() => setProfileOpen(false)} />
             </div>
@@ -1115,6 +1115,21 @@ function getNodeAssetId(node: AppNode) {
   return data.assetId ?? data.outputAssetId ?? null;
 }
 
+function collectNodeAssetIds(node: AppNode) {
+  if (node.type !== "image" && node.type !== "video") return [];
+  const data = node.data as ImageNodeData | VideoNodeData;
+  const ids = new Set<number>();
+  [data.assetId, data.outputAssetId].forEach((assetId) => {
+    if (typeof assetId === "number") ids.add(assetId);
+  });
+  if (Array.isArray(data.outputs)) {
+    data.outputs.forEach((output) => {
+      if (typeof output.assetId === "number") ids.add(output.assetId);
+    });
+  }
+  return [...ids];
+}
+
 function getNodeAssetAccessRequest(node: AppNode, assetId: number) {
   if (node.type === "video") {
     return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
@@ -1197,13 +1212,20 @@ function mergeVideoOutputPatch(node: AppNode, patch: Record<string, unknown>) {
 
 function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | null, assetId = getNodeAssetId(node)): AppNode {
   if (node.type === "video") {
+    const outputs = Array.isArray(node.data.outputs)
+      ? node.data.outputs.map((output) => (
+          output.assetId === assetId
+            ? { ...output, previewUrl: url, videoUrl: url }
+            : output
+        ))
+      : node.data.outputs;
+    const shouldUpdatePrimary = assetId === getNodeAssetId(node);
     return {
       ...node,
       data: {
         ...node.data,
-        assetId,
-        previewUrl: url,
-        videoUrl: url,
+        ...(shouldUpdatePrimary ? { assetId, previewUrl: url, videoUrl: url } : {}),
+        outputs,
         assetUrlExpireTime: expireTime ?? null,
       },
     } as AppNode;
@@ -1216,13 +1238,12 @@ function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | nul
             : output
         ))
       : node.data.outputs;
+    const shouldUpdatePrimary = assetId === getNodeAssetId(node);
     return {
       ...node,
       data: {
         ...node.data,
-        assetId,
-        previewUrl: url,
-        outputPreviewUrl: url,
+        ...(shouldUpdatePrimary ? { assetId, previewUrl: url, outputPreviewUrl: url } : {}),
         outputs,
         assetUrlExpireTime: expireTime ?? null,
       },
@@ -1779,14 +1800,17 @@ function CanvasFlow() {
   }, []);
 
   const refreshAssetUrls = useCallback(async (nodesToRefresh: AppNode[]) => {
-    const mediaNodes = nodesToRefresh
-      .map((node) => ({ nodeId: node.id, node, assetId: getNodeAssetId(node) }))
-      .filter((item): item is { nodeId: string; node: AppNode; assetId: number } => typeof item.assetId === "number");
-    if (mediaNodes.length === 0) return;
-    const assetIdByNodeId = new Map(mediaNodes.map((item) => [item.nodeId, item.assetId]));
+    const mediaAssetRefs = nodesToRefresh.flatMap((node) => (
+      collectNodeAssetIds(node).map((assetId) => ({ nodeId: node.id, node, assetId }))
+    ));
+    if (mediaAssetRefs.length === 0) return;
+    const assetIdsByNodeId = new Map<string, number[]>();
+    mediaAssetRefs.forEach(({ nodeId, assetId }) => {
+      assetIdsByNodeId.set(nodeId, [...(assetIdsByNodeId.get(nodeId) ?? []), assetId]);
+    });
 
     const requestsByAssetId = new Map<number, ReturnType<typeof getNodeAssetAccessRequest>>();
-    mediaNodes.forEach(({ node, assetId }) => {
+    mediaAssetRefs.forEach(({ node, assetId }) => {
       if (!requestsByAssetId.has(assetId)) {
         requestsByAssetId.set(assetId, getNodeAssetAccessRequest(node, assetId));
       }
@@ -1804,9 +1828,11 @@ function CanvasFlow() {
 
     if (entriesByAssetId.size > 0) {
       setNodes((nds) => nds.map((node) => {
-        const assetId = assetIdByNodeId.get(node.id) ?? getNodeAssetId(node);
-        const entry = typeof assetId === "number" ? entriesByAssetId.get(assetId) : undefined;
-        return entry ? withFreshAssetUrl(node, entry.url, entry.expireTime, assetId) : node;
+        const assetIds = assetIdsByNodeId.get(node.id) ?? collectNodeAssetIds(node);
+        return assetIds.reduce((nextNode, assetId) => {
+          const entry = entriesByAssetId.get(assetId);
+          return entry ? withFreshAssetUrl(nextNode, entry.url, entry.expireTime, assetId) : nextNode;
+        }, node);
       }));
     }
 
@@ -1855,9 +1881,11 @@ function CanvasFlow() {
     if (entriesByAssetId.size === 0) return;
 
     setNodes((nds) => nds.map((node) => {
-      const assetId = assetIdByNodeId.get(node.id) ?? getNodeAssetId(node);
-      const entry = typeof assetId === "number" ? entriesByAssetId.get(assetId) : undefined;
-      return entry ? withFreshAssetUrl(node, entry.url, entry.expireTime, assetId) : node;
+      const assetIds = assetIdsByNodeId.get(node.id) ?? collectNodeAssetIds(node);
+      return assetIds.reduce((nextNode, assetId) => {
+        const entry = entriesByAssetId.get(assetId);
+        return entry ? withFreshAssetUrl(nextNode, entry.url, entry.expireTime, assetId) : nextNode;
+      }, node);
     }));
   }, [serverProjectId, setNodes]);
 
@@ -1891,7 +1919,7 @@ function CanvasFlow() {
       const visibleNodes = filterNodesInExpandedCanvasViewport(getNodes() as AppNode[], screenToFlowPosition);
       const expiringNodes = visibleNodes.filter((node) => {
         if (node.type !== "image" && node.type !== "video") return false;
-        if (!getNodeAssetId(node)) return false;
+        if (collectNodeAssetIds(node).length === 0) return false;
         const data = node.data as ImageNodeData | VideoNodeData;
         const expireTime = data.assetUrlExpireTime;
         const displayUrl = node.type === "video" ? (data as VideoNodeData).videoUrl || data.previewUrl : data.previewUrl;

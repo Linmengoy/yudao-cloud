@@ -4,6 +4,11 @@ import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.LocalDateTime;
+
+import static cn.iocoder.yudao.framework.common.util.date.DateUtils.FORMAT_YEAR_MONTH_DAY_HOUR_MINUTE_SECOND;
 
 @Schema(description = "管理后台 - AIGC 模型用量日志分页 Request VO")
 @Data
@@ -19,6 +24,9 @@ public class AigcModelUsagePageReqVO extends PageParam {
     @Schema(description = "模型编号", example = "1")
     private Long modelId;
 
+    @Schema(description = "模型类型", example = "2")
+    private Integer modelType;
+
     @Schema(description = "渠道商编号", example = "1")
     private Long providerId;
 
@@ -27,5 +35,12 @@ public class AigcModelUsagePageReqVO extends PageParam {
 
     @Schema(description = "调用状态", example = "0")
     private Integer status;
+
+    @Schema(description = "创建时间")
+    @DateTimeFormat(pattern = FORMAT_YEAR_MONTH_DAY_HOUR_MINUTE_SECOND)
+    private LocalDateTime[] createTime;
+
+    @Schema(description = "排行数量", example = "10")
+    private Integer topN = 10;
 
 }

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomString;
@@ -39,8 +40,9 @@ public class AigcModelUsageServiceImplTest extends BaseDbUnitTest {
         List<AigcModelUsageTypeStatisticsRespVO> list = usageService.getUsageTypeStatistics(
                 new AigcModelUsagePageReqVO());
 
-        assertEquals(2, list.size());
-        AigcModelUsageTypeStatisticsRespVO image = list.get(0);
+        AigcModelUsageTypeStatisticsRespVO image = list.stream()
+                .filter(item -> "MODEL_TYPE".equals(item.getDimensionType()) && Integer.valueOf(2).equals(item.getModelType()))
+                .findFirst().orElseThrow();
         assertEquals(2, image.getModelType());
         assertEquals(2L, image.getUsageCount());
         assertEquals(1L, image.getSuccessCount());
@@ -60,10 +62,41 @@ public class AigcModelUsageServiceImplTest extends BaseDbUnitTest {
         List<AigcModelUsageTypeStatisticsRespVO> list = usageService.getUsageTypeStatistics(
                 new AigcModelUsagePageReqVO().setStatus(0));
 
-        assertEquals(1, list.size());
-        assertEquals(1L, list.get(0).getUsageCount());
-        assertEquals(1L, list.get(0).getSuccessCount());
-        assertEquals(0L, list.get(0).getFailedCount());
+        AigcModelUsageTypeStatisticsRespVO image = list.stream()
+                .filter(item -> "MODEL_TYPE".equals(item.getDimensionType()))
+                .findFirst().orElseThrow();
+        assertEquals(1L, image.getUsageCount());
+        assertEquals(1L, image.getSuccessCount());
+        assertEquals(0L, image.getFailedCount());
+    }
+
+    @Test
+    public void testGetUsageTypeStatistics_filterByCreateTimeAndModelType() {
+        AigcModelDO imageModel = createModel(2);
+        AigcModelDO videoModel = createModel(3);
+        AigcModelUsageLogDO includedLog = createUsageLog(imageModel.getId(), 0, 100L, "2.000000", "1.000000", 1000L);
+        includedLog.setCreateTime(LocalDateTime.of(2026, 6, 10, 12, 0));
+        usageLogMapper.insert(includedLog);
+        AigcModelUsageLogDO outOfRangeLog = createUsageLog(imageModel.getId(), 0, 50L, "1.000000", "0.500000", 1000L);
+        outOfRangeLog.setCreateTime(LocalDateTime.of(2026, 6, 1, 12, 0));
+        usageLogMapper.insert(outOfRangeLog);
+        AigcModelUsageLogDO otherTypeLog = createUsageLog(videoModel.getId(), 0, 200L, "6.000000", "4.000000", 3000L);
+        otherTypeLog.setCreateTime(LocalDateTime.of(2026, 6, 10, 12, 0));
+        usageLogMapper.insert(otherTypeLog);
+
+        List<AigcModelUsageTypeStatisticsRespVO> list = usageService.getUsageTypeStatistics(
+                new AigcModelUsagePageReqVO()
+                        .setModelType(2)
+                        .setCreateTime(new LocalDateTime[]{
+                                LocalDateTime.of(2026, 6, 9, 0, 0),
+                                LocalDateTime.of(2026, 6, 11, 0, 0)
+                        }));
+
+        AigcModelUsageTypeStatisticsRespVO image = list.stream()
+                .filter(item -> "MODEL_TYPE".equals(item.getDimensionType()))
+                .findFirst().orElseThrow();
+        assertEquals(2, image.getModelType());
+        assertEquals(1L, image.getUsageCount());
     }
 
     private AigcModelDO createModel(Integer type) {
