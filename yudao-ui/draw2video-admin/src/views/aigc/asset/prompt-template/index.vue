@@ -85,7 +85,16 @@
 </template>
 
 <script setup lang="ts">
-import type { FormInstance, FormRules, UploadFile, UploadFiles, UploadInstance, UploadUserFile } from 'element-plus'
+import type {
+  FormInstance,
+  FormRules,
+  UploadFile,
+  UploadFiles,
+  UploadInstance,
+  UploadRawFile,
+  UploadUserFile
+} from 'element-plus'
+import { genFileId } from 'element-plus'
 import { AigcPromptTemplateApi, type AigcPromptTemplateImportRespVO } from '@/api/aigc/asset/prompt-template'
 
 defineOptions({ name: 'AigcPromptTemplate' })
@@ -131,7 +140,8 @@ const handleCasesRemove = () => {
 
 const handleCasesExceed = (files: File[]) => {
   casesUploadRef.value?.clearFiles()
-  const file = files[0]
+  const file = files[0] as UploadRawFile
+  file.uid = genFileId()
   formData.casesJsonFile = file
   casesJsonFileList.value = [{ name: file.name, raw: file }]
   formRef.value?.validateField('casesJsonFile')
