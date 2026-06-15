@@ -18,5 +18,7 @@ public interface ErrorCodeConstants {
     ErrorCode ASSET_TASK_STATUS_INVALID = new ErrorCode(1_043_000_011, "来源任务状态不允许创建资产");
     ErrorCode ASSET_RELATION_EXISTS = new ErrorCode(1_043_001_000, "资产关系已存在");
     ErrorCode ASSET_VERSION_NOT_EXISTS = new ErrorCode(1_043_002_000, "资产版本不存在");
+    ErrorCode PROMPT_TEMPLATE_NOT_EXISTS = new ErrorCode(1_043_003_000, "提示词模板不存在");
+    ErrorCode PROMPT_TEMPLATE_STATUS_INVALID = new ErrorCode(1_043_003_001, "提示词模板状态不允许当前操作");
 
 }
