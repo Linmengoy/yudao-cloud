@@ -172,11 +172,15 @@ class CommunityReleaseGateTest(unittest.TestCase):
     def test_release_gate_document_archives_ci_version_db_and_smoke_evidence(self):
         gates = read("script/docker/community-release-gates.md")
 
-        for issue in ["#144", "#145", "#146", "#147", "#148", "#151", "#152", "#153", "#154"]:
+        for issue in ["#144", "#145", "#146", "#147", "#148", "#149", "#150", "#151", "#152", "#153", "#154"]:
             self.assertIn(issue, gates)
 
         for required in [
+            "script/docker/community-release-evidence-index.md",
             "review result, test result, release decision",
+            "reviewer:",
+            "contract test command:",
+            "Do not mark #150 as `test:done`",
             "workflow run url:",
             "release evidence file:",
             "docker compose version:",
@@ -210,6 +214,45 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("curl -fsS http://127.0.0.1:48097/actuator/health", workflow)
         self.assertIn("curl -fsS http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1", workflow)
         self.assertIn("script/docker/community-release-gates.md", workflow)
+        self.assertIn("script/docker/community-release-evidence-index.md", workflow)
+
+    def test_prod_workflow_uses_sha_tags_and_writes_release_evidence(self):
+        workflow = read(".gitea/workflows/yudao-micro-cicd-prod.yml")
+
+        self.assertIn("previous_stable_image_tag", workflow)
+        self.assertIn("RELEASE_EVIDENCE_FILE=tmp/release-evidence/prod-${service}-${image_tag}.md", workflow)
+        self.assertIn("Write release evidence summary", workflow)
+        self.assertIn("immutable image tag: ${MICRO_IMAGE_TAG}", workflow)
+        self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
+        self.assertIn("MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG}", workflow)
+        self.assertIn("FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}", workflow)
+        self.assertIn("export MICRO_IMAGE_TAG='${MICRO_IMAGE_TAG}' FRONTEND_IMAGE_TAG='${FRONTEND_IMAGE_TAG}'", workflow)
+        self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-stable-sha>", workflow)
+        self.assertIn("Append release verification evidence", workflow)
+        self.assertIn("deployment verification", workflow)
+        self.assertIn("docker compose -f docker-compose-micro.yml ps", workflow)
+        self.assertIn("curl -fsS http://127.0.0.1:48097/actuator/health", workflow)
+        self.assertIn("script/docker/community-release-evidence-index.md", workflow)
+
+    def test_release_evidence_index_covers_review_and_test_gates(self):
+        index = read("script/docker/community-release-evidence-index.md")
+
+        for issue in ["#145", "#146", "#147", "#149", "#150"]:
+            self.assertIn(issue, index)
+
+        for required in [
+            "aigc-community review evidence",
+            "reviewed files:",
+            "blocking findings:",
+            "release decision: review:ready | review:done | blocked",
+            "aigc-community test evidence",
+            "contract test command: python -m pytest tests/test_community_release_gates.py tests/test_review_ready_contracts.py",
+            "skipped tests: none | <reason>",
+            "Do not use `test:done`",
+            "task:failed",
+            "task:ready + task:done",
+        ]:
+            self.assertIn(required, index)
 
 
 if __name__ == "__main__":

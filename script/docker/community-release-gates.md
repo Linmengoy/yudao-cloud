@@ -1,7 +1,8 @@
 # aigc-community release gates
 
-This document is the release evidence template for issues #144, #145, #146, #147, #148, #151, #152, #153, and #154.
+This document is the release evidence template for issues #144, #145, #146, #147, #148, #149, #150, #151, #152, #153, and #154.
 Fill it during the release window and paste the completed record back to the release issue.
+Use `script/docker/community-release-evidence-index.md` for the issue-specific review and test evidence templates.
 
 ## Release targets
 
@@ -64,6 +65,39 @@ aigc-community CI build evidence
 - failure logs path or "not required":
 - release decision:
 ```
+
+## Review and test evidence for #149 and #150
+
+Use `script/docker/community-release-evidence-index.md` as the canonical write-back template for these two gates.
+
+Required #149 review fields:
+
+```text
+reviewer:
+reviewed at:
+commit sha:
+reviewed files:
+review scope:
+blocking findings:
+release decision:
+```
+
+Required #150 test fields:
+
+```text
+executor:
+executed at:
+commit sha:
+build command:
+contract test command:
+smoke test command:
+build result:
+test result:
+skipped tests:
+release decision:
+```
+
+Do not mark #150 as `test:done` when the only successful command is a Maven build with `-DskipTests`.
 
 ## Immutable version evidence for #146 and #153
 
