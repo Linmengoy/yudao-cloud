@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.asset.controller.app;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateModelRespVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplatePageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateRespVO;
 import cn.iocoder.yudao.module.aigc.asset.service.template.AigcPromptTemplateService;
@@ -49,6 +50,12 @@ public class AigcPromptTemplateAppController {
     @Operation(summary = "获取提示词模板分类")
     public CommonResult<List<String>> getTemplateCategories() {
         return success(promptTemplateService.getCategoryList());
+    }
+
+    @GetMapping("/models")
+    @Operation(summary = "获取提示词模板模型")
+    public CommonResult<List<AigcPromptTemplateModelRespVO>> getTemplateModels() {
+        return success(promptTemplateService.getModelList());
     }
 
     @PostMapping("/copy")

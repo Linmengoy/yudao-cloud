@@ -32,11 +32,17 @@ export interface PromptTemplate {
   createTime?: string;
 }
 
+export interface PromptTemplateModel {
+  modelCode: string;
+  modelName?: string;
+}
+
 export interface PromptTemplatePageParams {
   pageNo: number;
   pageSize: number;
   keyword?: string;
   category?: string;
+  modelCode?: string;
   style?: string;
   scene?: string;
   featured?: boolean;

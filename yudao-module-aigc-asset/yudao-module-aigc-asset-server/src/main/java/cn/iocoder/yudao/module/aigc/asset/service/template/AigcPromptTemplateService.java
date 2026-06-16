@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.aigc.asset.service.template;
 
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateModelRespVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplatePageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateRespVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcPromptTemplateDO;
@@ -16,6 +17,8 @@ public interface AigcPromptTemplateService {
     PageResult<AigcPromptTemplateRespVO> getTemplatePage(AigcPromptTemplatePageReqVO reqVO);
 
     List<String> getCategoryList();
+
+    List<AigcPromptTemplateModelRespVO> getModelList();
 
     void increaseViewCount(Long id);
 

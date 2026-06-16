@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.asset.service.template;
 
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateModelRespVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplatePageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateRespVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcPromptTemplateDO;
@@ -64,6 +65,11 @@ public class AigcPromptTemplateServiceImpl implements AigcPromptTemplateService 
     @Override
     public List<String> getCategoryList() {
         return promptTemplateMapper.selectCategoryList();
+    }
+
+    @Override
+    public List<AigcPromptTemplateModelRespVO> getModelList() {
+        return promptTemplateMapper.selectModelList();
     }
 
     @Override

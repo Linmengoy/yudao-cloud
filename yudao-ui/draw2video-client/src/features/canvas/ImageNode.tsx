@@ -45,6 +45,7 @@ import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getMyAsset } from "@/features/assets/asset-api";
 import { getAssetOriginalExpireTime, getAssetOriginalUrl } from "@/features/assets/asset-dictionaries";
+import { getPromptTemplate } from "@/features/templates/template-api";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
@@ -665,6 +666,38 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   );
 
   useEffect(() => {
+    if (!data.sourceTemplateId) return;
+    if (data.previewUrl || data.outputPreviewUrl || outputs.some((output) => output.previewUrl)) return;
+    let cancelled = false;
+    getPromptTemplate(data.sourceTemplateId)
+      .then((template) => {
+        if (cancelled || !template.imageUrl) return;
+        const output: ImageNodeOutput = {
+          id: `template-${template.id}`,
+          previewUrl: template.imageUrl,
+          width: template.width,
+          height: template.height,
+          fileName: template.title || data.fileName,
+          mimeType: template.mimeType || data.mimeType,
+        };
+        updateRuntimeData({
+          previewUrl: template.imageUrl,
+          outputPreviewUrl: template.imageUrl,
+          width: template.width ?? data.width,
+          height: template.height ?? data.height,
+          mimeType: template.mimeType || data.mimeType,
+          outputs: [output],
+          primaryOutputId: output.id,
+          assetUrlExpireTime: template.imageUrlExpireTime ?? null,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [data.fileName, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.sourceTemplateId, data.width, outputs, updateRuntimeData]);
+
+  useEffect(() => {
     if (!needsOutputUrlRefresh(outputs, data.assetUrlExpireTime)) return;
     let cancelled = false;
     hydrateImageOutputs(outputs, {
@@ -854,15 +887,24 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   useEffect(() => {
     if (aigcModels.loading || aigcModels.models.length === 0) return;
     if (selectedAigcModelId) return;
-    const nextModel = aigcModels.selectedModel ?? aigcModels.models[0];
+    const templateModelCode = typeof data.modelCode === "string" ? data.modelCode : "";
+    const matchedTemplateModel = templateModelCode
+      ? aigcModels.models.find((model) => (
+          model.code === templateModelCode ||
+          model.model === templateModelCode ||
+          model.providerModel === templateModelCode
+        ))
+      : null;
+    const nextModel = matchedTemplateModel ?? aigcModels.selectedModel ?? aigcModels.models[0];
     if (!nextModel) return;
     updateData({
       modelId: String(nextModel.id),
+      modelCode: nextModel.code,
       providerModel: nextModel.providerModel ?? nextModel.model,
       modelName: nextModel.name,
       aigcModelId: nextModel.id,
     }, { flush: true });
-  }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, selectedAigcModelId, updateData]);
+  }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, data.modelCode, selectedAigcModelId, updateData]);
 
   const handleNodeClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
@@ -932,6 +974,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       aigcModels.setSelectedModelId(nextModelId);
       updateData({
         modelId: String(nextModelId),
+        modelCode: model.code,
         providerModel: model.providerModel ?? model.model,
         modelName: model.name,
         aigcModelId: model.id,
