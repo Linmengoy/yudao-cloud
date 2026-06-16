@@ -37,6 +37,18 @@ export function isPayClosed(status?: number | string | null): boolean {
 }
 
 export function getPayStatusName(status?: number | string | null): string {
+  if (typeof status === "string") {
+    const text = status.toUpperCase();
+    const names: Record<string, string> = {
+      WAIT_PAY: "待支付",
+      WAITING: "待支付",
+      SUCCESS: "支付成功",
+      PAY_SUCCESS: "支付成功",
+      REFUND: "已退款",
+      CLOSED: "支付关闭",
+    };
+    if (names[text]) return names[text];
+  }
   switch (normalizePayStatus(status)) {
     case PayOrderStatusEnum.WAITING:
       return "待支付";
