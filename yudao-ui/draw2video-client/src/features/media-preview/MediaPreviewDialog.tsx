@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
@@ -23,9 +23,10 @@ type MediaPreviewDialogProps = {
   onClose: () => void;
   onNavigate?: (index: number) => void;
   onSetPrimary?: () => void;
+  footerActions?: ReactNode;
 };
 
-export function MediaPreviewDialog({ item, items, currentIndex = 0, open, onClose, onNavigate, onSetPrimary }: MediaPreviewDialogProps) {
+export function MediaPreviewDialog({ item, items, currentIndex = 0, open, onClose, onNavigate, onSetPrimary, footerActions }: MediaPreviewDialogProps) {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const information = useMemo(() => compactInfo(item?.information ?? []), [item?.information]);
   const editableAsset = item?.editableAsset;
@@ -255,6 +256,7 @@ export function MediaPreviewDialog({ item, items, currentIndex = 0, open, onClos
               </div>
 
               <div className="border-t border-border-warm p-5 dark:border-white/12">
+                {footerActions && <div className="mb-2">{footerActions}</div>}
                 <div className="flex gap-2">
                   <button
                     type="button"

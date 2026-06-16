@@ -17,6 +17,7 @@ import {
   Globe,
   LogOut,
   ChevronRight,
+  LayoutTemplate,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/auth-store";
@@ -26,7 +27,8 @@ import { NotificationBell } from "@/features/notifications/components/notificati
 const sidebarLinks = [
   { href: "/app", icon: Home, label: "首页" },
   { href: "/projects", icon: PlusCircle, label: "项目" },
-  { href: "/assets", icon: Folder, label: "素材库" },
+  { href: "/assets", icon: Folder, label: "资产" },
+  { href: "/templates", icon: LayoutTemplate, label: "模板库" },
   { href: "/tasks", icon: ListChecks, label: "任务" },
 ];
 

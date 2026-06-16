@@ -59,6 +59,9 @@ import {
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { CanvasProjectHeader, CanvasToolDock, CanvasUtilityBar, CanvasViewToolbar, MultiSelectionToolbar, type CanvasSyncState, type CreateNodeKind, type SelectionRectSnapshot } from "@/features/canvas/CanvasChrome";
 import { useCanvasMultiSelection, type MultiSelectionAction } from "@/features/canvas/use-canvas-multi-selection";
+import { getPromptTemplate, markPromptTemplateUsed } from "@/features/templates/template-api";
+import { CanvasTemplateLibraryDialog } from "@/features/templates/CanvasTemplateLibraryDialog";
+import type { PromptTemplate } from "@/features/templates/template-types";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
 import { ImagePlus, PenLine, Type, Video } from "lucide-react";
@@ -1089,6 +1092,7 @@ function CanvasFlow() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const routeProjectId = searchParams.get("projectId");
+  const routeTemplateId = searchParams.get("templateId");
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const serverProjectId = isServerProjectId(activeProjectId) ? activeProjectId : null;
   const [nodes, setNodes] = useNodesState<AppNode>([]);
@@ -1105,6 +1109,7 @@ function CanvasFlow() {
   const [lastAppliedVersion, setLastAppliedVersion] = useState(0);
   const [latestKnownVersion, setLatestKnownVersion] = useState(0);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
+  const [templateLibraryOpen, setTemplateLibraryOpen] = useState(false);
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
@@ -2329,6 +2334,68 @@ function CanvasFlow() {
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
 
+  const addPromptTemplateNode = useCallback((template: Pick<PromptTemplate, "id" | "title" | "prompt" | "imageUrl" | "width" | "height" | "mimeType" | "modelCode" | "modelName">) => {
+    if (isReadOnly) return null;
+    const center = screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const id = `template_${template.id}_${Date.now()}`;
+    const outputPreviewUrl = template.imageUrl || null;
+    const newNode: AppNode = withCardNodeInteraction({
+      id,
+      type: "image",
+      position: findOpenNodePosition(
+        { x: center.x - 190, y: center.y - 150 },
+        { width: 360, height: 340 },
+        getNodes() as AppNode[]
+      ),
+      data: {
+        imageId: id,
+        projectId: serverProjectId,
+        fileName: template.title || "Template",
+        dataUrl: "",
+        mimeType: template.mimeType || "image/png",
+        previewUrl: outputPreviewUrl,
+        outputPreviewUrl,
+        width: template.width,
+        height: template.height,
+        createdAt: new Date().toISOString(),
+        kind: "draft",
+        prompt: template.prompt,
+        sourceTemplateId: template.id,
+        modelId: template.modelCode || DEFAULT_PROMPT_DATA.modelId,
+        modelCode: template.modelCode,
+        modelName: template.modelName,
+        params: { ...DEFAULT_PROMPT_DATA.params },
+        status: "idle",
+        taskId: null,
+        errorMessage: null,
+        elapsedMs: null,
+        outputs: outputPreviewUrl ? [{
+          id: `template-${template.id}`,
+          previewUrl: outputPreviewUrl,
+          width: template.width,
+          height: template.height,
+          fileName: template.title || "Template",
+          mimeType: template.mimeType || "image/png",
+        }] : [],
+        primaryOutputId: outputPreviewUrl ? `template-${template.id}` : null,
+      },
+      selected: true,
+    });
+    setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
+    return newNode;
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
+
+  const handleSelectTemplateFromLibrary = useCallback((template: PromptTemplate) => {
+    const node = addPromptTemplateNode(template);
+    if (node) {
+      markPromptTemplateUsed(template.id).catch(() => undefined);
+    }
+  }, [addPromptTemplateNode]);
+
   const addSketchNode = useCallback((position?: { x: number; y: number }) => {
     if (isReadOnly) return null;
     const center = position ?? screenToFlowPosition({
@@ -2447,6 +2514,46 @@ function CanvasFlow() {
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+
+  useEffect(() => {
+    if (!routeTemplateId || !isHydrated || isReadOnly) return;
+    const templateId = Number(routeTemplateId);
+    if (!Number.isFinite(templateId) || templateId <= 0) return;
+    const exists = (getNodes() as AppNode[]).some((node) => (
+      node.type === "image" && Number((node.data as Record<string, unknown>).sourceTemplateId) === templateId
+    ));
+    const cleanUrl = routeProjectId
+      ? `/canvas?projectId=${encodeURIComponent(routeProjectId)}`
+      : "/canvas";
+    if (exists) {
+      router.replace(cleanUrl);
+      return;
+    }
+    let cancelled = false;
+    getPromptTemplate(templateId)
+      .then(async (template) => {
+        if (cancelled) return;
+        addPromptTemplateNode({
+          id: template.id,
+          title: template.title,
+          prompt: template.prompt,
+          imageUrl: template.imageUrl,
+          width: template.width,
+          height: template.height,
+          mimeType: template.mimeType,
+          modelCode: template.modelCode,
+          modelName: template.modelName,
+        });
+        await markPromptTemplateUsed(template.id).catch(() => undefined);
+        router.replace(cleanUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setSaveError("模板加载失败，请返回模板库重试");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [addPromptTemplateNode, getNodes, isHydrated, isReadOnly, routeProjectId, routeTemplateId, router]);
 
   const mergeSelectedNodesIntoGroup = useCallback((groupNode: AppNode) => {
     if (isReadOnly || groupNode.type !== "canvasGroup") return false;
@@ -3169,6 +3276,13 @@ function CanvasFlow() {
       <CanvasToolDock
         readOnly={isReadOnly || Boolean(referencePickerPromptId)}
         onAddNode={addNodeFromDock}
+        onOpenTemplateLibrary={() => setTemplateLibraryOpen(true)}
+      />
+
+      <CanvasTemplateLibraryDialog
+        open={templateLibraryOpen}
+        onClose={() => setTemplateLibraryOpen(false)}
+        onSelect={handleSelectTemplateFromLibrary}
       />
 
       <ReactFlow

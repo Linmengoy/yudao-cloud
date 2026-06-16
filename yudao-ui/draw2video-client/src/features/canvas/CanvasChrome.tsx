@@ -357,9 +357,10 @@ function CanvasProfileMenuLink({
 type CanvasToolDockProps = {
   readOnly: boolean;
   onAddNode: (kind: CreateNodeKind) => void;
+  onOpenTemplateLibrary: () => void;
 };
 
-export function CanvasToolDock({ readOnly, onAddNode }: CanvasToolDockProps) {
+export function CanvasToolDock({ readOnly, onAddNode, onOpenTemplateLibrary }: CanvasToolDockProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   if (readOnly) return null;
@@ -392,7 +393,7 @@ export function CanvasToolDock({ readOnly, onAddNode }: CanvasToolDockProps) {
           />
         </button>
         <ToolDockButton label="画板" icon={<Palette className="size-5" />} />
-        <ToolDockButton label="素材库" icon={<Folder className="size-5" />} href="/assets" />
+        <ToolDockButton label="素材库" icon={<Folder className="size-5" />} onClick={onOpenTemplateLibrary} />
         <ToolDockButton label="帮助" icon={<HelpCircle className="size-5" />} />
       </nav>
 
@@ -422,19 +423,15 @@ export function CanvasToolDock({ readOnly, onAddNode }: CanvasToolDockProps) {
   );
 }
 
-function ToolDockButton({ label, icon, href }: { label: string; icon: ReactNode; href?: string }) {
-  const className = "flex size-11 items-center justify-center rounded-full text-charcoal transition-colors hover:bg-muted";
-
-  if (href) {
-    return (
-      <Link href={href} aria-label={label} title={label} className={className}>
-        {icon}
-      </Link>
-    );
-  }
-
+function ToolDockButton({ label, icon, onClick }: { label: string; icon: ReactNode; onClick?: () => void }) {
   return (
-    <button type="button" aria-label={label} title={label} className={className}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="flex size-11 items-center justify-center rounded-full text-charcoal transition-colors hover:bg-muted"
+    >
       {icon}
     </button>
   );
