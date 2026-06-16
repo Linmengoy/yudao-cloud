@@ -20,7 +20,7 @@
       <el-table-column align="center" label="赠送积分" width="130"><template #default="scope">{{ formatPoints(scope.row.giftAmount) }}</template></el-table-column>
       <el-table-column align="center" label="合计积分" width="130"><template #default="scope">{{ formatPoints(scope.row.totalPointAmount) }}</template></el-table-column>
       <el-table-column align="center" label="支付渠道" prop="payChannelCode" width="120" />
-      <el-table-column align="center" label="状态" width="120"><template #default="scope">{{ mapText(rechargeStatusMap, scope.row.status) }}</template></el-table-column>
+      <el-table-column align="center" label="状态" width="120"><template #default="scope">{{ formatRechargeStatus(scope.row) }}</template></el-table-column>
       <el-table-column :formatter="dateFormatter" align="center" label="支付时间" prop="payTime" width="180" />
       <el-table-column align="center" fixed="right" label="操作" width="180"><template #default="scope"><el-button link type="primary" @click="handleDetail(scope.row)">详情</el-button><el-button link type="warning" @click="handleDiagnostic(scope.row.id)">排障</el-button><el-button v-if="String(scope.row.status) === 'WAIT_PAY' || String(scope.row.status) === '1'" v-hasPermi="['aigc:billing:recharge:update']" link type="danger" @click="handleClose(scope.row.id)">关闭</el-button></template></el-table-column>
     </el-table>
@@ -36,7 +36,7 @@
       <el-descriptions-item label="Pay 订单 ID">{{ detailData.payOrderId || '-' }} <el-button v-if="detailData.payOrderId" link type="primary" @click="copyText(String(detailData.payOrderId))">复制</el-button></el-descriptions-item>
       <el-descriptions-item label="Pay 订单号">{{ detailData.payOrderNo || '-' }} <el-button v-if="detailData.payOrderNo" link type="primary" @click="copyText(detailData.payOrderNo)">复制</el-button></el-descriptions-item>
       <el-descriptions-item label="支付渠道">{{ detailData.payChannelCode || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="状态">{{ mapText(rechargeStatusMap, detailData.status) }}</el-descriptions-item>
+      <el-descriptions-item label="状态">{{ formatRechargeStatus(detailData) }}</el-descriptions-item>
       <el-descriptions-item label="创建时间">{{ formatNullableDate(detailData.createTime) }}</el-descriptions-item>
       <el-descriptions-item label="支付时间">{{ formatNullableDate(detailData.payTime) }}</el-descriptions-item>
     </el-descriptions>
@@ -50,7 +50,7 @@
       <el-descriptions-item label="Pay 已成功">{{ diagnosticData.paySuccess ? '是' : '否' }}</el-descriptions-item>
       <el-descriptions-item label="已生成流水">{{ diagnosticData.billingRecordExists ? '是' : '否' }}</el-descriptions-item>
       <el-descriptions-item label="Pay 订单 ID">{{ diagnosticData.payOrder?.id || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="Pay 状态">{{ diagnosticData.payOrder?.status ?? '-' }}</el-descriptions-item>
+      <el-descriptions-item label="Pay 状态">{{ mapText(rechargeStatusMap, diagnosticData.payOrder?.status) }}</el-descriptions-item>
       <el-descriptions-item label="商户订单号">{{ diagnosticData.payOrder?.merchantOrderId || '-' }}</el-descriptions-item>
       <el-descriptions-item label="Pay 金额">{{ formatMoney(diagnosticData.payOrder?.price) }}</el-descriptions-item>
       <el-descriptions-item label="通知任务 ID">{{ diagnosticData.payNotify?.task?.id || '-' }}</el-descriptions-item>
@@ -88,6 +88,7 @@ const diagnosticData = ref<AigcRechargeOrderDiagnosticVO>()
 const queryFormRef = ref()
 const queryParams = reactive({ pageNo: 1, pageSize: 10, rechargeNo: undefined, userId: undefined, payOrderNo: undefined, payChannelCode: undefined, status: undefined, createTime: [], payTime: [] })
 const statusOptions = Object.entries(rechargeStatusMap).filter(([key]) => Number.isNaN(Number(key))).map(([value, label]) => ({ value, label }))
+const formatRechargeStatus = (row?: AigcRechargeOrderVO & { statusName?: string }) => mapText(rechargeStatusMap, row?.statusName || row?.status)
 const getList = async () => {
   loading.value = true
   try { const data = await AigcBillingRechargeApi.getRechargePage(queryParams); list.value = data.list; total.value = data.total } finally { loading.value = false }

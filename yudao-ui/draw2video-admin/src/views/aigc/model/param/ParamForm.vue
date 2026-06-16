@@ -51,7 +51,14 @@ const formRef = ref()
 const optionsText = ref('')
 const modelList = ref<AigcModelRespVO[]>([])
 const formData = ref<AigcModelParamTemplateSaveReqVO>({ id: undefined, modelId: undefined, capability: undefined, paramKey: undefined, paramName: undefined, paramType: undefined, requiredStatus: false, defaultValue: undefined, options: undefined, minValue: undefined, maxValue: undefined, regexPattern: undefined, sort: 0, status: CommonStatusEnum.ENABLE })
-const formRules = reactive({ modelId: [{ required: true, message: '模型不能为空', trigger: 'change' }], capability: [{ required: true, message: '能力不能为空', trigger: 'change' }], paramKey: [{ required: true, message: '参数键不能为空', trigger: 'blur' }], paramName: [{ required: true, message: '参数名称不能为空', trigger: 'blur' }], paramType: [{ required: true, message: '参数类型不能为空', trigger: 'change' }], status: [{ required: true, message: '状态不能为空', trigger: 'change' }] })
+const formRules = reactive({
+  modelId: [{ required: true, message: t('aigc.model.validation.modelRequired'), trigger: 'change' }],
+  capability: [{ required: true, message: t('aigc.model.validation.capabilityRequired'), trigger: 'change' }],
+  paramKey: [{ required: true, message: t('aigc.model.validation.paramKeyRequired'), trigger: 'blur' }],
+  paramName: [{ required: true, message: t('aigc.model.validation.paramNameRequired'), trigger: 'blur' }],
+  paramType: [{ required: true, message: t('aigc.model.validation.paramTypeRequired'), trigger: 'change' }],
+  status: [{ required: true, message: t('aigc.model.validation.statusRequired'), trigger: 'change' }]
+})
 
 const open = async (type: string, id?: number) => {
   dialogVisible.value = true
@@ -77,7 +84,7 @@ const loadModelList = async () => {
 }
 
 const getModelName = (model: AigcModelRespVO) => {
-  return model.name || `模型 ${model.id}`
+  return model.name || t('aigc.model.fallbacks.model', { id: model.id })
 }
 
 const getModelOptionValue = (model: AigcModelRespVO) => Number(model.id)

@@ -571,6 +571,8 @@ export default {
       fields: {
         model: '模型',
         businessModel: '业务模型',
+        sourceModel: '源模型',
+        targetModel: '目标模型',
         modelName: '模型名称',
         modelCode: '模型编码',
         modelType: '模型类型',
@@ -630,6 +632,8 @@ export default {
         extraConfig: '扩展配置',
         rateLimitConfig: '限流配置',
         ruleToggles: '规则开关',
+        batchMultiplier: '批量倍率',
+        durationMultiplier: '时长倍率',
         resolutionExtra: '分辨率加价',
         paramMultipliers: '参数倍率',
         param: '参数',
@@ -637,11 +641,14 @@ export default {
         values: '取值',
         saleMultiplier: '销售倍率',
         costMultiplier: '成本倍率',
-        advancedJson: '高级 JSON'
+        advancedJson: '高级 JSON',
+        overwriteExisting: '覆盖已有'
       },
       placeholders: {
         model: '请选择模型',
         businessModel: '请选择业务模型',
+        sourceModel: '请选择源模型',
+        targetModel: '请选择目标模型',
         modelName: '请输入模型名称',
         modelCode: '请输入模型编码',
         modelType: '请选择模型类型',
@@ -674,7 +681,9 @@ export default {
         paramType: '请选择参数类型',
         defaultValue: '请输入默认值',
         options: '请输入 JSON 数组或逗号分隔选项',
-        regexPattern: '请输入正则表达式'
+        values: '请输入单个取值或逗号分隔取值',
+        regexPattern: '请输入正则表达式',
+        copyAllCapabilities: '不选则复制全部能力'
       },
       actions: {
         search: '搜索',
@@ -691,11 +700,19 @@ export default {
       },
       messages: {
         providerTestPassed: '渠道测试通过',
-        proxyTestPassed: '代理可用，延迟 {duration} ms'
+        proxyTestPassed: '代理可用，延迟 {duration} ms',
+        copyParamsDone: '复制完成：新增 {created}，覆盖 {updated}，跳过 {skipped}'
+      },
+      fallbacks: {
+        model: '模型 {id}',
+        channel: '渠道 {id}',
+        channelImplementation: '渠道实现 {id}'
       },
       validation: {
         modelRequired: '模型不能为空',
         businessModelRequired: '业务模型不能为空',
+        sourceModelRequired: '源模型不能为空',
+        targetModelRequired: '目标模型不能为空',
         modelCodeRequired: '模型编码不能为空',
         modelNameRequired: '模型名称不能为空',
         modelTypeRequired: '模型类型不能为空',

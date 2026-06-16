@@ -31,17 +31,26 @@ export const freezeStatusMap: Record<string, string> = {
 
 export const rechargeStatusMap: Record<string, string> = {
   WAIT_PAY: '待支付',
+  WAITING: '待支付',
   PAID: '已支付',
+  SUCCESS: '已支付',
+  PAY_SUCCESS: '已支付',
   CLOSED: '已关闭',
+  CLOSE: '已关闭',
+  REFUND: '已退款',
   REFUNDED: '已退款',
   MANUAL_SUCCESS: '人工成功',
   FAILED: '失败',
+  '0': '待支付',
   '1': '待支付',
   '2': '已支付',
   '3': '已关闭',
   '4': '已退款',
   '5': '人工成功',
-  '6': '失败'
+  '6': '失败',
+  '10': '已支付',
+  '20': '已退款',
+  '30': '已关闭'
 }
 
 export const formatPoints = (value?: number | null) => {

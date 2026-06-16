@@ -37,18 +37,18 @@
       </el-row>
 
       <el-form-item :label="t('aigc.model.fields.ruleToggles')">
-        <el-checkbox v-model="priceRule.batchMultiplier">Batch multiplier</el-checkbox>
-        <el-checkbox v-model="priceRule.durationMultiplier">Duration multiplier</el-checkbox>
+        <el-checkbox v-model="priceRule.batchMultiplier">{{ t('aigc.model.fields.batchMultiplier') }}</el-checkbox>
+        <el-checkbox v-model="priceRule.durationMultiplier">{{ t('aigc.model.fields.durationMultiplier') }}</el-checkbox>
       </el-form-item>
 
       <el-form-item :label="t('aigc.model.fields.resolutionExtra')">
-        <el-input v-model="resolutionExtraText" type="textarea" :rows="2" placeholder='{"720p":0,"1080p":20}' />
+        <el-input v-model="resolutionExtraText" type="textarea" :rows="2" :placeholder="RESOLUTION_EXTRA_PLACEHOLDER" />
       </el-form-item>
 
       <el-form-item :label="t('aigc.model.fields.paramMultipliers')">
         <el-table :data="priceRule.paramMultipliers" border>
           <el-table-column :label="t('aigc.model.fields.param')" min-width="140">
-            <template #default="{ row }"><el-input v-model="row.param" placeholder="quality" /></template>
+            <template #default="{ row }"><el-input v-model="row.param" :placeholder="t('aigc.model.placeholders.paramKey')" /></template>
           </el-table-column>
           <el-table-column :label="t('aigc.model.fields.operator')" width="120">
             <template #default="{ row }">
@@ -59,7 +59,7 @@
             </template>
           </el-table-column>
           <el-table-column :label="t('aigc.model.fields.values')" min-width="180">
-            <template #default="{ row }"><el-input v-model="row.valueText" placeholder="high or high,ultra" /></template>
+            <template #default="{ row }"><el-input v-model="row.valueText" :placeholder="t('aigc.model.placeholders.values')" /></template>
           </el-table-column>
           <el-table-column :label="t('aigc.model.fields.saleMultiplier')" width="120">
             <template #default="{ row }"><el-input-number v-model="row.saleMultiplier" :min="0.01" :max="100" :precision="2" controls-position="right" /></template>
@@ -120,13 +120,14 @@ const formData = ref<AigcModelPriceSaveReqVO>({ id: undefined, modelId: undefine
 const priceRule = reactive({ batchMultiplier: false, durationMultiplier: false, paramMultipliers: [] as ParamMultiplierRow[] })
 const resolutionExtraText = ref('')
 const formRules = reactive({
-  modelId: [{ required: true, message: 'Model is required', trigger: 'change' }],
-  capability: [{ required: true, message: 'Capability is required', trigger: 'change' }],
-  billingUnit: [{ required: true, message: 'Billing unit is required', trigger: 'change' }],
-  salePrice: [{ required: true, message: 'Sale price is required', trigger: 'blur' }],
-  currencyType: [{ required: true, message: 'Currency is required', trigger: 'blur' }],
-  status: [{ required: true, message: 'Status is required', trigger: 'change' }]
+  modelId: [{ required: true, message: t('aigc.model.validation.modelRequired'), trigger: 'change' }],
+  capability: [{ required: true, message: t('aigc.model.validation.capabilityRequired'), trigger: 'change' }],
+  billingUnit: [{ required: true, message: t('aigc.model.validation.billingUnitRequired'), trigger: 'change' }],
+  salePrice: [{ required: true, message: t('aigc.model.validation.salePriceRequired'), trigger: 'blur' }],
+  currencyType: [{ required: true, message: t('aigc.model.validation.currencyRequired'), trigger: 'blur' }],
+  status: [{ required: true, message: t('aigc.model.validation.statusRequired'), trigger: 'change' }]
 })
+const RESOLUTION_EXTRA_PLACEHOLDER = '{"720p":0,"1080p":20}'
 
 const open = async (type: string, id?: number, modelId?: number) => {
   dialogVisible.value = true
@@ -152,7 +153,7 @@ const loadModelList = async () => {
   modelList.value = data.list || []
 }
 
-const getModelName = (model: AigcModelRespVO) => model.name || `Model ${model.id}`
+const getModelName = (model: AigcModelRespVO) => model.name || t('aigc.model.fallbacks.model', { id: model.id })
 const getModelOptionValue = (model: AigcModelRespVO) => Number(model.id)
 
 const emit = defineEmits(['success'])

@@ -47,7 +47,11 @@ const selectedChannelIds = ref<number[]>([])
 const modelList = ref<AigcModelRespVO[]>([])
 const channelList = ref<AigcModelChannelRespVO[]>([])
 const formData = ref<RouteFormData>({ id: undefined, name: undefined, taskType: undefined, modelId: undefined, capability: undefined, strategy: 'FIXED_MODEL', modelIds: undefined, channelIds: undefined, userLevel: undefined, status: CommonStatusEnum.ENABLE })
-const formRules = reactive({ name: [{ required: true, message: '规则名称不能为空', trigger: 'blur' }], strategy: [{ required: true, message: '路由策略不能为空', trigger: 'change' }], status: [{ required: true, message: '状态不能为空', trigger: 'change' }] })
+const formRules = reactive({
+  name: [{ required: true, message: t('aigc.model.validation.ruleNameRequired'), trigger: 'blur' }],
+  strategy: [{ required: true, message: t('aigc.model.validation.routeStrategyRequired'), trigger: 'change' }],
+  status: [{ required: true, message: t('aigc.model.validation.statusRequired'), trigger: 'change' }]
+})
 
 const open = async (type: string, id?: number) => {
   dialogVisible.value = true
@@ -84,11 +88,11 @@ const loadChannelList = async () => {
 }
 
 const getModelName = (model: AigcModelRespVO) => {
-  return model.name || `模型 ${model.id}`
+  return model.name || t('aigc.model.fallbacks.model', { id: model.id })
 }
 
 const getModelOptionValue = (model: AigcModelRespVO) => Number(model.id)
-const getChannelName = (channel: AigcModelChannelRespVO) => channel.name || `${channel.providerModel} / 渠道 ${channel.providerId}`
+const getChannelName = (channel: AigcModelChannelRespVO) => channel.name || `${channel.providerModel} / ${t('aigc.model.fallbacks.channel', { id: channel.providerId })}`
 
 const parseModelIds = (modelIds?: string): number[] => {
   if (!modelIds) return []

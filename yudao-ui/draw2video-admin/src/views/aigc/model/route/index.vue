@@ -83,13 +83,13 @@ const parseModelIds = (modelIds?: string): number[] => {
   }
   return modelIds.split(',').map((item) => Number(item.trim())).filter(Boolean)
 }
-const getModelName = (id?: number) => modelList.value.find((item) => item.id === id)?.name || `模型 ${id}`
+const getModelName = (id?: number) => modelList.value.find((item) => item.id === id)?.name || t('aigc.model.fallbacks.model', { id })
 const getChannelNames = (channelIds?: string) => {
   const ids = parseModelIds(channelIds)
   if (ids.length === 0) return '-'
   return ids.map((id) => {
     const channel = channelList.value.find((item) => item.id === id)
-    return channel?.name || channel?.providerModel || `渠道实现 ${id}`
+    return channel?.name || channel?.providerModel || t('aigc.model.fallbacks.channelImplementation', { id })
   }).join('、')
 }
 const formRef = ref()

@@ -576,6 +576,8 @@ export default {
       fields: {
         model: 'Model',
         businessModel: 'Business Model',
+        sourceModel: 'Source Model',
+        targetModel: 'Target Model',
         modelName: 'Model Name',
         modelCode: 'Model Code',
         modelType: 'Model Type',
@@ -635,6 +637,8 @@ export default {
         extraConfig: 'Extra Config',
         rateLimitConfig: 'Rate Limit Config',
         ruleToggles: 'Rule Toggles',
+        batchMultiplier: 'Batch Multiplier',
+        durationMultiplier: 'Duration Multiplier',
         resolutionExtra: 'Resolution Extra',
         paramMultipliers: 'Param Multipliers',
         param: 'Param',
@@ -642,11 +646,14 @@ export default {
         values: 'Value(s)',
         saleMultiplier: 'Sale x',
         costMultiplier: 'Cost x',
-        advancedJson: 'Advanced JSON'
+        advancedJson: 'Advanced JSON',
+        overwriteExisting: 'Overwrite Existing'
       },
       placeholders: {
         model: 'Select model',
         businessModel: 'Select business model',
+        sourceModel: 'Select source model',
+        targetModel: 'Select target model',
         modelName: 'Enter model name',
         modelCode: 'Enter model code',
         modelType: 'Select model type',
@@ -679,7 +686,9 @@ export default {
         paramType: 'Select param type',
         defaultValue: 'Enter default value',
         options: 'Enter JSON array or comma-separated options',
-        regexPattern: 'Enter regular expression'
+        values: 'Enter one value or comma-separated values',
+        regexPattern: 'Enter regular expression',
+        copyAllCapabilities: 'Leave empty to copy all capabilities'
       },
       actions: {
         search: 'Search',
@@ -696,11 +705,19 @@ export default {
       },
       messages: {
         providerTestPassed: 'Provider test passed',
-        proxyTestPassed: 'Proxy available, latency {duration} ms'
+        proxyTestPassed: 'Proxy available, latency {duration} ms',
+        copyParamsDone: 'Copy completed: created {created}, overwritten {updated}, skipped {skipped}'
+      },
+      fallbacks: {
+        model: 'Model {id}',
+        channel: 'Channel {id}',
+        channelImplementation: 'Channel Implementation {id}'
       },
       validation: {
         modelRequired: 'Model is required',
         businessModelRequired: 'Business model is required',
+        sourceModelRequired: 'Source model is required',
+        targetModelRequired: 'Target model is required',
         modelCodeRequired: 'Model code is required',
         modelNameRequired: 'Model name is required',
         modelTypeRequired: 'Model type is required',

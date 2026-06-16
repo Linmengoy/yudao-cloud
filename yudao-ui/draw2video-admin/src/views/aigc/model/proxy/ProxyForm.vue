@@ -75,11 +75,11 @@ const formData = ref<AigcModelProxySaveReqVO>({
   remark: undefined
 })
 const formRules = reactive({
-  name: [{ required: true, message: '代理名称不能为空', trigger: 'blur' }],
-  protocol: [{ required: true, message: '代理协议不能为空', trigger: 'change' }],
-  host: [{ required: true, message: '代理地址不能为空', trigger: 'blur' }],
-  port: [{ required: true, message: '代理端口不能为空', trigger: 'blur' }],
-  status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
+  name: [{ required: true, message: t('aigc.model.validation.proxyNameRequired'), trigger: 'blur' }],
+  protocol: [{ required: true, message: t('aigc.model.validation.proxyProtocolRequired'), trigger: 'change' }],
+  host: [{ required: true, message: t('aigc.model.validation.proxyAddressRequired'), trigger: 'blur' }],
+  port: [{ required: true, message: t('aigc.model.validation.proxyPortRequired'), trigger: 'blur' }],
+  status: [{ required: true, message: t('aigc.model.validation.statusRequired'), trigger: 'change' }]
 })
 
 const open = async (type: string, id?: number) => {

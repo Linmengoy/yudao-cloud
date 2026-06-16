@@ -66,12 +66,12 @@ const loadModelList = async () => {
   modelList.value = data.list || []
 }
 const getModelName = (model: AigcModelRespVO) => {
-  return model.name || `模型 ${model.id}`
+  return model.name || t('aigc.model.fallbacks.model', { id: model.id })
 }
 const getModelById = (modelId?: number) => modelList.value.find((item) => Number(item.id) === Number(modelId))
 const getModelNameById = (modelId?: number) => {
   const model = getModelById(modelId)
-  return model ? getModelName(model) : `模型 ${modelId}`
+  return model ? getModelName(model) : t('aigc.model.fallbacks.model', { id: modelId })
 }
 const getModelIdentifierById = (modelId?: number) => {
   return getModelById(modelId)?.model || '-'

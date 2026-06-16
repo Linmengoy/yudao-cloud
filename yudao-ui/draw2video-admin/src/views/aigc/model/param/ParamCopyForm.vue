@@ -1,13 +1,13 @@
 <template>
-  <Dialog v-model="dialogVisible" title="复制参数模板" width="560px">
+  <Dialog v-model="dialogVisible" :title="t('aigc.model.actions.copyParams')" width="560px">
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="96px">
-      <el-form-item label="源模型" prop="sourceModelId">
-        <el-select v-model="formData.sourceModelId" filterable placeholder="请选择源模型">
+      <el-form-item :label="t('aigc.model.fields.sourceModel')" prop="sourceModelId">
+        <el-select v-model="formData.sourceModelId" filterable :placeholder="t('aigc.model.placeholders.sourceModel')">
           <el-option v-for="item in modelList" :key="item.id" :label="getModelName(item)" :value="Number(item.id)" />
         </el-select>
       </el-form-item>
-      <el-form-item label="目标模型" prop="targetModelIds">
-        <el-select v-model="formData.targetModelIds" multiple filterable collapse-tags collapse-tags-tooltip placeholder="请选择目标模型">
+      <el-form-item :label="t('aigc.model.fields.targetModel')" prop="targetModelIds">
+        <el-select v-model="formData.targetModelIds" multiple filterable collapse-tags collapse-tags-tooltip :placeholder="t('aigc.model.placeholders.targetModel')">
           <el-option
             v-for="item in targetModelList"
             :key="item.id"
@@ -16,18 +16,18 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="能力">
-        <el-select v-model="formData.capabilities" multiple clearable collapse-tags collapse-tags-tooltip placeholder="不选则复制全部能力">
-          <el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" />
+      <el-form-item :label="t('aigc.model.fields.capability')">
+        <el-select v-model="formData.capabilities" multiple clearable collapse-tags collapse-tags-tooltip :placeholder="t('aigc.model.placeholders.copyAllCapabilities')">
+          <el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="getOptionLabel([item], item.value, t)" :value="item.value" />
         </el-select>
       </el-form-item>
-      <el-form-item label="覆盖已有">
+      <el-form-item :label="t('aigc.model.fields.overwriteExisting')">
         <el-switch v-model="formData.overwrite" />
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button :disabled="formLoading" @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="formLoading" @click="submitForm">确定</el-button>
+      <el-button :disabled="formLoading" @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
+      <el-button type="primary" :loading="formLoading" @click="submitForm">{{ t('common.ok') }}</el-button>
     </template>
   </Dialog>
 </template>
@@ -35,11 +35,12 @@
 <script setup lang="ts">
 import { AigcModelParamApi, type AigcModelParamTemplateCopyReqVO } from '@/api/aigc/model/param'
 import type { AigcModelRespVO } from '@/api/aigc/model/types'
-import { AIGC_MODEL_CAPABILITIES } from '../constants'
+import { AIGC_MODEL_CAPABILITIES, getOptionLabel } from '../constants'
 
 defineOptions({ name: 'AigcModelParamCopyForm' })
 
 const message = useMessage()
+const { t } = useI18n()
 const dialogVisible = ref(false)
 const formLoading = ref(false)
 const formRef = ref()
@@ -51,14 +52,15 @@ const formData = ref<AigcModelParamTemplateCopyReqVO>({
   overwrite: false
 })
 const formRules = reactive({
-  sourceModelId: [{ required: true, message: '源模型不能为空', trigger: 'change' }],
-  targetModelIds: [{ required: true, message: '目标模型不能为空', trigger: 'change' }]
+  sourceModelId: [{ required: true, message: t('aigc.model.validation.sourceModelRequired'), trigger: 'change' }],
+  targetModelIds: [{ required: true, message: t('aigc.model.validation.targetModelRequired'), trigger: 'change' }]
 })
 
 const targetModelList = computed(() => modelList.value.filter((item) => Number(item.id) !== formData.value.sourceModelId))
 const getModelName = (model: AigcModelRespVO) => {
   const code = model.code || model.model
-  return code ? `${model.name || `模型 ${model.id}`} / ${code}` : model.name || `模型 ${model.id}`
+  const name = model.name || t('aigc.model.fallbacks.model', { id: model.id })
+  return code ? `${name} / ${code}` : name
 }
 
 const emit = defineEmits(['success'])
@@ -81,7 +83,11 @@ const submitForm = async () => {
   formLoading.value = true
   try {
     const result = await AigcModelParamApi.copyParams(formData.value)
-    message.success(`复制完成：新增 ${result.createdCount || 0}，覆盖 ${result.updatedCount || 0}，跳过 ${result.skippedCount || 0}`)
+    message.success(t('aigc.model.messages.copyParamsDone', {
+      created: result.createdCount || 0,
+      updated: result.updatedCount || 0,
+      skipped: result.skippedCount || 0
+    }))
     dialogVisible.value = false
     emit('success')
   } finally {
