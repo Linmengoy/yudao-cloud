@@ -309,7 +309,7 @@ export default function TemplatesPage() {
           />
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1 lg:max-w-[620px]">
+        <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:max-w-[620px]">
           <button
             type="button"
             onClick={() => setCategory("")}
