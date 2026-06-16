@@ -612,7 +612,10 @@ export default {
         upstreamModel: 'Upstream Model',
         implementationName: 'Implementation Name',
         costPrice: 'Cost Price',
+        channelCostPrice: 'API Call Cost',
+        platformCostPrice: 'Platform Cost Price',
         salePrice: 'Sale Price',
+        userSalePrice: 'User Sale Price',
         weight: 'Weight',
         priority: 'Priority',
         billingUnit: 'Billing Unit',
@@ -648,6 +651,10 @@ export default {
         costMultiplier: 'Cost x',
         advancedJson: 'Advanced JSON',
         overwriteExisting: 'Overwrite Existing'
+      },
+      tips: {
+        channelCostPrice: 'Enter the provider-billed price for platform cost accounting only. It does not affect user billing.',
+        platformCostPrice: 'Used for margin reporting. User billing is based on the sale price.'
       },
       placeholders: {
         model: 'Select model',
@@ -706,6 +713,7 @@ export default {
       messages: {
         providerTestPassed: 'Provider test passed',
         proxyTestPassed: 'Proxy available, latency {duration} ms',
+        cloneChannelSuccess: 'Clone created and disabled by default. Review it before enabling.',
         copyParamsDone: 'Copy completed: created {created}, overwritten {updated}, skipped {skipped}'
       },
       fallbacks: {

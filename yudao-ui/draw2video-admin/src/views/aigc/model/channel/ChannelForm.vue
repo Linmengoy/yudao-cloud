@@ -2,14 +2,14 @@
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="760px">
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="120px" v-loading="formLoading">
       <el-row :gutter="20">
-        <el-col :span="12">
+        <el-col v-if="formType !== 'clone'" :span="12">
           <el-form-item :label="t('aigc.model.fields.businessModel')" prop="modelId">
             <el-select v-model="formData.modelId" class="!w-1/1" filterable :placeholder="t('aigc.model.placeholders.businessModel')">
               <el-option v-for="item in modelList" :key="item.id" :label="item.name" :value="Number(item.id)" />
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="12">
+        <el-col :span="formType === 'clone' ? 24 : 12">
           <el-form-item :label="t('aigc.model.fields.provider')" prop="providerId">
             <el-select v-model="formData.providerId" class="!w-1/1" filterable :placeholder="t('aigc.model.placeholders.provider')">
               <el-option v-for="item in providerList" :key="item.id" :label="item.name" :value="Number(item.id)" />
@@ -21,17 +21,30 @@
         <el-col :span="12"><el-form-item :label="t('aigc.model.fields.implementationName')" prop="name"><el-input v-model="formData.name" :placeholder="t('aigc.model.placeholders.implementationName')" /></el-form-item></el-col>
         <el-col :span="12"><el-form-item :label="t('aigc.model.fields.upstreamModel')" prop="providerModel"><el-input v-model="formData.providerModel" :placeholder="t('aigc.model.placeholders.upstreamModel')" /></el-form-item></el-col>
       </el-row>
-      <el-row :gutter="20">
-        <el-col :span="8"><el-form-item :label="t('aigc.model.fields.costPrice')" prop="costPrice"><el-input-number v-model="formData.costPrice" class="!w-1/1" :min="0" :precision="6" /></el-form-item></el-col>
+      <el-row v-if="formType !== 'clone'" :gutter="20">
+        <el-col :span="8">
+          <el-form-item prop="costPrice">
+            <template #label>
+              <span>{{ t('aigc.model.fields.channelCostPrice') }}</span>
+              <el-tooltip :content="t('aigc.model.tips.channelCostPrice')" placement="top">
+                <Icon icon="ep:question-filled" class="ml-4px text-14px color-#909399" />
+              </el-tooltip>
+            </template>
+            <el-input-number v-model="formData.costPrice" class="!w-1/1" :min="0" :precision="6" />
+          </el-form-item>
+        </el-col>
         <el-col :span="8"><el-form-item :label="t('aigc.model.fields.weight')" prop="weight"><el-input-number v-model="formData.weight" class="!w-1/1" :min="0" /></el-form-item></el-col>
         <el-col :span="8"><el-form-item :label="t('aigc.model.fields.priority')" prop="priority"><el-input-number v-model="formData.priority" class="!w-1/1" :min="0" /></el-form-item></el-col>
       </el-row>
-      <el-row :gutter="20">
+      <el-row v-else :gutter="20">
+        <el-col :span="24"><el-form-item :label="t('aigc.model.fields.weight')" prop="weight"><el-input-number v-model="formData.weight" class="!w-1/1" :min="0" /></el-form-item></el-col>
+      </el-row>
+      <el-row v-if="formType !== 'clone'" :gutter="20">
         <el-col :span="8"><el-form-item :label="t('aigc.model.fields.maxConcurrent')" prop="maxConcurrent"><el-input-number v-model="formData.maxConcurrent" class="!w-1/1" :min="1" /></el-form-item></el-col>
         <el-col :span="8"><el-form-item :label="t('aigc.model.fields.timeoutSeconds')" prop="timeoutSeconds"><el-input-number v-model="formData.timeoutSeconds" class="!w-1/1" :min="1" /></el-form-item></el-col>
         <el-col :span="8"><el-form-item :label="t('common.status')" prop="status"><el-radio-group v-model="formData.status"><el-radio v-for="dict in getIntDictOptions(DICT_TYPE.COMMON_STATUS)" :key="dict.value" :value="dict.value">{{ dict.label }}</el-radio></el-radio-group></el-form-item></el-col>
       </el-row>
-      <el-form-item :label="t('aigc.model.fields.remark')" prop="remark"><el-input v-model="formData.remark" type="textarea" :placeholder="t('aigc.model.placeholders.remark')" /></el-form-item>
+      <el-form-item v-if="formType !== 'clone'" :label="t('aigc.model.fields.remark')" prop="remark"><el-input v-model="formData.remark" type="textarea" :placeholder="t('aigc.model.placeholders.remark')" /></el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="submitForm" type="primary" :disabled="formLoading">{{ t('common.ok') }}</el-button>
@@ -109,7 +122,7 @@ const submitForm = async () => {
         name: formData.value.name,
         weight: formData.value.weight
       })
-      message.success(t('common.createSuccess'))
+      message.success(t('aigc.model.messages.cloneChannelSuccess'))
     } else {
       await AigcModelChannelApi.updateChannel(formData.value)
       message.success(t('common.updateSuccess'))

@@ -28,8 +28,18 @@
         <el-col :span="12"><el-form-item :label="t('aigc.model.fields.currency')" prop="currencyType"><el-input v-model="formData.currencyType" placeholder="POINT" /></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
-        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.costPrice')" prop="costPrice"><el-input-number v-model="formData.costPrice" class="!w-1/1" :min="0" :precision="2" controls-position="right" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.salePrice')" prop="salePrice"><el-input-number v-model="formData.salePrice" class="!w-1/1" :min="0" :precision="2" controls-position="right" /></el-form-item></el-col>
+        <el-col :span="12">
+          <el-form-item prop="costPrice">
+            <template #label>
+              <span>{{ t('aigc.model.fields.platformCostPrice') }}</span>
+              <el-tooltip :content="t('aigc.model.tips.platformCostPrice')" placement="top">
+                <Icon icon="ep:question-filled" class="ml-4px text-14px color-#909399" />
+              </el-tooltip>
+            </template>
+            <el-input-number v-model="formData.costPrice" class="!w-1/1" :min="0" :precision="2" controls-position="right" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.userSalePrice')" prop="salePrice"><el-input-number v-model="formData.salePrice" class="!w-1/1" :min="0" :precision="2" controls-position="right" /></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
         <el-col :span="12"><el-form-item :label="t('aigc.model.fields.effectiveStart')" prop="effectiveStartTime"><el-date-picker v-model="formData.effectiveStartTime" class="!w-1/1" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" /></el-form-item></el-col>

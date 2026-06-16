@@ -607,7 +607,10 @@ export default {
         upstreamModel: '上游模型',
         implementationName: '实现名称',
         costPrice: '成本价',
+        channelCostPrice: 'API 调用成本',
+        platformCostPrice: '平台成本价',
         salePrice: '销售价',
+        userSalePrice: '用户售价',
         weight: '权重',
         priority: '优先级',
         billingUnit: '计费单位',
@@ -643,6 +646,10 @@ export default {
         costMultiplier: '成本倍率',
         advancedJson: '高级 JSON',
         overwriteExisting: '覆盖已有'
+      },
+      tips: {
+        channelCostPrice: '填写渠道商实际收取的价格，用于平台成本核算，不影响用户计费',
+        platformCostPrice: '平台成本价用于统计毛利，用户实际扣费以销售价为准'
       },
       placeholders: {
         model: '请选择模型',
@@ -701,6 +708,7 @@ export default {
       messages: {
         providerTestPassed: '渠道测试通过',
         proxyTestPassed: '代理可用，延迟 {duration} ms',
+        cloneChannelSuccess: '克隆成功，已默认禁用，请核对后启用',
         copyParamsDone: '复制完成：新增 {created}，覆盖 {updated}，跳过 {skipped}'
       },
       fallbacks: {
