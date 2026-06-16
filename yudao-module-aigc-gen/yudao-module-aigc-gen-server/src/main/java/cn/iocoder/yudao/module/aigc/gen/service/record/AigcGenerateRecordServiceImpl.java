@@ -38,6 +38,7 @@ import cn.iocoder.yudao.module.aigc.gen.framework.client.AigcProviderClientFacto
 import cn.iocoder.yudao.module.aigc.gen.framework.client.dto.AigcProviderSubmitReqDTO;
 import cn.iocoder.yudao.module.aigc.gen.framework.client.dto.AigcProviderSubmitRespDTO;
 import cn.iocoder.yudao.module.aigc.gen.framework.security.AigcGenerateFileSecurityUtils;
+import cn.iocoder.yudao.module.aigc.gen.service.media.AigcMediaArchiveService;
 import cn.iocoder.yudao.module.aigc.model.api.AigcModelApi;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateReqDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateRespDTO;
@@ -141,6 +142,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     @Resource
     private AigcProviderClientFactory providerClientFactory;
     @Resource
+    private AigcMediaArchiveService mediaArchiveService;
+    @Resource
     private ObjectProvider<MeterRegistry> meterRegistryProvider;
     @Resource
     private ObjectProvider<TaskExecutor> taskExecutorProvider;
@@ -155,8 +158,9 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 return exists;
             }
         }
+        String archivedInputParams = mediaArchiveService.archiveInputParams(reqDTO.getInputParams());
         AigcGenerateRecordDO record = BeanUtils.toBean(reqDTO, AigcGenerateRecordDO.class)
-                .setInputParams(sanitizeInputParamsSnapshot(reqDTO.getInputParams()))
+                .setInputParams(sanitizeInputParamsSnapshot(archivedInputParams))
                 .setGenerateNo(generateGenerateNo())
                 .setStatus(AigcGenerateStatusEnum.CREATED.getCode());
         return insertRecordHandlingDuplicate(record);
@@ -181,9 +185,10 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         // 服务端统计埋点
         recordMetric(AigcGenerateMetricEnum.GEN_SUBMIT_TOTAL);
 
-        Map<String, Object> inputParams = parseInputParams(reqDTO.getInputParams());
-        // 关联的图片需要看看传的什么（尽量传资源ID，由我方获取ID进行上传）
-        String inputParamsSnapshot = sanitizeInputParamsSnapshot(reqDTO.getInputParams());
+        String archivedInputParams = mediaArchiveService.archiveInputParams(reqDTO.getInputParams());
+        AigcGenerateSubmitReqDTO providerReqDTO = copySubmitReq(reqDTO).setInputParams(archivedInputParams);
+        Map<String, Object> inputParams = parseInputParams(archivedInputParams);
+        String inputParamsSnapshot = sanitizeInputParamsSnapshot(archivedInputParams);
         String generateNo = generateGenerateNo();
         AigcModelSubmitPrepareRespDTO prepare = modelApi.prepareSubmit(new AigcModelPriceCalculateReqDTO()
                 .setModelId(reqDTO.getModelId()).setCapability(reqDTO.getGenerateMode())
@@ -218,10 +223,10 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             throw ex;
         }
         if (!Boolean.TRUE.equals(reqDTO.getSync())) {
-            submitProviderAfterCommit(record, reqDTO, attempt, provider);
+            submitProviderAfterCommit(record, providerReqDTO, attempt, provider);
             return generateRecordMapper.selectById(record.getId());
         }
-        return processProviderSubmitSafely(record, reqDTO, attempt, provider);
+        return processProviderSubmitSafely(record, providerReqDTO, attempt, provider);
     }
 
     private AigcGenerateRecordDO processProviderSubmit(AigcGenerateRecordDO record, AigcGenerateSubmitReqDTO reqDTO,
@@ -566,6 +571,24 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setSync(false);
     }
 
+    private AigcGenerateSubmitReqDTO copySubmitReq(AigcGenerateSubmitReqDTO reqDTO) {
+        return new AigcGenerateSubmitReqDTO()
+                .setUserId(reqDTO.getUserId())
+                .setClientRequestId(reqDTO.getClientRequestId())
+                .setGenerateType(reqDTO.getGenerateType())
+                .setGenerateMode(reqDTO.getGenerateMode())
+                .setModelId(reqDTO.getModelId())
+                .setProviderId(reqDTO.getProviderId())
+                .setPrompt(reqDTO.getPrompt())
+                .setInputParams(reqDTO.getInputParams())
+                .setSync(reqDTO.getSync())
+                .setOutputUrls(reqDTO.getOutputUrls())
+                .setOutputText(reqDTO.getOutputText())
+                .setPriceAmount(reqDTO.getPriceAmount())
+                .setCostAmount(reqDTO.getCostAmount())
+                .setFreezeId(reqDTO.getFreezeId());
+    }
+
     private AigcGenerateRecordDO insertRecordHandlingDuplicate(AigcGenerateRecordDO record) {
         try {
             generateRecordMapper.insert(record);
@@ -833,15 +856,16 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setCallbackType(reqDTO.getCallbackType() == null ? "GEN_CALLBACK" : reqDTO.getCallbackType())
                 .setRawBody(reqDTO.getRawBody()).setSignature(reqDTO.getSignature())).getCheckedData();
         if (AigcGenerateStatusEnum.SUCCESS.getCode().equals(reqDTO.getResultStatus())) {
+            String archivedOutputData = mediaArchiveService.archiveOutputData(reqDTO.getOutputData());
             AigcProviderSubmitRespDTO resp = new AigcProviderSubmitRespDTO()
                     .setProviderTaskId(reqDTO.getProviderTaskId()).setProviderStatus(reqDTO.getResultStatus())
-                    .setOutputText(reqDTO.getOutputText()).setOutputData(reqDTO.getOutputData())
+                    .setOutputText(reqDTO.getOutputText()).setOutputData(archivedOutputData)
                     .setOutputUrls(reqDTO.getOutputUrls()).setSuccess(true).setFinished(true);
             if (attempt == null) {
                 generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId())
                         .setStatus(AigcGenerateStatusEnum.ASSET_CREATING.getCode())
                         .setOutputText(reqDTO.getOutputText())
-                        .setOutputData(reqDTO.getOutputData()).setOutputUrls(reqDTO.getOutputUrls())
+                        .setOutputData(archivedOutputData).setOutputUrls(reqDTO.getOutputUrls())
                         .setCallbackTime(LocalDateTime.now()));
                 finishSuccess(generateRecordMapper.selectById(record.getId()), resp);
                 generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId())
@@ -911,11 +935,13 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return;
         }
         if (Boolean.TRUE.equals(resp.getFinished())) {
+            String archivedOutputData = mediaArchiveService.archiveOutputData(resp.getOutputData());
+            resp.setOutputData(archivedOutputData);
             if (attempt == null) {
                 generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId())
                         .setStatus(AigcGenerateStatusEnum.ASSET_CREATING.getCode())
                         .setProviderStatus(resp.getProviderStatus()).setOutputText(resp.getOutputText())
-                        .setOutputData(resp.getOutputData()).setOutputUrls(resp.getOutputUrls()));
+                        .setOutputData(archivedOutputData).setOutputUrls(resp.getOutputUrls()));
                 finishSuccess(generateRecordMapper.selectById(record.getId()), resp);
                 generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId())
                         .setStatus(AigcGenerateStatusEnum.SUCCESS.getCode()).setFinishTime(LocalDateTime.now()));
@@ -1114,6 +1140,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             }
             return;
         }
+        String archivedOutputData = mediaArchiveService.archiveOutputData(resp.getOutputData());
+        resp.setOutputData(archivedOutputData);
         int updated = generateRecordMapper.updateByIdAndStatuses(new AigcGenerateRecordDO().setId(record.getId())
                 .setStatus(AigcGenerateStatusEnum.ASSET_CREATING.getCode())
                 .setModelId(attempt.getModelId())
@@ -1125,7 +1153,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setProviderTaskId(resp.getProviderTaskId())
                 .setProviderStatus(resp.getProviderStatus())
                 .setOutputText(resp.getOutputText())
-                .setOutputData(resp.getOutputData())
+                .setOutputData(archivedOutputData)
                 .setOutputUrls(resp.getOutputUrls())
                 .setCallbackTime(LocalDateTime.now())
                 .setCostAmount(sumAttemptCost(record.getId())), WINNABLE_STATUSES);
