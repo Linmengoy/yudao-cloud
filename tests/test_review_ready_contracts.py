@@ -514,6 +514,91 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn("t('aigc.model.fields.userSalePrice')", target_text)
         self.assertIn("t('aigc.model.fields.required') : t('aigc.model.fields.optional')", target_text)
 
+    def test_issue_197_admin_model_cost_price_labels_explain_channel_vs_platform_costs(self):
+        channel_form = read("yudao-ui/draw2video-admin/src/views/aigc/model/channel/ChannelForm.vue")
+        price_form = read("yudao-ui/draw2video-admin/src/views/aigc/model/price/PriceForm.vue")
+        zh_locale = read("yudao-ui/draw2video-admin/src/locales/zh-CN.ts")
+        en_locale = read("yudao-ui/draw2video-admin/src/locales/en.ts")
+
+        self.assertIn("t('aigc.model.fields.channelCostPrice')", channel_form)
+        self.assertIn("t('aigc.model.tips.channelCostPrice')", channel_form)
+        self.assertIn("v-model=\"formData.costPrice\"", channel_form)
+        self.assertIn("formType !== 'clone'", channel_form)
+
+        self.assertIn("t('aigc.model.fields.platformCostPrice')", price_form)
+        self.assertIn("t('aigc.model.tips.platformCostPrice')", price_form)
+        self.assertIn("t('aigc.model.fields.userSalePrice')", price_form)
+        self.assertIn("v-model=\"formData.costPrice\"", price_form)
+        self.assertIn("v-model=\"formData.salePrice\"", price_form)
+
+        for key in [
+            "aigc.model.fields.channelCostPrice",
+            "aigc.model.fields.platformCostPrice",
+            "aigc.model.fields.userSalePrice",
+            "aigc.model.tips.channelCostPrice",
+            "aigc.model.tips.platformCostPrice",
+        ]:
+            self.assertTrue(self._locale_has_path(zh_locale, key), key)
+            self.assertTrue(self._locale_has_path(en_locale, key), key)
+
+        for required_text in [
+            "channelCostPrice: 'API 调用成本'",
+            "platformCostPrice: '平台成本价'",
+            "userSalePrice: '用户售价'",
+            "填写渠道商实际收取的价格，用于平台成本核算，不影响用户计费",
+            "平台成本价用于统计毛利，用户实际扣费以销售价为准",
+        ]:
+            self.assertIn(required_text, zh_locale)
+
+    def test_issue_196_admin_channel_clone_uses_dedicated_dialog_payload_and_success_copy(self):
+        channel_index = read("yudao-ui/draw2video-admin/src/views/aigc/model/channel/index.vue")
+        channel_form = read("yudao-ui/draw2video-admin/src/views/aigc/model/channel/ChannelForm.vue")
+        channel_api = read("yudao-ui/draw2video-admin/src/api/aigc/model/channel/index.ts")
+        zh_locale = read("yudao-ui/draw2video-admin/src/locales/zh-CN.ts")
+        en_locale = read("yudao-ui/draw2video-admin/src/locales/en.ts")
+
+        self.assertIn("openForm('clone', scope.row.id)", channel_index)
+        self.assertIn("formRef.value.open(type, id, queryParams.modelId)", channel_index)
+
+        self.assertIn("sourceChannelId?: number", channel_form)
+        self.assertIn("dialogTitle.value = type === 'clone' ? t('aigc.model.actions.clone')", channel_form)
+        self.assertIn("<el-col v-if=\"formType !== 'clone'\"", channel_form)
+        self.assertIn(":span=\"formType === 'clone' ? 24 : 12\"", channel_form)
+        self.assertIn("<el-row v-else :gutter=\"20\">", channel_form)
+        self.assertIn("sourceChannelId: id", channel_form)
+        self.assertIn("status: CommonStatusEnum.DISABLE", channel_form)
+        self.assertIn("name: formData.value.name ? `${formData.value.name}-克隆` : undefined", channel_form)
+        self.assertIn("AigcModelChannelApi.cloneChannel({", channel_form)
+        for field in [
+            "sourceChannelId: Number(formData.value.sourceChannelId)",
+            "targetProviderId: Number(formData.value.providerId)",
+            "providerModel: formData.value.providerModel",
+            "name: formData.value.name",
+            "weight: formData.value.weight",
+        ]:
+            self.assertIn(field, channel_form)
+        self.assertIn("message.success(t('aigc.model.messages.cloneChannelSuccess'))", channel_form)
+
+        self.assertIn("export interface AigcModelChannelCloneReqVO", channel_api)
+        self.assertIn("sourceChannelId: number", channel_api)
+        self.assertIn("targetProviderId: number", channel_api)
+        self.assertIn("providerModel?: string", channel_api)
+        self.assertIn("name?: string", channel_api)
+        self.assertIn("weight?: number", channel_api)
+        self.assertIn("url: '/aigc/model/channel/clone'", channel_api)
+        clone_req_match = re.search(
+            r"interface AigcModelChannelCloneReqVO \{(?P<body>.*?)\n\}",
+            channel_api,
+            re.S,
+        )
+        self.assertIsNotNone(clone_req_match)
+        self.assertNotIn("costPrice?: number", clone_req_match.group("body"))
+
+        self.assertIn("clone: '克隆'", zh_locale)
+        self.assertIn("cloneChannelSuccess: '克隆成功，已默认禁用，请核对后启用'", zh_locale)
+        self.assertIn("clone: 'Clone'", en_locale)
+        self.assertIn("cloneChannelSuccess: 'Clone created and disabled by default. Review it before enabling.'", en_locale)
+
     def test_issue_215_admin_aigc_i18n_scan_records_remaining_work_and_matching_locale_paths(self):
         scan = read("yudao-ui/draw2video-admin/src/views/aigc/i18n-hardcoded-scan-20260616.md")
         zh_locale = read("yudao-ui/draw2video-admin/src/locales/zh-CN.ts")
