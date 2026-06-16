@@ -58,6 +58,7 @@ import {
 } from "@/features/canvas/clipboard";
 import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/CanvasContextMenu";
 import { CanvasProjectHeader, CanvasToolDock, CanvasUtilityBar, CanvasViewToolbar, MultiSelectionToolbar, type CanvasSyncState, type CreateNodeKind, type SelectionRectSnapshot } from "@/features/canvas/CanvasChrome";
+import { useCanvasMultiSelection, type MultiSelectionAction } from "@/features/canvas/use-canvas-multi-selection";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
 import { ImagePlus, PenLine, Type, Video } from "lucide-react";
@@ -78,8 +79,6 @@ const CANVAS_EDGE_TYPES = {
 } satisfies EdgeTypes;
 
 type AssetUrlEntry = { assetId: number; url: string; expireTime: string | null };
-
-const assetUrlMemoryCache = new Map<string, AssetUrlEntry>();
 
 function assetUrlCacheKey(projectId: string | null, assetId: number) {
   return `${projectId ?? "global"}:${assetId}`;
@@ -107,8 +106,6 @@ type PendingConnectionPreview = {
   to: { x: number; y: number };
   direction: LinkedCreateDirection;
 };
-
-type MultiSelectionAction = "group" | "merge";
 
 type PointerSnapshot = {
   x: number;
@@ -1113,8 +1110,6 @@ function CanvasFlow() {
   const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
   const [nodeDragCommitVersion, setNodeDragCommitVersion] = useState(0);
   const [keyboardEditingNodeId, setKeyboardEditingNodeId] = useState<string | null>(null);
-  const [multiSelectionBounds, setMultiSelectionBounds] = useState<SelectionRectSnapshot | null>(null);
-  const [multiSelectionAction, setMultiSelectionAction] = useState<MultiSelectionAction | null>(null);
   const [createMenu, setCreateMenu] = useState<{
     x: number;
     y: number;
@@ -1129,6 +1124,8 @@ function CanvasFlow() {
   const selectionRectRef = useRef<SelectionRectSnapshot | null>(null);
   const selectionRafRef = useRef<number | null>(null);
   const groupDragStartRef = useRef<Record<string, { x: number; y: number }> | null>(null);
+  // Keep asset URLs scoped to this canvas instance so project sessions do not leak cached URLs across tabs.
+  const assetUrlCacheRef = useRef(new Map<string, AssetUrlEntry>());
   const storeApi = useStoreApi();
 
   const {
@@ -1143,20 +1140,20 @@ function CanvasFlow() {
     fitView,
   } = useReactFlow();
 
-  const refreshMultiSelectionBounds = useCallback((sourceNodes?: AppNode[]) => {
-    const currentNodes = sourceNodes ?? getNodes() as AppNode[];
-    const selectedNodes = currentNodes.filter((node) => node.selected);
-    const action: MultiSelectionAction | null = canGroupSelectedNodes(selectedNodes, currentNodes)
+  const {
+    bounds: multiSelectionBounds,
+    action: multiSelectionAction,
+    clear: clearMultiSelection,
+    refresh: refreshMultiSelection,
+  } = useCanvasMultiSelection({
+    getNodes: () => getNodes() as AppNode[],
+    readBounds: getNodesSelectionViewportRect,
+    resolveAction: (selectedNodes, currentNodes) => canGroupSelectedNodes(selectedNodes, currentNodes)
       ? "group"
       : getMergeTargetForSelectedNodes(selectedNodes, currentNodes)
         ? "merge"
-        : null;
-    window.requestAnimationFrame(() => {
-      const bounds = getNodesSelectionViewportRect();
-      setMultiSelectionAction(action);
-      setMultiSelectionBounds(bounds && selectedNodes.length > 1 ? bounds : null);
-    });
-  }, [getNodes]);
+        : null,
+  });
 
   const handleSelectionEnd = useCallback(() => {
     const selectionRect = selectionRectRef.current;
@@ -1180,7 +1177,7 @@ function CanvasFlow() {
             selected: selectedIds.has(node.id),
         }));
         setNodes(nextNodes);
-        refreshMultiSelectionBounds(nextNodes);
+        refreshMultiSelection(nextNodes);
         selectedNodes = nextNodes.filter((node) => selectedIds.has(node.id));
       }
 
@@ -1194,13 +1191,12 @@ function CanvasFlow() {
             selected: node.id === selectedId,
           }))
         );
-        setMultiSelectionBounds(null);
-        setMultiSelectionAction(null);
+        clearMultiSelection();
         return;
       }
 
       if (selectedNodes.length !== 1) {
-        if (!selectionRect) refreshMultiSelectionBounds(getNodes() as AppNode[]);
+        if (!selectionRect) refreshMultiSelection(getNodes() as AppNode[]);
         return;
       }
 
@@ -1212,10 +1208,9 @@ function CanvasFlow() {
           selected: node.id === selectedId,
         }))
       );
-      setMultiSelectionBounds(null);
-      setMultiSelectionAction(null);
+      clearMultiSelection();
     });
-  }, [getNodes, refreshMultiSelectionBounds, setNodes, storeApi]);
+  }, [clearMultiSelection, getNodes, refreshMultiSelection, setNodes, storeApi]);
 
   // Track last mouse position for paste placement
   const lastMouseRef = useRef<{ x: number; y: number }>({
@@ -1316,6 +1311,7 @@ function CanvasFlow() {
   }, []);
 
   const refreshAssetUrls = useCallback(async (nodesToRefresh: AppNode[]) => {
+    const assetUrlCache = assetUrlCacheRef.current;
     const mediaAssetRefs = nodesToRefresh.flatMap((node) => (
       collectNodeAssetIds(node).map((assetId) => ({ nodeId: node.id, node, assetId }))
     ));
@@ -1335,8 +1331,8 @@ function CanvasFlow() {
     const projectIdForAccess = serverProjectId;
     const entriesByAssetId = new Map<number, AssetUrlEntry>();
     requestsByAssetId.forEach((_, assetId) => {
-      const cached = assetUrlMemoryCache.get(assetUrlCacheKey(projectIdForAccess, assetId))
-        ?? assetUrlMemoryCache.get(assetUrlCacheKey(null, assetId));
+      const cached = assetUrlCache.get(assetUrlCacheKey(projectIdForAccess, assetId))
+        ?? assetUrlCache.get(assetUrlCacheKey(null, assetId));
       if (isUsableAssetUrlEntry(cached)) {
         entriesByAssetId.set(assetId, cached);
       }
@@ -1375,7 +1371,7 @@ function CanvasFlow() {
       if (!Number.isFinite(assetId)) return;
       const normalizedEntry = { assetId, url: entry.url, expireTime: entry.expireTime ?? null };
       entriesByAssetId.set(normalizedEntry.assetId, normalizedEntry);
-      assetUrlMemoryCache.set(assetUrlCacheKey(projectIdForAccess, normalizedEntry.assetId), normalizedEntry);
+      assetUrlCache.set(assetUrlCacheKey(projectIdForAccess, normalizedEntry.assetId), normalizedEntry);
     });
 
     try {
@@ -1770,8 +1766,7 @@ function CanvasFlow() {
         .map((node) => ({ ...node, selected: childNodeIds.has(node.id) }))
       );
       setEdges((eds) => eds.filter((edge) => edge.source !== detail.groupId && edge.target !== detail.groupId));
-      setMultiSelectionBounds(null);
-      setMultiSelectionAction(null);
+      clearMultiSelection();
       canvasOperations.submitOperation("NODE_DELETE", {
         nodeId: detail.groupId,
       });
@@ -1779,7 +1774,7 @@ function CanvasFlow() {
 
     window.addEventListener("copse:group-ungroup", handleGroupUngroup);
     return () => window.removeEventListener("copse:group-ungroup", handleGroupUngroup);
-  }, [canvasOperations, getNodes, isReadOnly, setEdges, setNodes]);
+  }, [canvasOperations, clearMultiSelection, getNodes, isReadOnly, setEdges, setNodes]);
 
   const arrangeGroupNodes = useCallback((groupId: string, mode: GroupArrangeEventDetail["mode"]) => {
     if (isReadOnly) return;
@@ -1857,8 +1852,7 @@ function CanvasFlow() {
         selected: false,
       };
     }));
-    setMultiSelectionBounds(null);
-    setMultiSelectionAction(null);
+    clearMultiSelection();
     for (const [nodeId, position] of nextPositions.entries()) {
       canvasOperations.submitOperation("NODE_MOVE", {
         nodeId,
@@ -1873,7 +1867,7 @@ function CanvasFlow() {
         updatedAt: nextGroupData.updatedAt,
       },
     });
-  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+  }, [canvasOperations, clearMultiSelection, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
   useEffect(() => {
     function handleGroupArrange(event: Event) {
@@ -2008,7 +2002,7 @@ function CanvasFlow() {
             const selectionRect = selectionRectRef.current;
             const nextNodes = applyNodeChanges(selectionChanges, nds);
             const selectedNodes = selectionRect ? applyPreviewCardSelection(nextNodes, selectionRect) : nextNodes;
-            queueMicrotask(() => refreshMultiSelectionBounds(selectedNodes as AppNode[]));
+            queueMicrotask(() => refreshMultiSelection(selectedNodes as AppNode[]));
             return selectedNodes;
           });
         }
@@ -2047,7 +2041,7 @@ function CanvasFlow() {
         if (selectionRect && changes.some((change) => change.type === "select")) {
           nextNodes = applyPreviewCardSelection(nextNodes, selectionRect) as AppNode[];
         }
-        queueMicrotask(() => refreshMultiSelectionBounds(nextNodes));
+        queueMicrotask(() => refreshMultiSelection(nextNodes));
         return nextNodes;
       });
       for (const change of changes) {
@@ -2090,7 +2084,7 @@ function CanvasFlow() {
         }
       }
     },
-    [canvasOperations, getNodes, isReadOnly, refreshMultiSelectionBounds, setNodes]
+    [canvasOperations, getNodes, isReadOnly, refreshMultiSelection, setNodes]
   );
 
   const onEdgesChange = useCallback(
@@ -2491,8 +2485,7 @@ function CanvasFlow() {
         selected: true,
       };
     }));
-    setMultiSelectionBounds(null);
-    setMultiSelectionAction(null);
+    clearMultiSelection();
     canvasOperations.submitOperation("NODE_MOVE", {
       nodeId: targetGroup.id,
       position: topLeft,
@@ -2507,7 +2500,7 @@ function CanvasFlow() {
       },
     });
     return true;
-  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+  }, [canvasOperations, clearMultiSelection, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
   const groupSelectedNodes = useCallback(() => {
     if (isReadOnly) return;
@@ -2556,10 +2549,9 @@ function CanvasFlow() {
       groupNode,
       ...unselectedNodes.slice(insertIndex),
     ]);
-    setMultiSelectionBounds(null);
-    setMultiSelectionAction(null);
+    clearMultiSelection();
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(groupNode) });
-  }, [canvasOperations, getNodes, isReadOnly, mergeSelectedNodesIntoGroup, screenToFlowPosition, setNodes]);
+  }, [canvasOperations, clearMultiSelection, getNodes, isReadOnly, mergeSelectedNodesIntoGroup, screenToFlowPosition, setNodes]);
 
   const closeReferencePicker = useCallback(() => {
     window.dispatchEvent(new CustomEvent<ReferencePickerEventDetail>("copse:reference-picker", {
@@ -2875,8 +2867,7 @@ function CanvasFlow() {
     if (movedNodes.length === 0) return;
 
     setNodes(nextNodes);
-    setMultiSelectionBounds(null);
-    setMultiSelectionAction(null);
+    clearMultiSelection();
     for (const node of movedNodes) {
       canvasOperations.submitOperation("NODE_MOVE", {
         nodeId: node.id,
@@ -2884,7 +2875,7 @@ function CanvasFlow() {
       });
     }
     window.requestAnimationFrame(() => fitView({ padding: 0.24, duration: 260 }));
-  }, [canvasOperations, edges, fitView, getNodes, isReadOnly, setNodes]);
+  }, [canvasOperations, clearMultiSelection, edges, fitView, getNodes, isReadOnly, setNodes]);
   const handleToolbarZoomChange = useCallback((zoom: number) => {
     const vp = getViewport();
     const flowElement = document.querySelector(".react-flow");
@@ -3122,8 +3113,7 @@ function CanvasFlow() {
         }
         selectionStartRef.current = { x: event.clientX, y: event.clientY };
         selectionRectRef.current = { x: event.clientX, y: event.clientY, width: 0, height: 0 };
-        setMultiSelectionBounds(null);
-        setMultiSelectionAction(null);
+        clearMultiSelection();
       }}
       onPointerMoveCapture={(event) => {
         const start = selectionStartRef.current;
@@ -3245,14 +3235,13 @@ function CanvasFlow() {
           groupDragStartRef.current = Object.fromEntries(
             (getNodes() as AppNode[]).map((node) => [node.id, { ...node.position }])
           );
-          setMultiSelectionBounds(null);
-          setMultiSelectionAction(null);
+          clearMultiSelection();
           window.dispatchEvent(new CustomEvent("copse:canvas-interaction"));
         }}
         onNodeDragStop={() => {
           nodeDragActiveRef.current = false;
           groupDragStartRef.current = null;
-          refreshMultiSelectionBounds();
+          refreshMultiSelection();
           setNodeDragCommitVersion((version) => version + 1);
         }}
         onConnectStart={() => { if (isReadOnly) return; setPendingConnectionPreview(null); window.dispatchEvent(new CustomEvent("copse:canvas-interaction")); }}
