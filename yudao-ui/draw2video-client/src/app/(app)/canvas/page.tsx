@@ -67,7 +67,7 @@ import { CanvasContextMenu, type ContextMenuState } from "@/features/canvas/Canv
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Boxes, ChevronRight, Folder, Globe, HelpCircle, ImagePlus, LogOut, MessageCircle, Palette, PenLine, Plus, Settings, Share2, Sparkles, Type, Video, Wallet, Map as MapIcon, Grid2X2, Grid3X3, Scan } from "lucide-react";
+import { ArrowLeft, BookOpen, Boxes, ChevronRight, Globe, HelpCircle, ImagePlus, LogOut, MessageCircle, Palette, PenLine, Plus, Settings, Share2, Sparkles, Type, Video, Wallet, Map as MapIcon, Grid2X2, Grid3X3, Scan } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -946,7 +946,7 @@ function CanvasToolDock({ readOnly, onAddNode, onOpenTemplateLibrary }: CanvasTo
           />
         </button>
         <ToolDockButton label="画板" icon={<Palette className="size-5" />} />
-        <ToolDockButton label="素材库" icon={<Folder className="size-5" />} onClick={onOpenTemplateLibrary} />
+        <ToolDockButton label="素材库" icon={<BookOpen className="size-5" />} onClick={onOpenTemplateLibrary} />
         <ToolDockButton label="帮助" icon={<HelpCircle className="size-5" />} />
       </nav>
 
@@ -2369,7 +2369,10 @@ function CanvasFlow() {
       createServerProject("未命名项目")
         .then((projectId) => {
           const id = String(projectId);
-          router.replace(`/canvas?projectId=${encodeURIComponent(id)}`);
+          const nextUrl = routeTemplateId
+            ? `/canvas?projectId=${encodeURIComponent(id)}&templateId=${encodeURIComponent(routeTemplateId)}`
+            : `/canvas?projectId=${encodeURIComponent(id)}`;
+          router.replace(nextUrl);
           setActiveProjectId(id);
         })
         .catch(() => {
@@ -2378,7 +2381,7 @@ function CanvasFlow() {
         });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [createServerProject, routeProjectId, router]);
+  }, [createServerProject, routeProjectId, routeTemplateId, router]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -2780,7 +2783,6 @@ function CanvasFlow() {
       y: window.innerHeight / 2,
     });
     const id = `template_${template.id}_${Date.now()}`;
-    const outputPreviewUrl = template.imageUrl || null;
     const newNode: AppNode = withCardNodeInteraction({
       id,
       type: "image",
@@ -2795,8 +2797,6 @@ function CanvasFlow() {
         fileName: template.title || "Template",
         dataUrl: "",
         mimeType: template.mimeType || "image/png",
-        previewUrl: outputPreviewUrl,
-        outputPreviewUrl,
         width: template.width,
         height: template.height,
         createdAt: new Date().toISOString(),
@@ -2813,15 +2813,6 @@ function CanvasFlow() {
         taskId: null,
         errorMessage: null,
         elapsedMs: null,
-        outputs: outputPreviewUrl ? [{
-          id: `template-${template.id}`,
-          previewUrl: outputPreviewUrl,
-          width: template.width,
-          height: template.height,
-          fileName: template.title || "Template",
-          mimeType: template.mimeType || "image/png",
-        }] : [],
-        primaryOutputId: outputPreviewUrl ? `template-${template.id}` : null,
       },
       selected: true,
     });
@@ -3757,7 +3748,6 @@ function CanvasFlow() {
         multiSelectionKeyCode={keyboardEditingNodeId ? null : undefined}
         panActivationKeyCode={keyboardEditingNodeId ? null : "Space"}
         disableKeyboardA11y={Boolean(keyboardEditingNodeId)}
-        fitView
         onlyRenderVisibleElements
         defaultEdgeOptions={{
           type: "signal",

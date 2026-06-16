@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
@@ -23,9 +24,10 @@ type MediaPreviewDialogProps = {
   onClose: () => void;
   onNavigate?: (index: number) => void;
   onSetPrimary?: () => void;
+  footerActions?: ReactNode;
 };
 
-export function MediaPreviewDialog({ item, items, currentIndex = 0, open, onClose, onNavigate, onSetPrimary }: MediaPreviewDialogProps) {
+export function MediaPreviewDialog({ item, items, currentIndex = 0, open, onClose, onNavigate, onSetPrimary, footerActions }: MediaPreviewDialogProps) {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const information = useMemo(() => compactInfo(item?.information ?? []), [item?.information]);
   const editableAsset = item?.editableAsset;
@@ -255,38 +257,42 @@ export function MediaPreviewDialog({ item, items, currentIndex = 0, open, onClos
               </div>
 
               <div className="border-t border-border-warm p-5 dark:border-white/12">
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => editableAsset?.onDownload ? editableAsset.onDownload() : downloadMedia(item)}
-                    disabled={editableAsset ? !editableAsset.canDownload : false}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-md bg-charcoal px-4 py-2.5 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] transition-opacity active:opacity-80 disabled:opacity-50 dark:border dark:border-white/14 dark:bg-[#1f1d19] dark:text-[#f4efe6] dark:shadow-[rgba(255,255,255,0.08)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.45)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.24)_0px_1px_2px_0px] dark:hover:bg-[#27241f]"
-                  >
-                    <Download className="size-4" />
-                    下载
-                  </button>
-                  {canSetPrimary && (
+                {footerActions ? (
+                  footerActions
+                ) : (
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => onSetPrimary?.()}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-md border border-border-warm bg-background px-4 py-2.5 text-sm font-medium text-charcoal shadow-[rgba(0,0,0,0.05)_0px_1px_2px_0px] transition-colors hover:bg-muted active:opacity-80 dark:border-white/12 dark:bg-white/6 dark:text-[#f4efe6] dark:hover:bg-white/10"
+                      onClick={() => editableAsset?.onDownload ? editableAsset.onDownload() : downloadMedia(item)}
+                      disabled={editableAsset ? !editableAsset.canDownload : false}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-md bg-charcoal px-4 py-2.5 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] transition-opacity active:opacity-80 disabled:opacity-50 dark:border dark:border-white/14 dark:bg-[#1f1d19] dark:text-[#f4efe6] dark:shadow-[rgba(255,255,255,0.08)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.45)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.24)_0px_1px_2px_0px] dark:hover:bg-[#27241f]"
                     >
-                      <Star className="size-4" />
-                      设为首图
+                      <Download className="size-4" />
+                      下载
                     </button>
-                  )}
-                  {editableAsset?.onDelete && (
-                    <button
-                      type="button"
-                      onClick={() => editableAsset.onDelete?.()}
-                      disabled={!editableAsset.canDelete}
-                      className="flex items-center justify-center gap-2 rounded-md border border-border-warm px-4 py-2.5 text-sm text-destructive hover:bg-muted active:opacity-80 disabled:opacity-50 dark:border-white/12 dark:hover:bg-white/8"
-                    >
-                      <Trash2 className="size-4" />
-                      删除
-                    </button>
-                  )}
-                </div>
+                    {canSetPrimary && (
+                      <button
+                        type="button"
+                        onClick={() => onSetPrimary?.()}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-md border border-border-warm bg-background px-4 py-2.5 text-sm font-medium text-charcoal shadow-[rgba(0,0,0,0.05)_0px_1px_2px_0px] transition-colors hover:bg-muted active:opacity-80 dark:border-white/12 dark:bg-white/6 dark:text-[#f4efe6] dark:hover:bg-white/10"
+                      >
+                        <Star className="size-4" />
+                        设为首图
+                      </button>
+                    )}
+                    {editableAsset?.onDelete && (
+                      <button
+                        type="button"
+                        onClick={() => editableAsset.onDelete?.()}
+                        disabled={!editableAsset.canDelete}
+                        className="flex items-center justify-center gap-2 rounded-md border border-border-warm px-4 py-2.5 text-sm text-destructive hover:bg-muted active:opacity-80 disabled:opacity-50 dark:border-white/12 dark:hover:bg-white/8"
+                      >
+                        <Trash2 className="size-4" />
+                        删除
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </aside>
           </motion.div>

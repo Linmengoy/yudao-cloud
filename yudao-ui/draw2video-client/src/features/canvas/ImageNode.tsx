@@ -45,7 +45,6 @@ import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getMyAsset } from "@/features/assets/asset-api";
 import { getAssetOriginalExpireTime, getAssetOriginalUrl } from "@/features/assets/asset-dictionaries";
-import { getPromptTemplate } from "@/features/templates/template-api";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
@@ -668,38 +667,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     },
     [id, setNodes]
   );
-
-  useEffect(() => {
-    if (!data.sourceTemplateId) return;
-    if (data.previewUrl || data.outputPreviewUrl || outputs.some((output) => output.previewUrl)) return;
-    let cancelled = false;
-    getPromptTemplate(data.sourceTemplateId)
-      .then((template) => {
-        if (cancelled || !template.imageUrl) return;
-        const output: ImageNodeOutput = {
-          id: `template-${template.id}`,
-          previewUrl: template.imageUrl,
-          width: template.width,
-          height: template.height,
-          fileName: template.title || data.fileName,
-          mimeType: template.mimeType || data.mimeType,
-        };
-        updateRuntimeData({
-          previewUrl: template.imageUrl,
-          outputPreviewUrl: template.imageUrl,
-          width: template.width ?? data.width,
-          height: template.height ?? data.height,
-          mimeType: template.mimeType || data.mimeType,
-          outputs: [output],
-          primaryOutputId: output.id,
-          assetUrlExpireTime: template.imageUrlExpireTime ?? null,
-        });
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [data.fileName, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.sourceTemplateId, data.width, outputs, updateRuntimeData]);
 
   useEffect(() => {
     if (!needsOutputUrlRefresh(outputs, data.assetUrlExpireTime)) return;
