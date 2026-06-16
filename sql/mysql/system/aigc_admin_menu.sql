@@ -708,6 +708,30 @@ INSERT INTO `system_menu` (
 ) VALUES
 ('下载日志查询', 'aigc:asset:query', 3, 1, @assetDownloadLogMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
 
+-- 提示词模板
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES (
+    '提示词模板', 'aigc:asset:query', 2, 3, @aigcAssetParentId,
+    'prompt-template', 'ep:collection', 'aigc/asset/prompt-template/index', 'AigcPromptTemplate',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+);
+
+SET @promptTemplateMenuId := LAST_INSERT_ID();
+
+INSERT INTO `system_menu` (
+    `name`, `permission`, `type`, `sort`, `parent_id`,
+    `path`, `icon`, `component`, `component_name`,
+    `status`, `visible`, `keep_alive`, `always_show`,
+    `creator`, `create_time`, `updater`, `update_time`, `deleted`
+) VALUES
+('提示词模板查询', 'aigc:asset:query', 3, 1, @promptTemplateMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'),
+('提示词模板导入', 'aigc:asset:create', 3, 2, @promptTemplateMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0');
+
 -- ===================================================================
 -- 6. AIGC 工作流管理（父级目录，sort=96）
 -- 注意：前端暂无对应页面，仅创建目录 + 按钮权限用于接口鉴权
@@ -1072,3 +1096,171 @@ INSERT INTO system_menu (
 )
 SELECT '成本记录导出', 'aigc:billing:cost:export', 3, 2, @costMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
 WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:billing:cost:export' AND deleted = b'0');
+
+-- AIGC Community management menus
+SELECT @aigcCommunityParentId := id
+FROM system_menu
+WHERE name = 'AIGC 社区管理'
+  AND path = '/aigc-community'
+  AND type = 1
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT
+    'AIGC 社区管理', '', 1, 98, 0,
+    '/aigc-community', 'ep:collection', NULL, NULL,
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcCommunityParentId IS NULL;
+
+SELECT @aigcCommunityParentId := id
+FROM system_menu
+WHERE name = 'AIGC 社区管理'
+  AND path = '/aigc-community'
+  AND type = 1
+  AND deleted = b'0'
+LIMIT 1;
+
+SELECT @communityPostMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:community-post:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT
+    '作品审核', 'aigc:community-post:query', 2, 1, @aigcCommunityParentId,
+    'post', 'ep:finished', 'aigc/community/post/index', 'AigcCommunityPost',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @communityPostMenuId IS NULL;
+
+SELECT @communityPostMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:community-post:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '作品查询', 'aigc:community-post:query', 3, 1, @communityPostMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:community-post:query' AND type = 3 AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '作品审核处理', 'aigc:community-post:audit', 3, 2, @communityPostMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:community-post:audit' AND deleted = b'0');
+
+SELECT @communityCommentMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:community-comment:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT
+    '评论管理', 'aigc:community-comment:query', 2, 2, @aigcCommunityParentId,
+    'comment', 'ep:chat-dot-round', 'aigc/community/comment/index', 'AigcCommunityComment',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @communityCommentMenuId IS NULL;
+
+SELECT @communityCommentMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:community-comment:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '评论查询', 'aigc:community-comment:query', 3, 1, @communityCommentMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:community-comment:query' AND type = 3 AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '评论审核处理', 'aigc:community-comment:audit', 3, 2, @communityCommentMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:community-comment:audit' AND deleted = b'0');
+
+-- AIGC Guide content management button permissions
+SELECT @aigcGuideMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:guide:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT 'Guide create', 'aigc:guide:create', 3, 2, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:guide:create' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT 'Guide update', 'aigc:guide:update', 3, 3, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:guide:update' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT 'Guide delete', 'aigc:guide:delete', 3, 4, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:guide:delete' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT 'Guide publish', 'aigc:guide:publish', 3, 5, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcGuideMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:guide:publish' AND deleted = b'0');

@@ -1,7 +1,13 @@
 import { NextRequest } from "next/server";
 
-const GATEWAY_HOST = process.env.NEXT_PUBLIC_GATEWAY_HOST || "111.228.39.103";
-const GATEWAY_PORT = process.env.NEXT_PUBLIC_GATEWAY_PORT || "48080";
+const GATEWAY_HOST =
+  process.env.APP_GATEWAY_HOST ||
+  process.env.NEXT_PUBLIC_GATEWAY_HOST ||
+  "host.docker.internal";
+const GATEWAY_PORT =
+  process.env.APP_GATEWAY_PORT ||
+  process.env.NEXT_PUBLIC_GATEWAY_PORT ||
+  "48080";
 const GATEWAY_BASE_URL = `http://${GATEWAY_HOST}:${GATEWAY_PORT}`;
 
 type RouteContext = {

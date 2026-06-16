@@ -135,21 +135,39 @@ java -jar .\yudao-module-aigc-workflow\yudao-module-aigc-workflow-server\target\
 前端
 
 ```powershell
-./script/deploy-frontend-images.ps1 -Server manman
+./script/deploy-frontend-images.ps1 -Server manman -DeployEnv test -UseRegistry
 ```
 
 ```powershell
-./script/deploy-frontend-images.ps1 -Server manman -Target admin
+./script/deploy-frontend-images.ps1 -Server manman2 -DeployEnv prod -UseRegistry
 ```
 
 ```powershell
-./script/deploy-frontend-images.ps1 -Server manman -Target client
+./script/deploy-frontend-images.ps1 -Server manman -DeployEnv test -Target admin -UseRegistry
+```
+
+```powershell
+./script/deploy-frontend-images.ps1 -Server manman2 -DeployEnv prod -Target admin -UseRegistry
+```
+
+```powershell
+./script/deploy-frontend-images.ps1 -Server manman -DeployEnv test -Target client -UseRegistry
+```
+
+```powershell
+./script/deploy-frontend-images.ps1 -Server manman2 -DeployEnv prod -Target client -UseRegistry
 ```
 
 前端发布策略：
 
-- 本地 Docker Desktop 完成 `docker buildx build --load` 和 `docker save`。
-- 上传镜像包到 `manman:/opt/code`，服务器只执行 `docker load` 和 `docker compose up -d --no-build --force-recreate`。
-- `script/docker/docker-compose.frontend.yml` 会随发布脚本同步到 `manman:/opt/code/docker-compose.frontend.yml`。
+- manman 是测试环境，manman2 是生产环境。
+- 前端必须在本机 Docker Desktop 构建，服务器不做前端打包。
+- Registry 模式：本机执行 `docker buildx build --load`，按 `test-<commit>` 或 `prod-<commit>` 生成镜像标签，推送到 Gitea Container Registry `111.228.39.103:3000/root/draw2video-*:<env>-<commit>`，服务器执行 `docker compose --env-file .frontend-<env>.env pull` 和 `docker compose --env-file .frontend-<env>.env up -d --no-build --force-recreate`。
+- 脚本会同步 `/opt/code/.frontend-test.env` 或 `/opt/code/.frontend-prod.env`，用于注入当前环境的网关、API、WebSocket、租户和终端变量。
+- manman 与 Gitea Registry 在同一台机器上，脚本默认本机推送到 `111.228.39.103:3000/root`，manman 远端拉取使用 `127.0.0.1:3000/root`。
+- manman2 远端拉取使用 `111.228.39.103:3000/root`。
+- 如需手动指定 manman 的远端拉取地址：`./script/deploy-frontend-images.ps1 -Server manman -UseRegistry -RemoteRegistry 127.0.0.1:3000/root`。
+- `script/docker/docker-compose.frontend.yml` 会随发布脚本同步到目标服务器的 `/opt/code/docker-compose.frontend.yml`。
+- 旧 tar 包模式仅作为临时回退：去掉 `-UseRegistry` 后，脚本会 `docker save` 并上传镜像包到服务器，再执行 `docker load`。
 - 用户访问链路为 `PC -> ucould(Caddy) -> manman(draw2video-client/admin) -> manman(yudao-gateway)`。
-- `draw2video-client` 容器内的 Next `/app-api` 代理通过 `host.docker.internal:48080` 访问 manman 宿主机网关，避免容器内访问 `111.228.39.103:48080` 超时。
+- `draw2video-client` 容器内的 Next `/app-api` 代理通过 `APP_GATEWAY_HOST=host.docker.internal`、`APP_GATEWAY_PORT=48080` 访问当前宿主机网关，避免 manman2 prod 回连 manman test。

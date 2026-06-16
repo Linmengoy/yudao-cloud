@@ -20,9 +20,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.*;
@@ -44,6 +46,7 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
     public Long createPrice(AigcModelPriceSaveReqVO reqVO) {
         validateModelExists(reqVO.getModelId());
         validatePriceUnique(null, reqVO.getModelId(), reqVO.getCapability());
+        validatePriceConfig(reqVO.getPriceConfig());
 
         AigcModelPriceDO price = BeanUtils.toBean(reqVO, AigcModelPriceDO.class);
         priceMapper.insert(price);
@@ -55,6 +58,7 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
         validatePriceExists(reqVO.getId());
         validateModelExists(reqVO.getModelId());
         validatePriceUnique(reqVO.getId(), reqVO.getModelId(), reqVO.getCapability());
+        validatePriceConfig(reqVO.getPriceConfig());
 
         AigcModelPriceDO updateObj = BeanUtils.toBean(reqVO, AigcModelPriceDO.class);
         priceMapper.updateById(updateObj);
@@ -96,14 +100,22 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
         BigDecimal salePrice = price.getSalePrice();
         BigDecimal costPrice = price.getCostPrice();
         Map<String, Object> priceDetail = new HashMap<>();
+        priceDetail.put("baseSalePrice", price.getSalePrice());
+        priceDetail.put("baseCostPrice", price.getCostPrice());
 
         AigcModelBillingUnitEnum billingUnit = AigcModelBillingUnitEnum.getByValue(price.getBillingUnit());
         if (billingUnit != null) {
             JSONObject params = reqDTO.getParams() == null ? null : JSONUtil.parseObj(reqDTO.getParams());
-            salePrice = calculateByBillingUnit(salePrice, billingUnit, params, price.getPriceConfig());
-            costPrice = calculateByBillingUnit(costPrice, billingUnit, params, price.getPriceConfig());
+            PriceCalculationResult result = calculateByBillingUnit(price.getSalePrice(), price.getCostPrice(), billingUnit,
+                    params, price.getPriceConfig());
+            salePrice = result.salePrice();
+            costPrice = result.costPrice();
             priceDetail.put("billingUnit", billingUnit.getCode());
             priceDetail.put("priceConfig", price.getPriceConfig());
+            priceDetail.put("matchedRules", result.matchedRules());
+            priceDetail.put("finalSaleMultiplier", result.saleMultiplier());
+            priceDetail.put("finalCostMultiplier", result.costMultiplier());
+            priceDetail.put("inputParamsSummary", summarizeParams(params));
         }
 
         return new AigcModelPriceCalculateRespDTO()
@@ -118,26 +130,47 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
                 .setPriceDetail(priceDetail);
     }
 
-    private BigDecimal calculateByBillingUnit(BigDecimal basePrice, AigcModelBillingUnitEnum billingUnit,
-                                              JSONObject params, String priceConfig) {
-        BigDecimal multiplier = BigDecimal.ONE;
+    private PriceCalculationResult calculateByBillingUnit(BigDecimal baseSalePrice, BigDecimal baseCostPrice,
+                                                          AigcModelBillingUnitEnum billingUnit,
+                                                          JSONObject params, String priceConfig) {
+        BigDecimal saleMultiplier = BigDecimal.ONE;
+        BigDecimal costMultiplier = BigDecimal.ONE;
+        List<Map<String, Object>> matchedRules = new ArrayList<>();
 
         if (AigcModelBillingUnitEnum.PER_IMAGE.equals(billingUnit) && params != null) {
-            multiplier = multiplier.multiply(BigDecimal.valueOf(resolveBatchSize(params)));
+            BigDecimal batchSize = BigDecimal.valueOf(resolveBatchSize(params));
+            saleMultiplier = saleMultiplier.multiply(batchSize);
+            costMultiplier = costMultiplier.multiply(batchSize);
+            Map<String, Object> ruleDetail = new HashMap<>();
+            ruleDetail.put("type", "batchSize");
+            ruleDetail.put("multiplier", batchSize);
+            matchedRules.add(ruleDetail);
         }
 
-        if (priceConfig != null) {
+        if (priceConfig != null && !priceConfig.isBlank()) {
             JSONObject config = JSONUtil.parseObj(priceConfig);
 
             if (!AigcModelBillingUnitEnum.PER_IMAGE.equals(billingUnit)
                     && Boolean.TRUE.equals(config.getBool("batchMultiplier")) && params != null) {
-                multiplier = multiplier.multiply(BigDecimal.valueOf(resolveBatchSize(params)));
+                BigDecimal batchSize = BigDecimal.valueOf(resolveBatchSize(params));
+                saleMultiplier = saleMultiplier.multiply(batchSize);
+                costMultiplier = costMultiplier.multiply(batchSize);
+                Map<String, Object> ruleDetail = new HashMap<>();
+                ruleDetail.put("type", "batchSize");
+                ruleDetail.put("multiplier", batchSize);
+                matchedRules.add(ruleDetail);
             }
 
             if (Boolean.TRUE.equals(config.getBool("durationMultiplier")) && params != null) {
                 Integer duration = params.getInt("duration", 10);
                 BigDecimal durationFactor = BigDecimal.valueOf(Math.ceil(duration / 5.0));
-                multiplier = multiplier.multiply(durationFactor);
+                saleMultiplier = saleMultiplier.multiply(durationFactor);
+                costMultiplier = costMultiplier.multiply(durationFactor);
+                Map<String, Object> ruleDetail = new HashMap<>();
+                ruleDetail.put("type", "duration");
+                ruleDetail.put("multiplier", durationFactor);
+                ruleDetail.put("duration", duration);
+                matchedRules.add(ruleDetail);
             }
 
             if (config.containsKey("resolutionExtra") && params != null) {
@@ -145,17 +178,142 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
                 Integer extra = config.getJSONObject("resolutionExtra").getInt(resolution, 0);
                 if (extra > 0) {
                     BigDecimal extraFactor = BigDecimal.ONE.add(BigDecimal.valueOf(extra).divide(BigDecimal.valueOf(100)));
-                    multiplier = multiplier.multiply(extraFactor);
+                    saleMultiplier = saleMultiplier.multiply(extraFactor);
+                    costMultiplier = costMultiplier.multiply(extraFactor);
+                    Map<String, Object> ruleDetail = new HashMap<>();
+                    ruleDetail.put("type", "resolutionExtra");
+                    ruleDetail.put("resolution", resolution);
+                    ruleDetail.put("multiplier", extraFactor);
+                    matchedRules.add(ruleDetail);
                 }
             }
+
+            ParamMultiplierResult paramResult = applyParamMultipliers(config, params, saleMultiplier, costMultiplier,
+                    matchedRules);
+            saleMultiplier = paramResult.saleMultiplier();
+            costMultiplier = paramResult.costMultiplier();
         }
 
-        return basePrice.multiply(multiplier);
+        return new PriceCalculationResult(
+                baseSalePrice.multiply(saleMultiplier),
+                baseCostPrice.multiply(costMultiplier),
+                saleMultiplier,
+                costMultiplier,
+                matchedRules);
+    }
+
+    private ParamMultiplierResult applyParamMultipliers(JSONObject config, JSONObject params, BigDecimal saleMultiplier,
+                                                        BigDecimal costMultiplier, List<Map<String, Object>> matchedRules) {
+        if (params == null || !config.containsKey("paramMultipliers")) {
+            return new ParamMultiplierResult(saleMultiplier, costMultiplier);
+        }
+        for (Object item : config.getJSONArray("paramMultipliers")) {
+            JSONObject rule = JSONUtil.parseObj(item);
+            String param = rule.getStr("param");
+            if (!matchesRule(params.get(param), rule)) {
+                continue;
+            }
+            BigDecimal ruleSaleMultiplier = defaultBigDecimal(rule.getBigDecimal("saleMultiplier"), BigDecimal.ONE);
+            BigDecimal ruleCostMultiplier = defaultBigDecimal(rule.getBigDecimal("costMultiplier"), ruleSaleMultiplier);
+            saleMultiplier = saleMultiplier.multiply(ruleSaleMultiplier);
+            costMultiplier = costMultiplier.multiply(ruleCostMultiplier);
+            Map<String, Object> ruleDetail = new HashMap<>();
+            ruleDetail.put("type", "paramMultiplier");
+            ruleDetail.put("param", param);
+            ruleDetail.put("operator", rule.getStr("operator", "eq"));
+            ruleDetail.put("value", Objects.toString(rule.get("value"), ""));
+            ruleDetail.put("saleMultiplier", ruleSaleMultiplier);
+            ruleDetail.put("costMultiplier", ruleCostMultiplier);
+            matchedRules.add(ruleDetail);
+        }
+        return new ParamMultiplierResult(saleMultiplier, costMultiplier);
+    }
+
+    private boolean matchesRule(Object actualValue, JSONObject rule) {
+        String operator = rule.getStr("operator", "eq");
+        Object expectedValue = rule.get("value");
+        if ("eq".equals(operator)) {
+            return Objects.equals(Objects.toString(actualValue, null), Objects.toString(expectedValue, null));
+        }
+        if ("in".equals(operator) && rule.getJSONArray("values") != null) {
+            String actual = Objects.toString(actualValue, null);
+            return rule.getJSONArray("values").stream()
+                    .anyMatch(item -> Objects.equals(actual, Objects.toString(item, null)));
+        }
+        return false;
+    }
+
+    private Map<String, Object> summarizeParams(JSONObject params) {
+        if (params == null) {
+            return Map.of();
+        }
+        Map<String, Object> summary = new HashMap<>();
+        for (String key : params.keySet()) {
+            Object value = params.get(key);
+            if (value instanceof CharSequence text && text.length() > 64) {
+                summary.put(key, text.subSequence(0, 64) + "***");
+            } else {
+                summary.put(key, value);
+            }
+        }
+        return summary;
+    }
+
+    private void validatePriceConfig(String priceConfig) {
+        if (priceConfig == null || priceConfig.isBlank()) {
+            return;
+        }
+        try {
+            JSONObject config = JSONUtil.parseObj(priceConfig);
+            if (config.containsKey("paramMultipliers")) {
+                for (Object item : config.getJSONArray("paramMultipliers")) {
+                    validateParamMultiplierRule(JSONUtil.parseObj(item));
+                }
+            }
+        } catch (Exception ex) {
+            throw exception(MODEL_PRICE_INVALID);
+        }
+    }
+
+    private void validateParamMultiplierRule(JSONObject rule) {
+        String param = rule.getStr("param");
+        String operator = rule.getStr("operator", "eq");
+        BigDecimal saleMultiplier = rule.getBigDecimal("saleMultiplier");
+        BigDecimal costMultiplier = defaultBigDecimal(rule.getBigDecimal("costMultiplier"), saleMultiplier);
+        if (param == null || param.isBlank()
+                || (!"eq".equals(operator) && !"in".equals(operator))
+                || saleMultiplier == null || costMultiplier == null
+                || !isValidMultiplier(saleMultiplier) || !isValidMultiplier(costMultiplier)) {
+            throw exception(MODEL_PRICE_INVALID);
+        }
+        if ("eq".equals(operator) && rule.get("value") == null) {
+            throw exception(MODEL_PRICE_INVALID);
+        }
+        if ("in".equals(operator) && (rule.getJSONArray("values") == null || rule.getJSONArray("values").isEmpty())) {
+            throw exception(MODEL_PRICE_INVALID);
+        }
+    }
+
+    private boolean isValidMultiplier(BigDecimal multiplier) {
+        return multiplier.compareTo(BigDecimal.ZERO) > 0
+                && multiplier.compareTo(BigDecimal.valueOf(100)) <= 0
+                && multiplier.scale() <= 6;
+    }
+
+    private BigDecimal defaultBigDecimal(BigDecimal value, BigDecimal defaultValue) {
+        return value == null ? defaultValue : value;
     }
 
     private int resolveBatchSize(JSONObject params) {
         int batchSize = params.getInt("batchSize", params.getInt("n", 1));
         return Math.max(1, Math.min(100, batchSize));
+    }
+
+    private record PriceCalculationResult(BigDecimal salePrice, BigDecimal costPrice, BigDecimal saleMultiplier,
+                                          BigDecimal costMultiplier, List<Map<String, Object>> matchedRules) {
+    }
+
+    private record ParamMultiplierResult(BigDecimal saleMultiplier, BigDecimal costMultiplier) {
     }
 
     private void validateModelExists(Long modelId) {

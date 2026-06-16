@@ -10,6 +10,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  Copy,
   Gem,
   ImageIcon,
   Loader2,
@@ -55,6 +56,7 @@ import { cn } from "@/lib/utils";
 import { clampToViewport } from "./floating-position";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
+import { copyImageSourceToClipboard } from "./clipboard-copy";
 import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, useComposerWheelPan, type PromptMentionOption } from "./PromptMentionInput";
 
 type ImageNodeProps = NodeProps<Node<ImageNodeData, "image">>;
@@ -217,6 +219,10 @@ function normalizeGenerationCount(value: unknown) {
   const count = Number(value);
   if (!Number.isFinite(count)) return 1;
   return Math.min(4, Math.max(1, Math.round(count)));
+}
+
+function normalizeModelMatchText(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
 function getOutputId(assetId: number | null | undefined, url: string, index: number) {
@@ -586,7 +592,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
   const outputs = useMemo(() => data.outputs ?? [], [data.outputs]);
   const hasOutputGroup = outputs.length > 1;
-  const outputsExpanded = Boolean(data.outputsExpanded && hasOutputGroup);
+  const outputsExpanded = data.outputsExpanded === true && hasOutputGroup;
   const primaryOutput = getPrimaryOutput(outputs, data.primaryOutputId);
   const imageSrc = primaryOutput?.previewUrl || data.previewUrl || data.dataUrl;
   const costLabel = aigcModels.priceLoading
@@ -644,12 +650,18 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   }, [id, referencePickerPromptId, selected]);
 
   const updateData = useCallback(
-    (patch: Partial<ImageNodeData>, options?: { flush?: boolean }) => {
+    (patch: Partial<ImageNodeData>, options?: { flush?: boolean; includeSnapshotOnly?: boolean; reliable?: boolean }) => {
       setNodes((nds) =>
         nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
       );
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
-        detail: { nodeId: id, patch, flush: options?.flush },
+        detail: {
+          nodeId: id,
+          patch,
+          flush: options?.flush,
+          includeSnapshotOnly: options?.includeSnapshotOnly,
+          reliable: options?.reliable,
+        },
       }));
     },
     [id, setNodes]
@@ -803,23 +815,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     setNodeMenu((prev) => ({ ...prev, visible: false }));
     if (!imageSrc) return;
 
-    try {
-      if (imageSrc.startsWith("data:") && "ClipboardItem" in window) {
-        const response = await fetch(imageSrc);
-        const blob = await response.blob();
-        await navigator.clipboard.write([
-          new ClipboardItem({ [blob.type || data.mimeType || "image/png"]: blob }),
-        ]);
-        return;
-      }
-      await navigator.clipboard.writeText(imageSrc);
-    } catch {
-      try {
-        await navigator.clipboard.writeText(imageSrc);
-      } catch {
-        // Clipboard permissions can be denied by the browser; keep the menu action silent.
-      }
-    }
+    await copyImageSourceToClipboard({ imageSrc, mimeType: data.mimeType });
   }, [imageSrc, data.mimeType]);
 
   const updateParams = useCallback(
@@ -854,15 +850,31 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   useEffect(() => {
     if (aigcModels.loading || aigcModels.models.length === 0) return;
     if (selectedAigcModelId) return;
-    const nextModel = aigcModels.selectedModel ?? aigcModels.models[0];
+    const templateModelCode = normalizeModelMatchText(data.modelCode);
+    const templateModelName = normalizeModelMatchText(data.modelName);
+    const matchedTemplateModel = templateModelCode || templateModelName
+      ? aigcModels.models.find((model) => (
+          [model.code, model.model, model.providerModel, model.name]
+            .map(normalizeModelMatchText)
+            .filter(Boolean)
+            .some((field) => (
+              field === templateModelCode ||
+              field === templateModelName ||
+              Boolean(templateModelCode && field.includes(templateModelCode)) ||
+              Boolean(templateModelName && field.includes(templateModelName))
+            ))
+        ))
+      : null;
+    const nextModel = matchedTemplateModel ?? aigcModels.selectedModel ?? aigcModels.models[0];
     if (!nextModel) return;
     updateData({
       modelId: String(nextModel.id),
+      modelCode: nextModel.code,
       providerModel: nextModel.providerModel ?? nextModel.model,
       modelName: nextModel.name,
       aigcModelId: nextModel.id,
-    }, { flush: true });
-  }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, selectedAigcModelId, updateData]);
+    }, { flush: true, includeSnapshotOnly: true });
+  }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, data.modelCode, data.modelName, selectedAigcModelId, updateData]);
 
   const handleNodeClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
@@ -932,6 +944,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       aigcModels.setSelectedModelId(nextModelId);
       updateData({
         modelId: String(nextModelId),
+        modelCode: model.code,
         providerModel: model.providerModel ?? model.model,
         modelName: model.name,
         aigcModelId: model.id,
@@ -971,6 +984,29 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       }, { flush: true });
     },
     [outputs, params, updateData]
+  );
+
+  const refreshBrokenOutputUrl = useCallback(
+    (output?: ImageNodeOutput | null) => {
+      const assetId = output?.assetId ?? data.outputAssetId ?? data.assetId;
+      if (!assetId) return;
+
+      const nextOutputs = output
+        ? outputs.map((item) => (
+            item.id === output.id || (item.assetId && item.assetId === output.assetId)
+              ? { ...item, previewUrl: "" }
+              : item
+          ))
+        : outputs;
+      const clearsPrimaryUrl = !output || output.id === primaryOutput?.id || output.assetId === data.assetId || output.assetId === data.outputAssetId;
+
+      updateRuntimeData({
+        outputs: nextOutputs,
+        assetUrlExpireTime: null,
+        ...(clearsPrimaryUrl ? { previewUrl: null, outputPreviewUrl: null } : {}),
+      });
+    },
+    [data.assetId, data.outputAssetId, outputs, primaryOutput?.id, updateRuntimeData]
   );
 
   const handleGenerate = useCallback(async () => {
@@ -1019,6 +1055,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     };
 
     updateData({
+      prompt: cleanPrompt,
+      params: effectiveParams,
       status: "pending",
       errorMessage: null,
       safetyStatus: null,
@@ -1029,12 +1067,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       taskStatus: "SUBMITTING",
       upstreamStatus: "SUBMITTING",
       generationCount,
+      kind: "generated",
       outputsExpanded: false,
       modelId: runAigcModelId ? String(runAigcModelId) : modelId,
       providerModel: runProviderModel,
       aigcModelId: runAigcModelId,
       modelName: runModelName,
-    }, { flush: true });
+    }, { flush: true, includeSnapshotOnly: true, reliable: true });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
     if (isServerCanvasProjectId(projectId) && runAigcModelId) {
@@ -1056,7 +1095,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           taskId: String(run.taskId),
           taskStatus: run.status,
           upstreamStatus: run.status,
-        }, { flush: true });
+        }, { flush: true, reliable: true });
         await waitAndApplyServerRun(projectId, run.taskId, startedAt);
         return;
       } catch (error) {
@@ -1090,6 +1129,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     }
     const completedAt = typeof updates.completedAt === "string" ? updates.completedAt : new Date().toISOString();
     const nextData: Partial<ImageNodeData> = {
+      prompt: cleanPrompt,
       status: updates.status === "complete" ? "idle" : "failed",
       taskId: typeof updates.taskId === "string" ? updates.taskId : null,
       errorMessage: typeof updates.errorMessage === "string" ? updates.errorMessage : null,
@@ -1364,7 +1404,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                         zIndex: -index - 1,
                       }}
                     >
-                      <img src={output.previewUrl} alt={output.fileName ?? data.fileName} className="size-full object-cover opacity-65" draggable={false} />
+                      <img
+                        src={output.previewUrl}
+                        alt={output.fileName ?? data.fileName}
+                        className="size-full object-cover opacity-65"
+                        draggable={false}
+                        onError={() => refreshBrokenOutputUrl(output)}
+                      />
                     </div>
                   ))}
                 </div>
@@ -1387,7 +1433,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                           className="group relative overflow-hidden rounded-xl border border-off-white/15 bg-charcoal shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
                           style={{ width: displaySize.width, height: displaySize.height }}
                         >
-                          <img src={output.previewUrl} alt={output.fileName ?? `生成图片 ${index + 1}`} className="size-full object-cover" draggable={false} />
+                          <img
+                            src={output.previewUrl}
+                            alt={output.fileName ?? `生成图片 ${index + 1}`}
+                            className="size-full object-cover"
+                            draggable={false}
+                            onError={() => refreshBrokenOutputUrl(output)}
+                          />
                           <div className="absolute right-3 top-3 z-10 flex gap-2 opacity-100 transition-opacity">
                             <button
                               type="button"
@@ -1435,30 +1487,45 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     })}
                   </div>
                 ) : imageSrc ? (
-                  <img
-                    src={imageSrc}
-                    alt={data.fileName}
-                    className="size-full object-contain"
-                    draggable={false}
-                    onLoad={(event) => {
-                      const image = event.currentTarget;
-                      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-                        setMeasuredSize((current) => (
-                          current?.width === image.naturalWidth && current.height === image.naturalHeight
-                            ? current
-                            : { width: image.naturalWidth, height: image.naturalHeight }
-                        ));
-                        setVisibleImageInset((current) => current ?? { left: getVisibleImageLeftInset(image) });
-                      }
-                      if (
-                        image.naturalWidth > 0 &&
-                        image.naturalHeight > 0 &&
-                        (data.width !== image.naturalWidth || data.height !== image.naturalHeight)
-                      ) {
-                        updateData({ width: image.naturalWidth, height: image.naturalHeight });
-                      }
-                    }}
-                  />
+                  <>
+                    <img
+                      src={imageSrc}
+                      alt={data.fileName}
+                      className="size-full object-contain"
+                      draggable={false}
+                      onError={() => refreshBrokenOutputUrl(primaryOutput)}
+                      onLoad={(event) => {
+                        const image = event.currentTarget;
+                        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                          setMeasuredSize((current) => (
+                            current?.width === image.naturalWidth && current.height === image.naturalHeight
+                              ? current
+                              : { width: image.naturalWidth, height: image.naturalHeight }
+                          ));
+                          setVisibleImageInset((current) => current ?? { left: getVisibleImageLeftInset(image) });
+                        }
+                        if (
+                          image.naturalWidth > 0 &&
+                          image.naturalHeight > 0 &&
+                          (data.width !== image.naturalWidth || data.height !== image.naturalHeight)
+                        ) {
+                          updateData({ width: image.naturalWidth, height: image.naturalHeight });
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void copyImageToClipboard();
+                      }}
+                      className="nodrag absolute right-3 top-3 z-20 flex size-9 items-center justify-center rounded-lg bg-charcoal/75 text-off-white opacity-0 shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-opacity hover:bg-charcoal/90 group-hover:opacity-100"
+                      aria-label="Copy image to clipboard"
+                      title="Copy image"
+                    >
+                      <Copy className="size-4" />
+                    </button>
+                  </>
                 ) : (
                   <ImageIcon className="size-12 text-muted-gray/40" />
                 )}

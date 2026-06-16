@@ -1,0 +1,394 @@
+--- #################### 网关相关配置 ####################
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: system-admin-api
+              uri: grayLb://system-server
+              predicates:
+                - Path=/admin-api/system/**
+              filters:
+                - RewritePath=/admin-api/system/v3/api-docs, /v3/api-docs
+            - id: system-app-api
+              uri: grayLb://system-server
+              predicates:
+                - Path=/app-api/system/**
+              filters:
+                - RewritePath=/app-api/system/v3/api-docs, /v3/api-docs
+            - id: infra-admin-api
+              uri: grayLb://infra-server
+              predicates:
+                - Path=/admin-api/infra/**
+              filters:
+                - RewritePath=/admin-api/infra/v3/api-docs, /v3/api-docs
+            - id: infra-app-api
+              uri: grayLb://infra-server
+              predicates:
+                - Path=/app-api/infra/**
+              filters:
+                - RewritePath=/app-api/infra/v3/api-docs, /v3/api-docs
+            - id: infra-spring-boot-admin
+              uri: grayLb://infra-server
+              predicates:
+                - Path=/admin/**
+            - id: infra-websocket
+              uri: grayLb://infra-server
+              predicates:
+                - Path=/infra/ws/**
+            - id: member-admin-api
+              uri: grayLb://member-server
+              predicates:
+                - Path=/admin-api/member/**
+              filters:
+                - RewritePath=/admin-api/member/v3/api-docs, /v3/api-docs
+            - id: member-app-api
+              uri: grayLb://member-server
+              predicates:
+                - Path=/app-api/member/**
+              filters:
+                - RewritePath=/app-api/member/v3/api-docs, /v3/api-docs
+            - id: bpm-admin-api
+              uri: grayLb://bpm-server
+              predicates:
+                - Path=/admin-api/bpm/**
+              filters:
+                - RewritePath=/admin-api/bpm/v3/api-docs, /v3/api-docs
+            - id: report-admin-api
+              uri: grayLb://report-server
+              predicates:
+                - Path=/admin-api/report/**
+              filters:
+                - RewritePath=/admin-api/report/v3/api-docs, /v3/api-docs
+            - id: report-jimu
+              uri: grayLb://report-server
+              predicates:
+                - Path=/jmreport/**, /drag/**, /jimubi/**
+            - id: pay-admin-api
+              uri: grayLb://pay-server
+              predicates:
+                - Path=/admin-api/pay/**
+              filters:
+                - RewritePath=/admin-api/pay/v3/api-docs, /v3/api-docs
+            - id: pay-app-api
+              uri: grayLb://pay-server
+              predicates:
+                - Path=/app-api/pay/**
+              filters:
+                - RewritePath=/app-api/pay/v3/api-docs, /v3/api-docs
+            - id: mp-admin-api
+              uri: grayLb://mp-server
+              predicates:
+                - Path=/admin-api/mp/**
+              filters:
+                - RewritePath=/admin-api/mp/v3/api-docs, /v3/api-docs
+            - id: product-admin-api
+              uri: grayLb://product-server
+              predicates:
+                - Path=/admin-api/product/**
+              filters:
+                - RewritePath=/admin-api/product/v3/api-docs, /v3/api-docs
+            - id: product-app-api
+              uri: grayLb://product-server
+              predicates:
+                - Path=/app-api/product/**
+              filters:
+                - RewritePath=/app-api/product/v3/api-docs, /v3/api-docs
+            - id: promotion-admin-api
+              uri: grayLb://promotion-server
+              predicates:
+                - Path=/admin-api/promotion/**
+              filters:
+                - RewritePath=/admin-api/promotion/v3/api-docs, /v3/api-docs
+            - id: promotion-app-api
+              uri: grayLb://promotion-server
+              predicates:
+                - Path=/app-api/promotion/**
+              filters:
+                - RewritePath=/app-api/promotion/v3/api-docs, /v3/api-docs
+            - id: trade-admin-api
+              uri: grayLb://trade-server
+              predicates:
+                - Path=/admin-api/trade/**
+              filters:
+                - RewritePath=/admin-api/trade/v3/api-docs, /v3/api-docs
+            - id: trade-app-api
+              uri: grayLb://trade-server
+              predicates:
+                - Path=/app-api/trade/**
+              filters:
+                - RewritePath=/app-api/trade/v3/api-docs, /v3/api-docs
+            - id: statistics-admin-api
+              uri: grayLb://statistics-server
+              predicates:
+                - Path=/admin-api/statistics/**
+              filters:
+                - RewritePath=/admin-api/statistics/v3/api-docs, /v3/api-docs
+            - id: erp-admin-api
+              uri: grayLb://erp-server
+              predicates:
+                - Path=/admin-api/erp/**
+              filters:
+                - RewritePath=/admin-api/erp/v3/api-docs, /v3/api-docs
+            - id: crm-admin-api
+              uri: grayLb://crm-server
+              predicates:
+                - Path=/admin-api/crm/**
+              filters:
+                - RewritePath=/admin-api/crm/v3/api-docs, /v3/api-docs
+            - id: ai-admin-api
+              uri: grayLb://ai-server
+              predicates:
+                - Path=/admin-api/ai/**
+              filters:
+                - RewritePath=/admin-api/ai/v3/api-docs, /v3/api-docs
+            - id: ai-mcp-server
+              uri: grayLb://ai-server
+              predicates:
+                - Path=/sse, /mcp/message
+            - id: aigc-model-admin-api
+              uri: grayLb://aigc-model-server
+              predicates:
+                - Path=/admin-api/aigc/model/**
+              filters:
+                - RewritePath=/admin-api/aigc/model/v3/api-docs, /v3/api-docs
+            - id: aigc-model-app-api
+              uri: grayLb://aigc-model-server
+              predicates:
+                - Path=/app-api/aigc/model/**
+              filters:
+                - RewritePath=/app-api/aigc/model/v3/api-docs, /v3/api-docs
+            - id: aigc-task-admin-api
+              uri: grayLb://aigc-task-server
+              predicates:
+                - Path=/admin-api/aigc/task/**
+              filters:
+                - RewritePath=/admin-api/aigc/task/v3/api-docs, /v3/api-docs
+            - id: aigc-task-app-api
+              uri: grayLb://aigc-task-server
+              predicates:
+                - Path=/app-api/aigc/task/**
+              filters:
+                - RewritePath=/app-api/aigc/task/v3/api-docs, /v3/api-docs
+            - id: aigc-billing-admin-api
+              uri: grayLb://aigc-billing-server
+              predicates:
+                - Path=/admin-api/aigc/billing/**
+              filters:
+                - RewritePath=/admin-api/aigc/billing/v3/api-docs, /v3/api-docs
+            - id: aigc-billing-app-api
+              uri: grayLb://aigc-billing-server
+              predicates:
+                - Path=/app-api/aigc/billing/**
+              filters:
+                - RewritePath=/app-api/aigc/billing/v3/api-docs, /v3/api-docs
+            - id: aigc-asset-admin-api
+              uri: grayLb://aigc-asset-server
+              predicates:
+                - Path=/admin-api/aigc/asset/**
+              filters:
+                - RewritePath=/admin-api/aigc/asset/v3/api-docs, /v3/api-docs
+            - id: aigc-asset-app-api
+              uri: grayLb://aigc-asset-server
+              predicates:
+                - Path=/app-api/aigc/asset/**
+              filters:
+                - RewritePath=/app-api/aigc/asset/v3/api-docs, /v3/api-docs
+            - id: aigc-safety-admin-api
+              uri: grayLb://aigc-safety-server
+              predicates:
+                - Path=/admin-api/aigc/safety/**
+              filters:
+                - RewritePath=/admin-api/aigc/safety/v3/api-docs, /v3/api-docs
+            - id: aigc-gen-admin-api
+              uri: grayLb://aigc-gen-server
+              predicates:
+                - Path=/admin-api/aigc/gen/**
+              filters:
+                - RewritePath=/admin-api/aigc/gen/v3/api-docs, /v3/api-docs
+            - id: aigc-gen-app-api
+              uri: grayLb://aigc-gen-server
+              predicates:
+                - Path=/app-api/aigc/gen/**
+              filters:
+                - RewritePath=/app-api/aigc/gen/v3/api-docs, /v3/api-docs
+            - id: aigc-workflow-admin-api
+              uri: grayLb://aigc-workflow-server
+              predicates:
+                - Path=/admin-api/aigc/workflow/**
+              filters:
+                - RewritePath=/admin-api/aigc/workflow/v3/api-docs, /v3/api-docs
+            - id: aigc-workflow-app-api
+              uri: grayLb://aigc-workflow-server
+              predicates:
+                - Path=/app-api/aigc/workflow/**, /app-api/canvas/**
+              filters:
+                - RewritePath=/app-api/aigc/workflow/v3/api-docs, /v3/api-docs
+            - id: aigc-workflow-websocket
+              uri: grayLb://aigc-workflow-server
+              predicates:
+                - Path=/aigc/workflow/ws/**
+            - id: aigc-community-admin-api
+              uri: grayLb://aigc-community-server
+              predicates:
+                - Path=/admin-api/aigc/community/**, /admin-api/aigc/guide/**
+              filters:
+                - RewritePath=/admin-api/aigc/community/v3/api-docs, /v3/api-docs
+            - id: aigc-community-app-api
+              uri: grayLb://aigc-community-server
+              predicates:
+                - Path=/app-api/aigc/community/**, /app-api/aigc/guide/**
+              filters:
+                - RewritePath=/app-api/aigc/community/v3/api-docs, /v3/api-docs
+            - id: iot-admin-api
+              uri: grayLb://iot-server
+              predicates:
+                - Path=/admin-api/iot/**
+              filters:
+                - RewritePath=/admin-api/iot/v3/api-docs, /v3/api-docs
+            - id: mes-admin-api
+              uri: grayLb://mes-server
+              predicates:
+                - Path=/admin-api/mes/**
+              filters:
+                - RewritePath=/admin-api/mes/v3/api-docs, /v3/api-docs
+            - id: wms-admin-api
+              uri: grayLb://wms-server
+              predicates:
+                - Path=/admin-api/wms/**
+              filters:
+                - RewritePath=/admin-api/wms/v3/api-docs, /v3/api-docs
+          x-forwarded:
+            prefix-enabled: false
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+
+--- #################### Knife4j 相关配置 ####################
+knife4j:
+  gateway:
+    enabled: true
+    routes:
+      - name: system-admin-api
+        service-name: system-server
+        url: /admin-api/system/v3/api-docs
+      - name: system-app-api
+        service-name: system-server
+        url: /app-api/system/v3/api-docs
+      - name: infra-admin-api
+        service-name: infra-server
+        url: /admin-api/infra/v3/api-docs
+      - name: infra-app-api
+        service-name: infra-server
+        url: /app-api/infra/v3/api-docs
+      - name: member-admin-api
+        service-name: member-server
+        url: /admin-api/member/v3/api-docs
+      - name: member-app-api
+        service-name: member-server
+        url: /app-api/member/v3/api-docs
+      - name: bpm-admin-api
+        service-name: bpm-server
+        url: /admin-api/bpm/v3/api-docs
+      - name: report-admin-api
+        service-name: report-server
+        url: /admin-api/report/v3/api-docs
+      - name: pay-admin-api
+        service-name: pay-server
+        url: /admin-api/pay/v3/api-docs
+      - name: pay-app-api
+        service-name: pay-server
+        url: /app-api/pay/v3/api-docs
+      - name: mp-admin-api
+        service-name: mp-server
+        url: /admin-api/mp/v3/api-docs
+      - name: product-admin-api
+        service-name: product-server
+        url: /admin-api/product/v3/api-docs
+      - name: product-app-api
+        service-name: product-server
+        url: /app-api/product/v3/api-docs
+      - name: promotion-admin-api
+        service-name: promotion-server
+        url: /admin-api/promotion/v3/api-docs
+      - name: promotion-app-api
+        service-name: promotion-server
+        url: /app-api/promotion/v3/api-docs
+      - name: trade-admin-api
+        service-name: trade-server
+        url: /admin-api/trade/v3/api-docs
+      - name: trade-app-api
+        service-name: trade-server
+        url: /app-api/trade/v3/api-docs
+      - name: statistics-admin-api
+        service-name: statistics-server
+        url: /admin-api/statistics/v3/api-docs
+      - name: erp-admin-api
+        service-name: erp-server
+        url: /admin-api/erp/v3/api-docs
+      - name: crm-admin-api
+        service-name: crm-server
+        url: /admin-api/crm/v3/api-docs
+      - name: ai-admin-api
+        service-name: ai-server
+        url: /admin-api/ai/v3/api-docs
+      - name: aigc-model-admin-api
+        service-name: aigc-model-server
+        url: /admin-api/aigc/model/v3/api-docs
+      - name: aigc-model-app-api
+        service-name: aigc-model-server
+        url: /app-api/aigc/model/v3/api-docs
+      - name: aigc-task-admin-api
+        service-name: aigc-task-server
+        url: /admin-api/aigc/task/v3/api-docs
+      - name: aigc-task-app-api
+        service-name: aigc-task-server
+        url: /app-api/aigc/task/v3/api-docs
+      - name: aigc-billing-admin-api
+        service-name: aigc-billing-server
+        url: /admin-api/aigc/billing/v3/api-docs
+      - name: aigc-billing-app-api
+        service-name: aigc-billing-server
+        url: /app-api/aigc/billing/v3/api-docs
+      - name: aigc-asset-admin-api
+        service-name: aigc-asset-server
+        url: /admin-api/aigc/asset/v3/api-docs
+      - name: aigc-asset-app-api
+        service-name: aigc-asset-server
+        url: /app-api/aigc/asset/v3/api-docs
+      - name: aigc-safety-admin-api
+        service-name: aigc-safety-server
+        url: /admin-api/aigc/safety/v3/api-docs
+      - name: aigc-gen-admin-api
+        service-name: aigc-gen-server
+        url: /admin-api/aigc/gen/v3/api-docs
+      - name: aigc-gen-app-api
+        service-name: aigc-gen-server
+        url: /app-api/aigc/gen/v3/api-docs
+      - name: aigc-workflow-admin-api
+        service-name: aigc-workflow-server
+        url: /admin-api/aigc/workflow/v3/api-docs
+      - name: aigc-workflow-app-api
+        service-name: aigc-workflow-server
+        url: /app-api/aigc/workflow/v3/api-docs
+      - name: aigc-community-admin-api
+        service-name: aigc-community-server
+        url: /admin-api/aigc/community/v3/api-docs
+      - name: aigc-community-app-api
+        service-name: aigc-community-server
+        url: /app-api/aigc/community/v3/api-docs
+      - name: iot-admin-api
+        service-name: iot-server
+        url: /admin-api/iot/v3/api-docs
+      - name: mes-admin-api
+        service-name: mes-server
+        url: /admin-api/mes/v3/api-docs
+      - name: wms-admin-api
+        service-name: wms-server
+        url: /admin-api/wms/v3/api-docs
+
+--- #################### 日志相关配置 ####################
+logging:
+  level:
+    cn.iocoder.yudao.gateway: debug
+    org.springframework.cloud.gateway: info

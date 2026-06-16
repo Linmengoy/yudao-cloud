@@ -4,12 +4,24 @@ set -euo pipefail
 SERVER=""
 REMOTE_DIR="/opt/code"
 PLATFORM="linux/amd64"
+DEPLOY_ENV="auto"
+ADMIN_BUILD_MODE=""
 CLIENT_API_BASE_URL=""
 CLIENT_APP_API_PREFIX="/app-api"
-CLIENT_WS_BASE_URL="wss://beta.copse.top"
+CLIENT_WS_BASE_URL=""
+CLIENT_GATEWAY_HOST="host.docker.internal"
+CLIENT_GATEWAY_PORT="48080"
+CLIENT_TENANT_ID="1"
+CLIENT_TERMINAL="20"
+ADMIN_GATEWAY_HOST="host.docker.internal"
+ADMIN_GATEWAY_PORT="48080"
 TARGET="all"
+IMAGE_TAG=""
 ARCHIVE_NAME=""
 COMPOSE_FILE="docker-compose.frontend.yml"
+USE_REGISTRY=0
+REGISTRY="111.228.39.103:3000/root"
+REMOTE_REGISTRY=""
 SSH_KEY="$HOME/.ssh/jd_ssh_5675.pem"
 SKIP_BUILD=0
 SKIP_SAVE=0
@@ -25,12 +37,25 @@ Options:
   --server HOST                 SSH target, required
   --remote-dir DIR             Remote deploy dir, default /opt/code
   --platform PLATFORM          Docker build platform, default linux/amd64
+  --deploy-env auto|test|prod  Environment, default auto from server
+  --admin-build-mode MODE      Vite admin build mode, default deploy env
   --client-api-base-url URL    NEXT_PUBLIC_API_BASE_URL, default empty
   --client-app-api-prefix PATH NEXT_PUBLIC_APP_API_PREFIX, default /app-api
-  --client-ws-base-url URL     NEXT_PUBLIC_WS_BASE_URL, default wss://beta.copse.top
-  --target all|admin|client    Build/deploy target, default all
+  --client-ws-base-url URL     NEXT_PUBLIC_WS_BASE_URL
+  --client-gateway-host HOST   Runtime gateway host for client server proxy
+  --client-gateway-port PORT   Runtime gateway port for client server proxy
+  --client-tenant-id ID        NEXT_PUBLIC_TENANT_ID, default 1
+  --client-terminal ID         NEXT_PUBLIC_TERMINAL, default 20
+  --admin-gateway-host HOST    Runtime gateway host for admin nginx proxy
+  --admin-gateway-port PORT    Runtime gateway port for admin nginx proxy
+  --target all|admin|client|guide
+                                Build/deploy target, default all
+  --image-tag TAG              Docker image tag, default current git SHA
   --archive-name NAME          Image archive name
   --compose-file NAME          Compose file name, default docker-compose.frontend.yml
+  --use-registry               Push images to Gitea registry and deploy by docker pull
+  --registry REGISTRY          Registry prefix, default 111.228.39.103:3000/root
+  --remote-registry REGISTRY   Registry prefix used by remote docker pull
   --ssh-key PATH               SSH private key, default ~/.ssh/jd_ssh_5675.pem
   --skip-build                 Skip docker buildx build
   --skip-save                  Skip docker save
@@ -42,6 +67,7 @@ Examples:
   script/deploy-frontend-images.sh --server manman
   script/deploy-frontend-images.sh --server manman --target admin
   script/deploy-frontend-images.sh --server manman --target client
+  script/deploy-frontend-images.sh --server manman --target guide
 EOF
 }
 
@@ -59,6 +85,14 @@ while [[ $# -gt 0 ]]; do
       PLATFORM="${2:-}"
       shift 2
       ;;
+    --deploy-env)
+      DEPLOY_ENV="${2:-}"
+      shift 2
+      ;;
+    --admin-build-mode)
+      ADMIN_BUILD_MODE="${2:-}"
+      shift 2
+      ;;
     --client-api-base-url)
       CLIENT_API_BASE_URL="${2:-}"
       shift 2
@@ -71,8 +105,36 @@ while [[ $# -gt 0 ]]; do
       CLIENT_WS_BASE_URL="${2:-}"
       shift 2
       ;;
+    --client-gateway-host)
+      CLIENT_GATEWAY_HOST="${2:-}"
+      shift 2
+      ;;
+    --client-gateway-port)
+      CLIENT_GATEWAY_PORT="${2:-}"
+      shift 2
+      ;;
+    --client-tenant-id)
+      CLIENT_TENANT_ID="${2:-}"
+      shift 2
+      ;;
+    --client-terminal)
+      CLIENT_TERMINAL="${2:-}"
+      shift 2
+      ;;
+    --admin-gateway-host)
+      ADMIN_GATEWAY_HOST="${2:-}"
+      shift 2
+      ;;
+    --admin-gateway-port)
+      ADMIN_GATEWAY_PORT="${2:-}"
+      shift 2
+      ;;
     --target)
       TARGET="${2:-}"
+      shift 2
+      ;;
+    --image-tag)
+      IMAGE_TAG="${2:-}"
       shift 2
       ;;
     --archive-name)
@@ -81,6 +143,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --compose-file)
       COMPOSE_FILE="${2:-}"
+      shift 2
+      ;;
+    --use-registry)
+      USE_REGISTRY=1
+      shift
+      ;;
+    --registry)
+      REGISTRY="${2:-}"
+      shift 2
+      ;;
+    --remote-registry)
+      REMOTE_REGISTRY="${2:-}"
       shift 2
       ;;
     --ssh-key)
@@ -126,17 +200,48 @@ if [[ "$SERVER" == "manman" ]]; then
 fi
 
 case "$TARGET" in
-  all|admin|client) ;;
+  all|admin|client|guide) ;;
   *)
-    echo "--target must be one of: all, admin, client" >&2
+    echo "--target must be one of: all, admin, client, guide" >&2
     exit 1
     ;;
 esac
 
+case "$DEPLOY_ENV" in
+  auto|test|prod) ;;
+  *)
+    echo "--deploy-env must be one of: auto, test, prod" >&2
+    exit 1
+    ;;
+esac
+
+if [[ "$DEPLOY_ENV" == "auto" ]]; then
+  if [[ "$SERVER" == "manman2" || "$SERVER" == "root@117.72.215.47" ]]; then
+    DEPLOY_ENV="prod"
+  else
+    DEPLOY_ENV="test"
+  fi
+fi
+
+if [[ -z "$ADMIN_BUILD_MODE" ]]; then
+  ADMIN_BUILD_MODE="$DEPLOY_ENV"
+fi
+
+if [[ -z "$CLIENT_WS_BASE_URL" && "$DEPLOY_ENV" == "prod" ]]; then
+  CLIENT_WS_BASE_URL="wss://beta.copse.top"
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ADMIN_DIR="$ROOT_DIR/yudao-ui/draw2video-admin"
 CLIENT_DIR="$ROOT_DIR/yudao-ui/draw2video-client"
+GUIDE_DIR="$ROOT_DIR/yudao-ui/draw2video-guide"
 COMPOSE_SOURCE_PATH="$ROOT_DIR/script/docker/$COMPOSE_FILE"
+
+if [[ -z "$IMAGE_TAG" ]]; then
+  GIT_TAG="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || true)"
+  GIT_TAG="${GIT_TAG:-latest}"
+  IMAGE_TAG="${DEPLOY_ENV}-${GIT_TAG}"
+fi
 
 if [[ -z "$ARCHIVE_NAME" ]]; then
   if [[ "$TARGET" == "all" ]]; then
@@ -146,18 +251,34 @@ if [[ -z "$ARCHIVE_NAME" ]]; then
   fi
 fi
 
+if [[ -z "$REMOTE_REGISTRY" ]]; then
+  if [[ "$SERVER" == "root@111.228.39.103" || "$SERVER" == "manman" ]]; then
+    REMOTE_REGISTRY="127.0.0.1:3000/root"
+  else
+    REMOTE_REGISTRY="$REGISTRY"
+  fi
+fi
+
 ARCHIVE_PATH="$ROOT_DIR/$ARCHIVE_NAME"
 IMAGES=()
+REGISTRY_IMAGES=()
 SERVICES=()
 
 if [[ "$TARGET" == "all" || "$TARGET" == "admin" ]]; then
-  IMAGES+=("draw2video-admin:latest")
+  IMAGES+=("draw2video-admin:$IMAGE_TAG")
+  REGISTRY_IMAGES+=("$REGISTRY/draw2video-admin:$IMAGE_TAG")
   SERVICES+=("draw2video-admin")
 fi
 
 if [[ "$TARGET" == "all" || "$TARGET" == "client" ]]; then
-  IMAGES+=("draw2video-client:latest")
+  IMAGES+=("draw2video-client:$IMAGE_TAG")
+  REGISTRY_IMAGES+=("$REGISTRY/draw2video-client:$IMAGE_TAG")
   SERVICES+=("draw2video-client")
+fi
+if [[ "$TARGET" == "all" || "$TARGET" == "guide" ]]; then
+  IMAGES+=("draw2video-guide:$IMAGE_TAG")
+  REGISTRY_IMAGES+=("$REGISTRY/draw2video-guide:$IMAGE_TAG")
+  SERVICES+=("draw2video-guide")
 fi
 
 step() {
@@ -232,6 +353,22 @@ save_docker_images() {
   done
 }
 
+write_frontend_env_file() {
+  local path="$1"
+  {
+    printf 'FRONTEND_DEPLOY_ENV=%s\n' "$DEPLOY_ENV"
+    printf 'ADMIN_GATEWAY_HOST=%s\n' "$ADMIN_GATEWAY_HOST"
+    printf 'ADMIN_GATEWAY_PORT=%s\n' "$ADMIN_GATEWAY_PORT"
+    printf 'CLIENT_GATEWAY_HOST=%s\n' "$CLIENT_GATEWAY_HOST"
+    printf 'CLIENT_GATEWAY_PORT=%s\n' "$CLIENT_GATEWAY_PORT"
+    printf 'CLIENT_API_BASE_URL=%s\n' "$CLIENT_API_BASE_URL"
+    printf 'CLIENT_APP_API_PREFIX=%s\n' "$CLIENT_APP_API_PREFIX"
+    printf 'CLIENT_WS_BASE_URL=%s\n' "$CLIENT_WS_BASE_URL"
+    printf 'CLIENT_TENANT_ID=%s\n' "$CLIENT_TENANT_ID"
+    printf 'CLIENT_TERMINAL=%s\n' "$CLIENT_TERMINAL"
+  } > "$path"
+}
+
 step "Check directories"
 if [[ "$TARGET" == "all" || "$TARGET" == "admin" ]]; then
   [[ -d "$ADMIN_DIR" ]] || { echo "Admin directory not found: $ADMIN_DIR" >&2; exit 1; }
@@ -239,13 +376,17 @@ fi
 if [[ "$TARGET" == "all" || "$TARGET" == "client" ]]; then
   [[ -d "$CLIENT_DIR" ]] || { echo "Client directory not found: $CLIENT_DIR" >&2; exit 1; }
 fi
+if [[ "$TARGET" == "all" || "$TARGET" == "guide" ]]; then
+  [[ -d "$GUIDE_DIR" ]] || { echo "Guide directory not found: $GUIDE_DIR" >&2; exit 1; }
+fi
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   if [[ "$TARGET" == "all" || "$TARGET" == "admin" ]]; then
     step "Build draw2video-admin image"
     run docker buildx build \
       --platform "$PLATFORM" \
-      -t draw2video-admin:latest \
+      --build-arg "ADMIN_BUILD_MODE=$ADMIN_BUILD_MODE" \
+      -t "draw2video-admin:$IMAGE_TAG" \
       --load \
       "$ADMIN_DIR"
   fi
@@ -257,30 +398,59 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       --build-arg "NEXT_PUBLIC_API_BASE_URL=$CLIENT_API_BASE_URL" \
       --build-arg "NEXT_PUBLIC_APP_API_PREFIX=$CLIENT_APP_API_PREFIX" \
       --build-arg "NEXT_PUBLIC_WS_BASE_URL=$CLIENT_WS_BASE_URL" \
-      -t draw2video-client:latest \
+      --build-arg "NEXT_PUBLIC_TENANT_ID=$CLIENT_TENANT_ID" \
+      --build-arg "NEXT_PUBLIC_TERMINAL=$CLIENT_TERMINAL" \
+      -t "draw2video-client:$IMAGE_TAG" \
       --load \
       "$CLIENT_DIR"
   fi
+
+  if [[ "$TARGET" == "all" || "$TARGET" == "guide" ]]; then
+    step "Build draw2video-guide image"
+    run docker buildx build \
+      --platform "$PLATFORM" \
+      -t "draw2video-guide:$IMAGE_TAG" \
+      --load \
+      "$GUIDE_DIR"
+  fi
 fi
 
-if [[ "$SKIP_SAVE" -eq 0 ]]; then
+if [[ "$USE_REGISTRY" -eq 1 ]]; then
+  step "Push frontend images to registry"
+  for i in "${!IMAGES[@]}"; do
+    run docker tag "${IMAGES[$i]}" "${REGISTRY_IMAGES[$i]}"
+    run docker push "${REGISTRY_IMAGES[$i]}"
+  done
+elif [[ "$SKIP_SAVE" -eq 0 ]]; then
   step "Save frontend images"
   save_docker_images "$ARCHIVE_PATH" "${IMAGES[@]}"
 fi
 
 if [[ "$SKIP_UPLOAD" -eq 0 ]]; then
-  step "Upload image archive"
+  step "Prepare remote compose file"
   ssh_run "$SERVER" "mkdir -p '$REMOTE_DIR'"
   if [[ -f "$COMPOSE_SOURCE_PATH" ]]; then
     scp_run "$COMPOSE_SOURCE_PATH" "${SERVER}:${REMOTE_DIR}/${COMPOSE_FILE}"
   else
     echo "Warning: compose file not found locally: $COMPOSE_SOURCE_PATH. Remote compose file will be reused." >&2
   fi
-  scp_run "$ARCHIVE_PATH" "${SERVER}:${REMOTE_DIR}/${ARCHIVE_NAME}"
+  local_env_file="$(mktemp)"
+  write_frontend_env_file "$local_env_file"
+  scp_run "$local_env_file" "${SERVER}:${REMOTE_DIR}/.frontend-${DEPLOY_ENV}.env"
+  rm -f "$local_env_file"
 
-  step "Load images and restart containers"
-  remote_command="cd '$REMOTE_DIR'; docker load -i '$ARCHIVE_NAME'; docker compose -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
-  ssh_run "$SERVER" "$remote_command"
+  if [[ "$USE_REGISTRY" -eq 1 ]]; then
+    step "Pull images and restart containers"
+    remote_command="cd '$REMOTE_DIR'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REMOTE_REGISTRY/' docker compose --env-file '.frontend-${DEPLOY_ENV}.env' -f '$COMPOSE_FILE' pull ${SERVICES[*]}; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REMOTE_REGISTRY/' docker compose --env-file '.frontend-${DEPLOY_ENV}.env' -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
+    ssh_run "$SERVER" "$remote_command"
+  else
+    step "Upload image archive"
+    scp_run "$ARCHIVE_PATH" "${SERVER}:${REMOTE_DIR}/${ARCHIVE_NAME}"
+
+    step "Load images and restart containers"
+    remote_command="cd '$REMOTE_DIR'; docker load -i '$ARCHIVE_NAME'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' docker compose --env-file '.frontend-${DEPLOY_ENV}.env' -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
+    ssh_run "$SERVER" "$remote_command"
+  fi
 fi
 
 printf '\nDone\n'

@@ -64,15 +64,13 @@ export function sanitizeNodeForCanvasOperation(node: AppNode): AppNode {
   return { ...node, data } as AppNode;
 }
 
-function isUnsyncedLocalMediaNode(node: AppNode): boolean {
-  if (node.type !== "image" && node.type !== "video" && node.type !== "sketch") return false;
-  const data = node.data as Record<string, unknown>;
-  if (data.assetId || data.outputAssetId || data.previewAssetId) return false;
-  return hasLocalMediaValue(data);
-}
-
 export function isCanvasNodeSyncable(node: AppNode): boolean {
-  return !isUnsyncedLocalMediaNode(node);
+  if (node.type !== "image" && node.type !== "video" && node.type !== "sketch") return true;
+  const data = stripRuntimeAssetUrlsFromValue(node.data);
+  for (const key of blockedKeys) {
+    delete (data as Record<string, unknown>)[key];
+  }
+  return !hasLocalMediaValue(data);
 }
 
 export function filterSyncableCanvasNodes(nodes: AppNode[]): AppNode[] {
@@ -84,9 +82,11 @@ export function sanitizeNodesForCanvasSnapshot(nodes: AppNode[]): AppNode[] {
 }
 
 export function sanitizeCanvasStateForPersistence(state: CanvasState): CanvasState {
+  const nodes = sanitizeNodesForCanvasSnapshot(state.nodes);
+  const nodeIds = new Set(nodes.map((node) => node.id));
   return {
     ...state,
-    nodes: sanitizeNodesForCanvasSnapshot(state.nodes),
-    edges: state.edges as AppEdge[],
+    nodes,
+    edges: (state.edges as AppEdge[]).filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
   };
 }

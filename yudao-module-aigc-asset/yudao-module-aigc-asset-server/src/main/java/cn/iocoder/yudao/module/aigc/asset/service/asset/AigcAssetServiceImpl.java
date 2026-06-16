@@ -15,6 +15,12 @@ import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_TASK_NOT_EXISTS;
 import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.ASSET_UPLOAD_FAILED;
 
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +38,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import javax.imageio.ImageIO;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -103,6 +111,8 @@ public class AigcAssetServiceImpl implements AigcAssetService {
     private static final int REMOTE_FILE_DOWNLOAD_TIMEOUT_SECONDS = 30;
     private static final int VIDEO_FRAME_CAPTURE_TIMEOUT_SECONDS = 45;
     private static final int ACCESS_URL_CACHE_TTL_SAFETY_SECONDS = 60;
+    private static final int IMAGE_THUMBNAIL_MAX_SIDE = 512;
+    private static final String IMAGE_THUMBNAIL_MIME_TYPE = "image/jpeg";
     private static final BigDecimal LAST_FRAME_OFFSET_SECONDS = new BigDecimal("0.05");
     private static final String REMOTE_FILE_DOWNLOAD_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
@@ -160,6 +170,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         Long assetId = createAsset(reqVO);
         assetFileMapper.insert(
                 buildAssetFileDO(assetId, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null, null, null, null));
+        createAndInsertImageThumbnail(assetId, fileName, mimeType, content);
         return assetId;
     }
 
@@ -173,10 +184,13 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         validateFileSize(reqDTO.getFileSize());
         String storageFileName = uniqueAssetStorageFileName(reqDTO.getFileName(), reqDTO.getMimeType());
         FilePresignPutRespDTO presign = fileApi.presignPutUrlV2(storageFileName, "aigc/asset").getCheckedData();
+        FilePresignPutRespDTO thumbnailPresign = shouldCreateImageThumbnail(reqDTO.getAssetType(), reqDTO.getMimeType())
+                ? fileApi.presignPutUrlV2(thumbnailStorageFileName(reqDTO.getFileName()), "aigc/asset/thumbnail").getCheckedData()
+                : null;
         String uploadToken = UUID.fastUUID().toString(true);
         String key = buildUploadTokenKey(uploadToken);
         uploadTokenRedisDAO.set(key,
-                AigcAssetUploadTokenRedisDAO.UploadToken.of(userId, reqDTO, presign),
+                AigcAssetUploadTokenRedisDAO.UploadToken.of(userId, reqDTO, presign, thumbnailPresign),
                 UPLOAD_TOKEN_EXPIRE_SECONDS);
         return new AigcAssetDirectUploadPrepareRespDTO()
                 .setUploadToken(uploadToken)
@@ -187,7 +201,15 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setBucket(presign.getBucket())
                 .setObjectKey(presign.getObjectKey())
                 .setPath(presign.getPath())
-                .setPublicAccess(presign.getPublicAccess());
+                .setPublicAccess(presign.getPublicAccess())
+                .setThumbnailUploadUrl(thumbnailPresign == null ? null : thumbnailPresign.getUploadUrl())
+                .setThumbnailUrl(thumbnailPresign == null ? null : thumbnailPresign.getUrl())
+                .setThumbnailConfigId(thumbnailPresign == null ? null : thumbnailPresign.getConfigId())
+                .setThumbnailStorageType(thumbnailPresign == null ? null : thumbnailPresign.getStorageType())
+                .setThumbnailBucket(thumbnailPresign == null ? null : thumbnailPresign.getBucket())
+                .setThumbnailObjectKey(thumbnailPresign == null ? null : thumbnailPresign.getObjectKey())
+                .setThumbnailPath(thumbnailPresign == null ? null : thumbnailPresign.getPath())
+                .setThumbnailPublicAccess(thumbnailPresign == null ? null : thumbnailPresign.getPublicAccess());
     }
 
     @Override
@@ -219,6 +241,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         Long assetId = createAsset(assetReqVO);
         assetFileMapper.insert(buildAssetFileDO(assetId, AigcAssetFileRoleEnum.ORIGINAL.getCode(), file, null,
                 reqDTO.getWidth(), reqDTO.getHeight(), reqDTO.getDuration()).setMetadata(reqDTO.getMetadata()));
+        insertDirectUploadThumbnail(assetId, token, reqDTO);
         uploadTokenRedisDAO.delete(key);
         return getAssetResp(assetId, userId);
     }
@@ -810,6 +833,81 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setMetadata(reqDTO.getMetadata());
     }
 
+    private void createAndInsertImageThumbnail(Long assetId, String fileName, String mimeType, byte[] content) {
+        if (!shouldCreateImageThumbnail(AigcAssetTypeEnum.IMAGE.getCode(), mimeType)) {
+            return;
+        }
+        try {
+            ThumbnailImage thumbnail = createImageThumbnail(content);
+            if (thumbnail == null) {
+                return;
+            }
+            FileCreateRespDTO thumbnailFile = fileApi.createFileV2(thumbnail.content,
+                    thumbnailStorageFileName(fileName), "aigc/asset/thumbnail", IMAGE_THUMBNAIL_MIME_TYPE);
+            assetFileMapper.insert(buildAssetFileDO(assetId, AigcAssetFileRoleEnum.THUMBNAIL.getCode(), thumbnailFile,
+                    null, thumbnail.width, thumbnail.height, null));
+        } catch (Exception ex) {
+            log.warn("[createAndInsertImageThumbnail][assetId({}) fileName({}) thumbnail create failed]",
+                    assetId, fileName, ex);
+        }
+    }
+
+    private void insertDirectUploadThumbnail(Long assetId, AigcAssetUploadTokenRedisDAO.UploadToken token,
+            AigcAssetDirectUploadCompleteReqDTO reqDTO) {
+        if (StrUtil.isBlank(token.getThumbnailPath()) || reqDTO.getThumbnailFileSize() == null
+                || reqDTO.getThumbnailFileSize() <= 0) {
+            return;
+        }
+        FileCreateRespDTO thumbnailRecord = fileApi.createFileRecordV2(new FileCreateRespDTO()
+                .setConfigId(token.getThumbnailConfigId())
+                .setStorageType(token.getThumbnailStorageType())
+                .setBucket(token.getThumbnailBucket())
+                .setObjectKey(token.getThumbnailObjectKey())
+                .setPath(token.getThumbnailPath())
+                .setName(StrUtil.blankToDefault(reqDTO.getThumbnailFileName(), thumbnailStorageFileName(token.getFileName())))
+                .setUrl(token.getThumbnailUrl())
+                .setType(StrUtil.blankToDefault(reqDTO.getThumbnailMimeType(), IMAGE_THUMBNAIL_MIME_TYPE))
+                .setSize(reqDTO.getThumbnailFileSize())
+                .setPublicAccess(token.getThumbnailPublicAccess())).getCheckedData();
+        assetFileMapper.insert(buildAssetFileDO(assetId, AigcAssetFileRoleEnum.THUMBNAIL.getCode(), thumbnailRecord,
+                null, reqDTO.getThumbnailWidth(), reqDTO.getThumbnailHeight(), null));
+    }
+
+    private boolean shouldCreateImageThumbnail(String assetType, String mimeType) {
+        return AigcAssetTypeEnum.IMAGE.getCode().equals(assetType)
+                && StrUtil.startWithIgnoreCase(mimeType, "image/")
+                && !StrUtil.equalsIgnoreCase(mimeType, "image/svg+xml");
+    }
+
+    private ThumbnailImage createImageThumbnail(byte[] content) throws Exception {
+        BufferedImage source = ImageIO.read(new ByteArrayInputStream(content));
+        if (source == null) {
+            return null;
+        }
+        int width = source.getWidth();
+        int height = source.getHeight();
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+        double ratio = Math.min(1D, (double) IMAGE_THUMBNAIL_MAX_SIDE / Math.max(width, height));
+        int targetWidth = Math.max(1, (int) Math.round(width * ratio));
+        int targetHeight = Math.max(1, (int) Math.round(height * ratio));
+        BufferedImage target = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = target.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            graphics.drawImage(source.getScaledInstance(targetWidth, targetHeight, Image.SCALE_SMOOTH),
+                    0, 0, targetWidth, targetHeight, null);
+        } finally {
+            graphics.dispose();
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ImageIO.write(target, "jpg", output);
+        return new ThumbnailImage(output.toByteArray(), targetWidth, targetHeight);
+    }
+
     private AigcAssetFileDO buildAssetFileDO(Long assetId, String fileRole, FileCreateRespDTO file, String originUrl,
             Integer width, Integer height, java.math.BigDecimal duration) {
         boolean publicAccess = BooleanUtil.isTrue(file.getPublicAccess());
@@ -865,6 +963,15 @@ public class AigcAssetServiceImpl implements AigcAssetService {
         fileBaseName = StrUtil.blankToDefault(fileBaseName.replaceAll("[\\\\/:*?\"<>|\\s]+", "-"), "asset");
         String uniqueName = fileBaseName + "-" + UUID.fastUUID().toString(true).substring(0, 6);
         return StrUtil.isBlank(fileExt) ? uniqueName : uniqueName + "." + fileExt;
+    }
+
+    private String thumbnailStorageFileName(String fileName) {
+        String normalizedFileName = StrUtil.blankToDefault(fileName, "asset");
+        String fileExt = fileExtFromFileName(normalizedFileName);
+        String fileBaseName = StrUtil.isBlank(fileExt)
+                ? normalizedFileName
+                : StrUtil.removeSuffixIgnoreCase(normalizedFileName, "." + fileExt);
+        return uniqueAssetStorageFileName(fileBaseName + "-thumbnail.jpg", IMAGE_THUMBNAIL_MIME_TYPE);
     }
 
     private String fileExtFromFileName(String fileName) {
@@ -933,7 +1040,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 continue;
             }
             String accessType = accessTypeForRole(file.getFileRole());
-            if (!Objects.equals(AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode(), file.getAccessMode())) {
+            if (!canGenerateSignedAccessUrl(file)) {
                 accessUrlMap.put(file.getId(), buildPublicAccessUrl(asset, file, accessType));
                 continue;
             }
@@ -974,7 +1081,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
 
     private AigcAssetAccessUrlRespDTO getAccessUrl(AigcAssetDO asset, AigcAssetFileDO file, String accessType,
             Long userId) {
-        if (!Objects.equals(AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode(), file.getAccessMode())) {
+        if (!canGenerateSignedAccessUrl(file)) {
             return buildPublicAccessUrl(asset, file, accessType);
         }
         String key = buildAccessUrlCacheKey(file, accessType, userId);
@@ -1007,9 +1114,15 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setAssetFileId(file.getId())
                 .setFileRole(file.getFileRole())
                 .setAccessType(accessType)
-                .setUrl(file.getPublicUrl())
-                .setPublicAccess(true)
+                .setUrl(StrUtil.blankToDefault(file.getPublicUrl(), file.getOriginUrl()))
+                .setPublicAccess(file.getPublicUrl() != null)
                 .setCacheHit(false);
+    }
+
+    private boolean canGenerateSignedAccessUrl(AigcAssetFileDO file) {
+        return Objects.equals(AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode(), file.getAccessMode())
+                && file.getStorageConfigId() != null
+                && StrUtil.isNotBlank(file.getFilePath());
     }
 
     private List<AigcAssetAccessUrlRespDTO> generateAccessUrls(List<AccessUrlGenerateContext> contexts) {
@@ -1084,6 +1197,9 @@ public class AigcAssetServiceImpl implements AigcAssetService {
             this.cacheKey = cacheKey;
         }
 
+    }
+
+    private record ThumbnailImage(byte[] content, int width, int height) {
     }
 
     private String buildAccessUrlCacheKey(AigcAssetFileDO file, String accessType, Long userId) {

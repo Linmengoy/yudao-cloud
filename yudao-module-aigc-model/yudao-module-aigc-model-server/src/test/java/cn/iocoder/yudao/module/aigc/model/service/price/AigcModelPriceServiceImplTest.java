@@ -80,6 +80,33 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
     }
 
     @Test
+    public void testCalculatePrice_paramMultipliers() {
+        AigcModelDO model = createModel();
+        priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
+                AigcModelBillingUnitEnum.PER_TASK.getCode(), "2.000000", "5.000000",
+                "{\"version\":2,\"paramMultipliers\":[{\"param\":\"quality\",\"operator\":\"eq\",\"value\":\"high\",\"saleMultiplier\":1.8,\"costMultiplier\":2.5}]}"));
+        AigcModelPriceCalculateReqDTO reqDTO = new AigcModelPriceCalculateReqDTO()
+                .setModelId(model.getId()).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())
+                .setParams(Map.of("quality", "high"));
+
+        AigcModelPriceCalculateRespDTO respDTO = priceService.calculatePrice(reqDTO);
+
+        assertEquals(0, new BigDecimal("9.0000000").compareTo(respDTO.getSalePrice()));
+        assertEquals(0, new BigDecimal("5.0000000").compareTo(respDTO.getCostPrice()));
+        assertEquals(new BigDecimal("1.8"), respDTO.getPriceDetail().get("finalSaleMultiplier"));
+        assertEquals(new BigDecimal("2.5"), respDTO.getPriceDetail().get("finalCostMultiplier"));
+    }
+
+    @Test
+    public void testCreatePrice_invalidParamMultiplier() {
+        AigcModelDO model = createModel();
+        AigcModelPriceSaveReqVO reqVO = createPriceReq(model.getId())
+                .setPriceConfig("{\"paramMultipliers\":[{\"param\":\"quality\",\"operator\":\"eq\",\"value\":\"high\",\"saleMultiplier\":0}]}");
+
+        assertServiceException(() -> priceService.createPrice(reqVO), MODEL_PRICE_INVALID);
+    }
+
+    @Test
     public void testCalculatePrice_priceNotFound() {
         AigcModelDO model = createModel();
         AigcModelPriceCalculateReqDTO reqDTO = new AigcModelPriceCalculateReqDTO()

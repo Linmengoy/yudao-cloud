@@ -119,6 +119,14 @@ export interface AigcAssetDirectUploadPrepareResp {
   objectKey?: string;
   path?: string;
   publicAccess?: boolean;
+  thumbnailUploadUrl?: string;
+  thumbnailUrl?: string;
+  thumbnailConfigId?: number;
+  thumbnailStorageType?: string;
+  thumbnailBucket?: string;
+  thumbnailObjectKey?: string;
+  thumbnailPath?: string;
+  thumbnailPublicAccess?: boolean;
 }
 
 export interface AigcAssetUpdateReq {

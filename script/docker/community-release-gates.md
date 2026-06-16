@@ -1,0 +1,348 @@
+# aigc-community release gates
+
+This document is the release evidence template for issues #144, #145, #146, #147, #148, #149, #150, #151, #152, #153, #154, #161, #162, #163, #164, and #165.
+Fill it during the release window and paste the completed record back to the release issue.
+Use `script/docker/community-release-evidence-index.md` for the issue-specific review and test evidence templates.
+
+## Release targets
+
+- API latency target: health and gateway smoke p95 under 500 ms.
+- Frontend target: mobile LCP under 2.5 s, INP under 200 ms, CLS under 0.1 for `/guide/` and community pages.
+- Availability target: 99.5% monthly SLO for the deployed community path.
+
+## Pre-release evidence for #124-#128
+
+| Issue | Required evidence | Status | Link or command output |
+| --- | --- | --- | --- |
+| #124 | review result, test result, release decision | pending | |
+| #125 | review result, test result, release decision | pending | |
+| #126 | review result, test result, release decision | pending | |
+| #127 | review result, test result, release decision | pending | |
+| #128 | review result, test result, release decision | pending | |
+
+Release is blocked if any row lacks both review and test evidence. When all rows are complete, copy this table to the
+release issue with the commit SHA and workflow run URL.
+
+## CI/CD evidence for #145 and #151
+
+Record these fields from `.gitea/workflows/yudao-micro-cicd.yml`:
+
+```text
+workflow run url:
+service input:
+runner:
+commit sha:
+docker version:
+docker compose version:
+maven command:
+image build command:
+compose up command:
+compose ps summary:
+failure logs path:
+executor:
+executed at:
+release evidence file:
+post-deploy health result:
+```
+
+For `aigc-community`, the workflow must run Maven package, image build, `docker compose up`, `docker compose ps`, and
+tail service logs on failure. The workflow also appends deployment verification evidence after the compose rollout,
+including the compose ps summary, service health result, and gateway smoke commands.
+
+The workflow must run `script/docker/verify-release-evidence.sh preflight` before build. This gate fails when
+`previous_stable_image_tag` is empty or is not a Git SHA tag, so rollback evidence cannot silently degrade to `latest` or
+`not-provided`.
+
+## Runner Docker and Compose recovery evidence for #161
+
+Record these fields before rerunning `service=aigc-community` or `service=all`:
+
+```text
+aigc-community runner docker evidence
+- issue: #161
+- runner:
+- target host:
+- docker daemon status:
+- docker version:
+- docker compose version:
+- compose service check:
+- aigc-community rerun workflow url:
+- all-services rerun workflow url:
+- build/deploy result:
+- failure stderr or "not required":
+- release decision:
+```
+
+The runner is not considered recovered until `docker version`, `docker compose version`, and
+`docker compose -f script/docker/docker-compose-micro-prod.yml config --services | grep -Fx "aigc-community"` all
+succeed on the deployment host. If Docker is unavailable, write back the failed command, stderr, runner host, and owner
+instead of marking the task done.
+
+Write-back summary for #151:
+
+```text
+aigc-community CI build evidence
+- workflow run url:
+- release evidence file:
+- commit sha:
+- immutable image tag:
+- maven command:
+- image build command:
+- compose up command:
+- compose ps summary:
+- service health result:
+- failure logs path or "not required":
+- release decision:
+```
+
+## Review and test evidence for #149 and #150
+
+Use `script/docker/community-release-evidence-index.md` as the canonical write-back template for these two gates.
+
+Required #149 review fields:
+
+```text
+reviewer:
+reviewed at:
+commit sha:
+reviewed files:
+review scope:
+blocking findings:
+release decision:
+```
+
+Required #150 test fields:
+
+```text
+executor:
+executed at:
+commit sha:
+build command:
+contract test command:
+smoke test command:
+build result:
+test result:
+skipped tests:
+release decision:
+```
+
+Do not mark #150 as `test:done` when the only successful command is a Maven build with `-DskipTests`.
+
+## Immutable version evidence for #146, #153, and #162
+
+Use the 12-character commit SHA from the workflow as `MICRO_IMAGE_TAG` and `FRONTEND_IMAGE_TAG`. Do not use `latest` as
+the only production release record.
+
+```text
+current version tag:
+current commit sha:
+previous stable tag:
+rollback target tag:
+image list:
+rollback command:
+```
+
+Rollback command:
+
+```bash
+MICRO_IMAGE_TAG=<previous-stable-sha> FRONTEND_IMAGE_TAG=<previous-stable-sha> \
+  docker compose -f script/docker/docker-compose-micro.yml up -d --no-build --force-recreate aigc-community
+```
+
+Local development may omit the tag and fall back to `latest`, but production evidence must record a commit SHA tag.
+
+Write-back summary for #153:
+
+```text
+aigc-community rollback version record
+- current version tag:
+- current git sha:
+- previous stable tag:
+- previous stable git sha:
+- compose file:
+- nacos config boundary:
+- database rollback boundary:
+- rollback command:
+- verification command:
+- release decision:
+```
+
+Write-back summary for #162:
+
+```text
+aigc-community stable rollback target
+- issue: #162
+- current image tag:
+- current git sha:
+- previous stable image tag:
+- previous stable git sha:
+- previous stable workflow run url:
+- rollback command:
+- verification command:
+- database rollback boundary:
+- missing evidence or "none":
+- release decision:
+```
+
+#162 must fail rather than pass if `previous_stable_image_tag` cannot be traced to a Git SHA and workflow run. The
+rollback command must use `MICRO_IMAGE_TAG=<previous-stable-sha>` and must not rely on `latest`.
+
+## Database migration record for #147, #152, and #163
+
+Use `yudao-module-aigc-community/yudao-module-aigc-community-server/src/main/resources/schema/community_db_release_runbook.md`.
+
+Required release issue fields:
+
+```text
+backup file:
+backup sha256:
+sql commit sha:
+execution window:
+executor:
+verifier:
+verification SQL summary:
+service health result:
+rollback owner:
+rollback decision:
+```
+
+For `aigc-community` and `all` releases, set `COMMUNITY_DB_RELEASE_RECORD` to a filled migration record before running
+the workflow. `script/docker/verify-release-evidence.sh db-evidence` blocks the release when the backup path, SHA256,
+SQL commit SHA, executor, verifier, execution window, table verification, utf8mb4 collation, service health result, or
+rollback drill is missing.
+
+Validation must confirm `aigc_guide_content` and all `aigc_community_*` tables use `utf8mb4` collation and have the
+indexes defined by `community_db.sql`.
+
+Write-back summary for #152:
+
+```text
+community_db migration record
+- backup file:
+- backup sha256:
+- sql commit sha:
+- executor:
+- execution window:
+- verification SQL summary:
+- service health result:
+- rollback owner:
+- rollback decision:
+- release decision:
+```
+
+Write-back summary for #163:
+
+```text
+community_db archived migration evidence
+- issue: #163
+- backup file:
+- backup sha256:
+- sql commit sha:
+- approval owner:
+- executor:
+- verifier:
+- execution window:
+- verification SQL output summary:
+- rollback drill:
+- release decision:
+```
+
+#163 is complete only when the runbook record has a backup path, SHA256, SQL commit SHA, executor, verifier, execution
+window, collation/index verification summary, and a rollback note that distinguishes "no writes yet" from "writes already
+happened".
+
+## Deploy health evidence for #154 and #164
+
+The deployment may proceed only when the review/test/build/database/rollback evidence above is present or explicitly
+accepted by the release owner. Record the real command output from the target environment.
+
+```text
+aigc-community deployment health evidence
+- target environment:
+- workflow run url:
+- release evidence file:
+- compose deploy command:
+- compose ps summary:
+- /actuator/health result:
+- gateway admin smoke result:
+- gateway app smoke result:
+- key API smoke result:
+- rollback command:
+- rollback executed:
+- release decision:
+```
+
+Write-back summary for #164:
+
+```text
+aigc-community smoke route evidence
+- issue: #164
+- target environment:
+- nacos config source:
+- service health command:
+- service health status:
+- gateway admin smoke command:
+- gateway admin status and response summary:
+- gateway app smoke command:
+- gateway app status and response summary:
+- service logs link:
+- release decision:
+```
+
+#164 is complete only when `/actuator/health` returns `UP` or an explicitly accepted equivalent healthy state and both
+Gateway routes prove they reach `aigc-community-server`. Authentication failures may be acceptable route proof when the
+response and service log identify the community service; 404 route misses are not acceptable.
+
+`script/docker/verify-release-evidence.sh verify-http` is the executable gate for this section. It must run without
+`|| true`; health and gateway smoke failures must fail the workflow and leave the release evidence file with the failed
+command context.
+
+## Evidence archive and bridge write-back for #165
+
+After #161-#164 run, write this summary to #159 and the related #125, #126, #127, and #128 release issues:
+
+```text
+aigc-community release bridge archive
+- issue: #165
+- source issue: #159
+- workflow run url:
+- commit sha:
+- immutable image tag:
+- release evidence file:
+- compose ps summary:
+- service log summary:
+- health summary:
+- gateway smoke summary:
+- related issue writebacks: #125, #126, #127, #128, #159
+- labels changed:
+- release decision:
+```
+
+If any required evidence is missing, keep the bridge failed and list the missing fields, owner, and next action. Remove
+failure labels only when the real workflow URL, compose ps output, logs, health result, smoke result, and release decision
+are present.
+
+## Smoke test checklist for #148
+
+Record the test account, executor, execution time, screenshots, and log links.
+
+| Area | Check | Expected result | Evidence |
+| --- | --- | --- | --- |
+| Service health | `curl -fsS http://<host>:48097/actuator/health` | UP or equivalent healthy status | |
+| Gateway admin route | `/admin-api/aigc/community/**` and `/admin-api/aigc/guide/**` | routed to `aigc-community-server` | |
+| Gateway app route | `/app-api/aigc/community/**` and `/app-api/aigc/guide/**` | routed to `aigc-community-server` | |
+| User community list | open community feed | list renders successfully | |
+| User detail | open a community post | detail renders successfully | |
+| User like | like then unlike a post | counts and state update correctly | |
+| User comment | create a comment | comment appears and can be traced | |
+| User share | trigger share logging | share count or log updates | |
+| User follow | follow then unfollow creator | follow state updates correctly | |
+| Creator profile | open creator profile | posts and stats render | |
+| Admin list | open community admin list | posts are visible | |
+| Admin audit approve | approve a pending post | app visibility matches audit result | |
+| Admin audit reject | reject a pending post | app visibility matches audit result | |
+| Admin hide/show | hide then show a post | app visibility changes accordingly | |
+| Admin delete | delete a test post | post disappears or is marked deleted | |
+
+If any smoke step fails, record the failed API, request payload, response, screenshot or log link, suspected owner, and
+rollback decision before marking the release as ready.

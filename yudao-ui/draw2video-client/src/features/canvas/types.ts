@@ -31,6 +31,8 @@ export type NodeDataPatchEventDetail = {
   nodeId: string;
   patch: Record<string, unknown>;
   flush?: boolean;
+  includeSnapshotOnly?: boolean;
+  reliable?: boolean;
 };
 
 export type NodePositionPatchEventDetail = {
@@ -135,7 +137,9 @@ export interface ImageNodeData {
   createdAt: string;
   kind?: "uploaded" | "draft" | "generated";
   prompt?: string;
+  sourceTemplateId?: number;
   modelId?: string;
+  modelCode?: string;
   providerModel?: string;
   modelName?: string;
   aigcModelId?: number;
@@ -331,7 +335,9 @@ export const SYNCABLE_NODE_DATA_KEYS = [
   "kind",
   "prompt",
   "content",
+  "sourceTemplateId",
   "modelId",
+  "modelCode",
   "provider",
   "providerModel",
   "modelName",

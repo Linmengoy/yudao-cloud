@@ -25,6 +25,14 @@ public interface AigcGenerateRecordMapper extends BaseMapperX<AigcGenerateRecord
                 .eqIfPresent(AigcGenerateRecordDO::getModelId, reqVO.getModelId())
                 .eqIfPresent(AigcGenerateRecordDO::getProviderCode, reqVO.getProviderCode())
                 .eqIfPresent(AigcGenerateRecordDO::getStatus, reqVO.getStatus())
+                .eqIfPresent(AigcGenerateRecordDO::getProviderTaskId, reqVO.getProviderTaskId())
+                .likeIfPresent(AigcGenerateRecordDO::getFailReason, reqVO.getFailReason())
+                .betweenIfPresent(AigcGenerateRecordDO::getCreateTime, reqVO.getCreateTime())
+                .betweenIfPresent(AigcGenerateRecordDO::getSubmitTime, reqVO.getSubmitTime())
+                .and(Boolean.TRUE.equals(reqVO.getHasError()), wrapper -> wrapper
+                        .isNotNull(AigcGenerateRecordDO::getFailReason)
+                        .or()
+                        .isNotNull(AigcGenerateRecordDO::getFailMessage))
                 .orderByDesc(AigcGenerateRecordDO::getId));
     }
 

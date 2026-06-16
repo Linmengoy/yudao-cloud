@@ -34,6 +34,7 @@
         <module>yudao-module-aigc-safety</module>
         <module>yudao-module-aigc-gen</module>
         <module>yudao-module-aigc-workflow</module>
+        <module>yudao-module-aigc-community</module>
     </modules>
 
     <name>${project.artifactId}</name>

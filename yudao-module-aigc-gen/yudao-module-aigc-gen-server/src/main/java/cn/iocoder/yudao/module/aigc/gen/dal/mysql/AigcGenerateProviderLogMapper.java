@@ -14,7 +14,9 @@ public interface AigcGenerateProviderLogMapper extends BaseMapperX<AigcGenerateP
         return selectPage(reqVO, new LambdaQueryWrapperX<AigcGenerateProviderLogDO>()
                 .eqIfPresent(AigcGenerateProviderLogDO::getRecordId, reqVO.getRecordId())
                 .eqIfPresent(AigcGenerateProviderLogDO::getTaskId, reqVO.getTaskId())
+                .eqIfPresent(AigcGenerateProviderLogDO::getAttemptId, reqVO.getAttemptId())
                 .eqIfPresent(AigcGenerateProviderLogDO::getProviderCode, reqVO.getProviderCode())
+                .eqIfPresent(AigcGenerateProviderLogDO::getModelCode, reqVO.getModelCode())
                 .eqIfPresent(AigcGenerateProviderLogDO::getApiAction, reqVO.getApiAction())
                 .eqIfPresent(AigcGenerateProviderLogDO::getSuccess, reqVO.getSuccess())
                 .orderByDesc(AigcGenerateProviderLogDO::getId));

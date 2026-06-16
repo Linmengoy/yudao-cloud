@@ -50,6 +50,7 @@ export type GenerateResult = {
   outputData?: string;
   outputUrls?: string;
   assetIds?: string;
+  failReason?: string;
   failMessage?: string;
   createTime?: string;
   finishTime?: string;

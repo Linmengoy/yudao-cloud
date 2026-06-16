@@ -29,7 +29,7 @@ import {
   type EdgeChange,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, NodePositionPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoFrameCaptureEventDetail, VideoGenerationMode, VideoNodeData } from "@/features/canvas/types";
+import type { AppNode, AppEdge, CanvasMember, CanvasPresence, CanvasProjectRole, CanvasState, EdgeDeleteEventDetail, GroupArrangeEventDetail, GroupNodeData, GroupUngroupEventDetail, ImageNodeData, NodeCreateMenuEventDetail, NodeDataPatchEventDetail, NodeEditingPresenceEventDetail, NodePositionPatchEventDetail, ReferencePickerEventDetail, SketchNodeData, TextNodeData, VideoFrameCaptureEventDetail, VideoGenerationMode, VideoNodeData } from "@/features/canvas/types";
 import { DEFAULT_PROMPT_DATA } from "@/features/canvas/types";
 import { canvasApi, snapshotRecordToCanvasState } from "@/features/canvas/canvas-api";
 import { CanvasShareDialog } from "@/features/canvas/CanvasShareDialog";
@@ -41,11 +41,13 @@ import { TextNodeComponent } from "@/features/canvas/TextNode";
 import { VideoNodeComponent } from "@/features/canvas/VideoNode";
 import { GroupNodeComponent } from "@/features/canvas/GroupNode";
 import { CanvasSignalEdge } from "@/features/canvas/CanvasSignalEdge";
-import { filterSyncableNodeDataPatch, isCanvasNodeSyncable, sanitizeNodeForCanvasOperation, sanitizeNodesForCanvasSnapshot, stripRuntimeAssetUrlsFromPatch } from "@/features/canvas/canvas-syncable-data";
+import { collectNodeAssetIds, getNodeAssetAccessRequest, withFreshAssetUrl } from "@/features/canvas/canvas-asset-runtime";
+import { filterSyncableNodeDataPatch, isCanvasNodeSyncable, sanitizeCanvasStateForPersistence, sanitizeNodeForCanvasOperation, stripRuntimeAssetUrlsFromPatch } from "@/features/canvas/canvas-syncable-data";
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
-import { saveImage, saveVideo } from "@/features/canvas/image-store";
+import { loadCanvas, saveCanvas } from "@/features/canvas/use-canvas-storage";
+import { loadImage, loadVideo, saveImage, saveVideo } from "@/features/canvas/image-store";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
 import { getAssetAccessUrls, getMyAsset } from "@/features/assets/asset-api";
@@ -82,6 +84,7 @@ const CANVAS_EDGE_TYPES = {
 } satisfies EdgeTypes;
 
 type AssetUrlEntry = { assetId: number; url: string; expireTime: string | null };
+type CanvasViewport = { x: number; y: number; zoom: number };
 
 function assetUrlCacheKey(projectId: string | null, assetId: number) {
   return `${projectId ?? "global"}:${assetId}`;
@@ -119,6 +122,7 @@ const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video"]
 const DEFAULT_CANVAS_VIEWPORT = { x: 110, y: 90, zoom: 0.78 };
 const NODE_DATA_PATCH_DEBOUNCE_MS = 200;
 const CANVAS_SAVE_DEBOUNCE_MS = 1500;
+const CANVAS_DRAFT_MAX_AGE_MS = 5 * 60_000;
 const SNAPSHOT_ONLY_NODE_DATA_KEYS = new Set(["prompt", "content"]);
 
 function getPresenceColor(clientId: string) {
@@ -625,34 +629,6 @@ function withCardNodeInteraction(node: AppNode): AppNode {
   };
 }
 
-function getNodeAssetId(node: AppNode) {
-  if (node.type !== "image" && node.type !== "video") return null;
-  const data = node.data as ImageNodeData | VideoNodeData;
-  return data.assetId ?? data.outputAssetId ?? null;
-}
-
-function collectNodeAssetIds(node: AppNode) {
-  if (node.type !== "image" && node.type !== "video") return [];
-  const data = node.data as ImageNodeData | VideoNodeData;
-  const ids = new Set<number>();
-  [data.assetId, data.outputAssetId].forEach((assetId) => {
-    if (typeof assetId === "number") ids.add(assetId);
-  });
-  if (Array.isArray(data.outputs)) {
-    data.outputs.forEach((output) => {
-      if (typeof output.assetId === "number") ids.add(output.assetId);
-    });
-  }
-  return [...ids];
-}
-
-function getNodeAssetAccessRequest(node: AppNode, assetId: number) {
-  if (node.type === "video") {
-    return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
-  }
-  return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
-}
-
 function getImageOutputIdentity(output: Record<string, unknown>) {
   if (typeof output.id === "string" && output.id) return output.id;
   if (typeof output.assetId === "number") return `asset-${output.assetId}`;
@@ -724,48 +700,6 @@ function mergeVideoOutputPatch(node: AppNode, patch: Record<string, unknown>) {
   });
 
   return { ...patch, outputs: mergedOutputs };
-}
-
-function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | null, assetId = getNodeAssetId(node)): AppNode {
-  if (node.type === "video") {
-    const outputs = Array.isArray(node.data.outputs)
-      ? node.data.outputs.map((output) => (
-          output.assetId === assetId
-            ? { ...output, previewUrl: url, videoUrl: url }
-            : output
-        ))
-      : node.data.outputs;
-    const shouldUpdatePrimary = assetId === getNodeAssetId(node);
-    return {
-      ...node,
-      data: {
-        ...node.data,
-        ...(shouldUpdatePrimary ? { assetId, previewUrl: url, videoUrl: url } : {}),
-        outputs,
-        assetUrlExpireTime: expireTime ?? null,
-      },
-    } as AppNode;
-  }
-  if (node.type === "image") {
-    const outputs = Array.isArray(node.data.outputs)
-      ? node.data.outputs.map((output) => (
-          output.assetId === assetId
-            ? { ...output, previewUrl: url }
-            : output
-        ))
-      : node.data.outputs;
-    const shouldUpdatePrimary = assetId === getNodeAssetId(node);
-    return {
-      ...node,
-      data: {
-        ...node.data,
-        ...(shouldUpdatePrimary ? { assetId, previewUrl: url, outputPreviewUrl: url } : {}),
-        outputs,
-        assetUrlExpireTime: expireTime ?? null,
-      },
-    } as AppNode;
-  }
-  return node;
 }
 
 function defaultNodes(): AppNode[] {
@@ -992,6 +926,58 @@ function isValidCanvasConnection(connection: { source: string; target: string },
     (source?.type === "image" && target?.type === "prompt") ||
     (source?.type === "prompt" && target?.type === "result")
   );
+}
+
+function migrateCanvasStateForHydration(state: { nodes: AppNode[]; edges: AppEdge[]; viewport?: CanvasViewport }): CanvasState {
+  const idMap = new Map<string, string>();
+  const migratedNodes = state.nodes.map((node) => {
+    const migrated = migrateNode(node);
+    idMap.set(node.id, migrated.id);
+    return migrated;
+  });
+  const migratedEdges = state.edges
+    .map(migrateEdge)
+    .map((edge) => ({
+      ...edge,
+      source: idMap.get(edge.source) ?? edge.source,
+      target: idMap.get(edge.target) ?? edge.target,
+    }))
+    .filter((edge) => isValidCanvasConnection(edge, migratedNodes));
+  return {
+    nodes: migratedNodes,
+    edges: migratedEdges,
+    viewport: state.viewport,
+  };
+}
+
+function getCanvasDraftSavedAt(state: CanvasState | null) {
+  const savedAt = (state as (CanvasState & { savedAt?: unknown }) | null)?.savedAt;
+  return typeof savedAt === "number" && Number.isFinite(savedAt) ? savedAt : null;
+}
+
+function hasActiveGenerationNode(nodes: AppNode[]) {
+  return nodes.some((node) => {
+    if (node.type !== "image" && node.type !== "video" && node.type !== "text") return false;
+    const data = node.data as Record<string, unknown>;
+    return data.status === "pending" || (typeof data.taskId === "string" && data.taskId.length > 0);
+  });
+}
+
+function hasDraftOnlyEdge(draftEdges: AppEdge[], serverEdges: AppEdge[]) {
+  return draftEdges.some((draftEdge) => !serverEdges.some((serverEdge) =>
+    serverEdge.id === draftEdge.id ||
+    (serverEdge.source === draftEdge.source && serverEdge.target === draftEdge.target)
+  ));
+}
+
+function shouldHydrateFromLocalDraft(draftState: CanvasState | null, serverState: CanvasState | null) {
+  if (!draftState) return false;
+  const savedAt = getCanvasDraftSavedAt(draftState);
+  if (!savedAt || Date.now() - savedAt > CANVAS_DRAFT_MAX_AGE_MS) return false;
+  if (!serverState) return draftState.nodes.length > 0 || draftState.edges.length > 0;
+  if (draftState.nodes.length > serverState.nodes.length) return true;
+  if (hasDraftOnlyEdge(draftState.edges, serverState.edges)) return true;
+  return hasActiveGenerationNode(draftState.nodes);
 }
 
 function isSameCanvasEdge(left: AppEdge, right: AppEdge) {
@@ -1451,6 +1437,29 @@ function CanvasFlow() {
     return () => window.clearInterval(timer);
   }, [getNodes, isHydrated, refreshAssetUrls, screenToFlowPosition]);
 
+  const hydrateLocalMediaNodes = useCallback(async (nodesToHydrate: AppNode[]) => {
+    const hydrated = await Promise.all(nodesToHydrate.map(async (node) => {
+      try {
+        if (node.type === "image") {
+          const data = node.data as ImageNodeData;
+          if (data.previewUrl || data.dataUrl || data.assetId || !data.imageId) return node;
+          const stored = await loadImage(data.imageId, mediaStoreScope);
+          return stored ? { ...node, data: { ...data, ...stored, projectId: data.projectId ?? stored.projectId } } as AppNode : node;
+        }
+        if (node.type === "video") {
+          const data = node.data as VideoNodeData;
+          if (data.previewUrl || data.videoUrl || data.assetId || !data.videoId) return node;
+          const stored = await loadVideo(data.videoId, mediaStoreScope);
+          return stored ? { ...node, data: { ...data, ...stored, projectId: data.projectId ?? stored.projectId } } as AppNode : node;
+        }
+      } catch {
+        return node;
+      }
+      return node;
+    }));
+    setNodes((currentNodes) => currentNodes.map((node) => hydrated.find((item) => item.id === node.id) ?? node));
+  }, [mediaStoreScope, setNodes]);
+
   const applyRemoteOperation = useCallback((operationType: string, payload: Record<string, unknown>) => {
     if (operationType === "NODE_MOVE" && typeof payload.nodeId === "string") {
       setNodes((nds) => nds.map((node) => node.id === payload.nodeId ? { ...node, position: payload.position as AppNode["position"] } : node));
@@ -1476,12 +1485,18 @@ function CanvasFlow() {
     }
     if ((operationType === "NODE_UPDATE_DATA" || operationType === "TASK_STATUS_PATCH") && typeof payload.nodeId === "string" && payload.patch) {
       const patch = stripRuntimeAssetUrlsFromPatch(payload.patch as Record<string, unknown>);
+      let nodeToRefresh: AppNode | null = null;
       setNodes((nds) => nds.map((node) => {
         if (node.id !== payload.nodeId) return node;
         const imageMergedPatch = mergeImageOutputPatch(node as AppNode, patch);
         const mergedPatch = mergeVideoOutputPatch(node as AppNode, imageMergedPatch);
-        return migrateNode({ ...node, data: { ...node.data, ...mergedPatch } } as AppNode);
+        const nextNode = migrateNode({ ...node, data: { ...node.data, ...mergedPatch } } as AppNode);
+        nodeToRefresh = nextNode;
+        return nextNode;
       }));
+      if (nodeToRefresh && collectNodeAssetIds(nodeToRefresh).length > 0) {
+        window.requestAnimationFrame(() => refreshAssetUrls([nodeToRefresh as AppNode]));
+      }
       return;
     }
     if (operationType === "ASSET_ATTACH" && typeof payload.nodeId === "string") {
@@ -2210,39 +2225,42 @@ function CanvasFlow() {
         const snapshotVersion = serverResult.snapshot?.version ?? 0;
         const currentVersion = serverResult.project.currentVersion ?? snapshotVersion;
         markAppliedVersion(snapshotVersion);
+        const localDraft = loadCanvas(projectId, user?.id ?? null);
 
         if (!saved) {
           if (!cancelled) {
-            setNodes(defaultNodes());
-            setEdges([]);
-            setViewport(DEFAULT_CANVAS_VIEWPORT);
+            const draftState = localDraft && shouldHydrateFromLocalDraft(localDraft, null)
+              ? migrateCanvasStateForHydration(localDraft)
+              : null;
+            const nextNodes = draftState?.nodes ?? defaultNodes();
+            setNodes(nextNodes);
+            setEdges(draftState?.edges ?? []);
+            setViewport(draftState?.viewport ?? DEFAULT_CANVAS_VIEWPORT);
             setIsHydrated(true);
+            window.requestAnimationFrame(() => {
+              hydrateLocalMediaNodes(nextNodes);
+              refreshVisibleAssetUrlsRef.current(nextNodes);
+            });
           }
           if (currentVersion > snapshotVersion) syncFromVersionRef.current(snapshotVersion);
           return;
         }
 
-        const idMap = new Map<string, string>();
-        const migratedNodes = saved.nodes.map((node) => {
-          const migrated = migrateNode(node);
-          idMap.set(node.id, migrated.id);
-          return migrated;
-        });
-        const migratedEdges = saved.edges
-          .map(migrateEdge)
-          .map((edge) => ({
-            ...edge,
-            source: idMap.get(edge.source) ?? edge.source,
-            target: idMap.get(edge.target) ?? edge.target,
-          }))
-          .filter((edge) => isValidCanvasConnection(edge, migratedNodes));
+        const serverState = migrateCanvasStateForHydration(saved);
+        const draftState = localDraft && shouldHydrateFromLocalDraft(localDraft, serverState)
+          ? migrateCanvasStateForHydration(localDraft)
+          : null;
+        const hydratedState = draftState ?? serverState;
 
         if (!cancelled) {
-          setNodes(migratedNodes);
-          setEdges(migratedEdges);
-          setViewport(saved.viewport ?? DEFAULT_CANVAS_VIEWPORT);
+          setNodes(hydratedState.nodes);
+          setEdges(hydratedState.edges);
+          setViewport(hydratedState.viewport ?? DEFAULT_CANVAS_VIEWPORT);
           setIsHydrated(true);
-          window.requestAnimationFrame(() => refreshVisibleAssetUrlsRef.current(migratedNodes));
+          window.requestAnimationFrame(() => {
+            hydrateLocalMediaNodes(hydratedState.nodes);
+            refreshVisibleAssetUrlsRef.current(hydratedState.nodes);
+          });
         }
 
         if (currentVersion > snapshotVersion) syncFromVersionRef.current(snapshotVersion);
@@ -2257,7 +2275,20 @@ function CanvasFlow() {
 
     hydrate();
     return () => { cancelled = true; };
-  }, [activeProjectId, loadProject, markAppliedVersion, resetAppliedVersion, router, setNodes, setEdges, setViewport]);
+  }, [activeProjectId, hydrateLocalMediaNodes, loadProject, markAppliedVersion, resetAppliedVersion, router, setNodes, setEdges, setViewport, user?.id]);
+
+  const localDraftSaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    if (!isHydrated || !activeProjectId || isReadOnly) return;
+    clearTimeout(localDraftSaveTimer.current);
+    localDraftSaveTimer.current = setTimeout(() => {
+      try {
+        saveCanvas({ nodes, edges, viewport: getViewport() }, activeProjectId, user?.id ?? null);
+      } catch {
+      }
+    }, 200);
+    return () => clearTimeout(localDraftSaveTimer.current);
+  }, [activeProjectId, edges, getViewport, isHydrated, isReadOnly, nodes, user?.id]);
 
   // Debounced save — only after hydration completes
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -2270,11 +2301,15 @@ function CanvasFlow() {
         const summary = summarizeCanvas(nodes);
         if (!isReadOnly && serverProjectId && canvasOperations.pendingOperationCount === 0) {
           setIsSavingSnapshot(true);
-          const snapshotNodes = sanitizeNodesForCanvasSnapshot(nodes);
-          saveSnapshot(serverProjectId, {
-            nodes: snapshotNodes,
+          const snapshotState = sanitizeCanvasStateForPersistence({
+            nodes,
             edges,
             viewport: getViewport(),
+          });
+          saveSnapshot(serverProjectId, {
+            nodes: snapshotState.nodes,
+            edges: snapshotState.edges,
+            viewport: snapshotState.viewport,
             baseVersion: lastAppliedVersionRef.current,
             clientId,
             ...summary,

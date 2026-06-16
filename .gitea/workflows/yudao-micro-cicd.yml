@@ -22,8 +22,14 @@ on:
           - aigc-asset
           - aigc-safety
           - aigc-workflow
+          - aigc-community
           - draw2video-admin
           - draw2video-client
+          - draw2video-guide
+      previous_stable_image_tag:
+        description: 'Previous stable image tag for rollback evidence, usually a 12-char commit SHA'
+        required: false
+        default: ''
 
 jobs:
   build-deploy:
@@ -70,6 +76,8 @@ jobs:
             service="all"
           fi
 
+          image_tag="$(git rev-parse --short=12 HEAD)"
+
           case "${service}" in
             all) module="all" ;;
             yudao-gateway) module="yudao-gateway" ;;
@@ -83,9 +91,11 @@ jobs:
             aigc-asset) module="yudao-module-aigc-asset/yudao-module-aigc-asset-server" ;;
             aigc-safety) module="yudao-module-aigc-safety/yudao-module-aigc-safety-server" ;;
             aigc-workflow) module="yudao-module-aigc-workflow/yudao-module-aigc-workflow-server" ;;
+            aigc-community) module="yudao-module-aigc-community/yudao-module-aigc-community-server" ;;
             aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
             draw2video-admin) module="frontend" ;;
             draw2video-client) module="frontend" ;;
+            draw2video-guide) module="frontend" ;;
             *) echo "Unknown service: ${service}" && exit 1 ;;
           esac
 
@@ -95,6 +105,41 @@ jobs:
 
           echo "BUILD_SERVICE=${service}" >> "${GITHUB_ENV}"
           echo "BUILD_MODULE=${module}" >> "${GITHUB_ENV}"
+          echo "MICRO_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
+          echo "FRONTEND_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
+          echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
+          echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/${service}-${image_tag}.md" >> "${GITHUB_ENV}"
+
+      - name: Enforce rollback version gate
+        run: |
+          bash script/docker/verify-release-evidence.sh preflight
+
+      - name: Write release evidence summary
+        run: |
+          mkdir -p tmp/release-evidence
+          evidence="${RELEASE_EVIDENCE_FILE}"
+          {
+            echo "release evidence"
+            echo "- workflow run url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- runner: ${RUNNER_NAME:-manman}"
+            echo "- service: ${BUILD_SERVICE}"
+            echo "- module: ${BUILD_MODULE}"
+            echo "- commit sha: $(git rev-parse HEAD)"
+            echo "- immutable image tag: ${MICRO_IMAGE_TAG}"
+            echo "- frontend image tag: ${FRONTEND_IMAGE_TAG}"
+            echo "- previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}"
+            echo "- maven command: mvn clean package -pl ${BUILD_MODULE} -am -DskipTests"
+            echo "- image build command: docker compose -f script/docker/docker-compose-micro.yml build ${BUILD_SERVICE}"
+            echo "- compose up command: docker compose -f script/docker/docker-compose-micro.yml up -d ${BUILD_SERVICE}"
+            echo "- rollback command: MICRO_IMAGE_TAG=<previous-stable-sha> FRONTEND_IMAGE_TAG=<previous-stable-sha> docker compose -f script/docker/docker-compose-micro.yml up -d --no-build --force-recreate ${BUILD_SERVICE}"
+            echo "- smoke checklist: script/docker/community-release-gates.md"
+            echo "- evidence index: script/docker/community-release-evidence-index.md"
+          } | tee "${evidence}"
+
+      - name: Enforce community DB evidence gate
+        if: env.BUILD_SERVICE == 'aigc-community' || env.BUILD_SERVICE == 'all'
+        run: |
+          bash script/docker/verify-release-evidence.sh db-evidence
 
       - name: Build jar
         run: |
@@ -139,21 +184,57 @@ jobs:
           docker compose -f script/docker/docker-compose-micro.yml ps
 
           if [ "${BUILD_SERVICE}" = "all" ]; then
-            verify_services="yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen draw2video-admin draw2video-client"
+            verify_services="yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community draw2video-admin draw2video-client draw2video-guide"
           else
             verify_services="${BUILD_SERVICE}"
           fi
 
           for service in ${verify_services}; do
+            service_running="false"
             for i in $(seq 1 30); do
               state=$(docker compose -f script/docker/docker-compose-micro.yml ps --status running --services | grep -Fx "${service}" || true)
               echo "${service}: ${state:-not-running}"
               if [ "${state}" = "${service}" ]; then
-                exit 0
+                service_running="true"
+                break
               fi
               sleep 5
             done
 
+            if [ "${service_running}" = "true" ]; then
+              continue
+            fi
+
             docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 "${service}"
             exit 1
           done
+
+          if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+            COMMUNITY_HEALTH_URL="http://127.0.0.1:48097/actuator/health" \
+            GATEWAY_BASE_URL="http://127.0.0.1:48080" \
+            COMPOSE_FILE_PATH="script/docker/docker-compose-micro.yml" \
+              bash script/docker/verify-release-evidence.sh verify-http
+          fi
+
+      - name: Append release verification evidence
+        if: always()
+        run: |
+          mkdir -p tmp/release-evidence
+          evidence="${RELEASE_EVIDENCE_FILE:-tmp/release-evidence/${BUILD_SERVICE:-unknown}-${MICRO_IMAGE_TAG:-unknown}.md}"
+          {
+            echo
+            echo "deployment verification"
+            echo "- verified at: $(date -Is)"
+            echo "- deploy env: master-jdk17"
+            echo "- docker compose version: $(docker compose version 2>/dev/null || true)"
+            echo "- compose ps summary:"
+            docker compose -f script/docker/docker-compose-micro.yml ps || true
+            if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+              echo "- strict gate:"
+              echo "  script/docker/verify-release-evidence.sh verify-http must pass before this workflow can succeed"
+              echo
+              echo "- gateway smoke commands:"
+              echo "  curl -i -sS --fail-with-body http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1"
+              echo "  curl -i -sS --fail-with-body http://127.0.0.1:48080/app-api/aigc/community/post/page?pageNo=1&pageSize=1"
+            fi
+          } | tee -a "${evidence}"

@@ -1,0 +1,86 @@
+spring:
+  datasource:
+    druid:
+      web-stat-filter:
+        enabled: true
+      stat-view-servlet:
+        enabled: true
+        allow:
+        url-pattern: /druid/*
+        login-username:
+        login-password:
+      filter:
+        stat:
+          enabled: true
+          log-slow-sql: true
+          slow-sql-millis: 100
+          merge-sql: true
+        wall:
+          config:
+            multi-statement-allow: true
+    dynamic:
+      druid:
+        initial-size: 1
+        min-idle: 1
+        max-active: 20
+        max-wait: 60000
+        time-between-eviction-runs-millis: 60000
+        min-evictable-idle-time-millis: 600000
+        max-evictable-idle-time-millis: 1800000
+        validation-query: SELECT 1 FROM DUAL
+        test-while-idle: true
+        test-on-borrow: false
+        test-on-return: false
+        pool-prepared-statements: true
+        max-pool-prepared-statement-per-connection-size: 20
+      primary: master
+      datasource:
+        master:
+          url: jdbc:mysql://mysql:3306/community_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+          username: root
+          password: 123456
+        slave:
+          lazy: true
+          url: jdbc:mysql://mysql:3306/community_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+          username: root
+          password: 123456
+  data:
+    redis:
+      host: redis
+      port: 6379
+      database: 3
+  cloud:
+    nacos:
+      server-addr: ${SPRING_CLOUD_NACOS_SERVER_ADDR:10.66.0.2:8848}
+      username: ${SPRING_CLOUD_NACOS_USERNAME:nacos}
+      password: ${SPRING_CLOUD_NACOS_PASSWORD:nacos}
+      discovery:
+        namespace: ${SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE:prod}
+        group: ${SPRING_CLOUD_NACOS_DISCOVERY_GROUP:DEFAULT_GROUP}
+        metadata:
+          version: 1.0.0
+      config:
+        server-addr: ${SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR:${spring.cloud.nacos.server-addr}}
+        encode: UTF-8
+        namespace: ${SPRING_CLOUD_NACOS_CONFIG_NAMESPACE:prod}
+        group: ${SPRING_CLOUD_NACOS_CONFIG_GROUP:DEFAULT_GROUP}
+
+logging:
+  level:
+    cn.iocoder.yudao.module.aigc.community: info
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+yudao:
+  env:
+    tag: ${HOSTNAME}
+  access-log:
+    enable: true

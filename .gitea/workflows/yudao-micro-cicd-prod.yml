@@ -1,0 +1,285 @@
+name: yudao-micro-cicd-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Docker service to build/deploy, use all for all services'
+        type: choice
+        required: false
+        default: 'aigc-gen'
+        options:
+          - aigc-gen
+          - all
+          - yudao-gateway
+          - yudao-system
+          - yudao-infra
+          - yudao-member
+          - yudao-pay
+          - aigc-model
+          - aigc-billing
+          - aigc-task
+          - aigc-asset
+          - aigc-safety
+          - aigc-workflow
+          - aigc-community
+      previous_stable_image_tag:
+        description: 'Previous stable image tag for rollback evidence, usually a 12-char commit SHA'
+        required: true
+        default: ''
+
+jobs:
+  build-deploy:
+    runs-on: manman2-prod
+
+    steps:
+      - name: Checkout
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -d .git ]; then
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+            git fetch --prune origin
+            git clean -fdx
+          else
+            git init .
+            git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          fi
+
+          git -c http.extraHeader="Authorization: token ${GITEA_TOKEN}" fetch --depth=1 origin "${{ github.ref }}"
+          git checkout -f FETCH_HEAD
+          git clean -fdx
+
+      - name: Show host environment
+        run: |
+          whoami
+          hostname
+          pwd
+          git --version
+          java -version
+          mvn -version
+          docker version
+          docker compose version
+
+      - name: Resolve build target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SERVICE: ${{ github.event.inputs.service }}
+        run: |
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            service="${INPUT_SERVICE:-aigc-gen}"
+          else
+            service="all"
+          fi
+
+          image_tag="$(git rev-parse --short=12 HEAD)"
+
+          case "${service}" in
+            all) module="all" ;;
+            yudao-gateway) module="yudao-gateway" ;;
+            yudao-system) module="yudao-module-system/yudao-module-system-server" ;;
+            yudao-infra) module="yudao-module-infra/yudao-module-infra-server" ;;
+            yudao-member) module="yudao-module-member/yudao-module-member-server" ;;
+            yudao-pay) module="yudao-module-pay/yudao-module-pay-server" ;;
+            aigc-model) module="yudao-module-aigc-model/yudao-module-aigc-model-server" ;;
+            aigc-billing) module="yudao-module-aigc-billing/yudao-module-aigc-billing-server" ;;
+            aigc-task) module="yudao-module-aigc-task/yudao-module-aigc-task-server" ;;
+            aigc-asset) module="yudao-module-aigc-asset/yudao-module-aigc-asset-server" ;;
+            aigc-safety) module="yudao-module-aigc-safety/yudao-module-aigc-safety-server" ;;
+            aigc-workflow) module="yudao-module-aigc-workflow/yudao-module-aigc-workflow-server" ;;
+            aigc-community) module="yudao-module-aigc-community/yudao-module-aigc-community-server" ;;
+            aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
+            *) echo "Unknown service: ${service}" && exit 1 ;;
+          esac
+
+          if [ "${service}" != "all" ]; then
+            docker compose -f script/docker/docker-compose-micro-prod.yml config --services | grep -Fx "${service}"
+          fi
+
+          echo "BUILD_SERVICE=${service}" >> "${GITHUB_ENV}"
+          echo "BUILD_MODULE=${module}" >> "${GITHUB_ENV}"
+          echo "MICRO_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
+          echo "FRONTEND_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
+          echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
+          echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/prod-${service}-${image_tag}.md" >> "${GITHUB_ENV}"
+
+      - name: Enforce rollback version gate
+        run: |
+          bash script/docker/verify-release-evidence.sh preflight
+
+      - name: Write release evidence summary
+        run: |
+          mkdir -p tmp/release-evidence
+          evidence="${RELEASE_EVIDENCE_FILE}"
+          {
+            echo "release evidence"
+            echo "- workflow run url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- runner: ${RUNNER_NAME:-manman2-prod}"
+            echo "- target environment: prod"
+            echo "- deploy host: local manman2"
+            echo "- service: ${BUILD_SERVICE}"
+            echo "- module: ${BUILD_MODULE}"
+            echo "- commit sha: $(git rev-parse HEAD)"
+            echo "- immutable image tag: ${MICRO_IMAGE_TAG}"
+            echo "- frontend image tag: ${FRONTEND_IMAGE_TAG}"
+            echo "- previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}"
+            echo "- maven command: mvn clean package -pl ${BUILD_MODULE} -am -DskipTests"
+            echo "- image build command: docker compose -f script/docker/docker-compose-micro-prod.yml build ${BUILD_SERVICE}"
+            echo "- compose up command: MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG} FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG} docker compose -f docker-compose-micro.yml up -d --no-deps ${BUILD_SERVICE}"
+            echo "- rollback command: MICRO_IMAGE_TAG=<previous-stable-sha> FRONTEND_IMAGE_TAG=<previous-stable-sha> docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${BUILD_SERVICE}"
+            echo "- rollback command: MICRO_IMAGE_TAG=${PREVIOUS_STABLE_IMAGE_TAG} FRONTEND_IMAGE_TAG=${PREVIOUS_STABLE_IMAGE_TAG} docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${BUILD_SERVICE}"
+            echo "- smoke checklist: script/docker/community-release-gates.md"
+            echo "- evidence index: script/docker/community-release-evidence-index.md"
+          } | tee "${evidence}"
+
+      - name: Enforce community DB evidence gate
+        if: env.BUILD_SERVICE == 'aigc-community' || env.BUILD_SERVICE == 'all'
+        run: |
+          bash script/docker/verify-release-evidence.sh db-evidence
+
+      - name: Build jar
+        run: |
+          echo "Build service: ${BUILD_SERVICE}"
+          echo "Build module: ${BUILD_MODULE}"
+
+          if [ "${BUILD_MODULE}" = "all" ]; then
+            mvn clean package -DskipTests
+          else
+            mvn clean package -pl "${BUILD_MODULE}" -am -DskipTests
+          fi
+
+      - name: Build image
+        run: |
+          echo "Build service: ${BUILD_SERVICE}"
+
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway"
+            docker compose -f script/docker/docker-compose-micro-prod.yml build ${services}
+          else
+            docker compose -f script/docker/docker-compose-micro-prod.yml build "${BUILD_SERVICE}"
+          fi
+
+      - name: Prepare local docker compose files
+        run: |
+          deploy_dir="/opt/deploy/yudao-micro"
+          mkdir -p "${deploy_dir}"
+          cp script/docker/docker-compose-micro-prod.yml "${deploy_dir}/docker-compose-micro.yml"
+          {
+            echo "MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG}"
+            echo "FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}"
+          } > /tmp/prod-deploy.env
+          if [ -f script/docker/.env ]; then
+            cat script/docker/.env >> /tmp/prod-deploy.env
+          fi
+          mv /tmp/prod-deploy.env "${deploy_dir}/.env"
+
+      - name: Prepare local prod network
+        run: |
+          docker network inspect yudao-network-prod >/dev/null 2>&1 || docker network create yudao-network-prod
+
+          for pair in "yudao-mysql-prod mysql" "yudao-redis-prod redis"; do
+            set -- ${pair}
+            container="$1"
+            alias="$2"
+            if docker ps --format '{{.Names}}' | grep -Fx "${container}" >/dev/null; then
+              if ! docker inspect "${container}" --format '{{json .NetworkSettings.Networks}}' | grep -q '"yudao-network-prod"'; then
+                docker network connect --alias "${alias}" yudao-network-prod "${container}"
+              fi
+            else
+              echo "Required infra container is missing: ${container}"
+              exit 1
+            fi
+          done
+
+      - name: Deploy services locally
+        run: |
+          deploy_env="prod"
+          deploy_dir="/opt/deploy/yudao-micro"
+          echo "Deploy env: ${deploy_env}"
+          echo "Deploy host: $(hostname)"
+
+          cd "${deploy_dir}"
+          export MICRO_IMAGE_TAG="${MICRO_IMAGE_TAG}" FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway"
+            docker compose -f docker-compose-micro.yml up -d --no-deps ${services}
+          else
+            docker compose -f docker-compose-micro.yml up -d --no-deps "${BUILD_SERVICE}"
+          fi
+
+      - name: Verify services locally
+        run: |
+          deploy_env="prod"
+          deploy_dir="/opt/deploy/yudao-micro"
+          echo "Verify env: ${deploy_env}"
+          echo "Deploy host: $(hostname)"
+          echo "Build service: ${BUILD_SERVICE}"
+
+          cd "${deploy_dir}"
+          docker compose -f docker-compose-micro.yml ps
+
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            verify_services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway"
+          else
+            verify_services="${BUILD_SERVICE}"
+          fi
+
+          for service in ${verify_services}; do
+            service_running="false"
+            for i in $(seq 1 30); do
+              state=$(docker compose -f docker-compose-micro.yml ps --status running --services | grep -Fx "${service}" || true)
+              echo "${service}: ${state:-not-running}"
+              if [ "${state}" = "${service}" ]; then
+                service_running="true"
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "${service_running}" = "true" ]; then
+              continue
+            fi
+
+            docker compose -f docker-compose-micro.yml logs --tail=100 "${service}"
+            exit 1
+          done
+
+          if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+            COMMUNITY_HEALTH_URL="http://127.0.0.1:48097/actuator/health" \
+            GATEWAY_BASE_URL="http://127.0.0.1:48080" \
+            COMPOSE_FILE_PATH="docker-compose-micro.yml" \
+              bash "${GITHUB_WORKSPACE}/script/docker/verify-release-evidence.sh" verify-http
+          fi
+
+      - name: Append release verification evidence
+        if: always()
+        run: |
+          mkdir -p tmp/release-evidence
+          evidence="${RELEASE_EVIDENCE_FILE:-tmp/release-evidence/prod-${BUILD_SERVICE:-unknown}-${MICRO_IMAGE_TAG:-unknown}.md}"
+          deploy_dir="/opt/deploy/yudao-micro"
+          {
+            echo
+            echo "deployment verification"
+            echo "- verified at: $(date -Is)"
+            echo "- deploy env: prod"
+            echo "- deploy host: $(hostname)"
+            echo "- docker compose version:"
+            docker compose version || true
+            echo "- compose ps summary:"
+            cd "${deploy_dir}" && docker compose -f docker-compose-micro.yml ps || true
+            if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+              echo "- strict gate:"
+              echo "  script/docker/verify-release-evidence.sh verify-http must pass before this workflow can succeed"
+              echo "- gateway smoke commands:"
+              admin_url="http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1"
+              app_url="http://127.0.0.1:48080/app-api/aigc/community/post/page?pageNo=1&pageSize=1"
+              echo "  curl -i -sS --fail-with-body ${admin_url}"
+              echo "  curl -i -sS --fail-with-body ${app_url}"
+              echo "- gateway admin smoke result: captured by strict verify-http gate"
+              echo "- gateway app smoke result: captured by strict verify-http gate"
+              echo
+              echo "- service logs tail:"
+              docker compose -f docker-compose-micro.yml logs --tail=80 aigc-community || true
+            fi
+          } | tee -a "${evidence}"

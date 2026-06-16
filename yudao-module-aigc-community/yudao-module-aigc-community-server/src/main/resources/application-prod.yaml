@@ -1,0 +1,36 @@
+spring:
+  cloud:
+    nacos:
+      server-addr: ${SPRING_CLOUD_NACOS_SERVER_ADDR:10.66.0.2:8848}
+      username: ${SPRING_CLOUD_NACOS_USERNAME:nacos}
+      password: ${SPRING_CLOUD_NACOS_PASSWORD:nacos}
+      discovery:
+        namespace: ${SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE:prod}
+        group: ${SPRING_CLOUD_NACOS_DISCOVERY_GROUP:DEFAULT_GROUP}
+        metadata:
+          version: 1.0.0
+      config:
+        server-addr: ${SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR:${spring.cloud.nacos.server-addr}}
+        encode: UTF-8
+        namespace: ${SPRING_CLOUD_NACOS_CONFIG_NAMESPACE:prod}
+        group: ${SPRING_CLOUD_NACOS_CONFIG_GROUP:DEFAULT_GROUP}
+
+logging:
+  level:
+    cn.iocoder.yudao.module.aigc.community: info
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+yudao:
+  env:
+    tag: ${HOSTNAME}
+  access-log:
+    enable: true

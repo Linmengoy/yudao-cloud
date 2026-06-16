@@ -87,8 +87,7 @@ public class AigcAssetController {
     @Parameter(name = "id", description = "资产编号", required = true)
     @PreAuthorize("@ss.hasPermission('aigc:asset:query')")
     public CommonResult<AigcAssetRespDTO> getAsset(@RequestParam("id") Long id) {
-        AigcAssetDO asset = assetService.validateAssetExists(id);
-        return success(BeanUtils.toBean(asset, AigcAssetRespDTO.class));
+        return success(assetService.getAssetResp(id, null));
     }
 
     @GetMapping("/page")
@@ -96,7 +95,8 @@ public class AigcAssetController {
     @PreAuthorize("@ss.hasPermission('aigc:asset:query')")
     public CommonResult<PageResult<AigcAssetRespDTO>> getAssetPage(@Valid AigcAssetPageReqVO reqVO) {
         PageResult<AigcAssetDO> pageResult = assetService.getAssetPage(reqVO);
-        return success(BeanUtils.toBean(pageResult, AigcAssetRespDTO.class));
+        return success(new PageResult<>(assetService.buildAssetRespList(pageResult.getList(), null),
+                pageResult.getTotal()));
     }
 
     @PutMapping("/audit")

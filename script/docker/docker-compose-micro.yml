@@ -387,6 +387,54 @@ services:
         condition: service_started
       yudao-infra:
         condition: service_started
+
+  aigc-community:
+    build:
+      context: ../../yudao-module-aigc-community/yudao-module-aigc-community-server
+      dockerfile: Dockerfile
+    image: aigc-community:${MICRO_IMAGE_TAG:-latest}
+    container_name: aigc-community
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: dev
+      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: dev
+      SPRING_CLOUD_NACOS_DISCOVERY_GROUP: DEFAULT_GROUP
+      SPRING_CLOUD_NACOS_CONFIG_GROUP: DEFAULT_GROUP
+      JAVA_OPTS: -Xms512m -Xmx512m
+    networks:
+      - yudao-network
+    ports:
+      - "48097:48097"
+    volumes:
+      - /opt/data/yudao-logs:/root/logs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:48097/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_started
+      yudao-system:
+        condition: service_started
+      yudao-infra:
+        condition: service_started
+      yudao-member:
+        condition: service_started
+      aigc-asset:
+        condition: service_started
+      aigc-workflow:
+        condition: service_started
+
   yudao-member:
     build:
       context: ../../yudao-module-member/yudao-module-member-server
@@ -447,7 +495,7 @@ services:
     build:
       context: ../../yudao-ui/draw2video-admin
       dockerfile: Dockerfile
-    image: draw2video-admin:latest
+    image: draw2video-admin:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-admin
     restart: always
     environment:
@@ -467,7 +515,7 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: ""
         NEXT_PUBLIC_APP_API_PREFIX: /app-api
-    image: draw2video-client:latest
+    image: draw2video-client:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-client
     restart: always
     environment:
@@ -478,6 +526,28 @@ services:
       - yudao-network
     ports:
       - "3000:3000"
+    depends_on:
+      yudao-gateway:
+        condition: service_started
+
+  draw2video-guide:
+    build:
+      context: ../../yudao-ui/draw2video-guide
+      dockerfile: Dockerfile
+    image: draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}
+    container_name: draw2video-guide
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - yudao-network
+    ports:
+      - "8082:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     depends_on:
       yudao-gateway:
         condition: service_started
