@@ -392,7 +392,7 @@ export function CanvasToolDock({ readOnly, onAddNode }: CanvasToolDockProps) {
           />
         </button>
         <ToolDockButton label="画板" icon={<Palette className="size-5" />} />
-        <ToolDockButton label="素材库" icon={<Folder className="size-5" />} />
+        <ToolDockButton label="素材库" icon={<Folder className="size-5" />} href="/assets" />
         <ToolDockButton label="帮助" icon={<HelpCircle className="size-5" />} />
       </nav>
 
@@ -422,14 +422,19 @@ export function CanvasToolDock({ readOnly, onAddNode }: CanvasToolDockProps) {
   );
 }
 
-function ToolDockButton({ label, icon }: { label: string; icon: ReactNode }) {
+function ToolDockButton({ label, icon, href }: { label: string; icon: ReactNode; href?: string }) {
+  const className = "flex size-11 items-center justify-center rounded-full text-charcoal transition-colors hover:bg-muted";
+
+  if (href) {
+    return (
+      <Link href={href} aria-label={label} title={label} className={className}>
+        {icon}
+      </Link>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className="flex size-11 items-center justify-center rounded-full text-charcoal transition-colors hover:bg-muted"
-    >
+    <button type="button" aria-label={label} title={label} className={className}>
       {icon}
     </button>
   );
@@ -492,4 +497,3 @@ export function MultiSelectionToolbar({ bounds, actionLabel, onGroup }: MultiSel
     </div>
   );
 }
-
