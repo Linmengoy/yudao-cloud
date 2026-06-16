@@ -9,11 +9,17 @@ RUN npm config set registry https://registry.npmmirror.com \
   && pnpm install --frozen-lockfile
 
 COPY . .
-RUN pnpm build:prod
+ARG ADMIN_BUILD_MODE=prod
+RUN pnpm "build:${ADMIN_BUILD_MODE}" \
+  && rm -rf /app/dist-release \
+  && cp -R "/app/dist-${ADMIN_BUILD_MODE}" /app/dist-release
 
 FROM docker.m.daocloud.io/library/nginx:1.27-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist-prod /usr/share/nginx/html
+ENV ADMIN_GATEWAY_HOST=host.docker.internal
+ENV ADMIN_GATEWAY_PORT=48080
+
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+COPY --from=build /app/dist-release /usr/share/nginx/html
 
 EXPOSE 80

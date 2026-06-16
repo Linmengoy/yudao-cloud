@@ -4,10 +4,19 @@ param(
 
   [string]$RemoteDir = "/opt/code",
   [string]$Platform = "linux/amd64",
+  [ValidateSet("auto", "test", "prod")]
+  [string]$DeployEnv = "auto",
+  [string]$AdminBuildMode = "",
   [string]$ClientApiBaseUrl = "",
   [string]$ClientAppApiPrefix = "/app-api",
   # [string]$ClientWsBaseUrl = "ws://111.228.39.103:48080",
-  [string]$ClientWsBaseUrl = "wss://beta.copse.top",
+  [string]$ClientWsBaseUrl = "",
+  [string]$ClientGatewayHost = "host.docker.internal",
+  [string]$ClientGatewayPort = "48080",
+  [string]$ClientTenantId = "1",
+  [string]$ClientTerminal = "20",
+  [string]$AdminGatewayHost = "host.docker.internal",
+  [string]$AdminGatewayPort = "48080",
   [ValidateSet("all", "admin", "client", "guide")]
   [string]$Target = "all",
   [string]$ImageTag = "",
@@ -29,11 +38,28 @@ $ClientDir = Join-Path $RootDir "yudao-ui\draw2video-client"
 $GuideDir = Join-Path $RootDir "yudao-ui\draw2video-guide"
 $ComposeSourcePath = Join-Path $RootDir "script\docker\$ComposeFile"
 
-if ([string]::IsNullOrWhiteSpace($ImageTag)) {
-  $ImageTag = (git -C $RootDir rev-parse --short=12 HEAD 2>$null)
-  if ([string]::IsNullOrWhiteSpace($ImageTag)) {
-    $ImageTag = "latest"
+if ($DeployEnv -eq "auto") {
+  if ($Server -eq "manman2" -or $Server -eq "root@117.72.215.47") {
+    $DeployEnv = "prod"
+  } else {
+    $DeployEnv = "test"
   }
+}
+
+if ([string]::IsNullOrWhiteSpace($AdminBuildMode)) {
+  $AdminBuildMode = $DeployEnv
+}
+
+if ([string]::IsNullOrWhiteSpace($ClientWsBaseUrl)) {
+  $ClientWsBaseUrl = if ($DeployEnv -eq "prod") { "wss://beta.copse.top" } else { "" }
+}
+
+if ([string]::IsNullOrWhiteSpace($ImageTag)) {
+  $GitTag = (git -C $RootDir rev-parse --short=12 HEAD 2>$null)
+  if ([string]::IsNullOrWhiteSpace($GitTag)) {
+    $GitTag = "latest"
+  }
+  $ImageTag = "${DeployEnv}-${GitTag}"
 }
 
 if ([string]::IsNullOrWhiteSpace($ArchiveName)) {
@@ -152,12 +178,40 @@ Invoke-Step "Check directories" {
   if (($Target -eq "all" -or $Target -eq "guide") -and !(Test-Path $GuideDir)) { throw "Guide directory not found: $GuideDir" }
 }
 
+function ConvertTo-EnvValue {
+  param([string]$Value)
+
+  if ($null -eq $Value) {
+    return ""
+  }
+  return ($Value -replace '\\', '\\' -replace "`r", "" -replace "`n", "")
+}
+
+function New-FrontendEnvFile {
+  $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "frontend-${DeployEnv}-${PID}.env"
+  $lines = @(
+    "FRONTEND_DEPLOY_ENV=$(ConvertTo-EnvValue $DeployEnv)",
+    "ADMIN_GATEWAY_HOST=$(ConvertTo-EnvValue $AdminGatewayHost)",
+    "ADMIN_GATEWAY_PORT=$(ConvertTo-EnvValue $AdminGatewayPort)",
+    "CLIENT_GATEWAY_HOST=$(ConvertTo-EnvValue $ClientGatewayHost)",
+    "CLIENT_GATEWAY_PORT=$(ConvertTo-EnvValue $ClientGatewayPort)",
+    "CLIENT_API_BASE_URL=$(ConvertTo-EnvValue $ClientApiBaseUrl)",
+    "CLIENT_APP_API_PREFIX=$(ConvertTo-EnvValue $ClientAppApiPrefix)",
+    "CLIENT_WS_BASE_URL=$(ConvertTo-EnvValue $ClientWsBaseUrl)",
+    "CLIENT_TENANT_ID=$(ConvertTo-EnvValue $ClientTenantId)",
+    "CLIENT_TERMINAL=$(ConvertTo-EnvValue $ClientTerminal)"
+  )
+  [System.IO.File]::WriteAllText($envFile, ($lines -join [Environment]::NewLine) + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+  return $envFile
+}
+
 if (!$SkipBuild) {
   if ($Target -eq "all" -or $Target -eq "admin") {
     Invoke-Step "Build draw2video-admin image" {
       Run-Command "docker" @(
         "buildx", "build",
         "--platform", $Platform,
+        "--build-arg", "ADMIN_BUILD_MODE=$AdminBuildMode",
         "-t", "draw2video-admin:$ImageTag",
         "--load",
         $AdminDir
@@ -173,6 +227,8 @@ if (!$SkipBuild) {
         "--build-arg", "NEXT_PUBLIC_API_BASE_URL=$ClientApiBaseUrl",
         "--build-arg", "NEXT_PUBLIC_APP_API_PREFIX=$ClientAppApiPrefix",
         "--build-arg", "NEXT_PUBLIC_WS_BASE_URL=$ClientWsBaseUrl",
+        "--build-arg", "NEXT_PUBLIC_TENANT_ID=$ClientTenantId",
+        "--build-arg", "NEXT_PUBLIC_TERMINAL=$ClientTerminal",
         "-t", "draw2video-client:$ImageTag",
         "--load",
         $ClientDir
@@ -214,11 +270,17 @@ if (!$SkipUpload) {
     } else {
       Write-Warning "Compose file not found locally: $ComposeSourcePath. Remote compose file will be reused."
     }
+    $LocalEnvFile = New-FrontendEnvFile
+    try {
+      Run-Command "scp" @($LocalEnvFile, "${Server}:${RemoteDir}/.frontend-${DeployEnv}.env")
+    } finally {
+      Remove-PathWithRetry $LocalEnvFile
+    }
   }
 
   if ($UseRegistry) {
     Invoke-Step "Pull images and restart containers" {
-      $RemoteCommand = "cd $RemoteDir; FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${RemoteRegistry}/ docker compose -f $ComposeFile pull $($Services -join ' '); FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${RemoteRegistry}/ docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
+      $RemoteCommand = "cd $RemoteDir; FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${RemoteRegistry}/ docker compose --env-file .frontend-${DeployEnv}.env -f $ComposeFile pull $($Services -join ' '); FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${RemoteRegistry}/ docker compose --env-file .frontend-${DeployEnv}.env -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
       Run-Command "ssh" @($Server, $RemoteCommand)
     }
   } else {
@@ -227,7 +289,7 @@ if (!$SkipUpload) {
     }
 
     Invoke-Step "Load images and restart containers" {
-      $RemoteCommand = "cd $RemoteDir; docker load -i $ArchiveName; FRONTEND_IMAGE_TAG=$ImageTag docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
+      $RemoteCommand = "cd $RemoteDir; docker load -i $ArchiveName; FRONTEND_IMAGE_TAG=$ImageTag docker compose --env-file .frontend-${DeployEnv}.env -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
       Run-Command "ssh" @($Server, $RemoteCommand)
     }
   }

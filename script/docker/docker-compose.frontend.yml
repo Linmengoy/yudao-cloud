@@ -3,6 +3,11 @@ services:
     image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-admin:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-admin
     restart: always
+    environment:
+      ADMIN_GATEWAY_HOST: "${ADMIN_GATEWAY_HOST:-host.docker.internal}"
+      ADMIN_GATEWAY_PORT: "${ADMIN_GATEWAY_PORT:-48080}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8081:80"
 
@@ -13,12 +18,16 @@ services:
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
-      PORT: 3000
-      NEXT_PUBLIC_GATEWAY_HOST: host.docker.internal
-      NEXT_PUBLIC_GATEWAY_PORT: 48080
-      NEXT_PUBLIC_API_BASE_URL: ""
-      NEXT_PUBLIC_APP_API_PREFIX: /app-api
-      NEXT_PUBLIC_WS_BASE_URL: wss://beta.copse.top
+      PORT: "3000"
+      APP_GATEWAY_HOST: "${CLIENT_GATEWAY_HOST:-host.docker.internal}"
+      APP_GATEWAY_PORT: "${CLIENT_GATEWAY_PORT:-48080}"
+      NEXT_PUBLIC_GATEWAY_HOST: "${CLIENT_GATEWAY_HOST:-host.docker.internal}"
+      NEXT_PUBLIC_GATEWAY_PORT: "${CLIENT_GATEWAY_PORT:-48080}"
+      NEXT_PUBLIC_API_BASE_URL: "${CLIENT_API_BASE_URL:-}"
+      NEXT_PUBLIC_APP_API_PREFIX: "${CLIENT_APP_API_PREFIX:-/app-api}"
+      NEXT_PUBLIC_WS_BASE_URL: "${CLIENT_WS_BASE_URL-}"
+      NEXT_PUBLIC_TENANT_ID: "${CLIENT_TENANT_ID:-1}"
+      NEXT_PUBLIC_TERMINAL: "${CLIENT_TERMINAL:-20}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
