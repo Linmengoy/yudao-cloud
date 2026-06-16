@@ -1,6 +1,6 @@
 # aigc-community release gates
 
-This document is the release evidence template for issues #144, #145, #146, #147, #148, #149, #150, #151, #152, #153, and #154.
+This document is the release evidence template for issues #144, #145, #146, #147, #148, #149, #150, #151, #152, #153, #154, #161, #162, #163, #164, and #165.
 Fill it during the release window and paste the completed record back to the release issue.
 Use `script/docker/community-release-evidence-index.md` for the issue-specific review and test evidence templates.
 
@@ -48,6 +48,31 @@ post-deploy health result:
 For `aigc-community`, the workflow must run Maven package, image build, `docker compose up`, `docker compose ps`, and
 tail service logs on failure. The workflow also appends deployment verification evidence after the compose rollout,
 including the compose ps summary, service health result, and gateway smoke commands.
+
+## Runner Docker and Compose recovery evidence for #161
+
+Record these fields before rerunning `service=aigc-community` or `service=all`:
+
+```text
+aigc-community runner docker evidence
+- issue: #161
+- runner:
+- target host:
+- docker daemon status:
+- docker version:
+- docker compose version:
+- compose service check:
+- aigc-community rerun workflow url:
+- all-services rerun workflow url:
+- build/deploy result:
+- failure stderr or "not required":
+- release decision:
+```
+
+The runner is not considered recovered until `docker version`, `docker compose version`, and
+`docker compose -f script/docker/docker-compose-micro-prod.yml config --services | grep -Fx "aigc-community"` all
+succeed on the deployment host. If Docker is unavailable, write back the failed command, stderr, runner host, and owner
+instead of marking the task done.
 
 Write-back summary for #151:
 
@@ -99,7 +124,7 @@ release decision:
 
 Do not mark #150 as `test:done` when the only successful command is a Maven build with `-DskipTests`.
 
-## Immutable version evidence for #146 and #153
+## Immutable version evidence for #146, #153, and #162
 
 Use the 12-character commit SHA from the workflow as `MICRO_IMAGE_TAG` and `FRONTEND_IMAGE_TAG`. Do not use `latest` as
 the only production release record.
@@ -138,7 +163,27 @@ aigc-community rollback version record
 - release decision:
 ```
 
-## Database migration record for #147 and #152
+Write-back summary for #162:
+
+```text
+aigc-community stable rollback target
+- issue: #162
+- current image tag:
+- current git sha:
+- previous stable image tag:
+- previous stable git sha:
+- previous stable workflow run url:
+- rollback command:
+- verification command:
+- database rollback boundary:
+- missing evidence or "none":
+- release decision:
+```
+
+#162 must fail rather than pass if `previous_stable_image_tag` cannot be traced to a Git SHA and workflow run. The
+rollback command must use `MICRO_IMAGE_TAG=<previous-stable-sha>` and must not rely on `latest`.
+
+## Database migration record for #147, #152, and #163
 
 Use `yudao-module-aigc-community/yudao-module-aigc-community-server/src/main/resources/schema/community_db_release_runbook.md`.
 
@@ -176,7 +221,28 @@ community_db migration record
 - release decision:
 ```
 
-## Deploy health evidence for #154
+Write-back summary for #163:
+
+```text
+community_db archived migration evidence
+- issue: #163
+- backup file:
+- backup sha256:
+- sql commit sha:
+- approval owner:
+- executor:
+- verifier:
+- execution window:
+- verification SQL output summary:
+- rollback drill:
+- release decision:
+```
+
+#163 is complete only when the runbook record has a backup path, SHA256, SQL commit SHA, executor, verifier, execution
+window, collation/index verification summary, and a rollback note that distinguishes "no writes yet" from "writes already
+happened".
+
+## Deploy health evidence for #154 and #164
 
 The deployment may proceed only when the review/test/build/database/rollback evidence above is present or explicitly
 accepted by the release owner. Record the real command output from the target environment.
@@ -196,6 +262,52 @@ aigc-community deployment health evidence
 - rollback executed:
 - release decision:
 ```
+
+Write-back summary for #164:
+
+```text
+aigc-community smoke route evidence
+- issue: #164
+- target environment:
+- nacos config source:
+- service health command:
+- service health status:
+- gateway admin smoke command:
+- gateway admin status and response summary:
+- gateway app smoke command:
+- gateway app status and response summary:
+- service logs link:
+- release decision:
+```
+
+#164 is complete only when `/actuator/health` returns `UP` or an explicitly accepted equivalent healthy state and both
+Gateway routes prove they reach `aigc-community-server`. Authentication failures may be acceptable route proof when the
+response and service log identify the community service; 404 route misses are not acceptable.
+
+## Evidence archive and bridge write-back for #165
+
+After #161-#164 run, write this summary to #159 and the related #125, #126, #127, and #128 release issues:
+
+```text
+aigc-community release bridge archive
+- issue: #165
+- source issue: #159
+- workflow run url:
+- commit sha:
+- immutable image tag:
+- release evidence file:
+- compose ps summary:
+- service log summary:
+- health summary:
+- gateway smoke summary:
+- related issue writebacks: #125, #126, #127, #128, #159
+- labels changed:
+- release decision:
+```
+
+If any required evidence is missing, keep the bridge failed and list the missing fields, owner, and next action. Remove
+failure labels only when the real workflow URL, compose ps output, logs, health result, smoke result, and release decision
+are present.
 
 ## Smoke test checklist for #148
 

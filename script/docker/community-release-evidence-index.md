@@ -18,6 +18,11 @@ ad-hoc chat summaries.
 | #152 | database execution evidence | backup path, backup SHA256, SQL commit SHA, executor, execution window, verification SQL summary, health result, rollback decision | task:ready + task:done |
 | #153 | rollback version evidence | current SHA tag, current Git SHA, previous stable tag and SHA, compose/config/database boundaries, rollback command, verification command | task:ready + task:done |
 | #154 | deployment health evidence | target environment, workflow run URL, release evidence file, compose deploy and ps output, health and gateway smoke results, rollback command | task:ready + task:done |
+| #161 | runner Docker/Compose recovery | runner host, Docker daemon status, Docker version, Compose version, service config check, rerun workflow URLs, stderr on failure | task:ready + task:done |
+| #162 | previous stable rollback target | current SHA tag, previous stable SHA tag, source workflow run, rollback command, verification command, database rollback boundary | task:ready + task:done |
+| #163 | archived community_db migration evidence | backup file, backup SHA256, SQL commit SHA, approval owner, executor, verifier, execution window, verification SQL output, rollback drill | task:ready + task:done |
+| #164 | health and Gateway smoke route evidence | Nacos config source, health command/status, admin smoke command/result, app smoke command/result, service log link | task:ready + task:done |
+| #165 | release bridge archive | workflow URL, commit SHA, image tag, release evidence file, compose ps, logs, health/smoke summary, related issue writebacks | task:ready + task:done |
 
 ## Smoke evidence for #148
 
@@ -188,6 +193,119 @@ aigc-community deployment health evidence
 
 Do not mark #154 complete until the health response and gateway smoke results are real command output from the target
 environment, or the release owner explicitly accepts the missing evidence and the issue is marked failed.
+
+## Runner Docker recovery evidence for #161
+
+Use this template after the runner host is checked and the release workflow is rerun:
+
+```text
+aigc-community runner docker evidence
+- issue: #161
+- runner:
+- target host:
+- docker daemon status:
+- docker version:
+- docker compose version:
+- compose service check:
+- aigc-community rerun workflow url:
+- all-services rerun workflow url:
+- build/deploy result:
+- failure stderr or "not required":
+- release decision:
+```
+
+Do not mark #161 complete unless Docker daemon access, Compose plugin availability, and the `aigc-community` service
+entry are proven from command output.
+
+## Stable rollback target evidence for #162
+
+Use this template after identifying the previous stable production image:
+
+```text
+aigc-community stable rollback target
+- issue: #162
+- current image tag:
+- current git sha:
+- previous stable image tag:
+- previous stable git sha:
+- previous stable workflow run url:
+- rollback command:
+- verification command:
+- database rollback boundary:
+- missing evidence or "none":
+- release decision:
+```
+
+Do not mark #162 complete if the previous stable tag is `latest`, empty, or cannot be traced to a Git SHA and workflow
+run.
+
+## Archived migration evidence for #163
+
+Use this template after `community_db_release_runbook.md` is filled for the target environment:
+
+```text
+community_db archived migration evidence
+- issue: #163
+- backup file:
+- backup sha256:
+- sql commit sha:
+- approval owner:
+- executor:
+- verifier:
+- execution window:
+- verification SQL output summary:
+- rollback drill:
+- release decision:
+```
+
+Do not mark #163 complete unless the verification summary names the eight expected tables, confirms utf8mb4 collation,
+and includes the rollback boundary for both pre-write and post-write failure.
+
+## Smoke route evidence for #164
+
+Use this template after service health and Gateway routes are probed:
+
+```text
+aigc-community smoke route evidence
+- issue: #164
+- target environment:
+- nacos config source:
+- service health command:
+- service health status:
+- gateway admin smoke command:
+- gateway admin status and response summary:
+- gateway app smoke command:
+- gateway app status and response summary:
+- service logs link:
+- release decision:
+```
+
+Do not mark #164 complete if either Gateway route is a 404 route miss. A 401/403 can be acceptable only when the response
+and service log prove routing reached `aigc-community-server`.
+
+## Release bridge archive for #165
+
+Use this template after #161-#164 have concrete results:
+
+```text
+aigc-community release bridge archive
+- issue: #165
+- source issue: #159
+- workflow run url:
+- commit sha:
+- immutable image tag:
+- release evidence file:
+- compose ps summary:
+- service log summary:
+- health summary:
+- gateway smoke summary:
+- related issue writebacks: #125, #126, #127, #128, #159
+- labels changed:
+- release decision:
+```
+
+Do not remove `devops:failed` or related failure labels until the bridge archive includes real workflow, compose, log,
+health, and smoke evidence, or a named owner explicitly accepts the missing fields and the issue remains failed.
 
 ## Failure label rule
 

@@ -172,7 +172,10 @@ class CommunityReleaseGateTest(unittest.TestCase):
     def test_release_gate_document_archives_ci_version_db_and_smoke_evidence(self):
         gates = read("script/docker/community-release-gates.md")
 
-        for issue in ["#144", "#145", "#146", "#147", "#148", "#149", "#150", "#151", "#152", "#153", "#154"]:
+        for issue in [
+            "#144", "#145", "#146", "#147", "#148", "#149", "#150", "#151", "#152", "#153", "#154",
+            "#161", "#162", "#163", "#164", "#165",
+        ]:
             self.assertIn(issue, gates)
 
         for required in [
@@ -195,6 +198,16 @@ class CommunityReleaseGateTest(unittest.TestCase):
             "User like",
             "Admin audit approve",
             "rollback decision",
+            "aigc-community runner docker evidence",
+            "docker daemon status:",
+            "aigc-community stable rollback target",
+            "previous stable workflow run url:",
+            "community_db archived migration evidence",
+            "rollback drill:",
+            "aigc-community smoke route evidence",
+            "gateway admin status and response summary:",
+            "aigc-community release bridge archive",
+            "related issue writebacks: #125, #126, #127, #128, #159",
         ]:
             self.assertIn(required, gates)
 
@@ -216,6 +229,32 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("script/docker/community-release-gates.md", workflow)
         self.assertIn("script/docker/community-release-evidence-index.md", workflow)
 
+    def test_prod_workflow_records_runner_recovery_and_smoke_route_evidence(self):
+        workflow = read(".gitea/workflows/yudao-micro-cicd-prod.yml")
+
+        for required in [
+            "runs-on: manman2-prod",
+            "docker version",
+            "docker compose version",
+            "docker compose -f script/docker/docker-compose-micro-prod.yml config --services | grep -Fx \"${service}\"",
+            "runner: ${RUNNER_NAME:-manman2-prod}",
+            "target environment: prod",
+            "deploy host: local manman2",
+            "Prepare local prod network",
+            "docker network inspect yudao-network-prod",
+            "Required infra container is missing",
+            "docker compose -f docker-compose-micro.yml up -d --no-deps",
+            "docker compose -f docker-compose-micro.yml ps --status running --services",
+            "docker compose -f docker-compose-micro.yml logs --tail=100",
+            "curl -fsS http://127.0.0.1:48097/actuator/health",
+            "curl -i -sS ${admin_url}",
+            "curl -i -sS ${app_url}",
+            "gateway admin smoke result:",
+            "gateway app smoke result:",
+            "service logs tail:",
+        ]:
+            self.assertIn(required, workflow)
+
     def test_prod_workflow_uses_sha_tags_and_writes_release_evidence(self):
         workflow = read(".gitea/workflows/yudao-micro-cicd-prod.yml")
 
@@ -226,7 +265,7 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
         self.assertIn("MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG}", workflow)
         self.assertIn("FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}", workflow)
-        self.assertIn("export MICRO_IMAGE_TAG='${MICRO_IMAGE_TAG}' FRONTEND_IMAGE_TAG='${FRONTEND_IMAGE_TAG}'", workflow)
+        self.assertIn('export MICRO_IMAGE_TAG="${MICRO_IMAGE_TAG}" FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"', workflow)
         self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-stable-sha>", workflow)
         self.assertIn("Append release verification evidence", workflow)
         self.assertIn("deployment verification", workflow)
@@ -237,7 +276,7 @@ class CommunityReleaseGateTest(unittest.TestCase):
     def test_release_evidence_index_covers_all_release_gate_templates(self):
         index = read("script/docker/community-release-evidence-index.md")
 
-        for issue in ["#145", "#146", "#147", "#148", "#149", "#150", "#151", "#152", "#153", "#154"]:
+        for issue in ["#145", "#146", "#147", "#148", "#149", "#150", "#151", "#152", "#153", "#154", "#161", "#162", "#163", "#164", "#165"]:
             self.assertIn(issue, index)
 
         for required in [
@@ -271,8 +310,41 @@ class CommunityReleaseGateTest(unittest.TestCase):
             "compose deploy command:",
             "/actuator/health result:",
             "rollback executed:",
+            "aigc-community runner docker evidence",
+            "docker daemon status:",
+            "compose service check:",
+            "aigc-community stable rollback target",
+            "previous stable workflow run url:",
+            "missing evidence or \"none\":",
+            "community_db archived migration evidence",
+            "rollback drill:",
+            "aigc-community smoke route evidence",
+            "nacos config source:",
+            "gateway app status and response summary:",
+            "aigc-community release bridge archive",
+            "service log summary:",
+            "related issue writebacks: #125, #126, #127, #128, #159",
         ]:
             self.assertIn(required, index)
+
+    def test_runbook_archives_issue_163_required_fields(self):
+        runbook = read("yudao-module-aigc-community/yudao-module-aigc-community-server/src/main/resources/schema/community_db_release_runbook.md")
+
+        for required in [
+            "For #163 archival evidence",
+            "backup file",
+            "backup sha256",
+            "sql commit sha",
+            "approval owner",
+            "executor",
+            "verifier",
+            "execution window",
+            "utf8mb4",
+            "rollback drill",
+            "no writes yet: run the `DROP TABLE IF EXISTS ...` block",
+            "writes already happened: restore `/opt/data/mysql-backup/community/<backup-file>.sql`",
+        ]:
+            self.assertIn(required, runbook)
 
 
 if __name__ == "__main__":

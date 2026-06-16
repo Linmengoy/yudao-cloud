@@ -33,7 +33,7 @@ on:
 
 jobs:
   build-deploy:
-    runs-on: manman
+    runs-on: manman2-prod
 
     steps:
       - name: Checkout
@@ -109,7 +109,6 @@ jobs:
           echo "FRONTEND_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
           echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/prod-${service}-${image_tag}.md" >> "${GITHUB_ENV}"
-          echo "REMOTE_HOST=172.16.0.5" >> "${GITHUB_ENV}"
 
       - name: Write release evidence summary
         run: |
@@ -118,9 +117,9 @@ jobs:
           {
             echo "release evidence"
             echo "- workflow run url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo "- runner: ${RUNNER_NAME:-manman}"
+            echo "- runner: ${RUNNER_NAME:-manman2-prod}"
             echo "- target environment: prod"
-            echo "- remote host: ${REMOTE_HOST}"
+            echo "- deploy host: local manman2"
             echo "- service: ${BUILD_SERVICE}"
             echo "- module: ${BUILD_MODULE}"
             echo "- commit sha: $(git rev-parse HEAD)"
@@ -129,8 +128,8 @@ jobs:
             echo "- previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}"
             echo "- maven command: mvn clean package -pl ${BUILD_MODULE} -am -DskipTests"
             echo "- image build command: docker compose -f script/docker/docker-compose-micro-prod.yml build ${BUILD_SERVICE}"
-            echo "- compose up command: MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG} FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG} docker compose -f docker-compose-micro.yml up -d ${BUILD_SERVICE}"
-            echo "- rollback command: MICRO_IMAGE_TAG=<previous-stable-sha> FRONTEND_IMAGE_TAG=<previous-stable-sha> docker compose -f docker-compose-micro.yml up -d --no-build --force-recreate ${BUILD_SERVICE}"
+            echo "- compose up command: MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG} FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG} docker compose -f docker-compose-micro.yml up -d --no-deps ${BUILD_SERVICE}"
+            echo "- rollback command: MICRO_IMAGE_TAG=<previous-stable-sha> FRONTEND_IMAGE_TAG=<previous-stable-sha> docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${BUILD_SERVICE}"
             echo "- smoke checklist: script/docker/community-release-gates.md"
             echo "- evidence index: script/docker/community-release-evidence-index.md"
           } | tee "${evidence}"
@@ -158,69 +157,67 @@ jobs:
             docker compose -f script/docker/docker-compose-micro-prod.yml build "${BUILD_SERVICE}"
           fi
 
-      - name: Prepare docker compose files for remote deployment
+      - name: Prepare local docker compose files
         run: |
-          mkdir -p /tmp/deploy
-          cp script/docker/docker-compose-micro-prod.yml /tmp/deploy/docker-compose-micro.yml
+          deploy_dir="/opt/deploy/yudao-micro"
+          mkdir -p "${deploy_dir}"
+          cp script/docker/docker-compose-micro-prod.yml "${deploy_dir}/docker-compose-micro.yml"
           {
             echo "MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG}"
             echo "FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}"
-          } > /tmp/deploy/.env
+          } > /tmp/prod-deploy.env
           if [ -f script/docker/.env ]; then
-            cat script/docker/.env >> /tmp/deploy/.env
+            cat script/docker/.env >> /tmp/prod-deploy.env
           fi
+          mv /tmp/prod-deploy.env "${deploy_dir}/.env"
 
-      - name: Transfer images and compose files to remote server
+      - name: Prepare local prod network
         run: |
-          deploy_dir="/opt/deploy/yudao-micro"
-          echo "Transferring to remote host: ${REMOTE_HOST}"
+          docker network inspect yudao-network-prod >/dev/null 2>&1 || docker network create yudao-network-prod
 
-          ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "mkdir -p ${deploy_dir}"
-
-          scp -o StrictHostKeyChecking=no /tmp/deploy/docker-compose-micro.yml root@${REMOTE_HOST}:${deploy_dir}/
-          if [ -f /tmp/deploy/.env ]; then
-            scp -o StrictHostKeyChecking=no /tmp/deploy/.env root@${REMOTE_HOST}:${deploy_dir}/
-          fi
-
-          if [ "${BUILD_SERVICE}" = "all" ]; then
-            services="yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community draw2video-admin draw2video-client draw2video-guide"
-          else
-            services="${BUILD_SERVICE}"
-          fi
-
-          for service in ${services}; do
-            image_name=$(docker compose -f script/docker/docker-compose-micro-prod.yml config --images | grep -E "^${service}" || echo "${service}:latest")
-            echo "Transferring image: ${image_name}"
-            docker save "${image_name}" | gzip | ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "gunzip | docker load"
+          for pair in "yudao-mysql-prod mysql" "yudao-redis-prod redis"; do
+            set -- ${pair}
+            container="$1"
+            alias="$2"
+            if docker ps --format '{{.Names}}' | grep -Fx "${container}" >/dev/null; then
+              if ! docker inspect "${container}" --format '{{json .NetworkSettings.Networks}}' | grep -q '"yudao-network-prod"'; then
+                docker network connect --alias "${alias}" yudao-network-prod "${container}"
+              fi
+            else
+              echo "Required infra container is missing: ${container}"
+              exit 1
+            fi
           done
 
-      - name: Deploy services on remote server
+      - name: Deploy services locally
         run: |
           deploy_env="prod"
           deploy_dir="/opt/deploy/yudao-micro"
           echo "Deploy env: ${deploy_env}"
-          echo "Remote host: ${REMOTE_HOST}"
+          echo "Deploy host: $(hostname)"
 
-          ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && \
-            export MICRO_IMAGE_TAG='${MICRO_IMAGE_TAG}' FRONTEND_IMAGE_TAG='${FRONTEND_IMAGE_TAG}' && \
-            if [ \"${BUILD_SERVICE}\" = \"all\" ]; then \
-              docker compose -f docker-compose-micro.yml up -d; \
-            else \
-              docker compose -f docker-compose-micro.yml up -d \"${BUILD_SERVICE}\"; \
-            fi"
+          cd "${deploy_dir}"
+          export MICRO_IMAGE_TAG="${MICRO_IMAGE_TAG}" FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway draw2video-admin draw2video-client draw2video-guide"
+            docker compose -f docker-compose-micro.yml up -d ${services}
+          else
+            docker compose -f docker-compose-micro.yml up -d --no-deps "${BUILD_SERVICE}"
+          fi
 
-      - name: Verify services on remote server
+      - name: Verify services locally
         run: |
           deploy_env="prod"
           deploy_dir="/opt/deploy/yudao-micro"
           echo "Verify env: ${deploy_env}"
-          echo "Remote host: ${REMOTE_HOST}"
+          echo "Deploy host: $(hostname)"
           echo "Build service: ${BUILD_SERVICE}"
 
-          ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && docker compose -f docker-compose-micro.yml ps"
+          cd "${deploy_dir}"
+          docker compose -f docker-compose-micro.yml ps
 
           if [ "${BUILD_SERVICE}" = "all" ]; then
-            verify_services="yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community draw2video-admin draw2video-client draw2video-guide"
+            verify_services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway draw2video-admin draw2video-client draw2video-guide"
           else
             verify_services="${BUILD_SERVICE}"
           fi
@@ -228,7 +225,7 @@ jobs:
           for service in ${verify_services}; do
             service_running="false"
             for i in $(seq 1 30); do
-              state=$(ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && docker compose -f docker-compose-micro.yml ps --status running --services | grep -Fx \"${service}\"" || true)
+              state=$(docker compose -f docker-compose-micro.yml ps --status running --services | grep -Fx "${service}" || true)
               echo "${service}: ${state:-not-running}"
               if [ "${state}" = "${service}" ]; then
                 service_running="true"
@@ -241,7 +238,7 @@ jobs:
               continue
             fi
 
-            ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && docker compose -f docker-compose-micro.yml logs --tail=100 \"${service}\""
+            docker compose -f docker-compose-micro.yml logs --tail=100 "${service}"
             exit 1
           done
 
@@ -256,17 +253,27 @@ jobs:
             echo "deployment verification"
             echo "- verified at: $(date -Is)"
             echo "- deploy env: prod"
-            echo "- remote host: ${REMOTE_HOST}"
+            echo "- deploy host: $(hostname)"
             echo "- docker compose version:"
-            ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "docker compose version" || true
+            docker compose version || true
             echo "- compose ps summary:"
-            ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && docker compose -f docker-compose-micro.yml ps" || true
+            cd "${deploy_dir}" && docker compose -f docker-compose-micro.yml ps || true
             if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
               echo "- service health result:"
-              ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && docker compose -f docker-compose-micro.yml exec -T aigc-community curl -fsS http://127.0.0.1:48097/actuator/health" || true
+              docker compose -f docker-compose-micro.yml exec -T aigc-community curl -fsS http://127.0.0.1:48097/actuator/health || true
               echo
               echo "- gateway smoke commands:"
-              echo "  curl -fsS http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1"
-              echo "  curl -fsS http://127.0.0.1:48080/app-api/aigc/community/post/page?pageNo=1&pageSize=1"
+              admin_url="http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1"
+              app_url="http://127.0.0.1:48080/app-api/aigc/community/post/page?pageNo=1&pageSize=1"
+              echo "  curl -i -sS ${admin_url}"
+              echo "  curl -i -sS ${app_url}"
+              echo "- gateway admin smoke result:"
+              curl -i -sS "${admin_url}" 2>&1 | head -n 40 || true
+              echo
+              echo "- gateway app smoke result:"
+              curl -i -sS "${app_url}" 2>&1 | head -n 40 || true
+              echo
+              echo "- service logs tail:"
+              docker compose -f docker-compose-micro.yml logs --tail=80 aigc-community || true
             fi
           } | tee -a "${evidence}"

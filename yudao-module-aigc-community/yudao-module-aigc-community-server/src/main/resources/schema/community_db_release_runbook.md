@@ -113,7 +113,15 @@ Write the following back to the release issue:
 - Backup file and checksum
 - SQL commit SHA
 - Verification SQL output summary
-- Rollback decision or "rollback not required"
+- Rollback drill and decision or "rollback not required"
+
+For #163 archival evidence, the record is incomplete unless `backup file`, `backup sha256`, `sql commit sha`,
+`approval owner`, `executor`, `verifier`, and `execution window` are filled with target-environment values. The
+verification SQL output summary must explicitly mention all eight expected tables, `utf8mb4` collation, and index
+presence. The rollback drill must state which branch applies:
+
+- no writes yet: run the `DROP TABLE IF EXISTS ...` block above in reverse dependency order.
+- writes already happened: restore `/opt/data/mysql-backup/community/<backup-file>.sql` and do not use table drops.
 
 Template:
 
@@ -134,6 +142,7 @@ community_db migration record
 - verification summary:
 - service health result:
 - rollback owner:
+- rollback drill:
 - rollback decision:
 - notes:
 ```
