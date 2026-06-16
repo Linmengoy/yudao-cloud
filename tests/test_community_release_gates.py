@@ -169,6 +169,38 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("DROP TABLE IF EXISTS aigc_community_post;", runbook)
         self.assertIn("Verification SQL output summary", runbook)
 
+    def test_release_gate_document_archives_ci_version_db_and_smoke_evidence(self):
+        gates = read("script/docker/community-release-gates.md")
+
+        for issue in ["#144", "#145", "#146", "#147", "#148"]:
+            self.assertIn(issue, gates)
+
+        for required in [
+            "review result, test result, release decision",
+            "workflow run url:",
+            "docker compose version:",
+            "current version tag:",
+            "previous stable tag:",
+            "backup sha256:",
+            "sql commit sha:",
+            "test account",
+            "Gateway admin route",
+            "User like",
+            "Admin audit approve",
+            "rollback decision",
+        ]:
+            self.assertIn(required, gates)
+
+    def test_workflow_writes_release_evidence_with_rollback_tag(self):
+        workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
+
+        self.assertIn("previous_stable_image_tag", workflow)
+        self.assertIn("Write release evidence summary", workflow)
+        self.assertIn("immutable image tag: ${MICRO_IMAGE_TAG}", workflow)
+        self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
+        self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-stable-sha>", workflow)
+        self.assertIn("script/docker/community-release-gates.md", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
