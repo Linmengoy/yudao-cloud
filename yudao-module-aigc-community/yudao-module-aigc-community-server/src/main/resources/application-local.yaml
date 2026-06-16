@@ -1,7 +1,7 @@
 spring:
   cloud:
     nacos:
-      server-addr: 111.228.39.103:8848
+      server-addr: 10.66.0.2:8848
       username: nacos
       password: nacos
       discovery:

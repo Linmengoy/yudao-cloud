@@ -1,7 +1,7 @@
 spring:
   cloud:
     nacos:
-      server-addr: ${SPRING_CLOUD_NACOS_SERVER_ADDR:111.228.39.103:8848}
+      server-addr: ${SPRING_CLOUD_NACOS_SERVER_ADDR:10.66.0.2:8848}
       username: ${SPRING_CLOUD_NACOS_USERNAME:nacos}
       password: ${SPRING_CLOUD_NACOS_PASSWORD:nacos}
       discovery:

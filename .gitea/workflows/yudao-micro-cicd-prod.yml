@@ -200,7 +200,7 @@ jobs:
           export MICRO_IMAGE_TAG="${MICRO_IMAGE_TAG}" FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
           if [ "${BUILD_SERVICE}" = "all" ]; then
             services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway draw2video-admin draw2video-client draw2video-guide"
-            docker compose -f docker-compose-micro.yml up -d ${services}
+            docker compose -f docker-compose-micro.yml up -d --no-deps ${services}
           else
             docker compose -f docker-compose-micro.yml up -d --no-deps "${BUILD_SERVICE}"
           fi

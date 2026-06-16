@@ -51,9 +51,9 @@ spring:
       database: 3
   cloud:
     nacos:
-      server-addr: ${SPRING_CLOUD_NACOS_SERVER_ADDR:111.228.39.103:8848}
-      username: ${SPRING_CLOUD_NACOS_USERNAME:111.228.39.103}
-      password: ${SPRING_CLOUD_NACOS_PASSWORD:111.228.39.103}
+      server-addr: ${SPRING_CLOUD_NACOS_SERVER_ADDR:10.66.0.2:8848}
+      username: ${SPRING_CLOUD_NACOS_USERNAME:nacos}
+      password: ${SPRING_CLOUD_NACOS_PASSWORD:nacos}
       discovery:
         namespace: ${SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE:prod}
         group: ${SPRING_CLOUD_NACOS_DISCOVERY_GROUP:DEFAULT_GROUP}
