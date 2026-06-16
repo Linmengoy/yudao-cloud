@@ -22,7 +22,7 @@ COMPOSE_FILE="docker-compose.frontend.yml"
 USE_REGISTRY=0
 REGISTRY="111.228.39.103:3000/root"
 REMOTE_REGISTRY=""
-SSH_KEY="$HOME/.ssh/jd_ssh_5675.pem"
+SSH_KEY="${SSH_KEY:-}"
 SKIP_BUILD=0
 SKIP_SAVE=0
 SKIP_UPLOAD=0
@@ -56,7 +56,7 @@ Options:
   --use-registry               Push images to Gitea registry and deploy by docker pull
   --registry REGISTRY          Registry prefix, default 111.228.39.103:3000/root
   --remote-registry REGISTRY   Registry prefix used by remote docker pull
-  --ssh-key PATH               SSH private key, default ~/.ssh/jd_ssh_5675.pem
+  --ssh-key PATH               Optional SSH private key, default uses ssh config/agent
   --skip-build                 Skip docker buildx build
   --skip-save                  Skip docker save
   --skip-upload                Skip scp and remote restart
@@ -68,6 +68,7 @@ Examples:
   script/deploy-frontend-images.sh --server manman --target admin
   script/deploy-frontend-images.sh --server manman --target client
   script/deploy-frontend-images.sh --server manman --target guide
+  script/deploy-frontend-images.sh --server manman2 --deploy-env prod --use-registry
 EOF
 }
 
@@ -195,10 +196,6 @@ if [[ -z "$SERVER" ]]; then
   exit 1
 fi
 
-if [[ "$SERVER" == "manman" ]]; then
-  SERVER="root@111.228.39.103"
-fi
-
 case "$TARGET" in
   all|admin|client|guide) ;;
   *)
@@ -215,8 +212,38 @@ case "$DEPLOY_ENV" in
     ;;
 esac
 
+is_manman() {
+  [[ "$1" == "manman" || "$1" == "root@111.228.39.103" || "$1" == "111.228.39.103" ]]
+}
+
+is_manman2() {
+  [[ "$1" == "manman2" || "$1" == "root@117.72.215.47" || "$1" == "117.72.215.47" ]]
+}
+
+resolve_direct_target() {
+  case "$1" in
+    manman)
+      printf 'root@111.228.39.103\n'
+      ;;
+    manman2)
+      printf 'root@117.72.215.47\n'
+      ;;
+    111.228.39.103|117.72.215.47)
+      printf 'root@%s\n' "$1"
+      ;;
+    *)
+      printf '%s\n' "$1"
+      ;;
+  esac
+}
+
+SSH_TARGET="$SERVER"
+if [[ "$NO_PROXY" -eq 1 ]]; then
+  SSH_TARGET="$(resolve_direct_target "$SERVER")"
+fi
+
 if [[ "$DEPLOY_ENV" == "auto" ]]; then
-  if [[ "$SERVER" == "manman2" || "$SERVER" == "root@117.72.215.47" ]]; then
+  if is_manman2 "$SERVER"; then
     DEPLOY_ENV="prod"
   else
     DEPLOY_ENV="test"
@@ -252,7 +279,7 @@ if [[ -z "$ARCHIVE_NAME" ]]; then
 fi
 
 if [[ -z "$REMOTE_REGISTRY" ]]; then
-  if [[ "$SERVER" == "root@111.228.39.103" || "$SERVER" == "manman" ]]; then
+  if is_manman "$SERVER"; then
     REMOTE_REGISTRY="127.0.0.1:3000/root"
   else
     REMOTE_REGISTRY="$REGISTRY"
@@ -293,20 +320,30 @@ run() {
 }
 
 ssh_run() {
+  local ssh_args=()
+  if [[ -n "$SSH_KEY" ]]; then
+    ssh_args+=("-i" "$SSH_KEY")
+  fi
+
   if [[ "$NO_PROXY" -eq 1 ]]; then
     run env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy -u SOCKS_PROXY -u socks_proxy \
-      ssh -F /dev/null -i "$SSH_KEY" -o ProxyCommand=none -o ProxyJump=none "$@"
+      ssh -F /dev/null "${ssh_args[@]}" -o ProxyCommand=none -o ProxyJump=none "$@"
   else
-    run ssh -i "$SSH_KEY" "$@"
+    run ssh "${ssh_args[@]}" "$@"
   fi
 }
 
 scp_run() {
+  local scp_args=()
+  if [[ -n "$SSH_KEY" ]]; then
+    scp_args+=("-i" "$SSH_KEY")
+  fi
+
   if [[ "$NO_PROXY" -eq 1 ]]; then
     run env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy -u SOCKS_PROXY -u socks_proxy \
-      scp -F /dev/null -i "$SSH_KEY" -o ProxyCommand=none -o ProxyJump=none "$@"
+      scp -F /dev/null "${scp_args[@]}" -o ProxyCommand=none -o ProxyJump=none "$@"
   else
-    run scp -i "$SSH_KEY" "$@"
+    run scp "${scp_args[@]}" "$@"
   fi
 }
 
@@ -428,28 +465,28 @@ fi
 
 if [[ "$SKIP_UPLOAD" -eq 0 ]]; then
   step "Prepare remote compose file"
-  ssh_run "$SERVER" "mkdir -p '$REMOTE_DIR'"
+  ssh_run "$SSH_TARGET" "mkdir -p '$REMOTE_DIR'"
   if [[ -f "$COMPOSE_SOURCE_PATH" ]]; then
-    scp_run "$COMPOSE_SOURCE_PATH" "${SERVER}:${REMOTE_DIR}/${COMPOSE_FILE}"
+    scp_run "$COMPOSE_SOURCE_PATH" "${SSH_TARGET}:${REMOTE_DIR}/${COMPOSE_FILE}"
   else
     echo "Warning: compose file not found locally: $COMPOSE_SOURCE_PATH. Remote compose file will be reused." >&2
   fi
   local_env_file="$(mktemp)"
   write_frontend_env_file "$local_env_file"
-  scp_run "$local_env_file" "${SERVER}:${REMOTE_DIR}/.frontend-${DEPLOY_ENV}.env"
+  scp_run "$local_env_file" "${SSH_TARGET}:${REMOTE_DIR}/.frontend-${DEPLOY_ENV}.env"
   rm -f "$local_env_file"
 
   if [[ "$USE_REGISTRY" -eq 1 ]]; then
     step "Pull images and restart containers"
     remote_command="cd '$REMOTE_DIR'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REMOTE_REGISTRY/' docker compose --env-file '.frontend-${DEPLOY_ENV}.env' -f '$COMPOSE_FILE' pull ${SERVICES[*]}; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REMOTE_REGISTRY/' docker compose --env-file '.frontend-${DEPLOY_ENV}.env' -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
-    ssh_run "$SERVER" "$remote_command"
+    ssh_run "$SSH_TARGET" "$remote_command"
   else
     step "Upload image archive"
-    scp_run "$ARCHIVE_PATH" "${SERVER}:${REMOTE_DIR}/${ARCHIVE_NAME}"
+    scp_run "$ARCHIVE_PATH" "${SSH_TARGET}:${REMOTE_DIR}/${ARCHIVE_NAME}"
 
     step "Load images and restart containers"
     remote_command="cd '$REMOTE_DIR'; docker load -i '$ARCHIVE_NAME'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' docker compose --env-file '.frontend-${DEPLOY_ENV}.env' -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
-    ssh_run "$SERVER" "$remote_command"
+    ssh_run "$SSH_TARGET" "$remote_command"
   fi
 fi
 

@@ -244,11 +244,35 @@ curl.exe -k -sS -I "https://beta.copse.top/"
 curl.exe -k -sS "https://beta.copse.top/app-api/member/auth/email-login"
 ```
 
+前端容器级健康检查：
+
+```powershell
+ssh manman "cd /opt/code && docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml ps draw2video-client draw2video-admin"
+ssh manman "curl -fsS -I http://127.0.0.1:13000/"
+ssh manman "curl -fsS -I http://127.0.0.1:8081/"
+ssh manman2 "cd /opt/code && docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml ps draw2video-client draw2video-admin"
+ssh manman2 "curl -fsS -I http://127.0.0.1:13000/"
+ssh manman2 "curl -fsS -I http://127.0.0.1:8081/"
+```
+
+`draw2video-client` 和 `draw2video-admin` 已在 `script/docker/docker-compose.frontend.yml`、`script/docker/docker-compose-micro.yml`、`script/docker/docker-compose-micro-prod.yml` 配置 healthcheck。发布证据必须包含 `docker compose ps` 的 `healthy` 状态、HTTP 探活输出、服务日志路径和失败时的回滚决策。
+
 前端回滚到旧镜像 tag：
 
 ```powershell
 ssh manman2 "cd /opt/code && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml pull draw2video-client && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client"
 ```
+
+前端发布单必须同时记录 `current image tag` 和 `previous stable image tag`，格式为 `test-<commit>` 或 `prod-<commit>`。上一稳定 tag 优先从上一条成功发布 issue 写回、Gitea Registry 可拉取 tag、或目标服务器当前运行镜像获取：
+
+```powershell
+ssh manman "docker inspect draw2video-client --format '{{.Config.Image}}'"
+ssh manman "docker inspect draw2video-admin --format '{{.Config.Image}}'"
+ssh manman2 "docker inspect draw2video-client --format '{{.Config.Image}}'"
+ssh manman2 "docker inspect draw2video-admin --format '{{.Config.Image}}'"
+```
+
+找不到上一稳定 tag 时，前端发布门禁失败，不能用 `latest` 代替回滚版本。
 
 ## Nacos 配置发布
 

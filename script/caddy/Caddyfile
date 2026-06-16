@@ -4,7 +4,7 @@ beta.copse.top {
     }
 
     handle /aigc/workflow/ws* {
-        reverse_proxy 111.228.39.103:48080 {
+        reverse_proxy 10.66.0.9:48080 {
             flush_interval -1
 
             header_up Host {host}
@@ -23,7 +23,7 @@ beta.copse.top {
     }
 
     handle {
-        reverse_proxy 111.228.39.103:13000 {
+        reverse_proxy 10.66.0.9:13000 {
             flush_interval -1
 
             header_up Host {host}
@@ -68,7 +68,7 @@ admin.copse.top {
     }
 
     handle /admin-api/* {
-        reverse_proxy 111.228.39.103:48080 {
+        reverse_proxy 10.66.0.9:48080 {
             flush_interval -1
 
             header_up Host {host}
@@ -87,7 +87,7 @@ admin.copse.top {
     }
 
     handle /infra/ws* {
-        reverse_proxy 111.228.39.103:48080 {
+        reverse_proxy 10.66.0.9:48080 {
             flush_interval -1
 
             header_up Host {host}
@@ -106,7 +106,7 @@ admin.copse.top {
     }
 
     handle {
-        reverse_proxy 111.228.39.103:8081 {
+        reverse_proxy 10.66.0.9:8081 {
             flush_interval -1
 
             header_up Host {host}

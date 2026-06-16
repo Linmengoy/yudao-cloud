@@ -1,3 +1,11 @@
+部署总入口
+
+详细的 test/prod、前端/后端、Nacos、数据库、Caddy 和回滚操作见：
+
+```text
+script/deployment-runbook.md
+```
+
 infra-server
 
 本地构建

@@ -85,8 +85,8 @@ describe("admin provider proxy form contracts", () => {
   it("uses proxyId as the only visible proxy configuration and preserves legacy fields by omission", () => {
     const template = providerForm.slice(0, providerForm.indexOf("<script setup"));
 
-    expect(template).toContain('label="启用代理"');
-    expect(template).toContain('label="代理" prop="proxyId"');
+    expect(template).toContain(':label="t(\'aigc.model.fields.proxy\')" prop="proxyEnabled"');
+    expect(template).toContain(':label="t(\'aigc.model.fields.proxy\')" prop="proxyId"');
     expect(template).toContain('v-model="formData.proxyId"');
     expect(template).toContain("openProxyManage");
     expect(template).not.toContain("proxyProtocol");
