@@ -7,3 +7,4 @@ DELETE FROM "aigc_model_param_template";
 DELETE FROM "aigc_model_price";
 DELETE FROM "aigc_model_route";
 DELETE FROM "aigc_model_tenant";
+DELETE FROM "aigc_release_note";

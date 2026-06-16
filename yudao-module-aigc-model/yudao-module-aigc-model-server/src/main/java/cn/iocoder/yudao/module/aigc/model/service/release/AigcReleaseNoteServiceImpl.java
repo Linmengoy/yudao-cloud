@@ -65,7 +65,7 @@ public class AigcReleaseNoteServiceImpl implements AigcReleaseNoteService {
         AigcReleaseNoteDO oldReleaseNote = validateReleaseNoteExists(id);
         AigcReleaseNoteDO updateObj = new AigcReleaseNoteDO().setId(id).setStatus(status);
         fillPublishTime(updateObj, oldReleaseNote);
-        releaseNoteMapper.updateById(updateObj);
+        releaseNoteMapper.updateStatusAndPublishTime(id, status, updateObj.getPublishTime());
     }
 
     @Override

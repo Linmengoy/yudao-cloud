@@ -19,7 +19,9 @@ import org.springframework.context.annotation.Import;
 import java.math.BigDecimal;
 
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomString;
+import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.MODEL_CHANNEL_DUPLICATE;
 import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.MODEL_CHANNEL_REFERENCED_BY_ROUTE;
+import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.MODEL_PROVIDER_NOT_EXISTS;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -64,6 +66,61 @@ public class AigcModelChannelServiceImplTest extends BaseDbUnitTest {
         assertEquals(source.getTimeoutSeconds(), clone.getTimeoutSeconds());
         assertEquals(source.getRateLimitConfig(), clone.getRateLimitConfig());
         assertEquals(CommonStatusEnum.DISABLE.getStatus(), clone.getStatus());
+    }
+
+    @Test
+    public void testCloneChannel_defaultValues() {
+        AigcModelDO model = createModel();
+        AigcModelProviderDO sourceProvider = createProvider();
+        AigcModelProviderDO targetProvider = createProvider();
+        AigcModelChannelDO source = createChannel(model.getId(), sourceProvider.getId());
+
+        Long cloneId = channelService.cloneChannel(new AigcModelChannelCloneReqVO()
+                .setSourceChannelId(source.getId())
+                .setTargetProviderId(targetProvider.getId())
+                .setProviderModel(" ")
+                .setName(" "));
+
+        AigcModelChannelDO clone = channelMapper.selectById(cloneId);
+        assertEquals(source.getModelId(), clone.getModelId());
+        assertEquals(targetProvider.getId(), clone.getProviderId());
+        assertEquals(source.getProviderModel(), clone.getProviderModel());
+        assertEquals(source.getName() + "-克隆", clone.getName());
+        assertEquals(source.getWeight(), clone.getWeight());
+        assertEquals(source.getPriority(), clone.getPriority());
+        assertEquals(source.getMaxConcurrent(), clone.getMaxConcurrent());
+        assertEquals(source.getTimeoutSeconds(), clone.getTimeoutSeconds());
+        assertEquals(source.getRateLimitConfig(), clone.getRateLimitConfig());
+        assertEquals(CommonStatusEnum.DISABLE.getStatus(), clone.getStatus());
+    }
+
+    @Test
+    public void testCloneChannel_duplicateTargetProviderModel() {
+        AigcModelDO model = createModel();
+        AigcModelProviderDO sourceProvider = createProvider();
+        AigcModelProviderDO targetProvider = createProvider();
+        AigcModelChannelDO source = createChannel(model.getId(), sourceProvider.getId());
+        AigcModelChannelDO existing = createChannel(model.getId(), targetProvider.getId());
+
+        ServiceException exception = assertThrows(ServiceException.class, () -> channelService.cloneChannel(new AigcModelChannelCloneReqVO()
+                .setSourceChannelId(source.getId())
+                .setTargetProviderId(targetProvider.getId())
+                .setProviderModel(existing.getProviderModel())));
+
+        assertEquals(MODEL_CHANNEL_DUPLICATE.getCode(), exception.getCode());
+    }
+
+    @Test
+    public void testCloneChannel_targetProviderNotExists() {
+        AigcModelDO model = createModel();
+        AigcModelProviderDO sourceProvider = createProvider();
+        AigcModelChannelDO source = createChannel(model.getId(), sourceProvider.getId());
+
+        ServiceException exception = assertThrows(ServiceException.class, () -> channelService.cloneChannel(new AigcModelChannelCloneReqVO()
+                .setSourceChannelId(source.getId())
+                .setTargetProviderId(999_999L)));
+
+        assertEquals(MODEL_PROVIDER_NOT_EXISTS.getCode(), exception.getCode());
     }
 
     @Test
