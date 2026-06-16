@@ -1930,7 +1930,8 @@ function CanvasFlow() {
       createServerProject("未命名项目")
         .then((projectId) => {
           const id = String(projectId);
-          router.replace(`/canvas?projectId=${encodeURIComponent(id)}`);
+          const templateQuery = routeTemplateId ? `&templateId=${encodeURIComponent(routeTemplateId)}` : "";
+          router.replace(`/canvas?projectId=${encodeURIComponent(id)}${templateQuery}`);
           setActiveProjectId(id);
         })
         .catch(() => {
@@ -1939,7 +1940,7 @@ function CanvasFlow() {
         });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [createServerProject, routeProjectId, router]);
+  }, [createServerProject, routeProjectId, routeTemplateId, router]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -2334,14 +2335,13 @@ function CanvasFlow() {
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
 
-  const addPromptTemplateNode = useCallback((template: Pick<PromptTemplate, "id" | "title" | "prompt" | "imageUrl" | "width" | "height" | "mimeType" | "modelCode" | "modelName">) => {
+  const addPromptTemplateNode = useCallback((template: Pick<PromptTemplate, "id" | "title" | "prompt" | "width" | "height" | "mimeType" | "modelCode" | "modelName" | "aigcModelId" | "providerModel">) => {
     if (isReadOnly) return null;
     const center = screenToFlowPosition({
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
     });
     const id = `template_${template.id}_${Date.now()}`;
-    const outputPreviewUrl = template.imageUrl || null;
     const newNode: AppNode = withCardNodeInteraction({
       id,
       type: "image",
@@ -2356,31 +2356,22 @@ function CanvasFlow() {
         fileName: template.title || "Template",
         dataUrl: "",
         mimeType: template.mimeType || "image/png",
-        previewUrl: outputPreviewUrl,
-        outputPreviewUrl,
         width: template.width,
         height: template.height,
         createdAt: new Date().toISOString(),
         kind: "draft",
         prompt: template.prompt,
         sourceTemplateId: template.id,
-        modelId: template.modelCode || DEFAULT_PROMPT_DATA.modelId,
+        modelId: template.aigcModelId ? String(template.aigcModelId) : template.modelCode || DEFAULT_PROMPT_DATA.modelId,
         modelCode: template.modelCode,
+        providerModel: template.providerModel,
         modelName: template.modelName,
+        aigcModelId: template.aigcModelId,
         params: { ...DEFAULT_PROMPT_DATA.params },
         status: "idle",
         taskId: null,
         errorMessage: null,
         elapsedMs: null,
-        outputs: outputPreviewUrl ? [{
-          id: `template-${template.id}`,
-          previewUrl: outputPreviewUrl,
-          width: template.width,
-          height: template.height,
-          fileName: template.title || "Template",
-          mimeType: template.mimeType || "image/png",
-        }] : [],
-        primaryOutputId: outputPreviewUrl ? `template-${template.id}` : null,
       },
       selected: true,
     });
@@ -2537,12 +2528,13 @@ function CanvasFlow() {
           id: template.id,
           title: template.title,
           prompt: template.prompt,
-          imageUrl: template.imageUrl,
           width: template.width,
           height: template.height,
           mimeType: template.mimeType,
           modelCode: template.modelCode,
           modelName: template.modelName,
+          aigcModelId: template.aigcModelId,
+          providerModel: template.providerModel,
         });
         await markPromptTemplateUsed(template.id).catch(() => undefined);
         router.replace(cleanUrl);

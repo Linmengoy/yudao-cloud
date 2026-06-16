@@ -30,6 +30,8 @@ export interface PromptTemplate {
   copyCount?: number;
   useCount?: number;
   createTime?: string;
+  aigcModelId?: number;
+  providerModel?: string;
 }
 
 export interface PromptTemplateModel {
