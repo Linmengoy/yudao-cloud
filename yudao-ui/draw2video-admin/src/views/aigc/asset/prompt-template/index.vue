@@ -107,7 +107,7 @@ import { AigcPromptTemplateApi, type AigcPromptTemplateImportRespVO } from '@/ap
 defineOptions({ name: 'AigcPromptTemplate' })
 
 const message = useMessage()
-const BATCH_SIZE = 3
+const BATCH_SIZE = 1
 const formRef = ref<FormInstance>()
 const casesUploadRef = ref<UploadInstance>()
 const imagesUploadRef = ref<UploadInstance>()
@@ -207,7 +207,9 @@ const handleImport = async () => {
       data.append('casesJson', buildBatchCasesJsonFile(casesJson, batch))
       batch.forEach((file) => data.append('images', file))
       data.append('storageDirectory', formData.storageDirectory)
-      const result = await AigcPromptTemplateApi.importAwesomeGptImageFiles(data)
+      const result = await AigcPromptTemplateApi.importAwesomeGptImageFiles(data).catch((error) => {
+        throw new Error(`第 ${currentBatch.value + 1} 批上传失败：${batch.map((file) => file.name).join(', ')}。${error?.message || ''}`)
+      })
       importResult.value.totalCount += result.totalCount || 0
       importResult.value.createCount += result.createCount || 0
       importResult.value.updateCount += result.updateCount || 0
