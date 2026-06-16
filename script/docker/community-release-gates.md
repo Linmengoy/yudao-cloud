@@ -1,7 +1,7 @@
 # aigc-community release gates
 
-This document is the release evidence template for issues #144, #145, #146, #147, and #148. Fill it during the
-release window and paste the completed record back to the release issue.
+This document is the release evidence template for issues #144, #145, #146, #147, #148, #151, #152, #153, and #154.
+Fill it during the release window and paste the completed record back to the release issue.
 
 ## Release targets
 
@@ -22,7 +22,7 @@ release window and paste the completed record back to the release issue.
 Release is blocked if any row lacks both review and test evidence. When all rows are complete, copy this table to the
 release issue with the commit SHA and workflow run URL.
 
-## CI/CD evidence for #145
+## CI/CD evidence for #145 and #151
 
 Record these fields from `.gitea/workflows/yudao-micro-cicd.yml`:
 
@@ -40,12 +40,32 @@ compose ps summary:
 failure logs path:
 executor:
 executed at:
+release evidence file:
+post-deploy health result:
 ```
 
 For `aigc-community`, the workflow must run Maven package, image build, `docker compose up`, `docker compose ps`, and
-tail service logs on failure.
+tail service logs on failure. The workflow also appends deployment verification evidence after the compose rollout,
+including the compose ps summary, service health result, and gateway smoke commands.
 
-## Immutable version evidence for #146
+Write-back summary for #151:
+
+```text
+aigc-community CI build evidence
+- workflow run url:
+- release evidence file:
+- commit sha:
+- immutable image tag:
+- maven command:
+- image build command:
+- compose up command:
+- compose ps summary:
+- service health result:
+- failure logs path or "not required":
+- release decision:
+```
+
+## Immutable version evidence for #146 and #153
 
 Use the 12-character commit SHA from the workflow as `MICRO_IMAGE_TAG` and `FRONTEND_IMAGE_TAG`. Do not use `latest` as
 the only production release record.
@@ -68,7 +88,23 @@ MICRO_IMAGE_TAG=<previous-stable-sha> FRONTEND_IMAGE_TAG=<previous-stable-sha> \
 
 Local development may omit the tag and fall back to `latest`, but production evidence must record a commit SHA tag.
 
-## Database migration record for #147
+Write-back summary for #153:
+
+```text
+aigc-community rollback version record
+- current version tag:
+- current git sha:
+- previous stable tag:
+- previous stable git sha:
+- compose file:
+- nacos config boundary:
+- database rollback boundary:
+- rollback command:
+- verification command:
+- release decision:
+```
+
+## Database migration record for #147 and #152
 
 Use `yudao-module-aigc-community/yudao-module-aigc-community-server/src/main/resources/schema/community_db_release_runbook.md`.
 
@@ -89,6 +125,43 @@ rollback decision:
 
 Validation must confirm `aigc_guide_content` and all `aigc_community_*` tables use `utf8mb4` collation and have the
 indexes defined by `community_db.sql`.
+
+Write-back summary for #152:
+
+```text
+community_db migration record
+- backup file:
+- backup sha256:
+- sql commit sha:
+- executor:
+- execution window:
+- verification SQL summary:
+- service health result:
+- rollback owner:
+- rollback decision:
+- release decision:
+```
+
+## Deploy health evidence for #154
+
+The deployment may proceed only when the review/test/build/database/rollback evidence above is present or explicitly
+accepted by the release owner. Record the real command output from the target environment.
+
+```text
+aigc-community deployment health evidence
+- target environment:
+- workflow run url:
+- release evidence file:
+- compose deploy command:
+- compose ps summary:
+- /actuator/health result:
+- gateway admin smoke result:
+- gateway app smoke result:
+- key API smoke result:
+- rollback command:
+- rollback executed:
+- release decision:
+```
 
 ## Smoke test checklist for #148
 

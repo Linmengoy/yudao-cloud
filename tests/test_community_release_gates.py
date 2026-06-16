@@ -172,17 +172,20 @@ class CommunityReleaseGateTest(unittest.TestCase):
     def test_release_gate_document_archives_ci_version_db_and_smoke_evidence(self):
         gates = read("script/docker/community-release-gates.md")
 
-        for issue in ["#144", "#145", "#146", "#147", "#148"]:
+        for issue in ["#144", "#145", "#146", "#147", "#148", "#151", "#152", "#153", "#154"]:
             self.assertIn(issue, gates)
 
         for required in [
             "review result, test result, release decision",
             "workflow run url:",
+            "release evidence file:",
             "docker compose version:",
             "current version tag:",
             "previous stable tag:",
             "backup sha256:",
             "sql commit sha:",
+            "post-deploy health result:",
+            "/actuator/health result:",
             "test account",
             "Gateway admin route",
             "User like",
@@ -196,9 +199,16 @@ class CommunityReleaseGateTest(unittest.TestCase):
 
         self.assertIn("previous_stable_image_tag", workflow)
         self.assertIn("Write release evidence summary", workflow)
+        self.assertIn("RELEASE_EVIDENCE_FILE=tmp/release-evidence/${service}-${image_tag}.md", workflow)
+        self.assertIn("workflow run url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", workflow)
         self.assertIn("immutable image tag: ${MICRO_IMAGE_TAG}", workflow)
         self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
         self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-stable-sha>", workflow)
+        self.assertIn("Append release verification evidence", workflow)
+        self.assertIn("deployment verification", workflow)
+        self.assertIn("docker compose -f script/docker/docker-compose-micro.yml ps", workflow)
+        self.assertIn("curl -fsS http://127.0.0.1:48097/actuator/health", workflow)
+        self.assertIn("curl -fsS http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1", workflow)
         self.assertIn("script/docker/community-release-gates.md", workflow)
 
 

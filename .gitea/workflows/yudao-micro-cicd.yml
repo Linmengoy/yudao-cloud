@@ -108,19 +108,25 @@ jobs:
           echo "MICRO_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "FRONTEND_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
+          echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/${service}-${image_tag}.md" >> "${GITHUB_ENV}"
 
       - name: Write release evidence summary
         run: |
           mkdir -p tmp/release-evidence
-          evidence="tmp/release-evidence/${BUILD_SERVICE}-${MICRO_IMAGE_TAG}.md"
+          evidence="${RELEASE_EVIDENCE_FILE}"
           {
             echo "release evidence"
+            echo "- workflow run url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- runner: ${RUNNER_NAME:-manman}"
             echo "- service: ${BUILD_SERVICE}"
             echo "- module: ${BUILD_MODULE}"
             echo "- commit sha: $(git rev-parse HEAD)"
             echo "- immutable image tag: ${MICRO_IMAGE_TAG}"
             echo "- frontend image tag: ${FRONTEND_IMAGE_TAG}"
             echo "- previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}"
+            echo "- maven command: mvn clean package -pl ${BUILD_MODULE} -am -DskipTests"
+            echo "- image build command: docker compose -f script/docker/docker-compose-micro.yml build ${BUILD_SERVICE}"
+            echo "- compose up command: docker compose -f script/docker/docker-compose-micro.yml up -d ${BUILD_SERVICE}"
             echo "- rollback command: MICRO_IMAGE_TAG=<previous-stable-sha> FRONTEND_IMAGE_TAG=<previous-stable-sha> docker compose -f script/docker/docker-compose-micro.yml up -d --no-build --force-recreate ${BUILD_SERVICE}"
             echo "- smoke checklist: script/docker/community-release-gates.md"
           } | tee "${evidence}"
@@ -192,3 +198,27 @@ jobs:
             docker compose -f script/docker/docker-compose-micro.yml logs --tail=100 "${service}"
             exit 1
           done
+
+      - name: Append release verification evidence
+        if: always()
+        run: |
+          mkdir -p tmp/release-evidence
+          evidence="${RELEASE_EVIDENCE_FILE:-tmp/release-evidence/${BUILD_SERVICE:-unknown}-${MICRO_IMAGE_TAG:-unknown}.md}"
+          {
+            echo
+            echo "deployment verification"
+            echo "- verified at: $(date -Is)"
+            echo "- deploy env: master-jdk17"
+            echo "- docker compose version: $(docker compose version 2>/dev/null || true)"
+            echo "- compose ps summary:"
+            docker compose -f script/docker/docker-compose-micro.yml ps || true
+            if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+              echo "- service health result:"
+              docker compose -f script/docker/docker-compose-micro.yml exec -T aigc-community \
+                curl -fsS http://127.0.0.1:48097/actuator/health || true
+              echo
+              echo "- gateway smoke commands:"
+              echo "  curl -fsS http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1"
+              echo "  curl -fsS http://127.0.0.1:48080/app-api/aigc/community/post/page?pageNo=1&pageSize=1"
+            fi
+          } | tee -a "${evidence}"
