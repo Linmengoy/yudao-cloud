@@ -349,6 +349,72 @@ class ReviewReadyContractTest(unittest.TestCase):
             self.assertIn("previous stable image tag:", workflow)
             self.assertIn("rollback command:", workflow)
 
+    def test_issue_235_frontend_release_healthchecks_cover_admin_and_client(self):
+        compose_paths = [
+            "script/docker/docker-compose.frontend.yml",
+            "script/docker/docker-compose-micro.yml",
+            "script/docker/docker-compose-micro-prod.yml",
+        ]
+
+        for path in compose_paths:
+            with self.subTest(path=path, service="draw2video-admin"):
+                admin_block = self._yaml_service_block(read(path), "draw2video-admin")
+                self.assertIn("healthcheck:", admin_block)
+                self.assertIn("http://127.0.0.1/", admin_block)
+                self.assertIn("interval: 10s", admin_block)
+                self.assertIn("timeout: 5s", admin_block)
+                self.assertIn("retries: 10", admin_block)
+
+            with self.subTest(path=path, service="draw2video-client"):
+                client_block = self._yaml_service_block(read(path), "draw2video-client")
+                self.assertIn("healthcheck:", client_block)
+                self.assertIn("http://127.0.0.1:3000/", client_block)
+                self.assertIn("statusCode>=200&&r.statusCode<500", client_block)
+                self.assertIn("interval: 10s", client_block)
+                self.assertIn("timeout: 5s", client_block)
+                self.assertIn("retries: 10", client_block)
+
+        release_evidence = read("script/docker/frontend-release-evidence-20260616.md")
+        deploy_guide = read("yudao-ui/deploy_frontend_command.md")
+        runbook = read("script/deployment-runbook.md")
+        for doc in [release_evidence, deploy_guide, runbook]:
+            self.assertIn("docker compose", doc)
+            self.assertIn("ps draw2video-client draw2video-admin", doc)
+            self.assertIn("curl -fsS -I http://127.0.0.1:13000/", doc)
+            self.assertIn("curl -fsS -I http://127.0.0.1:8081/", doc)
+            self.assertIn("healthy", doc)
+            self.assertRegex(doc, r"(失败|failure|timeout|connection error|连接失败)")
+
+    def test_issue_236_frontend_release_evidence_assigns_uncommitted_changes(self):
+        evidence = read("script/docker/frontend-release-evidence-20260616.md")
+
+        expected_rows = {
+            "script/caddy/Caddyfile": ("#236", "prod Caddy approval", "Caddy validate/reload evidence"),
+            "script/d.md": ("#236", "include", "Documentation only"),
+            "script/deploy-frontend-images.sh": ("#236", "include with release script review", "Bash parity"),
+            "script/docker/docker-compose.frontend.yml": ("#235", "include", "container-level frontend health gate"),
+            "script/docker/docker-compose-micro.yml": ("#235", "include", "micro compose behavior aligned"),
+            "script/docker/docker-compose-micro-prod.yml": ("#235", "include", "prod compose health gate explicit"),
+            "yudao-ui/deploy_frontend_command.md": ("#232, #233, #234, #235", "include", "Primary operator runbook"),
+            "script/deployment-runbook.md": ("#234, #235", "include", "Top-level runbook cross-reference"),
+            "yudao-ui/draw2video-client/pnpm-workspace.yaml": ("#232", "include", "ERR_PNPM_IGNORED_BUILDS"),
+            "yudao-ui/draw2video-admin/pnpm-workspace.yaml": ("#233", "include", "ignored build scripts"),
+        }
+
+        for file_path, required_cells in expected_rows.items():
+            with self.subTest(file_path=file_path):
+                self.assertIn(f"`{file_path}`", evidence)
+                row_match = re.search(rf"\| `{re.escape(file_path)}` \|(?P<row>.*)\|", evidence)
+                self.assertIsNotNone(row_match)
+                row = row_match.group("row")
+                for required in required_cells:
+                    self.assertIn(required, row)
+
+        self.assertIn("No change in this table should be discarded automatically", evidence)
+        self.assertIn("record the exclusion reason", evidence)
+        self.assertIn("previous stable image tag", evidence)
+        self.assertIn("latest` is not acceptable rollback evidence", evidence)
+
     def test_issue_214_admin_asset_pages_use_i18n_keys_without_chinese_literals(self):
         target_paths = [
             "yudao-ui/draw2video-admin/src/views/aigc/asset/index.vue",
@@ -462,6 +528,11 @@ class ReviewReadyContractTest(unittest.TestCase):
     def _locale_leaf_paths(self, locale_text: str, root_key: str) -> set[str]:
         block = self._object_block(locale_text, root_key)
         return {f"{root_key}.{path}" for path in self._leaf_paths(block)}
+
+    def _yaml_service_block(self, text: str, service: str) -> str:
+        match = re.search(rf"^  {re.escape(service)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text, re.S | re.M)
+        self.assertIsNotNone(match, service)
+        return match.group("body")
 
     def _leaf_paths(self, block: str, prefix: str = "") -> set[str]:
         paths: set[str] = set()
