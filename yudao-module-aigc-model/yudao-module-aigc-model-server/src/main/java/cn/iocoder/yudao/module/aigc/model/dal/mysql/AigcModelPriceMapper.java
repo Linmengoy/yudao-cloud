@@ -13,17 +13,20 @@ import java.util.List;
 @Mapper
 public interface AigcModelPriceMapper extends BaseMapperX<AigcModelPriceDO> {
 
-    default AigcModelPriceDO selectByModelIdAndCapability(Long modelId, String capability, Long tenantId) {
+    default AigcModelPriceDO selectByModelIdAndCapability(Long modelId, String capability, Long tenantId,
+                                                          LocalDateTime now) {
         List<AigcModelPriceDO> list = selectList(new LambdaQueryWrapperX<AigcModelPriceDO>()
                 .eq(AigcModelPriceDO::getModelId, modelId)
                 .eq(AigcModelPriceDO::getCapability, capability)
                 .in(AigcModelPriceDO::getTenantId, tenantId, 0L)
                 .eq(AigcModelPriceDO::getStatus, CommonStatusEnum.ENABLE.getStatus())
                 .and(wrapper -> wrapper.isNull(AigcModelPriceDO::getEffectiveStartTime)
-                        .or().le(AigcModelPriceDO::getEffectiveStartTime, LocalDateTime.now()))
+                        .or().le(AigcModelPriceDO::getEffectiveStartTime, now))
                 .and(wrapper -> wrapper.isNull(AigcModelPriceDO::getEffectiveEndTime)
-                        .or().ge(AigcModelPriceDO::getEffectiveEndTime, LocalDateTime.now()))
-                .orderByDesc(AigcModelPriceDO::getTenantId));
+                        .or().ge(AigcModelPriceDO::getEffectiveEndTime, now))
+                .orderByDesc(AigcModelPriceDO::getTenantId)
+                .orderByDesc(AigcModelPriceDO::getEffectiveStartTime)
+                .last("LIMIT 1"));
         return list.isEmpty() ? null : list.get(0);
     }
 

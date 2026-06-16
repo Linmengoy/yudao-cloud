@@ -128,12 +128,13 @@ const formRules = reactive({
   status: [{ required: true, message: 'Status is required', trigger: 'change' }]
 })
 
-const open = async (type: string, id?: number) => {
+const open = async (type: string, id?: number, modelId?: number) => {
   dialogVisible.value = true
   dialogTitle.value = t('action.' + type)
   formType.value = type
   resetForm()
   await loadModelList()
+  if (modelId) formData.value.modelId = modelId
   if (id) {
     formLoading.value = true
     try {

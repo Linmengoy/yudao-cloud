@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -91,8 +92,9 @@ public class AigcModelPriceServiceImpl implements AigcModelPriceService {
         validateTenantModel(reqDTO.getModelId());
 
         Long tenantId = TenantContextHolder.getRequiredTenantId();
+        LocalDateTime now = LocalDateTime.now();
         AigcModelPriceDO price = TenantUtils.executeIgnore(
-                () -> priceMapper.selectByModelIdAndCapability(reqDTO.getModelId(), reqDTO.getCapability(), tenantId));
+                () -> priceMapper.selectByModelIdAndCapability(reqDTO.getModelId(), reqDTO.getCapability(), tenantId, now));
         if (price == null) {
             throw exception(MODEL_PRICE_NOT_FOUND);
         }

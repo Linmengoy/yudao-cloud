@@ -82,6 +82,13 @@ function getOrderPayAppId(rechargeOrder: AigcRechargeOrder | null, payOrder: Pay
   return Number(rechargeOrder?.payAppId || payOrder?.appId || fallbackPayAppId || 0);
 }
 
+function getRechargeOrderStatusName(rechargeOrder: AigcRechargeOrder | null, payOrder: PayOrder | null) {
+  if (rechargeOrder?.statusName) return rechargeOrder.statusName;
+  if (rechargeOrder?.status !== undefined && rechargeOrder.status !== null) return getPayStatusName(rechargeOrder.status);
+  if (payOrder?.status !== undefined && payOrder.status !== null) return getPayStatusName(payOrder.status);
+  return "待支付";
+}
+
 function isAlipayChannel(channelCode?: string) {
   return normalizeDisplayMode(channelCode).startsWith("alipay");
 }
@@ -470,7 +477,7 @@ export default function RechargeCheckoutPage() {
               <div className="flex justify-between gap-4"><span className="text-muted-gray">到账积分</span><span className="text-charcoal">{formatPoints(rechargeOrder?.totalPointAmount ?? fallbackSummary.totalPointAmount)}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-gray">充值单号</span><span className="break-all text-right text-charcoal">{rechargeOrder?.rechargeNo ?? fallbackSummary.rechargeNo ?? "-"}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-gray">支付单号</span><span className="break-all text-right text-charcoal">{rechargeOrder?.payOrderNo ?? payOrder?.no ?? "-"}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-gray">订单状态</span><span className="text-right text-charcoal">{rechargeOrder?.statusName ?? rechargeOrder?.status ?? "待支付"}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-gray">订单状态</span><span className="text-right text-charcoal">{getRechargeOrderStatusName(rechargeOrder, payOrder)}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-gray">创建时间</span><span className="text-right text-charcoal">{formatDateTime(rechargeOrder?.createTime)}</span></div>
             </div>
             {isPaySuccess(payOrder?.status) && (

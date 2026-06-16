@@ -5,26 +5,41 @@ export enum PayOrderStatusEnum {
   CLOSED = 30,
 }
 
-export function isPaySuccess(status?: number): boolean {
-  return status === PayOrderStatusEnum.SUCCESS;
+export function normalizePayStatus(status?: number | string | null): number | string | undefined {
+  if (typeof status === "number") return status;
+  if (!status) return undefined;
+  const text = status.toUpperCase();
+  const names: Record<string, number> = {
+    WAIT_PAY: PayOrderStatusEnum.WAITING,
+    WAITING: PayOrderStatusEnum.WAITING,
+    SUCCESS: PayOrderStatusEnum.SUCCESS,
+    PAY_SUCCESS: PayOrderStatusEnum.SUCCESS,
+    REFUND: PayOrderStatusEnum.REFUND,
+    CLOSED: PayOrderStatusEnum.CLOSED,
+  };
+  return names[text] ?? status;
 }
 
-export function isPayWaiting(status?: number): boolean {
-  return status === PayOrderStatusEnum.WAITING;
+export function isPaySuccess(status?: number | string | null): boolean {
+  return normalizePayStatus(status) === PayOrderStatusEnum.SUCCESS;
 }
 
-export function isPayRefund(status?: number): boolean {
-  return status === PayOrderStatusEnum.REFUND;
+export function isPayWaiting(status?: number | string | null): boolean {
+  return normalizePayStatus(status) === PayOrderStatusEnum.WAITING;
 }
 
-export function isPayClosed(status?: number): boolean {
-  return status === PayOrderStatusEnum.CLOSED;
+export function isPayRefund(status?: number | string | null): boolean {
+  return normalizePayStatus(status) === PayOrderStatusEnum.REFUND;
 }
 
-export function getPayStatusName(status?: number): string {
-  switch (status) {
+export function isPayClosed(status?: number | string | null): boolean {
+  return normalizePayStatus(status) === PayOrderStatusEnum.CLOSED;
+}
+
+export function getPayStatusName(status?: number | string | null): string {
+  switch (normalizePayStatus(status)) {
     case PayOrderStatusEnum.WAITING:
-      return "未支付";
+      return "待支付";
     case PayOrderStatusEnum.SUCCESS:
       return "支付成功";
     case PayOrderStatusEnum.REFUND:
@@ -32,6 +47,6 @@ export function getPayStatusName(status?: number): string {
     case PayOrderStatusEnum.CLOSED:
       return "支付关闭";
     default:
-      return "未知状态";
+      return status ? String(status) : "未知状态";
   }
 }

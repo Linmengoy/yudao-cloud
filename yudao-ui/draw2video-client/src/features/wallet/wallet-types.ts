@@ -12,7 +12,7 @@ export interface AigcWallet {
   totalGift: number;
   totalConsume: number;
   totalRefund: number;
-  status: number;
+  status: number | string;
   lastTransTime?: string;
 }
 
@@ -84,7 +84,7 @@ export interface PayOrder {
   subject: string;
   body?: string;
   price: number;
-  status: number;
+  status: number | string;
   expireTime?: string;
   successTime?: string;
   no?: string;

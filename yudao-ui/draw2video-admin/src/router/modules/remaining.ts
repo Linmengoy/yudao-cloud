@@ -234,6 +234,29 @@ const remainingRouter: AppRouteRecordRaw[] = [
     }
   },
   {
+    path: '/aigc/model',
+    component: Layout,
+    name: 'AigcModelCenter',
+    meta: {
+      hidden: true
+    },
+    children: [
+      {
+        path: 'detail/:id(\\d+)',
+        component: () => import('@/views/aigc/model/model/ModelDetailPage.vue'),
+        name: 'AigcModelDetail',
+        meta: {
+          noCache: true,
+          hidden: true,
+          canTo: true,
+          icon: 'ep:view',
+          title: '模型详情',
+          activeMenu: '/aigc/model/model'
+        }
+      }
+    ]
+  },
+  {
     path: '/:pathMatch(.*)*',
     component: () => import('@/views/Error/404.vue'),
     name: '',
