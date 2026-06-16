@@ -116,7 +116,7 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn('git -C "$ROOT_DIR" rev-parse --short=12 HEAD', sh)
 
         self.assertIn("draw2video-guide:", compose)
-        self.assertIn("image: draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}", compose)
+        self.assertIn("image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}", compose)
         self.assertIn('"8082:80"', compose)
         self.assertIn("healthcheck:", compose)
         self.assertIn("http://127.0.0.1/health", compose)
@@ -217,6 +217,137 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn(".setFollowingCount(stats == null ? 0 : stats.getFollowingCount())", body)
         self.assertIn(".setPublicPostCount(stats == null ? 0 : stats.getPublicPostCount())", body)
         self.assertIn(".setLikeReceivedCount(stats == null ? 0 : stats.getLikeReceivedCount())", body)
+
+    def test_issue_222_canvas_unload_flushes_only_when_pending_with_beacon_fallback(self):
+        page = read("yudao-ui/draw2video-client/src/features/canvas/CanvasFlowPage.tsx")
+        operations = read("yudao-ui/draw2video-client/src/features/canvas/use-canvas-operations.ts")
+
+        unload_match = re.search(
+            r"useEffect\(\(\) => \{\n    if \(!serverProjectId \|\| isReadOnly\) return;(?P<body>.*?)\n  \}, "
+            r"\[canvasOperations, isReadOnly, serverProjectId\]\);",
+            page,
+            re.S,
+        )
+        self.assertIsNotNone(unload_match)
+        unload_body = unload_match.group("body")
+        self.assertIn("if (pendingOperationCountRef.current <= 0) return;", unload_body)
+        self.assertIn("canvasOperations.flushPendingOperations({ keepalive: true });", unload_body)
+        self.assertIn('window.addEventListener("beforeunload", handleBeforeUnload);', unload_body)
+        self.assertIn('window.addEventListener("pagehide", handlePageHide);', unload_body)
+        self.assertIn("event.preventDefault();", unload_body)
+        self.assertIn('event.returnValue = "";', unload_body)
+        self.assertIn('window.removeEventListener("beforeunload", handleBeforeUnload);', unload_body)
+        self.assertIn('window.removeEventListener("pagehide", handlePageHide);', unload_body)
+
+        keepalive_match = re.search(
+            r"function submitKeepaliveOperation\(projectId: string, clientId: string, operation: PendingCanvasOperation\) \{(?P<body>.*?)\n\}",
+            operations,
+            re.S,
+        )
+        self.assertIsNotNone(keepalive_match)
+        keepalive_body = keepalive_match.group("body")
+        self.assertIn("const body = JSON.stringify(buildOperationBody(projectId, clientId, operation));", keepalive_body)
+        self.assertIn("!token && navigator.sendBeacon && body.length < 60_000", keepalive_body)
+        self.assertIn("navigator.sendBeacon(url, blob)", keepalive_body)
+        self.assertIn("keepalive: true", keepalive_body)
+
+        flush_match = re.search(
+            r"const flushPendingOperations = useCallback\(\(options\?: \{ keepalive\?: boolean \}\) => \{(?P<body>.*?)\n  \}, "
+            r"\[clientId, projectId, sendRealtimeOperation, settleOperationFailure, settleOperationSuccess\]\);",
+            operations,
+            re.S,
+        )
+        self.assertIsNotNone(flush_match)
+        flush_body = flush_match.group("body")
+        self.assertIn("if (!projectId) return;", flush_body)
+        self.assertIn("if (options?.keepalive) {", flush_body)
+        self.assertIn("for (const pendingOperation of operations)", flush_body)
+        self.assertIn("submitKeepaliveOperation(projectId, clientId, pendingOperation);", flush_body)
+        self.assertIn("return;", flush_body)
+
+    def test_issue_223_http_canvas_operation_broadcasts_same_applied_message_as_ws(self):
+        controller = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/controller/app/AigcCanvasAppController.java"
+        )
+        project_service = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/service/canvas/AigcCanvasProjectServiceImpl.java"
+        )
+        ws_listener = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/websocket/canvas/AigcCanvasOperationMessageListener.java"
+        )
+        realtime = read("yudao-ui/draw2video-client/src/features/canvas/canvas-realtime.ts")
+        page = read("yudao-ui/draw2video-client/src/features/canvas/CanvasFlowPage.tsx")
+
+        self.assertIn("projectService.submitOperation(reqVO, getLoginUserId())", controller)
+
+        http_submit_match = re.search(
+            r"public AigcCanvasOperationLogDO submitOperation\(AigcCanvasOperationSubmitReqVO reqVO, Long userId\) \{(?P<body>.*?)\n    \}",
+            project_service,
+            re.S,
+        )
+        self.assertIsNotNone(http_submit_match)
+        http_submit_body = http_submit_match.group("body")
+        self.assertIn("operationService.submitOperation(reqVO, userId)", http_submit_body)
+        self.assertIn('roomService.broadcast(operation.getProjectId(), "canvas-op-applied", buildAppliedMessage(operation), null);', http_submit_body)
+
+        build_message_match = re.search(
+            r"private AigcCanvasOperationAppliedMessage buildAppliedMessage\(AigcCanvasOperationLogDO operation\) \{(?P<body>.*?)\n    \}",
+            project_service,
+            re.S,
+        )
+        self.assertIsNotNone(build_message_match)
+        build_message_body = build_message_match.group("body")
+        for setter in [
+            "setProjectId(operation.getProjectId())",
+            "setClientId(operation.getClientId())",
+            "setOpId(operation.getOpId())",
+            "setActorUserId(operation.getActorUserId())",
+            "setBaseVersion(operation.getBaseVersion())",
+            "setVersion(operation.getNextVersion())",
+            "setOperationType(operation.getOperationType())",
+            "setOperationJson(operation.getOperationJson())",
+            "setInverseOperationJson(operation.getInverseOperationJson())",
+        ]:
+            self.assertIn(setter, build_message_body)
+
+        self.assertIn('roomService.broadcast(operation.getProjectId(), "canvas-op-applied", appliedMessage, null);', ws_listener)
+        self.assertIn('type: "canvas-op-applied";', realtime)
+        self.assertIn("canvasOperations.markOperationAcked(message.opId, version);", page)
+        self.assertIn("applyOperationRecord({", page)
+
+    def test_issue_219_release_runbook_records_current_and_previous_stable_sha_sources(self):
+        runbook = read("script/deployment-runbook.md")
+        test_workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
+        prod_workflow = read(".gitea/workflows/yudao-micro-cicd-prod.yml")
+
+        for required in [
+            "## 发布前门禁",
+            "回滚版本明确",
+            "记录当前 commit SHA 和上一个稳定 commit SHA",
+            "### 回滚版本从哪里取",
+            "git rev-parse --short=12 HEAD",
+            "workflow 页面显示的 commit 短 SHA",
+            "git fetch gitea --tags",
+            "prod-stable-",
+            "上一条成功发布写回",
+            "script/docker/community-release-evidence-index.md",
+            "服务器当前运行镜像 tag",
+            "不要把 `latest` 当作生产回滚版本",
+            "previous_stable_image_tag",
+        ]:
+            self.assertIn(required, runbook)
+
+        for workflow in [test_workflow, prod_workflow]:
+            self.assertIn("previous_stable_image_tag", workflow)
+            self.assertIn("PREVIOUS_STABLE_IMAGE_TAG", workflow)
+            self.assertIn("Enforce rollback version gate", workflow)
+            self.assertIn("bash script/docker/verify-release-evidence.sh preflight", workflow)
+            self.assertIn("commit sha: $(git rev-parse HEAD)", workflow)
+            self.assertIn("previous stable image tag:", workflow)
+            self.assertIn("rollback command:", workflow)
 
     def _setter_for(self, field: str, source: str) -> str:
         suffix = field[0].upper() + field[1:]
