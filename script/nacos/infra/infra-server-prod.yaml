@@ -63,7 +63,7 @@ spring:
 xxl:
   job:
     admin:
-      addresses: http://10.66.0.2:8080/xxl-job-admin
+      addresses: http://10.66.0.2:9090/xxl-job-admin
     accessToken: default_token
 
 lock4j:

@@ -38,7 +38,7 @@ xxl:
   job:
     enabled: true
     admin:
-      addresses: ${XXL_JOB_ADMIN_ADDRESSES:http://10.66.0.2:8080/xxl-job-admin}
+      addresses: ${XXL_JOB_ADMIN_ADDRESSES:http://10.66.0.2:9090/xxl-job-admin}
 
 --- #################### 服务保障相关配置 ####################
 
