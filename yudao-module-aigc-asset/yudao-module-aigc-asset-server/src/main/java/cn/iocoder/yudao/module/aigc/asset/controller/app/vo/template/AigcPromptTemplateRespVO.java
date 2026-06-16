@@ -32,6 +32,12 @@ public class AigcPromptTemplateRespVO {
     @Schema(description = "分类")
     private String category;
 
+    @Schema(description = "适配模型编码")
+    private String modelCode;
+
+    @Schema(description = "适配模型名称")
+    private String modelName;
+
     @Schema(description = "风格标签 JSON")
     private String styles;
 

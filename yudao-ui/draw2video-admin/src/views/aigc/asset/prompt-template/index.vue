@@ -107,7 +107,7 @@ import { AigcPromptTemplateApi, type AigcPromptTemplateImportRespVO } from '@/ap
 defineOptions({ name: 'AigcPromptTemplate' })
 
 const message = useMessage()
-const BATCH_SIZE = 3
+const BATCH_SIZE = 1
 const formRef = ref<FormInstance>()
 const casesUploadRef = ref<UploadInstance>()
 const imagesUploadRef = ref<UploadInstance>()
@@ -145,6 +145,16 @@ const importProgress = computed(() => {
 
 const formatProgress = () => `${currentBatch.value}/${totalBatch.value} 批`
 
+interface AwesomeGptImageCase {
+  image?: string
+  [key: string]: unknown
+}
+
+interface AwesomeGptImageCasesJson {
+  cases?: AwesomeGptImageCase[]
+  [key: string]: unknown
+}
+
 const handleCasesChange = (file: UploadFile) => {
   formData.casesJsonFile = file.raw
   casesJsonFileList.value = file.raw ? [{ name: file.name, raw: file.raw }] : []
@@ -179,33 +189,65 @@ const handleImagesRemove = (_file: UploadFile, files: UploadFiles) => {
 }
 
 const handleImport = async () => {
-  await formRef.value?.validate()
-  const imageBatches = chunkFiles(formData.imageFiles, BATCH_SIZE)
-  totalBatch.value = imageBatches.length
-  currentBatch.value = 0
-  importResult.value = {
-    totalCount: formData.imageFiles.length,
-    createCount: 0,
-    updateCount: 0,
-    skipCount: 0
-  }
-  loading.value = true
   try {
+    await formRef.value?.validate()
+    const casesJson = await readCasesJson(formData.casesJsonFile as File)
+    const imageBatches = chunkFiles(formData.imageFiles, BATCH_SIZE)
+    totalBatch.value = imageBatches.length
+    currentBatch.value = 0
+    importResult.value = {
+      totalCount: 0,
+      createCount: 0,
+      updateCount: 0,
+      skipCount: 0
+    }
+    loading.value = true
     for (const batch of imageBatches) {
       const data = new FormData()
-      data.append('casesJson', formData.casesJsonFile as File)
+      data.append('casesJson', buildBatchCasesJsonFile(casesJson, batch))
       batch.forEach((file) => data.append('images', file))
       data.append('storageDirectory', formData.storageDirectory)
-      const result = await AigcPromptTemplateApi.importAwesomeGptImageFiles(data)
+      const result = await AigcPromptTemplateApi.importAwesomeGptImageFiles(data).catch((error) => {
+        throw new Error(`第 ${currentBatch.value + 1} 批上传失败：${batch.map((file) => file.name).join(', ')}。${error?.message || ''}`)
+      })
+      importResult.value.totalCount += result.totalCount || 0
       importResult.value.createCount += result.createCount || 0
       importResult.value.updateCount += result.updateCount || 0
       importResult.value.skipCount += result.skipCount || 0
       currentBatch.value += 1
     }
     message.success('导入完成')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导入失败')
   } finally {
     loading.value = false
   }
+}
+
+const readCasesJson = async (file: File): Promise<AwesomeGptImageCasesJson> => {
+  const text = await file.text()
+  const parsed = JSON.parse(text) as AwesomeGptImageCasesJson
+  if (!Array.isArray(parsed.cases)) {
+    throw new Error('cases.json 缺少 cases 数组')
+  }
+  return parsed
+}
+
+const buildBatchCasesJsonFile = (casesJson: AwesomeGptImageCasesJson, images: File[]) => {
+  const imageNames = new Set(images.map((file) => file.name))
+  const batchCases = (casesJson.cases || []).filter((item) => imageNames.has(getImageFileName(item.image)))
+  if (batchCases.length === 0) {
+    throw new Error(`本批图片没有在 cases.json 中匹配到案例：${images.map((file) => file.name).join(', ')}`)
+  }
+  const batchJson = JSON.stringify({ ...casesJson, cases: batchCases })
+  return new File([batchJson], 'cases.json', { type: 'application/json' })
+}
+
+const getImageFileName = (image?: string) => {
+  if (!image) {
+    return ''
+  }
+  return image.split('/').pop() || image
 }
 
 const chunkFiles = (files: File[], size: number) => {

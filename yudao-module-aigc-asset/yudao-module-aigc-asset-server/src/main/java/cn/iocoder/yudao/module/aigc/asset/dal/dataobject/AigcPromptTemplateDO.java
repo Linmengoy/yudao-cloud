@@ -23,6 +23,8 @@ public class AigcPromptTemplateDO extends TenantBaseDO {
     private Long sourceCaseId;
     private String sourceRepo;
     private String sourceLabel;
+    private String modelCode;
+    private String modelName;
     private String sourceUrl;
     private String githubUrl;
     private String title;

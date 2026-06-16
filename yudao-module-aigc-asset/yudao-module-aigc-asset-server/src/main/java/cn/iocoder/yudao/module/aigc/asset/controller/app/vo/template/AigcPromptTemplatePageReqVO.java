@@ -18,6 +18,9 @@ public class AigcPromptTemplatePageReqVO extends PageParam {
     @Schema(description = "分类", example = "Posters & Typography")
     private String category;
 
+    @Schema(description = "模型编码", example = "gpt-image-2")
+    private String modelCode;
+
     @Schema(description = "风格", example = "Poster")
     private String style;
 

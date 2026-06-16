@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.aigc.asset.dal.mysql;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
+import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateModelRespVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplatePageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcPromptTemplateDO;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -31,8 +32,17 @@ public interface AigcPromptTemplateMapper extends BaseMapperX<AigcPromptTemplate
                 .eq(AigcPromptTemplateDO::getStatus, "NORMAL")
                 .eq(AigcPromptTemplateDO::getVisibility, "PUBLIC")
                 .eq(AigcPromptTemplateDO::getAuditStatus, "PASS")
-                .eqIfPresent(AigcPromptTemplateDO::getCategory, reqVO.getCategory())
                 .eqIfPresent(AigcPromptTemplateDO::getFeatured, reqVO.getFeatured());
+        if (reqVO.getModelCode() != null && !reqVO.getModelCode().isBlank()) {
+            wrapper.eq(AigcPromptTemplateDO::getModelCode, reqVO.getModelCode().trim());
+        }
+        if (reqVO.getCategory() != null && !reqVO.getCategory().isBlank()) {
+            String category = reqVO.getCategory().trim();
+            wrapper.and(w -> w.eq(AigcPromptTemplateDO::getCategory, category)
+                    .or().like(AigcPromptTemplateDO::getTags, category)
+                    .or().like(AigcPromptTemplateDO::getStyles, category)
+                    .or().like(AigcPromptTemplateDO::getScenes, category));
+        }
         if (reqVO.getKeyword() != null && !reqVO.getKeyword().isBlank()) {
             String keyword = reqVO.getKeyword().trim();
             wrapper.and(w -> w.like(AigcPromptTemplateDO::getTitle, keyword)
@@ -63,6 +73,19 @@ public interface AigcPromptTemplateMapper extends BaseMapperX<AigcPromptTemplate
             ORDER BY category ASC
             """)
     List<String> selectCategoryList();
+
+    @Select("""
+            SELECT DISTINCT model_code AS modelCode, model_name AS modelName
+            FROM aigc_prompt_template
+            WHERE deleted = 0
+              AND status = 'NORMAL'
+              AND visibility = 'PUBLIC'
+              AND audit_status = 'PASS'
+              AND model_code IS NOT NULL
+              AND model_code <> ''
+            ORDER BY model_name ASC, model_code ASC
+            """)
+    List<AigcPromptTemplateModelRespVO> selectModelList();
 
     default int increaseViewCount(Long id) {
         return update(null, new LambdaUpdateWrapper<AigcPromptTemplateDO>()

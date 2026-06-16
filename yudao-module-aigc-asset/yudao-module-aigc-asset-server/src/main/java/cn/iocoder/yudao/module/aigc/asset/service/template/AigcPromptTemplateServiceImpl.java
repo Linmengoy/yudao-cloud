@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.asset.service.template;
 
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateModelRespVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplatePageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateRespVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcPromptTemplateDO;
@@ -67,6 +68,11 @@ public class AigcPromptTemplateServiceImpl implements AigcPromptTemplateService 
     }
 
     @Override
+    public List<AigcPromptTemplateModelRespVO> getModelList() {
+        return promptTemplateMapper.selectModelList();
+    }
+
+    @Override
     public void increaseViewCount(Long id) {
         validateTemplateAvailable(id);
         promptTemplateMapper.increaseViewCount(id);
@@ -94,6 +100,8 @@ public class AigcPromptTemplateServiceImpl implements AigcPromptTemplateService 
                 .setPrompt(template.getPrompt())
                 .setPromptPreview(template.getPromptPreview())
                 .setCategory(template.getCategory())
+                .setModelCode(template.getModelCode())
+                .setModelName(template.getModelName())
                 .setStyles(template.getStyles())
                 .setScenes(template.getScenes())
                 .setTags(template.getTags())

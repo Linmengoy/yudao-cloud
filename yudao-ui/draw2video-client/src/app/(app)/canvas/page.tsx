@@ -52,6 +52,8 @@ import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-ass
 import { getAssetAccessUrls, getMyAsset } from "@/features/assets/asset-api";
 import { getAssetOriginalExpireTime, getAssetOriginalUrl } from "@/features/assets/asset-dictionaries";
 import { getPromptTemplate, markPromptTemplateUsed } from "@/features/templates/template-api";
+import { CanvasTemplateLibraryDialog } from "@/features/templates/CanvasTemplateLibraryDialog";
+import type { PromptTemplate } from "@/features/templates/template-types";
 import { useAuth } from "@/features/auth/auth-store";
 import { ThemeToggle } from "@/features/theme/ThemeToggle";
 import { NotificationBell } from "@/features/notifications/components/notification-bell";
@@ -908,9 +910,10 @@ function CanvasProfileMenuLink({
 type CanvasToolDockProps = {
   readOnly: boolean;
   onAddNode: (kind: CreateNodeKind) => void;
+  onOpenTemplateLibrary: () => void;
 };
 
-function CanvasToolDock({ readOnly, onAddNode }: CanvasToolDockProps) {
+function CanvasToolDock({ readOnly, onAddNode, onOpenTemplateLibrary }: CanvasToolDockProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   if (readOnly) return null;
@@ -943,7 +946,7 @@ function CanvasToolDock({ readOnly, onAddNode }: CanvasToolDockProps) {
           />
         </button>
         <ToolDockButton label="画板" icon={<Palette className="size-5" />} />
-        <ToolDockButton label="素材库" icon={<Folder className="size-5" />} />
+        <ToolDockButton label="素材库" icon={<Folder className="size-5" />} onClick={onOpenTemplateLibrary} />
         <ToolDockButton label="帮助" icon={<HelpCircle className="size-5" />} />
       </nav>
 
@@ -973,10 +976,11 @@ function CanvasToolDock({ readOnly, onAddNode }: CanvasToolDockProps) {
   );
 }
 
-function ToolDockButton({ label, icon }: { label: string; icon: React.ReactNode }) {
+function ToolDockButton({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick?: () => void }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       aria-label={label}
       title={label}
       className="flex size-11 items-center justify-center rounded-full text-charcoal transition-colors hover:bg-muted"
@@ -1535,6 +1539,7 @@ function CanvasFlow() {
   const [lastAppliedVersion, setLastAppliedVersion] = useState(0);
   const [latestKnownVersion, setLatestKnownVersion] = useState(0);
   const [referencePickerPromptId, setReferencePickerPromptId] = useState<string | null>(null);
+  const [templateLibraryOpen, setTemplateLibraryOpen] = useState(false);
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [canvasZoom, setCanvasZoom] = useState(DEFAULT_CANVAS_VIEWPORT.zoom);
@@ -2768,13 +2773,14 @@ function CanvasFlow() {
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
 
-  const addPromptTemplateNode = useCallback((template: { id: number; title: string; prompt: string }) => {
+  const addPromptTemplateNode = useCallback((template: Pick<PromptTemplate, "id" | "title" | "prompt" | "imageUrl" | "width" | "height" | "mimeType" | "modelCode" | "modelName">) => {
     if (isReadOnly) return null;
     const center = screenToFlowPosition({
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
     });
     const id = `template_${template.id}_${Date.now()}`;
+    const outputPreviewUrl = template.imageUrl || null;
     const newNode: AppNode = withCardNodeInteraction({
       id,
       type: "image",
@@ -2788,17 +2794,32 @@ function CanvasFlow() {
         projectId: serverProjectId,
         fileName: template.title || "Template",
         dataUrl: "",
-        mimeType: "image/png",
+        mimeType: template.mimeType || "image/png",
+        previewUrl: outputPreviewUrl,
+        outputPreviewUrl,
+        width: template.width,
+        height: template.height,
         createdAt: new Date().toISOString(),
         kind: "draft",
         prompt: template.prompt,
         sourceTemplateId: template.id,
-        modelId: DEFAULT_PROMPT_DATA.modelId,
+        modelId: template.modelCode || DEFAULT_PROMPT_DATA.modelId,
+        modelCode: template.modelCode,
+        modelName: template.modelName,
         params: { ...DEFAULT_PROMPT_DATA.params },
         status: "idle",
         taskId: null,
         errorMessage: null,
         elapsedMs: null,
+        outputs: outputPreviewUrl ? [{
+          id: `template-${template.id}`,
+          previewUrl: outputPreviewUrl,
+          width: template.width,
+          height: template.height,
+          fileName: template.title || "Template",
+          mimeType: template.mimeType || "image/png",
+        }] : [],
+        primaryOutputId: outputPreviewUrl ? `template-${template.id}` : null,
       },
       selected: true,
     });
@@ -2806,6 +2827,13 @@ function CanvasFlow() {
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
+
+  const handleSelectTemplateFromLibrary = useCallback((template: PromptTemplate) => {
+    const node = addPromptTemplateNode(template);
+    if (node) {
+      markPromptTemplateUsed(template.id).catch(() => undefined);
+    }
+  }, [addPromptTemplateNode]);
 
   const addSketchNode = useCallback((position?: { x: number; y: number }) => {
     if (isReadOnly) return null;
@@ -2948,6 +2976,12 @@ function CanvasFlow() {
           id: template.id,
           title: template.title,
           prompt: template.prompt,
+          imageUrl: template.imageUrl,
+          width: template.width,
+          height: template.height,
+          mimeType: template.mimeType,
+          modelCode: template.modelCode,
+          modelName: template.modelName,
         });
         await markPromptTemplateUsed(template.id).catch(() => undefined);
         router.replace(cleanUrl);
@@ -3685,6 +3719,13 @@ function CanvasFlow() {
       <CanvasToolDock
         readOnly={isReadOnly || Boolean(referencePickerPromptId)}
         onAddNode={addNodeFromDock}
+        onOpenTemplateLibrary={() => setTemplateLibraryOpen(true)}
+      />
+
+      <CanvasTemplateLibraryDialog
+        open={templateLibraryOpen}
+        onClose={() => setTemplateLibraryOpen(false)}
+        onSelect={handleSelectTemplateFromLibrary}
       />
 
       <ReactFlow

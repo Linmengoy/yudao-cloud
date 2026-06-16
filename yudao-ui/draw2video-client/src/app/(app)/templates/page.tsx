@@ -49,6 +49,7 @@ function templateToPreviewItem(template: PromptTemplate): MediaPreviewItem | nul
     createdAt: template.createTime,
     information: [
       { label: "分类", value: template.category || "-" },
+      { label: "模型", value: template.modelName || template.modelCode || "-" },
       { label: "风格", value: parseJsonArray(template.styles).join(", ") || "-" },
       { label: "场景", value: parseJsonArray(template.scenes).join(", ") || "-" },
       { label: "来源", value: template.sourceLabel || "-" },
@@ -124,6 +125,11 @@ function TemplateCard({
         </div>
         <p className="mt-1.5 line-clamp-3 text-xs leading-5 text-muted-gray">{promptPreview}</p>
         <div className="mt-3 flex flex-wrap gap-1.5">
+          {(template.modelName || template.modelCode) && (
+            <span className="rounded-full bg-charcoal px-2 py-1 text-[11px] text-off-white">
+              {template.modelName || template.modelCode}
+            </span>
+          )}
           {template.category && (
             <span className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-gray">{template.category}</span>
           )}

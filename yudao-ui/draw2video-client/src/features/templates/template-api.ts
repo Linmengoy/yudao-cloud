@@ -1,5 +1,5 @@
 import { api } from "@/lib/api-client";
-import type { PageResult, PromptTemplate, PromptTemplatePageParams } from "./template-types";
+import type { PageResult, PromptTemplate, PromptTemplateModel, PromptTemplatePageParams } from "./template-types";
 
 function toQuery(params: object) {
   const search = new URLSearchParams();
@@ -22,6 +22,10 @@ export function getPromptTemplate(id: number | string) {
 
 export function getPromptTemplateCategories() {
   return api.get<string[]>("/aigc/asset/prompt-template/categories");
+}
+
+export function getPromptTemplateModels() {
+  return api.get<PromptTemplateModel[]>("/aigc/asset/prompt-template/models");
 }
 
 export function copyPromptTemplate(id: number | string) {
