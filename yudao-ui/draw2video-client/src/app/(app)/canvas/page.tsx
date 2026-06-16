@@ -2775,7 +2775,6 @@ function CanvasFlow() {
 
   const addPromptTemplateNode = useCallback((template: Pick<PromptTemplate, "id" | "title" | "prompt" | "imageUrl" | "width" | "height" | "mimeType" | "modelCode" | "modelName" | "aigcModelId" | "providerModel">) => {
     if (isReadOnly) return null;
-    const currentViewport = getViewport();
     const center = screenToFlowPosition({
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
@@ -2815,10 +2814,9 @@ function CanvasFlow() {
       selected: true,
     });
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
-    window.requestAnimationFrame(() => setViewport(currentViewport));
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
-  }, [canvasOperations, getNodes, getViewport, isReadOnly, screenToFlowPosition, serverProjectId, setNodes, setViewport]);
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
 
   const handleSelectTemplateFromLibrary = useCallback((template: PromptTemplate) => {
     const node = addPromptTemplateNode(template);
