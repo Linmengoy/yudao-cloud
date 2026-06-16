@@ -234,10 +234,10 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("curl -fsS http://127.0.0.1:48097/actuator/health", workflow)
         self.assertIn("script/docker/community-release-evidence-index.md", workflow)
 
-    def test_release_evidence_index_covers_review_and_test_gates(self):
+    def test_release_evidence_index_covers_all_release_gate_templates(self):
         index = read("script/docker/community-release-evidence-index.md")
 
-        for issue in ["#145", "#146", "#147", "#149", "#150"]:
+        for issue in ["#145", "#146", "#147", "#148", "#149", "#150", "#151", "#152", "#153", "#154"]:
             self.assertIn(issue, index)
 
         for required in [
@@ -251,6 +251,26 @@ class CommunityReleaseGateTest(unittest.TestCase):
             "Do not use `test:done`",
             "task:failed",
             "task:ready + task:done",
+            "aigc-community smoke evidence",
+            "test account:",
+            "Gateway admin route result:",
+            "Gateway app route result:",
+            "Admin audit approve result:",
+            "aigc-community CI build evidence",
+            "workflow run url:",
+            "release evidence file:",
+            "immutable image tag:",
+            "community_db migration record",
+            "backup sha256:",
+            "verification SQL summary:",
+            "aigc-community rollback version record",
+            "previous stable git sha:",
+            "nacos config boundary:",
+            "database rollback boundary:",
+            "aigc-community deployment health evidence",
+            "compose deploy command:",
+            "/actuator/health result:",
+            "rollback executed:",
         ]:
             self.assertIn(required, index)
 
