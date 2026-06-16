@@ -56,6 +56,7 @@ import { cn } from "@/lib/utils";
 import { clampToViewport } from "./floating-position";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
+import { copyImageSourceToClipboard } from "./clipboard-copy";
 import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, useComposerWheelPan, type PromptMentionOption } from "./PromptMentionInput";
 
 type ImageNodeProps = NodeProps<Node<ImageNodeData, "image">>;
@@ -440,15 +441,6 @@ function getDisplaySize(data: ImageNodeData, measuredSize: { width: number; heig
   return scaleToPreview(width, height);
 }
 
-async function imageSourceToClipboardBlob(imageSrc: string, mimeType?: string | null) {
-  const response = await fetch(imageSrc);
-  if (!response.ok) {
-    throw new Error(`Image fetch failed: ${response.status}`);
-  }
-  const blob = await response.blob();
-  return blob.type ? blob : blob.slice(0, blob.size, mimeType || "image/png");
-}
-
 function getVisibleImageLeftInset(image: HTMLImageElement) {
   if (!image.naturalWidth || !image.naturalHeight) return 0;
   const sampleScale = Math.min(1, 240 / Math.max(image.naturalWidth, image.naturalHeight));
@@ -823,22 +815,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     setNodeMenu((prev) => ({ ...prev, visible: false }));
     if (!imageSrc) return;
 
-    try {
-      if ("ClipboardItem" in window && navigator.clipboard?.write) {
-        const blob = await imageSourceToClipboardBlob(imageSrc, data.mimeType);
-        await navigator.clipboard.write([
-          new ClipboardItem({ [blob.type || data.mimeType || "image/png"]: blob }),
-        ]);
-        return;
-      }
-      await navigator.clipboard.writeText(imageSrc);
-    } catch {
-      try {
-        await navigator.clipboard.writeText(imageSrc);
-      } catch {
-        // Clipboard permissions can be denied by the browser; keep the menu action silent.
-      }
-    }
+    await copyImageSourceToClipboard({ imageSrc, mimeType: data.mimeType });
   }, [imageSrc, data.mimeType]);
 
   const updateParams = useCallback(
