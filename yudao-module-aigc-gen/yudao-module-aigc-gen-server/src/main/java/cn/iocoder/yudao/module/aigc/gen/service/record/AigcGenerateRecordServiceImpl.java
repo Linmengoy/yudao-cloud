@@ -1246,13 +1246,29 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
         AigcModelProviderRespDTO provider = record.getProviderId() == null ? null
                 : modelApi.getProvider(record.getProviderId()).getCheckedData();
         List<Long> assetIds = new ArrayList<>();
+        List<String> storedUrls = new ArrayList<>();
         for (int i = 0; i < urls.size(); i++) {
             AigcAssetCreateRespDTO asset = createAsset(record, provider, urls.get(i), i);
             assetIds.add(asset.getId());
+            storedUrls.add(resolveStoredOutputUrl(asset));
         }
         generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId())
-                .setAssetIds(JSONUtil.toJsonStr(assetIds)));
+                .setAssetIds(JSONUtil.toJsonStr(assetIds))
+                .setOutputUrls(JSONUtil.toJsonStr(storedUrls)));
         return assetIds;
+    }
+
+    private String resolveStoredOutputUrl(AigcAssetCreateRespDTO asset) {
+        if (StrUtil.isNotBlank(asset.getFileUrl())) {
+            return asset.getFileUrl();
+        }
+        if (StrUtil.isNotBlank(asset.getFilePath())) {
+            return asset.getFilePath();
+        }
+        if (StrUtil.isNotBlank(asset.getObjectKey())) {
+            return asset.getObjectKey();
+        }
+        return "asset://" + asset.getId();
     }
 
     private AigcAssetCreateRespDTO createAsset(AigcGenerateRecordDO record, AigcModelProviderRespDTO provider,

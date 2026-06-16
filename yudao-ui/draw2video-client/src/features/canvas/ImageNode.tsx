@@ -10,6 +10,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  Copy,
   Gem,
   ImageIcon,
   Loader2,
@@ -439,6 +440,15 @@ function getDisplaySize(data: ImageNodeData, measuredSize: { width: number; heig
   return scaleToPreview(width, height);
 }
 
+async function imageSourceToClipboardBlob(imageSrc: string, mimeType?: string | null) {
+  const response = await fetch(imageSrc);
+  if (!response.ok) {
+    throw new Error(`Image fetch failed: ${response.status}`);
+  }
+  const blob = await response.blob();
+  return blob.type ? blob : blob.slice(0, blob.size, mimeType || "image/png");
+}
+
 function getVisibleImageLeftInset(image: HTMLImageElement) {
   if (!image.naturalWidth || !image.naturalHeight) return 0;
   const sampleScale = Math.min(1, 240 / Math.max(image.naturalWidth, image.naturalHeight));
@@ -814,9 +824,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     if (!imageSrc) return;
 
     try {
-      if (imageSrc.startsWith("data:") && "ClipboardItem" in window) {
-        const response = await fetch(imageSrc);
-        const blob = await response.blob();
+      if ("ClipboardItem" in window && navigator.clipboard?.write) {
+        const blob = await imageSourceToClipboardBlob(imageSrc, data.mimeType);
         await navigator.clipboard.write([
           new ClipboardItem({ [blob.type || data.mimeType || "image/png"]: blob }),
         ]);
@@ -1501,31 +1510,45 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     })}
                   </div>
                 ) : imageSrc ? (
-                  <img
-                    src={imageSrc}
-                    alt={data.fileName}
-                    className="size-full object-contain"
-                    draggable={false}
-                    onError={() => refreshBrokenOutputUrl(primaryOutput)}
-                    onLoad={(event) => {
-                      const image = event.currentTarget;
-                      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-                        setMeasuredSize((current) => (
-                          current?.width === image.naturalWidth && current.height === image.naturalHeight
-                            ? current
-                            : { width: image.naturalWidth, height: image.naturalHeight }
-                        ));
-                        setVisibleImageInset((current) => current ?? { left: getVisibleImageLeftInset(image) });
-                      }
-                      if (
-                        image.naturalWidth > 0 &&
-                        image.naturalHeight > 0 &&
-                        (data.width !== image.naturalWidth || data.height !== image.naturalHeight)
-                      ) {
-                        updateData({ width: image.naturalWidth, height: image.naturalHeight });
-                      }
-                    }}
-                  />
+                  <>
+                    <img
+                      src={imageSrc}
+                      alt={data.fileName}
+                      className="size-full object-contain"
+                      draggable={false}
+                      onError={() => refreshBrokenOutputUrl(primaryOutput)}
+                      onLoad={(event) => {
+                        const image = event.currentTarget;
+                        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                          setMeasuredSize((current) => (
+                            current?.width === image.naturalWidth && current.height === image.naturalHeight
+                              ? current
+                              : { width: image.naturalWidth, height: image.naturalHeight }
+                          ));
+                          setVisibleImageInset((current) => current ?? { left: getVisibleImageLeftInset(image) });
+                        }
+                        if (
+                          image.naturalWidth > 0 &&
+                          image.naturalHeight > 0 &&
+                          (data.width !== image.naturalWidth || data.height !== image.naturalHeight)
+                        ) {
+                          updateData({ width: image.naturalWidth, height: image.naturalHeight });
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void copyImageToClipboard();
+                      }}
+                      className="nodrag absolute right-3 top-3 z-20 flex size-9 items-center justify-center rounded-lg bg-charcoal/75 text-off-white opacity-0 shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md transition-opacity hover:bg-charcoal/90 group-hover:opacity-100"
+                      aria-label="Copy image to clipboard"
+                      title="Copy image"
+                    >
+                      <Copy className="size-4" />
+                    </button>
+                  </>
                 ) : (
                   <ImageIcon className="size-12 text-muted-gray/40" />
                 )}
