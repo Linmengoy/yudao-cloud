@@ -1063,6 +1063,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     };
 
     updateData({
+      prompt: cleanPrompt,
       status: "pending",
       errorMessage: null,
       safetyStatus: null,
@@ -1134,6 +1135,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     }
     const completedAt = typeof updates.completedAt === "string" ? updates.completedAt : new Date().toISOString();
     const nextData: Partial<ImageNodeData> = {
+      prompt: cleanPrompt,
       status: updates.status === "complete" ? "idle" : "failed",
       taskId: typeof updates.taskId === "string" ? updates.taskId : null,
       errorMessage: typeof updates.errorMessage === "string" ? updates.errorMessage : null,
