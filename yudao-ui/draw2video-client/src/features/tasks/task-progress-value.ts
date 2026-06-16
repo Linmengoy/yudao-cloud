@@ -19,20 +19,28 @@ function clampProgress(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+export function getTaskTimingStartMs(
+  task: Pick<AigcTask, "id" | "submitTime" | "startTime" | "createTime">,
+) {
+  const baseTime = task.submitTime || task.startTime || task.createTime;
+  if (!baseTime) return null;
+  const startAt = new Date(baseTime).getTime();
+  return Number.isNaN(startAt) ? null : startAt;
+}
+
 function getTimeProgress(task: AigcTask, now: number) {
   const estimatedDurationMillis = Number(task.estimatedDurationMillis ?? 0);
   if (!estimatedDurationMillis || estimatedDurationMillis <= 0) {
     return 0;
   }
-  const baseTime = task.submitTime || task.startTime || task.createTime;
-  if (!baseTime) {
+  const startAt = getTaskTimingStartMs(task);
+  if (startAt == null) {
     return 0;
   }
-  const startAt = new Date(baseTime).getTime();
-  if (Number.isNaN(startAt)) {
-    return 0;
-  }
-  return Math.min(OPTIMISTIC_PROGRESS_CAP, ((now - startAt) / estimatedDurationMillis) * OPTIMISTIC_PROGRESS_CAP);
+  return Math.min(
+    OPTIMISTIC_PROGRESS_CAP,
+    ((now - startAt) / estimatedDurationMillis) * OPTIMISTIC_PROGRESS_CAP,
+  );
 }
 
 function formatDuration(milliseconds: number) {
@@ -55,7 +63,10 @@ export function getDisplayTaskProgress(task: AigcTask, now = Date.now()) {
   if (task.status === "SUCCESS") {
     return 100;
   }
-  if (!shouldPollTask(task.status) || !OPTIMISTIC_PROGRESS_STATUSES.has(task.status as AigcTaskStatus)) {
+  if (
+    !shouldPollTask(task.status) ||
+    !OPTIMISTIC_PROGRESS_STATUSES.has(task.status as AigcTaskStatus)
+  ) {
     return serverProgress;
   }
   return clampProgress(Math.max(serverProgress, getTimeProgress(task, now)));
@@ -65,11 +76,10 @@ export function getTaskEstimatedTimeText(task: AigcTask, now = Date.now()) {
   if (!shouldPollTask(task.status)) return null;
   const estimatedDurationMillis = Number(task.estimatedDurationMillis ?? 0);
   if (!estimatedDurationMillis || estimatedDurationMillis <= 0) return null;
-  const baseTime = task.submitTime || task.startTime || task.createTime;
-  if (!baseTime) return `预计 ${formatDuration(estimatedDurationMillis)}`;
-  const startAt = new Date(baseTime).getTime();
-  if (Number.isNaN(startAt)) return `预计 ${formatDuration(estimatedDurationMillis)}`;
+  const startAt = getTaskTimingStartMs(task);
+  if (startAt == null) return `预计 ${formatDuration(estimatedDurationMillis)}`;
   const remainingMillis = estimatedDurationMillis - (now - startAt);
-  if (remainingMillis <= 0) return `已超时 ${formatDuration(Math.abs(remainingMillis))}`;
+  if (remainingMillis <= 0)
+    return `已超时 ${formatDuration(Math.abs(remainingMillis))}`;
   return `预计剩余 ${formatDuration(remainingMillis)}`;
 }

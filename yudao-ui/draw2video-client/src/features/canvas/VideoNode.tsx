@@ -1115,10 +1115,11 @@ export function VideoNodeComponent({
     void waitAndApplyServerRun(
       projectId,
       taskId,
-      data.generationStartedAt ?? data.createdAt,
+      data.generationRunStartedAt ?? data.generationStartedAt ?? data.createdAt,
     );
   }, [
     data.createdAt,
+    data.generationRunStartedAt,
     data.generationStartedAt,
     data.status,
     data.taskId,
