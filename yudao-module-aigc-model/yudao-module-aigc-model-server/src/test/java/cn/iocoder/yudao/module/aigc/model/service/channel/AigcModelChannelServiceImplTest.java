@@ -138,6 +138,21 @@ public class AigcModelChannelServiceImplTest extends BaseDbUnitTest {
         assertTrue(exception.getMessage().contains("主路由"));
     }
 
+    @Test
+    public void testDeleteChannel_successWhenNotReferencedByRoute() {
+        AigcModelDO model = createModel();
+        AigcModelProviderDO provider = createProvider();
+        AigcModelChannelDO channel = createChannel(model.getId(), provider.getId());
+        routeMapper.insert(new AigcModelRouteDO()
+                .setName("其他路由")
+                .setStrategy("FIXED_MODEL")
+                .setChannelIds("[" + (channel.getId() + 1) + "]"));
+
+        channelService.deleteChannel(channel.getId());
+
+        assertNull(channelMapper.selectById(channel.getId()));
+    }
+
     private AigcModelDO createModel() {
         AigcModelDO model = new AigcModelDO()
                 .setCode(randomString())

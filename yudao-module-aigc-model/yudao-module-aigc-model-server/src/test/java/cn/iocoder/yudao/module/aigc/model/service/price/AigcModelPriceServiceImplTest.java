@@ -132,6 +132,27 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
     }
 
     @Test
+    public void testCalculatePrice_fallsBackToPlatformPriceWhenTenantPriceExpired() {
+        AigcModelDO model = createModel();
+        LocalDateTime now = LocalDateTime.now();
+        priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
+                AigcModelBillingUnitEnum.PER_TASK.getCode(), "1.500000", "3.000000", null)
+                .setEffectiveStartTime(now.minusHours(1))
+                .setEffectiveEndTime(now.plusDays(1)));
+        priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
+                AigcModelBillingUnitEnum.PER_TASK.getCode(), "9.000000", "99.000000", null)
+                .setTenantId(1L)
+                .setEffectiveEndTime(now.minusDays(1)));
+
+        AigcModelPriceCalculateRespDTO respDTO = priceService.calculatePrice(new AigcModelPriceCalculateReqDTO()
+                .setModelId(model.getId()).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode()));
+
+        assertEquals(0, new BigDecimal("3.000000").compareTo(respDTO.getSalePrice()));
+        assertEquals(0, new BigDecimal("1.500000").compareTo(respDTO.getCostPrice()));
+        assertEquals("PLATFORM", respDTO.getPriceSource());
+    }
+
+    @Test
     public void testCalculatePrice_tenantPriceFirst() {
         AigcModelDO model = createModel();
         priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
