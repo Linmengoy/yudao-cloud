@@ -5,9 +5,10 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, BookOpen, Boxes, ChevronRight, Folder, Globe, Grid2X2, Grid3X3, HelpCircle, ImagePlus, LogOut, Map as MapIcon, MessageCircle, Palette, PenLine, Plus, Scan, Settings, Share2, Sparkles, Type, Video, Wallet } from "lucide-react";
+import { ArrowLeft, BookOpen, Boxes, ChevronRight, Folder, Globe, Grid2X2, Grid3X3, HelpCircle, ImagePlus, LogOut, Map as MapIcon, MessageCircle, Palette, PenLine, Plus, RefreshCw, Scan, Settings, Share2, Sparkles, Type, Video, Wallet } from "lucide-react";
 import { useAuth } from "@/features/auth/auth-store";
 import { NotificationBell } from "@/features/notifications/components/notification-bell";
+import { getFallbackVersion, getPublishedReleaseNotes } from "@/features/release-notes/release-note-api";
 import { ThemeToggle } from "@/features/theme/ThemeToggle";
 import { formatCompactPoints } from "@/features/wallet/wallet-api";
 import { cn } from "@/lib/utils";
@@ -203,6 +204,7 @@ export function CanvasUtilityBar({ canShare, onShare }: CanvasUtilityBarProps) {
   const { wallet, user, logout } = useAuth();
   const credits = wallet ? formatCompactPoints(wallet.balance) : "0";
   const [profileOpen, setProfileOpen] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState(getFallbackVersion());
   const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -222,6 +224,18 @@ export function CanvasUtilityBar({ canShare, onShare }: CanvasUtilityBarProps) {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [profileOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPublishedReleaseNotes(1)
+      .then((notes) => {
+        if (!cancelled && notes[0]?.version) setCurrentVersion(notes[0].version);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="pointer-events-auto absolute right-4 top-4 z-[90] flex items-center gap-2 rounded-full border border-border-warm bg-background/95 px-2 py-1.5 shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.08)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] backdrop-blur-sm">
@@ -309,6 +323,7 @@ export function CanvasUtilityBar({ canShare, onShare }: CanvasUtilityBarProps) {
               <CanvasProfileMenuLink href="/guide/" icon={<BookOpen className="size-4" />} label="使用指南" onClick={() => setProfileOpen(false)} />
               <CanvasProfileMenuLink href="#" icon={<MessageCircle className="size-4" />} label="联系我们" onClick={() => setProfileOpen(false)} />
               <CanvasProfileMenuLink href="#" icon={<Globe className="size-4" />} label="简体中文" onClick={() => setProfileOpen(false)} />
+              <CanvasProfileMenuLink href="/release-notes" icon={<RefreshCw className="size-4" />} label="版本更新" suffix={currentVersion} onClick={() => setProfileOpen(false)} />
             </div>
 
             <div className="border-t border-border-warm py-1">
@@ -336,21 +351,26 @@ function CanvasProfileMenuLink({
   href,
   icon,
   label,
+  suffix,
   onClick,
 }: {
   href: string;
   icon: ReactNode;
   label: string;
+  suffix?: string;
   onClick: () => void;
 }) {
   return (
     <Link
       href={href}
       onClick={onClick}
-      className="flex items-center gap-3 px-4 py-2.5 text-sm text-muted-gray transition-colors hover:bg-muted hover:text-charcoal"
+      className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm text-muted-gray transition-colors hover:bg-muted hover:text-charcoal"
     >
-      {icon}
-      {label}
+      <span className="inline-flex items-center gap-3">
+        {icon}
+        {label}
+      </span>
+      {suffix && <span className="max-w-[120px] truncate text-xs">{suffix}</span>}
     </Link>
   );
 }

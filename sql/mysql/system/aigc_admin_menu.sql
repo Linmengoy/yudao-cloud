@@ -1264,3 +1264,89 @@ INSERT INTO system_menu (
 SELECT 'Guide publish', 'aigc:guide:publish', 3, 5, @aigcGuideMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
 WHERE @aigcGuideMenuId IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:guide:publish' AND deleted = b'0');
+
+-- AIGC release note management
+SELECT @aigcModelParentId := id
+FROM system_menu
+WHERE path = '/aigc-model'
+  AND type = 1
+  AND deleted = b'0'
+LIMIT 1;
+
+SELECT @aigcReleaseNoteMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:release-note:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT
+    '版本更新记录', 'aigc:release-note:query', 2, 10, @aigcModelParentId,
+    'release-note', 'ep:calendar', 'aigc/release-note/index', 'AigcReleaseNote',
+    0, b'1', b'1', b'1',
+    'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcModelParentId IS NOT NULL
+  AND @aigcReleaseNoteMenuId IS NULL;
+
+SELECT @aigcReleaseNoteMenuId := id
+FROM system_menu
+WHERE permission = 'aigc:release-note:query'
+  AND type = 2
+  AND deleted = b'0'
+LIMIT 1;
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '版本更新查询', 'aigc:release-note:query', 3, 1, @aigcReleaseNoteMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcReleaseNoteMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:release-note:query' AND type = 3 AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '版本更新新增', 'aigc:release-note:create', 3, 2, @aigcReleaseNoteMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcReleaseNoteMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:release-note:create' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '版本更新修改', 'aigc:release-note:update', 3, 3, @aigcReleaseNoteMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcReleaseNoteMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:release-note:update' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '版本更新发布', 'aigc:release-note:publish', 3, 4, @aigcReleaseNoteMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcReleaseNoteMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:release-note:publish' AND deleted = b'0');
+
+INSERT INTO system_menu (
+    name, permission, type, sort, parent_id,
+    path, icon, component, component_name,
+    status, visible, keep_alive, always_show,
+    creator, create_time, updater, update_time, deleted
+)
+SELECT '版本更新删除', 'aigc:release-note:delete', 3, 5, @aigcReleaseNoteMenuId, '', '', NULL, NULL, 0, b'1', b'1', b'1', 'admin', NOW(), 'admin', NOW(), b'0'
+WHERE @aigcReleaseNoteMenuId IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM system_menu WHERE permission = 'aigc:release-note:delete' AND deleted = b'0');

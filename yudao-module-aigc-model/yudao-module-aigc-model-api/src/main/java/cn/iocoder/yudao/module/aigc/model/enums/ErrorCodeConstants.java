@@ -47,4 +47,7 @@ public interface ErrorCodeConstants {
 
     ErrorCode MODEL_TENANT_NOT_EXISTS = new ErrorCode(1_041_005_000, "租户模型授权不存在");
 
+    ErrorCode RELEASE_NOTE_NOT_EXISTS = new ErrorCode(1_041_006_000, "版本更新记录不存在");
+    ErrorCode RELEASE_NOTE_VERSION_DUPLICATE = new ErrorCode(1_041_006_001, "版本号已存在");
+
 }

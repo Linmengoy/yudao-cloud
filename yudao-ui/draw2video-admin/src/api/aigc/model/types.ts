@@ -187,3 +187,16 @@ export interface AigcModelUsageTypeStatisticsRespVO {
   salePrice?: number
   avgDurationMillis?: number
 }
+
+export interface AigcReleaseNoteRespVO {
+  id?: number
+  version?: string
+  releaseDate?: string
+  title?: string
+  summary?: string
+  content?: string
+  status?: number
+  publisher?: string
+  publishTime?: string
+  createTime?: Date
+}

@@ -235,6 +235,26 @@ CREATE TABLE `aigc_model_usage_log` (
   KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型调用计量日志表';
 
+CREATE TABLE `aigc_release_note` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '编号',
+  `version` varchar(64) NOT NULL COMMENT '版本号',
+  `release_date` date NOT NULL COMMENT '发布日期',
+  `title` varchar(128) NOT NULL COMMENT '标题',
+  `summary` varchar(512) DEFAULT NULL COMMENT '更新摘要',
+  `content` text COMMENT '更新内容',
+  `status` tinyint NOT NULL DEFAULT 1 COMMENT '状态（0正常 1停用）',
+  `publisher` varchar(64) DEFAULT NULL COMMENT '发布人',
+  `publish_time` datetime DEFAULT NULL COMMENT '发布时间',
+  `creator` varchar(64) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updater` varchar(64) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '是否删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_version` (`version`),
+  KEY `idx_status_release_date` (`status`, `release_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AIGC版本更新记录表';
+
 INSERT INTO `aigc_model_provider` (`id`, `code`, `name`, `api_base_url`, `auth_type`, `status`, `tenant_id`) VALUES
 (1, 'provider_kling', '可灵AI', 'https://api.klingai.com', 'API_KEY', 0, 0),
 (2, 'provider_jimeng', '即梦AI', 'https://api.jimengai.com', 'API_KEY', 0, 0),

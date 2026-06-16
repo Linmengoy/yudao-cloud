@@ -217,7 +217,7 @@ export async function POST(request: Request) {
       code: 0,
       msg: "success",
       data: {
-        taskId: `mock_task_${Date.now()}`,
+        taskId: null,
         status: "complete",
         imageUrls,
         revisedPrompts: (payload.data ?? []).map((item) => item.revised_prompt).filter(Boolean),
@@ -233,7 +233,7 @@ export async function POST(request: Request) {
         code: 500,
         msg: message,
         data: {
-          taskId: `mock_task_${Date.now()}`,
+          taskId: null,
           status: "failed",
           imageUrls: [],
           elapsedMs: Date.now() - startedAt,

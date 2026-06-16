@@ -1767,6 +1767,24 @@ function CanvasFlow() {
   }, [serverProjectId, canvasRealtime.isConnected, isHydrated, syncFromVersion]);
 
   useEffect(() => {
+    if (!serverProjectId || !isHydrated) return;
+    const pollSync = () => {
+      if (document.visibilityState !== "visible") return;
+      if (pendingOperationCountRef.current > 0) return;
+      syncFromVersionRef.current(lastAppliedVersionRef.current);
+    };
+    const timer = window.setInterval(pollSync, 30_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") pollSync();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [serverProjectId, isHydrated]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
       const now = Date.now();
       setRemotePresences((prev) => {

@@ -15,6 +15,7 @@ import {
   LogOut,
   MessageCircle,
   PlusCircle,
+  RefreshCw,
   Settings,
   Wallet,
   Zap,
@@ -22,6 +23,7 @@ import {
 import { NotificationBell } from "@/features/notifications/components/notification-bell";
 import { ThemeToggle } from "@/features/theme/ThemeToggle";
 import { useAuth } from "@/features/auth/auth-store";
+import { getFallbackVersion, getPublishedReleaseNotes } from "@/features/release-notes/release-note-api";
 import { cn } from "@/lib/utils";
 
 const sidebarLinks = [
@@ -45,6 +47,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState(getFallbackVersion());
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const mounted = useSyncExternalStore(
@@ -80,6 +83,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [popoverOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPublishedReleaseNotes(1)
+      .then((notes) => {
+        if (!cancelled && notes[0]?.version) setCurrentVersion(notes[0].version);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (loading || !mounted) {
     return (
@@ -206,6 +221,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         {item.label}
                       </Link>
                     ))}
+                    <Link
+                      href="/release-notes"
+                      onClick={() => setPopoverOpen(false)}
+                      className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm text-muted-gray transition-colors hover:bg-muted hover:text-charcoal"
+                    >
+                      <span className="inline-flex items-center gap-3">
+                        <RefreshCw className="size-4" />
+                        版本更新
+                      </span>
+                      <span className="max-w-[120px] truncate text-xs">{currentVersion}</span>
+                    </Link>
                   </div>
 
                   <div className="border-t border-border-warm py-1">
