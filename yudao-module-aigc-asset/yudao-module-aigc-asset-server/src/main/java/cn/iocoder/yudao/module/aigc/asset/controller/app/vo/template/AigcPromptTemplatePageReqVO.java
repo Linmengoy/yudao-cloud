@@ -30,4 +30,7 @@ public class AigcPromptTemplatePageReqVO extends PageParam {
     @Schema(description = "是否推荐", example = "true")
     private Boolean featured;
 
+    @Schema(description = "随机排序种子", example = "1700000000")
+    private Integer randomSeed;
+
 }

@@ -16,10 +16,15 @@ import java.util.List;
 public interface AigcPromptTemplateMapper extends BaseMapperX<AigcPromptTemplateDO> {
 
     default PageResult<AigcPromptTemplateDO> selectPage(AigcPromptTemplatePageReqVO reqVO) {
-        return selectPage(reqVO, buildPageWrapper(reqVO)
-                .orderByDesc(AigcPromptTemplateDO::getFeatured)
-                .orderByAsc(AigcPromptTemplateDO::getSort)
-                .orderByDesc(AigcPromptTemplateDO::getId));
+        LambdaQueryWrapperX<AigcPromptTemplateDO> wrapper = buildPageWrapper(reqVO);
+        if (reqVO.getRandomSeed() != null) {
+            wrapper.last("ORDER BY CRC32(CONCAT(id, '" + reqVO.getRandomSeed() + "')) ASC, id DESC");
+        } else {
+            wrapper.orderByDesc(AigcPromptTemplateDO::getFeatured)
+                    .orderByAsc(AigcPromptTemplateDO::getSort)
+                    .orderByDesc(AigcPromptTemplateDO::getId);
+        }
+        return selectPage(reqVO, wrapper);
     }
 
     default AigcPromptTemplateDO selectBySource(String sourceRepo, Long sourceCaseId) {

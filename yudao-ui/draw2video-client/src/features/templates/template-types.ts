@@ -48,4 +48,5 @@ export interface PromptTemplatePageParams {
   style?: string;
   scene?: string;
   featured?: boolean;
+  randomSeed?: number;
 }
