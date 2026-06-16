@@ -388,27 +388,27 @@ export default function TemplatesPage() {
         item={previewItem}
         open={previewTemplateId != null}
         onClose={() => setPreviewTemplateId(null)}
+        footerActions={previewTemplate ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleCopyFromPreview}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md border border-border-warm bg-background px-4 py-2.5 text-sm font-medium text-charcoal shadow-[rgba(0,0,0,0.05)_0px_1px_2px_0px] transition-colors hover:bg-muted active:opacity-80"
+            >
+              <Copy className="size-4" />
+              复制提示词
+            </button>
+            <button
+              type="button"
+              onClick={() => handleReuse(previewTemplate)}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-charcoal px-4 py-2.5 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80"
+            >
+              <Sparkles className="size-4" />
+              复用模板
+            </button>
+          </div>
+        ) : undefined}
       />
-      {previewTemplate && previewTemplateId != null && (
-        <div className="pointer-events-none fixed bottom-6 right-6 z-[410] hidden gap-2 lg:flex">
-          <button
-            type="button"
-            onClick={handleCopyFromPreview}
-            className="pointer-events-auto inline-flex items-center gap-2 rounded-md border border-border-warm bg-background px-4 py-2 text-sm text-charcoal shadow-[rgba(0,0,0,0.05)_0px_1px_2px_0px] hover:bg-muted active:opacity-80"
-          >
-            <Copy className="size-4" />
-            复制提示词
-          </button>
-          <button
-            type="button"
-            onClick={() => handleReuse(previewTemplate)}
-            className="pointer-events-auto inline-flex items-center gap-2 rounded-md bg-charcoal px-4 py-2 text-sm text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80"
-          >
-            <Sparkles className="size-4" />
-            复用到画布
-          </button>
-        </div>
-      )}
     </main>
   );
 }
