@@ -12,6 +12,11 @@ export interface AigcGenerateRecordPageReqVO extends PageParam {
   modelId?: number
   providerCode?: string
   status?: string
+  providerTaskId?: string
+  failReason?: string
+  createTime?: string[]
+  submitTime?: string[]
+  hasError?: boolean
 }
 
 export interface AigcGenerateRecordRespVO {
@@ -74,14 +79,17 @@ export interface AigcGenerateCallbackRespVO {
 export interface AigcGenerateProviderLogPageReqVO extends PageParam {
   recordId?: number
   taskId?: number
+  attemptId?: number
   providerCode?: string
   modelCode?: string
+  apiAction?: string
   success?: boolean
 }
 
 export interface AigcGenerateProviderLogRespVO {
   id: number
   recordId?: number
+  attemptId?: number
   taskId?: number
   providerCode?: string
   modelCode?: string

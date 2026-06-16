@@ -5,6 +5,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 @Schema(description = "管理后台 - AIGC 生成记录分页 Request VO")
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -33,5 +35,20 @@ public class AigcGenerateRecordPageReqVO extends PageParam {
 
     @Schema(description = "状态", example = "SUCCESS")
     private String status;
+
+    @Schema(description = "Provider task id", example = "task_123")
+    private String providerTaskId;
+
+    @Schema(description = "Fail reason keyword")
+    private String failReason;
+
+    @Schema(description = "Create time range")
+    private LocalDateTime[] createTime;
+
+    @Schema(description = "Submit time range")
+    private LocalDateTime[] submitTime;
+
+    @Schema(description = "Only failed/error records")
+    private Boolean hasError;
 
 }

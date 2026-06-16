@@ -694,7 +694,71 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
 
     @Override
     public PageResult<AigcGenerateProviderLogDO> getProviderLogPage(AigcGenerateProviderLogPageReqVO reqVO) {
-        return providerLogMapper.selectPage(reqVO);
+        PageResult<AigcGenerateProviderLogDO> pageResult = providerLogMapper.selectPage(reqVO);
+        if (pageResult.getList() != null) {
+            pageResult.getList().forEach(this::sanitizeProviderLogForAdmin);
+        }
+        return pageResult;
+    }
+
+    private void sanitizeProviderLogForAdmin(AigcGenerateProviderLogDO log) {
+        log.setRequestSummary(sanitizeProviderSummary(log.getRequestSummary()));
+        log.setResponseSummary(sanitizeProviderSummary(log.getResponseSummary()));
+    }
+
+    private String sanitizeProviderSummary(String summary) {
+        if (StrUtil.isBlank(summary)) {
+            return summary;
+        }
+        try {
+            if (JSONUtil.isTypeJSON(summary)) {
+                Object json = JSONUtil.parse(summary);
+                sanitizeJsonValue(json);
+                return JSONUtil.toJsonStr(json);
+            }
+        } catch (Exception ignored) {
+            // Fall through to text masking for malformed provider summaries.
+        }
+        return maskSensitiveText(summary);
+    }
+
+    private void sanitizeJsonValue(Object value) {
+        if (value instanceof JSONObject jsonObject) {
+            for (String key : new ArrayList<>(jsonObject.keySet())) {
+                Object item = jsonObject.get(key);
+                if (isSensitiveKey(key)) {
+                    jsonObject.set(key, "***");
+                } else {
+                    sanitizeJsonValue(item);
+                }
+            }
+            return;
+        }
+        if (value instanceof JSONArray jsonArray) {
+            for (Object item : jsonArray) {
+                sanitizeJsonValue(item);
+            }
+        }
+    }
+
+    private boolean isSensitiveKey(String key) {
+        String normalized = key == null ? "" : key.toLowerCase();
+        return normalized.contains("authorization")
+                || normalized.contains("apikey")
+                || normalized.contains("api_key")
+                || normalized.contains("token")
+                || normalized.contains("cookie")
+                || normalized.contains("secret")
+                || normalized.contains("password")
+                || normalized.contains("phone")
+                || normalized.contains("email");
+    }
+
+    private String maskSensitiveText(String text) {
+        return text.replaceAll("(?i)(authorization|api[_-]?key|token|cookie|secret|password)\\s*[:=]\\s*[^,}\\s]+",
+                        "$1=***")
+                .replaceAll("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "***@***")
+                .replaceAll("(?<!\\d)1\\d{10}(?!\\d)", "1**********");
     }
 
     @SuppressWarnings("unchecked")
