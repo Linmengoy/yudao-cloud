@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Paperclip, Plus, Send, SlidersHorizontal, X } from "lucide-react";
+import { Compass, Folder, LayoutTemplate, Loader2, Paperclip, Plus, Send, SlidersHorizontal, X } from "lucide-react";
+import { motion } from "motion/react";
 import { canvasApi } from "@/features/canvas/canvas-api";
 import type { CanvasProject } from "@/features/canvas/types";
 import { getMyAssetPage, uploadAssetAndGetInfo } from "@/features/assets/asset-api";
 import { getAssetPreviewUrl } from "@/features/assets/asset-dictionaries";
 import type { AigcAsset } from "@/features/assets/asset-types";
+import { getCommunityPosts } from "@/features/community/community-api";
+import type { CommunityPost } from "@/features/community/community-types";
 import { getImageFilesFromPasteEvent } from "@/features/canvas/clipboard";
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import {
@@ -21,19 +24,11 @@ import { listProjects, type ProjectMeta } from "@/features/projects/project-stor
 import { useAuth } from "@/features/auth/auth-store";
 import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache";
 
-const MODEL_TYPE_LABELS: Record<number, string> = {
-  1: "文本",
-  2: "图片",
-  3: "视频",
-  4: "音频",
-  5: "审核",
-};
-
-const MODEL_TYPE_ORDER = [2, 3, 4, 1, 5];
 const REFERENCE_IMAGE_CACHE_KEY = "copse:workspace:reference-images";
 const REFERENCE_IMAGE_DRAG_DATA_TYPE = "application/x-copse-reference-image-index";
 
 type QuickGenerationMode = "TEXT_TO_IMAGE" | "IMAGE_TO_IMAGE" | "TEXT_TO_VIDEO" | "IMAGE_TO_VIDEO";
+type GenerationTab = "image" | "video";
 
 const QUICK_GENERATION_MODE_LABELS: Record<QuickGenerationMode, string> = {
   TEXT_TO_IMAGE: "文生图",
@@ -68,6 +63,10 @@ type WorkspaceProjectsCache = {
 
 type WorkspaceModelsCache = {
   models: AigcModel[];
+};
+
+type WorkspaceCommunityCache = {
+  posts: CommunityPost[];
 };
 
 type ReferenceImage = {
@@ -300,6 +299,10 @@ function workspaceModelsCacheKey(imageCapability: QuickGenerationMode, videoCapa
   return `workspace:models:${imageCapability}:${videoCapability}`;
 }
 
+function workspaceCommunityCacheKey(ownerKey: string | number | null | undefined) {
+  return `workspace:community-hot:${ownerKey ?? "current"}`;
+}
+
 function getProjectKey(project: ProjectListItem) {
   return `${project.source}:${project.id}`;
 }
@@ -308,11 +311,16 @@ function getModelKey(model: AigcModel) {
   return model.id;
 }
 
-function pickDefaultModelId(models: AigcModel[]) {
-  return models.find((item) => item.defaultModel && (item.type === 2 || item.type === 3))?.id
-    ?? models.find((item) => item.type === 2 || item.type === 3)?.id
+function pickDefaultModelId(models: AigcModel[], tab: GenerationTab = "image") {
+  const type = tab === "video" ? 3 : 2;
+  return models.find((item) => item.defaultModel && item.type === type)?.id
+    ?? models.find((item) => item.type === type)?.id
     ?? models[0]?.id
     ?? null;
+}
+
+function communityPostCoverUrl(post: CommunityPost) {
+  return post.coverUrl || post.fileUrl || "";
 }
 
 function reorderItems<T>(items: T[], fromIndex: number, toIndex: number) {
@@ -390,6 +398,27 @@ function ProjectCover({ project }: { project: ProjectListItem }) {
   );
 }
 
+function CommunityPostCover({ post }: { post: CommunityPost }) {
+  const coverUrl = communityPostCoverUrl(post);
+  if (coverUrl) {
+    return (
+      <div className="aspect-square overflow-hidden rounded-[10px] bg-muted">
+        <img
+          src={coverUrl}
+          alt={post.title || "社区作品"}
+          draggable={false}
+          className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="flex aspect-square items-center justify-center rounded-[10px] bg-muted px-3 text-center text-xs font-medium text-muted-gray">
+      社区作品
+    </div>
+  );
+}
+
 export default function WorkspacePage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -407,9 +436,15 @@ export default function WorkspacePage() {
     () => readPageCache<WorkspaceModelsCache>(workspaceModelsCacheKey(initialImageGenerationCapability, initialVideoGenerationCapability)),
     [initialImageGenerationCapability, initialVideoGenerationCapability]
   );
+  const initialCommunityCache = useMemo(
+    () => readPageCache<WorkspaceCommunityCache>(workspaceCommunityCacheKey(user?.id)),
+    [user?.id]
+  );
   const [prompt, setPrompt] = useState("");
+  const [selectedTab, setSelectedTab] = useState<GenerationTab>("image");
+  const selectedTabRef = useRef<GenerationTab>("image");
   const [models, setModels] = useState<AigcModel[]>(() => initialModelsCache?.models ?? []);
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(() => pickDefaultModelId(initialModelsCache?.models ?? []));
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(() => pickDefaultModelId(initialModelsCache?.models ?? [], "image"));
   const [modelsLoading, setModelsLoading] = useState(() => !initialModelsCache);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [paramTemplates, setParamTemplates] = useState<AigcModelParamTemplate[]>([]);
@@ -424,6 +459,11 @@ export default function WorkspacePage() {
   const [draggingReferenceIndex, setDraggingReferenceIndex] = useState<number | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectListItem[]>(() => initialProjectsCache?.projects ?? []);
+  const [projectCreating, setProjectCreating] = useState(false);
+  const [projectCreateError, setProjectCreateError] = useState<string | null>(null);
+  const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>(() => initialCommunityCache?.posts ?? []);
+  const [communityLoading, setCommunityLoading] = useState(() => !initialCommunityCache);
+  const [communityHidden, setCommunityHidden] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [assetPickerAssets, setAssetPickerAssets] = useState<AigcAsset[]>([]);
   const [assetPickerLoading, setAssetPickerLoading] = useState(false);
@@ -433,34 +473,22 @@ export default function WorkspacePage() {
   const paramsButtonRef = useRef<HTMLButtonElement | null>(null);
   const recentProjects = useMemo(() => projects.slice(0, 7), [projects]);
   const quickModels = useMemo(() => models.filter((model) => model.type === 2 || model.type === 3), [models]);
-  const modelGroups = useMemo(() => {
-    const groups = new Map<number, AigcModel[]>();
-    for (const model of quickModels) {
-      groups.set(model.type, [...(groups.get(model.type) ?? []), model]);
-    }
-    return [...groups.entries()].sort(([a], [b]) => {
-      const aIndex = MODEL_TYPE_ORDER.indexOf(a);
-      const bIndex = MODEL_TYPE_ORDER.indexOf(b);
-      if (aIndex === -1 && bIndex === -1) return a - b;
-      if (aIndex === -1) return 1;
-      if (bIndex === -1) return -1;
-      return aIndex - bIndex;
-    });
-  }, [quickModels]);
+  const selectedTabType = selectedTab === "video" ? 3 : 2;
+  const selectedTabModels = useMemo(
+    () => quickModels.filter((model) => model.type === selectedTabType),
+    [quickModels, selectedTabType]
+  );
   const selectedModel = useMemo(
-    () => quickModels.find((model) => model.id === selectedModelId) ?? null,
-    [quickModels, selectedModelId]
+    () => selectedTabModels.find((model) => model.id === selectedModelId) ?? null,
+    [selectedModelId, selectedTabModels]
   );
   const selectedModelParamId = selectedModel?.id ?? null;
   const referenceImage = referenceImages[0] ?? null;
   const hasReferenceImages = referenceImages.length > 0;
   const imageGenerationCapability: QuickGenerationMode = hasReferenceImages ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
   const videoGenerationCapability: QuickGenerationMode = hasReferenceImages ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO";
-  const quickGenerationMode = useMemo<QuickGenerationMode | null>(() => {
-    if (!selectedModel || (selectedModel.type !== 2 && selectedModel.type !== 3)) return null;
-    return selectedModel.type === 3 ? videoGenerationCapability : imageGenerationCapability;
-  }, [imageGenerationCapability, selectedModel, videoGenerationCapability]);
-  const isQuickGenerationModel = Boolean(quickGenerationMode);
+  const quickGenerationMode = selectedTab === "video" ? videoGenerationCapability : imageGenerationCapability;
+  const isQuickGenerationModel = Boolean(selectedModel && quickGenerationMode);
   const effectiveModelParams = useMemo(
     () => selectedModel
       ? buildEffectiveModelParams(paramTemplates, modelParams)
@@ -523,13 +551,48 @@ export default function WorkspacePage() {
   useEffect(() => {
     let ignore = false;
     const timer = window.setTimeout(() => {
+      const cacheKey = workspaceCommunityCacheKey(user?.id);
+      const cached = readPageCache<WorkspaceCommunityCache>(cacheKey);
+      let hasVisiblePosts = false;
+      if (cached) {
+        hasVisiblePosts = cached.posts.length > 0;
+        setCommunityPosts(cached.posts);
+        setCommunityLoading(false);
+        setCommunityHidden(cached.posts.length === 0);
+      } else {
+        setCommunityLoading(true);
+      }
+      getCommunityPosts({ pageNo: 1, pageSize: 8, sort: "hot" })
+        .then((page) => {
+          if (ignore) return;
+          const posts = (page.list ?? []).slice(0, 8);
+          writePageCache<WorkspaceCommunityCache>(cacheKey, { posts });
+          setCommunityPosts(posts);
+          setCommunityHidden(posts.length === 0);
+        })
+        .catch(() => {
+          if (!ignore && !hasVisiblePosts) setCommunityHidden(true);
+        })
+        .finally(() => {
+          if (!ignore) setCommunityLoading(false);
+        });
+    }, 0);
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let ignore = false;
+    const timer = window.setTimeout(() => {
       const cacheKey = workspaceModelsCacheKey(imageGenerationCapability, videoGenerationCapability);
       const cached = readPageCache<WorkspaceModelsCache>(cacheKey);
       if (cached) {
         setModels((items) => mergeStableList(items, cached.models, getModelKey));
         setSelectedModelId((current) => {
           if (cached.models.some((item) => item.id === current)) return current;
-          return pickDefaultModelId(cached.models);
+          return pickDefaultModelId(cached.models, selectedTabRef.current);
         });
         setModelsLoading(false);
       } else {
@@ -553,7 +616,7 @@ export default function WorkspacePage() {
           }
           setSelectedModelId((current) => {
             if (data.some((item) => item.id === current)) return current;
-            return pickDefaultModelId(data);
+            return pickDefaultModelId(data, selectedTabRef.current);
           });
         })
         .finally(() => {
@@ -656,6 +719,28 @@ export default function WorkspacePage() {
     setAssetPickerOpen(true);
     void loadAssetPickerImages();
   }, [loadAssetPickerImages]);
+
+  const handleTabChange = useCallback((tab: GenerationTab) => {
+    selectedTabRef.current = tab;
+    setSelectedTab(tab);
+    setSelectedModelId(pickDefaultModelId(quickModels, tab));
+    setParamsOpen(false);
+    setSubmitError(null);
+  }, [quickModels]);
+
+  const handleCreateProject = useCallback(async () => {
+    if (projectCreating) return;
+    setProjectCreating(true);
+    setProjectCreateError(null);
+    try {
+      const projectId = await canvasApi.createProject({ name: "未命名项目" });
+      router.push(`/canvas?projectId=${encodeURIComponent(String(projectId))}`);
+    } catch (error) {
+      setProjectCreateError(error instanceof Error ? error.message : "项目创建失败，请稍后再试");
+    } finally {
+      setProjectCreating(false);
+    }
+  }, [projectCreating, router]);
 
   const selectAssetReference = useCallback((asset: AigcAsset) => {
     const reference = assetToReferenceImage(asset);
@@ -798,8 +883,62 @@ export default function WorkspacePage() {
             rows={4}
             className="w-full resize-none bg-transparent text-sm text-charcoal placeholder:text-muted-gray focus:outline-none"
           />
-          <div className="mt-2 flex items-center justify-between">
-            <div className="flex flex-wrap items-center gap-1.5">
+          <div className="mt-2 flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="relative flex h-8 rounded-lg bg-muted p-0.5">
+                {([
+                  ["image", "图片"],
+                  ["video", "视频"],
+                ] as const).map(([tab, label]) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => handleTabChange(tab)}
+                    disabled={submitting}
+                    className={`relative z-10 h-7 min-w-14 rounded-md px-3 text-xs font-medium transition-colors ${
+                      selectedTab === tab ? "text-charcoal" : "text-muted-gray hover:text-charcoal"
+                    }`}
+                  >
+                    {selectedTab === tab && (
+                      <motion.span
+                        layoutId="workspace-generation-tab"
+                        transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                        className="absolute inset-0 -z-10 rounded-md bg-background shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                      />
+                    )}
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                {modelsLoading && models.length === 0 && (
+                  <span className="px-2 text-xs text-muted-gray">模型加载中...</span>
+                )}
+                {!modelsLoading && modelsError && models.length === 0 && (
+                  <span className="px-2 text-xs text-muted-gray">{modelsError}</span>
+                )}
+                {!modelsLoading && !modelsError && selectedTabModels.length === 0 && (
+                  <span className="px-2 text-xs text-muted-gray">暂无可用模型</span>
+                )}
+                {selectedTabModels.length > 0 && (
+                  <select
+                    value={selectedModel ? String(selectedModel.id) : ""}
+                    onChange={(event) => {
+                      setSelectedModelId(Number(event.target.value));
+                      setParamsOpen(false);
+                      setSubmitError(null);
+                    }}
+                    className="h-8 max-w-52 rounded-lg border border-border-warm bg-background px-2 text-xs text-muted-gray outline-none transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal focus:border-[rgba(28,28,28,0.55)]"
+                  >
+                    {selectedTabModels.map((model) => (
+                      <option key={model.id} value={model.id}>{model.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={openAssetPicker}
@@ -826,32 +965,6 @@ export default function WorkspacePage() {
                 className="hidden"
                 onChange={handleReferenceFileChange}
               />
-              {modelsLoading && models.length === 0 && (
-                <span className="px-2 text-xs text-muted-gray">模型加载中...</span>
-              )}
-              {!modelsLoading && modelsError && models.length === 0 && (
-                <span className="px-2 text-xs text-muted-gray">{modelsError}</span>
-              )}
-              {!modelsLoading && !modelsError && quickModels.length === 0 && (
-                <span className="px-2 text-xs text-muted-gray">暂无可用模型</span>
-              )}
-              {modelGroups.map(([type, items]) => (
-                <select
-                  key={type}
-                  value={selectedModel?.type === type ? String(selectedModel.id) : ""}
-                  onChange={(event) => {
-                    setSelectedModelId(Number(event.target.value));
-                    setParamsOpen(false);
-                    setSubmitError(null);
-                  }}
-                  className="h-8 rounded-lg border border-border-warm bg-background px-2 text-xs text-muted-gray outline-none transition-colors hover:border-[rgba(28,28,28,0.4)] hover:text-charcoal focus:border-[rgba(28,28,28,0.55)]"
-                >
-                  <option value="" disabled>{MODEL_TYPE_LABELS[type] ?? `类型 ${type}`}</option>
-                  {items.map((model) => (
-                    <option key={model.id} value={model.id}>{model.name}</option>
-                  ))}
-                </select>
-              ))}
             </div>
             <div className="flex items-center gap-2">
               {selectedModel && (
@@ -908,6 +1021,11 @@ export default function WorkspacePage() {
                   )}
                 </div>
               )}
+              {quickGenerationMode && (
+                <span className="rounded-full border border-border-warm bg-muted px-2.5 py-1 text-xs font-medium text-charcoal">
+                  {QUICK_GENERATION_MODE_LABELS[quickGenerationMode]}
+                </span>
+              )}
               <button
                 onClick={handleSubmit}
                 disabled={!canSubmit}
@@ -916,6 +1034,7 @@ export default function WorkspacePage() {
               >
                 <Send className="size-4" />
               </button>
+            </div>
             </div>
           </div>
           {referenceImage && (
@@ -1006,7 +1125,43 @@ export default function WorkspacePage() {
         </div>
       </div>
 
-      <div className="mt-20 w-full max-w-[840px]">
+      <div className="mt-8 grid w-full max-w-[840px] grid-cols-2 gap-3 md:grid-cols-4">
+        <button
+          type="button"
+          onClick={handleCreateProject}
+          disabled={projectCreating}
+          className="flex h-14 items-center justify-center gap-2 rounded-xl border border-border-warm bg-background px-3 text-sm font-medium text-charcoal transition-colors hover:border-[rgba(28,28,28,0.4)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {projectCreating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+          <span>新建画布</span>
+        </button>
+        <Link
+          href="/templates"
+          className="flex h-14 items-center justify-center gap-2 rounded-xl border border-border-warm bg-background px-3 text-sm font-medium text-charcoal transition-colors hover:border-[rgba(28,28,28,0.4)]"
+        >
+          <LayoutTemplate className="size-4" />
+          <span>从模板开始</span>
+        </Link>
+        <Link
+          href="/community"
+          className="flex h-14 items-center justify-center gap-2 rounded-xl border border-border-warm bg-background px-3 text-sm font-medium text-charcoal transition-colors hover:border-[rgba(28,28,28,0.4)]"
+        >
+          <Compass className="size-4" />
+          <span>浏览社区</span>
+        </Link>
+        <Link
+          href="/assets"
+          className="flex h-14 items-center justify-center gap-2 rounded-xl border border-border-warm bg-background px-3 text-sm font-medium text-charcoal transition-colors hover:border-[rgba(28,28,28,0.4)]"
+        >
+          <Folder className="size-4" />
+          <span>我的资产</span>
+        </Link>
+      </div>
+      {projectCreateError && (
+        <p className="mt-2 w-full max-w-[840px] text-xs text-red-500">{projectCreateError}</p>
+      )}
+
+      <div className="mt-12 w-full max-w-[840px]">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-medium text-charcoal">最近项目</h2>
           <Link
@@ -1017,21 +1172,77 @@ export default function WorkspacePage() {
           </Link>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {recentProjects.map((project) => (
-            <Link
-              key={project.id}
-              href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
-              className="group relative block overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
+        {recentProjects.length === 0 ? (
+          <div className="mt-5 flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={handleCreateProject}
+              disabled={projectCreating}
+              className="flex aspect-square w-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border-warm bg-background text-sm font-medium text-charcoal transition-colors hover:border-[rgba(28,28,28,0.4)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-40"
             >
-              <ProjectCover project={project} />
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pt-10 pb-3 text-center">
-                <p className="text-[11px] font-medium text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>
-              </div>
-            </Link>
-          ))}
-        </div>
+              {projectCreating ? <Loader2 className="size-7 animate-spin text-muted-gray" /> : <Plus className="size-7 text-muted-gray" />}
+              <span>新建项目</span>
+            </button>
+            <p className="text-sm text-muted-gray">还没有项目，从这里开始吧</p>
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <button
+              type="button"
+              onClick={handleCreateProject}
+              disabled={projectCreating}
+              className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border-warm bg-background text-sm font-medium text-charcoal transition-colors hover:border-[rgba(28,28,28,0.4)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {projectCreating ? <Loader2 className="size-7 animate-spin text-muted-gray" /> : <Plus className="size-7 text-muted-gray" />}
+              <span>新建项目</span>
+            </button>
+            {recentProjects.map((project) => (
+              <Link
+                key={project.id}
+                href={`/canvas?projectId=${encodeURIComponent(project.id)}`}
+                className="group relative block overflow-hidden rounded-xl border border-border-warm bg-background transition-colors hover:border-[rgba(28,28,28,0.4)]"
+              >
+                <ProjectCover project={project} />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pt-10 pb-3 text-center">
+                  <p className="text-[11px] font-medium text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{projectRoleLabel(project)} · {formatDate(project.lastOpenedAt)}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
+      {!communityHidden && (
+        <div className="mt-12 w-full max-w-[840px]">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-medium text-charcoal">社区精选</h2>
+            <Link href="/community" className="text-xs text-muted-gray hover:text-charcoal">
+              查看全部 →
+            </Link>
+          </div>
+          <div className="scrollbar-hide mt-5 flex gap-3 overflow-x-auto pb-2">
+            {communityLoading && communityPosts.length === 0 ? (
+              Array.from({ length: 8 }).map((_, index) => (
+                <div key={index} className="w-36 shrink-0">
+                  <div className="aspect-square animate-pulse rounded-[10px] bg-muted" />
+                  <div className="mt-2 h-3 w-28 animate-pulse rounded bg-muted" />
+                </div>
+              ))
+            ) : (
+              communityPosts.map((post) => (
+                <Link
+                  key={post.id}
+                  href={`/community/${encodeURIComponent(String(post.id))}`}
+                  className="group w-36 shrink-0"
+                  title={post.title}
+                >
+                  <CommunityPostCover post={post} />
+                  <p className="mt-2 truncate text-xs font-medium text-charcoal">{post.title}</p>
+                </Link>
+              ))
+            )}
+          </div>
+        </div>
+      )}
       {assetPickerOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"

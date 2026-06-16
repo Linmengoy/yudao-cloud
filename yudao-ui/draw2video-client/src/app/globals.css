@@ -352,4 +352,12 @@
     background: rgb(250, 248, 242);
     box-shadow: none;
   }
+
+  .scrollbar-hide {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
 }

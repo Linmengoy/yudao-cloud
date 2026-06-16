@@ -63,21 +63,24 @@
       </el-form-item>
       <template v-if="formData.proxyEnabled">
         <el-form-item label="代理" prop="proxyId">
-          <el-select
-            v-model="formData.proxyId"
-            class="!w-1/1"
-            clearable
-            filterable
-            placeholder="请选择已配置代理"
-            :loading="proxyLoading"
-          >
-            <el-option
-              v-for="item in proxyList"
-              :key="item.id"
-              :label="`${item.name}（${getOptionLabel(AIGC_PROXY_PROTOCOLS, item.protocol)} ${item.host}:${item.port}）`"
-              :value="item.id!"
-            />
-          </el-select>
+          <div class="flex w-1/1 gap-8px">
+            <el-select
+              v-model="formData.proxyId"
+              class="flex-1"
+              clearable
+              filterable
+              placeholder="请选择已配置代理"
+              :loading="proxyLoading"
+            >
+              <el-option
+                v-for="item in proxyList"
+                :key="item.id"
+                :label="`${item.name}（${getOptionLabel(AIGC_PROXY_PROTOCOLS, item.protocol)} ${item.host}:${item.port}）`"
+                :value="item.id!"
+              />
+            </el-select>
+            <el-button @click="openProxyManage">新建代理</el-button>
+          </div>
         </el-form-item>
       </template>
       <el-form-item label="扩展配置" prop="extraConfig">
@@ -186,11 +189,24 @@ const removeEmptySecret = (data: AigcModelProviderSaveReqVO) => {
   }
 }
 
+const removeLegacyProxyFields = (data: AigcModelProviderSaveReqVO) => {
+  delete data.proxyProtocol
+  delete data.proxyHost
+  delete data.proxyPort
+  delete data.proxyUsername
+  delete data.proxyPassword
+}
+
+const openProxyManage = () => {
+  window.open('/aigc/model/proxy', '_blank', 'noopener,noreferrer')
+}
+
 const submitForm = async () => {
   await formRef.value.validate()
   formLoading.value = true
   try {
     const data = { ...formData.value }
+    removeLegacyProxyFields(data)
     if (!data.proxyEnabled) {
       data.proxyId = undefined
     }
