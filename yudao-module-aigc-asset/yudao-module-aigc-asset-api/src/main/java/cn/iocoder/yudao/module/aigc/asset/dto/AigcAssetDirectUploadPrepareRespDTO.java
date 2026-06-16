@@ -36,4 +36,28 @@ public class AigcAssetDirectUploadPrepareRespDTO {
     @Schema(description = "是否公开访问")
     private Boolean publicAccess;
 
+    @Schema(description = "thumbnail upload URL")
+    private String thumbnailUploadUrl;
+
+    @Schema(description = "thumbnail access URL")
+    private String thumbnailUrl;
+
+    @Schema(description = "thumbnail storage config ID")
+    private Long thumbnailConfigId;
+
+    @Schema(description = "thumbnail storage type")
+    private String thumbnailStorageType;
+
+    @Schema(description = "thumbnail bucket")
+    private String thumbnailBucket;
+
+    @Schema(description = "thumbnail object key")
+    private String thumbnailObjectKey;
+
+    @Schema(description = "thumbnail file path")
+    private String thumbnailPath;
+
+    @Schema(description = "thumbnail public access")
+    private Boolean thumbnailPublicAccess;
+
 }

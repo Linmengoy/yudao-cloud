@@ -96,11 +96,11 @@ function normalizeMetadata(metadata: UploadAssetOptions["metadata"]) {
   return typeof metadata === "string" ? metadata : JSON.stringify(metadata);
 }
 
-async function putFileToStorage(uploadUrl: string, file: File) {
+async function putBlobToStorage(uploadUrl: string, blob: Blob) {
   try {
     const response = await fetch(uploadUrl, {
       method: "PUT",
-      body: new Blob([file]),
+      body: blob,
     });
     if (!response.ok) {
       const body = await response.text().catch(() => "");
@@ -111,6 +111,66 @@ async function putFileToStorage(uploadUrl: string, file: File) {
       throw error;
     }
     throw new Error("Storage upload failed before reaching complete step. Check object storage CORS and whether the signed upload URL is reachable from the browser.");
+  }
+}
+
+async function putFileToStorage(uploadUrl: string, file: File) {
+  await putBlobToStorage(uploadUrl, file);
+}
+
+interface ImageThumbnailUpload {
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  width: number;
+  height: number;
+}
+
+const THUMBNAIL_MAX_SIDE = 512;
+const THUMBNAIL_MIME_TYPE = "image/jpeg";
+const THUMBNAIL_QUALITY = 0.82;
+
+async function createImageThumbnail(file: File): Promise<{ blob: Blob; info: ImageThumbnailUpload } | null> {
+  if (typeof window === "undefined" || !file.type.startsWith("image/") || file.type === "image/svg+xml") {
+    return null;
+  }
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    const loaded = new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Image thumbnail decode failed"));
+    });
+    image.src = objectUrl;
+    await loaded;
+    const ratio = Math.min(1, THUMBNAIL_MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * ratio));
+    const height = Math.max(1, Math.round(image.naturalHeight * ratio));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(image, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, THUMBNAIL_MIME_TYPE, THUMBNAIL_QUALITY)
+    );
+    if (!blob) return null;
+    return {
+      blob,
+      info: {
+        fileName: `${file.name.replace(/\.[^.]+$/, "") || "asset"}-thumbnail.jpg`,
+        mimeType: THUMBNAIL_MIME_TYPE,
+        fileSize: blob.size,
+        width,
+        height,
+      },
+    };
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
   }
 }
 
@@ -132,6 +192,10 @@ export async function uploadAssetAndGetInfo(
   }
 
   await putFileToStorage(presign.uploadUrl, file);
+  const thumbnail = presign.thumbnailUploadUrl && assetType === "IMAGE" ? await createImageThumbnail(file) : null;
+  if (thumbnail && presign.thumbnailUploadUrl) {
+    await putBlobToStorage(presign.thumbnailUploadUrl, thumbnail.blob);
+  }
 
   const asset = await api.post<AigcAsset>("/aigc/asset/upload/complete", {
     uploadToken: presign.uploadToken,
@@ -139,6 +203,11 @@ export async function uploadAssetAndGetInfo(
     height: finiteInteger(options.height),
     duration: finiteNumber(options.duration),
     metadata: normalizeMetadata(options.metadata),
+    thumbnailFileName: thumbnail?.info.fileName,
+    thumbnailMimeType: thumbnail?.info.mimeType,
+    thumbnailFileSize: thumbnail?.info.fileSize,
+    thumbnailWidth: thumbnail?.info.width,
+    thumbnailHeight: thumbnail?.info.height,
   });
   if (!asset?.id) {
     throw new Error("Asset creation failed after storage upload");

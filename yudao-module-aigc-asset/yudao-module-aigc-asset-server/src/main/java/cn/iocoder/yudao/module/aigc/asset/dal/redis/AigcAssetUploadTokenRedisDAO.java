@@ -60,8 +60,27 @@ public class AigcAssetUploadTokenRedisDAO {
 
         private Boolean publicAccess;
 
+        private Long thumbnailConfigId;
+
+        private String thumbnailStorageType;
+
+        private String thumbnailBucket;
+
+        private String thumbnailObjectKey;
+
+        private String thumbnailPath;
+
+        private String thumbnailUrl;
+
+        private Boolean thumbnailPublicAccess;
+
         public static UploadToken of(Long userId, AigcAssetDirectUploadPrepareReqDTO reqDTO,
                 FilePresignPutRespDTO presign) {
+            return of(userId, reqDTO, presign, null);
+        }
+
+        public static UploadToken of(Long userId, AigcAssetDirectUploadPrepareReqDTO reqDTO,
+                FilePresignPutRespDTO presign, FilePresignPutRespDTO thumbnailPresign) {
             return new UploadToken()
                     .setUserId(userId)
                     .setAssetType(reqDTO.getAssetType())
@@ -75,7 +94,14 @@ public class AigcAssetUploadTokenRedisDAO {
                     .setObjectKey(presign.getObjectKey())
                     .setPath(presign.getPath())
                     .setUrl(presign.getUrl())
-                    .setPublicAccess(presign.getPublicAccess());
+                    .setPublicAccess(presign.getPublicAccess())
+                    .setThumbnailConfigId(thumbnailPresign == null ? null : thumbnailPresign.getConfigId())
+                    .setThumbnailStorageType(thumbnailPresign == null ? null : thumbnailPresign.getStorageType())
+                    .setThumbnailBucket(thumbnailPresign == null ? null : thumbnailPresign.getBucket())
+                    .setThumbnailObjectKey(thumbnailPresign == null ? null : thumbnailPresign.getObjectKey())
+                    .setThumbnailPath(thumbnailPresign == null ? null : thumbnailPresign.getPath())
+                    .setThumbnailUrl(thumbnailPresign == null ? null : thumbnailPresign.getUrl())
+                    .setThumbnailPublicAccess(thumbnailPresign == null ? null : thumbnailPresign.getPublicAccess());
         }
 
     }
