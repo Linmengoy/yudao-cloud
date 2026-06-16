@@ -1,0 +1,11 @@
+.git
+node_modules
+build
+dist
+.cache
+Dockerfile
+.dockerignore
+README.md
+*.tar
+*.log
+.env*.local

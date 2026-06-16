@@ -22,16 +22,24 @@ PC
 ./script/deploy-frontend-images.ps1 -Server manman
 ```
 
+使用 Gitea Container Registry 发布，推荐用于生产，避免上传大 tar 包：
+
+```powershell
+./script/deploy-frontend-images.ps1 -Server manman2 -UseRegistry
+```
+
 只发布管理端：
 
 ```powershell
 ./script/deploy-frontend-images.ps1 -Server manman -Target admin
+./script/deploy-frontend-images.ps1 -Server manman2 -Target admin -UseRegistry
 ```
 
 只发布用户端：
 
 ```powershell
 ./script/deploy-frontend-images.ps1 -Server manman -Target client
+./script/deploy-frontend-images.ps1 -Server manman2 -Target client -UseRegistry
 ```
 
 ## 发布策略
@@ -45,6 +53,15 @@ PC
 5. 服务器只执行 `docker load` 和 `docker compose up -d --no-build --force-recreate`。
 
 `--no-build` 是硬约束，避免服务器上误触发前端构建。
+
+Registry 模式的发布链路：
+
+1. 本地 Docker Desktop 执行 `docker buildx build --load`。
+2. 本地把镜像推送到 Gitea Container Registry：`111.228.39.103:3000/root/draw2video-*:<commit>`。
+3. 服务器执行 `docker compose pull`。
+4. 服务器执行 `docker compose up -d --no-build --force-recreate`。
+
+manman2 已配置 Docker 信任 `111.228.39.103:3000` 和 `10.66.0.2:3000` 作为 HTTP registry，并已完成 Docker 登录。你的本地 Docker Desktop 也需要把 `111.228.39.103:3000` 加到 insecure registries，或后续给 Gitea registry 配置 HTTPS 域名。
 
 ## 关键配置
 

@@ -11,6 +11,8 @@ TARGET="all"
 IMAGE_TAG=""
 ARCHIVE_NAME=""
 COMPOSE_FILE="docker-compose.frontend.yml"
+USE_REGISTRY=0
+REGISTRY="111.228.39.103:3000/root"
 SSH_KEY="$HOME/.ssh/jd_ssh_5675.pem"
 SKIP_BUILD=0
 SKIP_SAVE=0
@@ -34,6 +36,8 @@ Options:
   --image-tag TAG              Docker image tag, default current git SHA
   --archive-name NAME          Image archive name
   --compose-file NAME          Compose file name, default docker-compose.frontend.yml
+  --use-registry               Push images to Gitea registry and deploy by docker pull
+  --registry REGISTRY          Registry prefix, default 111.228.39.103:3000/root
   --ssh-key PATH               SSH private key, default ~/.ssh/jd_ssh_5675.pem
   --skip-build                 Skip docker buildx build
   --skip-save                  Skip docker save
@@ -89,6 +93,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --compose-file)
       COMPOSE_FILE="${2:-}"
+      shift 2
+      ;;
+    --use-registry)
+      USE_REGISTRY=1
+      shift
+      ;;
+    --registry)
+      REGISTRY="${2:-}"
       shift 2
       ;;
     --ssh-key)
@@ -162,19 +174,23 @@ fi
 
 ARCHIVE_PATH="$ROOT_DIR/$ARCHIVE_NAME"
 IMAGES=()
+REGISTRY_IMAGES=()
 SERVICES=()
 
 if [[ "$TARGET" == "all" || "$TARGET" == "admin" ]]; then
   IMAGES+=("draw2video-admin:$IMAGE_TAG")
+  REGISTRY_IMAGES+=("$REGISTRY/draw2video-admin:$IMAGE_TAG")
   SERVICES+=("draw2video-admin")
 fi
 
 if [[ "$TARGET" == "all" || "$TARGET" == "client" ]]; then
   IMAGES+=("draw2video-client:$IMAGE_TAG")
+  REGISTRY_IMAGES+=("$REGISTRY/draw2video-client:$IMAGE_TAG")
   SERVICES+=("draw2video-client")
 fi
 if [[ "$TARGET" == "all" || "$TARGET" == "guide" ]]; then
   IMAGES+=("draw2video-guide:$IMAGE_TAG")
+  REGISTRY_IMAGES+=("$REGISTRY/draw2video-guide:$IMAGE_TAG")
   SERVICES+=("draw2video-guide")
 fi
 
@@ -293,24 +309,38 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
   fi
 fi
 
-if [[ "$SKIP_SAVE" -eq 0 ]]; then
+if [[ "$USE_REGISTRY" -eq 1 ]]; then
+  step "Push frontend images to registry"
+  for i in "${!IMAGES[@]}"; do
+    run docker tag "${IMAGES[$i]}" "${REGISTRY_IMAGES[$i]}"
+    run docker push "${REGISTRY_IMAGES[$i]}"
+  done
+elif [[ "$SKIP_SAVE" -eq 0 ]]; then
   step "Save frontend images"
   save_docker_images "$ARCHIVE_PATH" "${IMAGES[@]}"
 fi
 
 if [[ "$SKIP_UPLOAD" -eq 0 ]]; then
-  step "Upload image archive"
+  step "Prepare remote compose file"
   ssh_run "$SERVER" "mkdir -p '$REMOTE_DIR'"
   if [[ -f "$COMPOSE_SOURCE_PATH" ]]; then
     scp_run "$COMPOSE_SOURCE_PATH" "${SERVER}:${REMOTE_DIR}/${COMPOSE_FILE}"
   else
     echo "Warning: compose file not found locally: $COMPOSE_SOURCE_PATH. Remote compose file will be reused." >&2
   fi
-  scp_run "$ARCHIVE_PATH" "${SERVER}:${REMOTE_DIR}/${ARCHIVE_NAME}"
 
-  step "Load images and restart containers"
-  remote_command="cd '$REMOTE_DIR'; docker load -i '$ARCHIVE_NAME'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' docker compose -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
-  ssh_run "$SERVER" "$remote_command"
+  if [[ "$USE_REGISTRY" -eq 1 ]]; then
+    step "Pull images and restart containers"
+    remote_command="cd '$REMOTE_DIR'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REGISTRY/' docker compose -f '$COMPOSE_FILE' pull ${SERVICES[*]}; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REGISTRY/' docker compose -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
+    ssh_run "$SERVER" "$remote_command"
+  else
+    step "Upload image archive"
+    scp_run "$ARCHIVE_PATH" "${SERVER}:${REMOTE_DIR}/${ARCHIVE_NAME}"
+
+    step "Load images and restart containers"
+    remote_command="cd '$REMOTE_DIR'; docker load -i '$ARCHIVE_NAME'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' docker compose -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
+    ssh_run "$SERVER" "$remote_command"
+  fi
 fi
 
 printf '\nDone\n'

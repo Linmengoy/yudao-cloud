@@ -1,13 +1,13 @@
 services:
   draw2video-admin:
-    image: draw2video-admin:${FRONTEND_IMAGE_TAG:-latest}
+    image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-admin:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-admin
     restart: always
     ports:
       - "8081:80"
 
   draw2video-client:
-    image: draw2video-client:${FRONTEND_IMAGE_TAG:-latest}
+    image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-client:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-client
     restart: always
     environment:
@@ -25,7 +25,7 @@ services:
       - "13000:3000"
 
   draw2video-guide:
-    image: draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}
+    image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-guide
     restart: always
     ports:

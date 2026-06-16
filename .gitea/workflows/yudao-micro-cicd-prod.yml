@@ -23,9 +23,6 @@ on:
           - aigc-safety
           - aigc-workflow
           - aigc-community
-          - draw2video-admin
-          - draw2video-client
-          - draw2video-guide
       previous_stable_image_tag:
         description: 'Previous stable image tag for rollback evidence, usually a 12-char commit SHA'
         required: false
@@ -93,9 +90,6 @@ jobs:
             aigc-workflow) module="yudao-module-aigc-workflow/yudao-module-aigc-workflow-server" ;;
             aigc-community) module="yudao-module-aigc-community/yudao-module-aigc-community-server" ;;
             aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
-            draw2video-admin) module="frontend" ;;
-            draw2video-client) module="frontend" ;;
-            draw2video-guide) module="frontend" ;;
             *) echo "Unknown service: ${service}" && exit 1 ;;
           esac
 
@@ -139,9 +133,7 @@ jobs:
           echo "Build service: ${BUILD_SERVICE}"
           echo "Build module: ${BUILD_MODULE}"
 
-          if [ "${BUILD_MODULE}" = "frontend" ]; then
-            echo "Skip Maven build for frontend service: ${BUILD_SERVICE}"
-          elif [ "${BUILD_MODULE}" = "all" ]; then
+          if [ "${BUILD_MODULE}" = "all" ]; then
             mvn clean package -DskipTests
           else
             mvn clean package -pl "${BUILD_MODULE}" -am -DskipTests
@@ -152,7 +144,8 @@ jobs:
           echo "Build service: ${BUILD_SERVICE}"
 
           if [ "${BUILD_SERVICE}" = "all" ]; then
-            docker compose -f script/docker/docker-compose-micro-prod.yml build
+            services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway"
+            docker compose -f script/docker/docker-compose-micro-prod.yml build ${services}
           else
             docker compose -f script/docker/docker-compose-micro-prod.yml build "${BUILD_SERVICE}"
           fi
@@ -199,7 +192,7 @@ jobs:
           cd "${deploy_dir}"
           export MICRO_IMAGE_TAG="${MICRO_IMAGE_TAG}" FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
           if [ "${BUILD_SERVICE}" = "all" ]; then
-            services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway draw2video-admin draw2video-client draw2video-guide"
+            services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway"
             docker compose -f docker-compose-micro.yml up -d --no-deps ${services}
           else
             docker compose -f docker-compose-micro.yml up -d --no-deps "${BUILD_SERVICE}"
@@ -217,7 +210,7 @@ jobs:
           docker compose -f docker-compose-micro.yml ps
 
           if [ "${BUILD_SERVICE}" = "all" ]; then
-            verify_services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway draw2video-admin draw2video-client draw2video-guide"
+            verify_services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway"
           else
             verify_services="${BUILD_SERVICE}"
           fi

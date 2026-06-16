@@ -13,6 +13,8 @@ param(
   [string]$ImageTag = "",
   [string]$ArchiveName = "",
   [string]$ComposeFile = "docker-compose.frontend.yml",
+  [switch]$UseRegistry,
+  [string]$Registry = "111.228.39.103:3000/root",
   [switch]$SkipBuild,
   [switch]$SkipSave,
   [switch]$SkipUpload
@@ -44,17 +46,21 @@ if ([string]::IsNullOrWhiteSpace($ArchiveName)) {
 $ArchivePath = Join-Path $RootDir $ArchiveName
 
 $Images = @()
+$RegistryImages = @()
 $Services = @()
 if ($Target -eq "all" -or $Target -eq "admin") {
   $Images += "draw2video-admin:$ImageTag"
+  $RegistryImages += "${Registry}/draw2video-admin:$ImageTag"
   $Services += "draw2video-admin"
 }
 if ($Target -eq "all" -or $Target -eq "client") {
   $Images += "draw2video-client:$ImageTag"
+  $RegistryImages += "${Registry}/draw2video-client:$ImageTag"
   $Services += "draw2video-client"
 }
 if ($Target -eq "all" -or $Target -eq "guide") {
   $Images += "draw2video-guide:$ImageTag"
+  $RegistryImages += "${Registry}/draw2video-guide:$ImageTag"
   $Services += "draw2video-guide"
 }
 
@@ -178,26 +184,43 @@ if (!$SkipBuild) {
   }
 }
 
-if (!$SkipSave) {
+if ($UseRegistry) {
+  Invoke-Step "Push frontend images to registry" {
+    for ($i = 0; $i -lt $Images.Count; $i++) {
+      Run-Command "docker" @("tag", $Images[$i], $RegistryImages[$i])
+      Run-Command "docker" @("push", $RegistryImages[$i])
+    }
+  }
+} elseif (!$SkipSave) {
   Invoke-Step "Save frontend images" {
     Save-DockerImages $ArchivePath $Images
   }
 }
 
 if (!$SkipUpload) {
-  Invoke-Step "Upload image archive" {
+  Invoke-Step "Prepare remote compose file" {
     Run-Command "ssh" @($Server, "mkdir -p $RemoteDir")
     if (Test-Path $ComposeSourcePath) {
       Run-Command "scp" @($ComposeSourcePath, "${Server}:${RemoteDir}/${ComposeFile}")
     } else {
       Write-Warning "Compose file not found locally: $ComposeSourcePath. Remote compose file will be reused."
     }
-    Run-Command "scp" @($ArchivePath, "${Server}:${RemoteDir}/${ArchiveName}")
   }
 
-  Invoke-Step "Load images and restart containers" {
-    $RemoteCommand = "cd $RemoteDir; docker load -i $ArchiveName; FRONTEND_IMAGE_TAG=$ImageTag docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
-    Run-Command "ssh" @($Server, $RemoteCommand)
+  if ($UseRegistry) {
+    Invoke-Step "Pull images and restart containers" {
+      $RemoteCommand = "cd $RemoteDir; FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${Registry}/ docker compose -f $ComposeFile pull $($Services -join ' '); FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${Registry}/ docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
+      Run-Command "ssh" @($Server, $RemoteCommand)
+    }
+  } else {
+    Invoke-Step "Upload image archive" {
+      Run-Command "scp" @($ArchivePath, "${Server}:${RemoteDir}/${ArchiveName}")
+    }
+
+    Invoke-Step "Load images and restart containers" {
+      $RemoteCommand = "cd $RemoteDir; docker load -i $ArchiveName; FRONTEND_IMAGE_TAG=$ImageTag docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
+      Run-Command "ssh" @($Server, $RemoteCommand)
+    }
   }
 }
 
