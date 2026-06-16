@@ -3748,7 +3748,6 @@ function CanvasFlow() {
         multiSelectionKeyCode={keyboardEditingNodeId ? null : undefined}
         panActivationKeyCode={keyboardEditingNodeId ? null : "Space"}
         disableKeyboardA11y={Boolean(keyboardEditingNodeId)}
-        fitView
         onlyRenderVisibleElements
         defaultEdgeOptions={{
           type: "signal",
