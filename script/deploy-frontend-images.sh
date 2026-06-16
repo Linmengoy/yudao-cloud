@@ -13,6 +13,7 @@ ARCHIVE_NAME=""
 COMPOSE_FILE="docker-compose.frontend.yml"
 USE_REGISTRY=0
 REGISTRY="111.228.39.103:3000/root"
+REMOTE_REGISTRY=""
 SSH_KEY="$HOME/.ssh/jd_ssh_5675.pem"
 SKIP_BUILD=0
 SKIP_SAVE=0
@@ -38,6 +39,7 @@ Options:
   --compose-file NAME          Compose file name, default docker-compose.frontend.yml
   --use-registry               Push images to Gitea registry and deploy by docker pull
   --registry REGISTRY          Registry prefix, default 111.228.39.103:3000/root
+  --remote-registry REGISTRY   Registry prefix used by remote docker pull
   --ssh-key PATH               SSH private key, default ~/.ssh/jd_ssh_5675.pem
   --skip-build                 Skip docker buildx build
   --skip-save                  Skip docker save
@@ -101,6 +103,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --registry)
       REGISTRY="${2:-}"
+      shift 2
+      ;;
+    --remote-registry)
+      REMOTE_REGISTRY="${2:-}"
       shift 2
       ;;
     --ssh-key)
@@ -169,6 +175,14 @@ if [[ -z "$ARCHIVE_NAME" ]]; then
     ARCHIVE_NAME="draw2video-frontend.tar"
   else
     ARCHIVE_NAME="draw2video-${TARGET}.tar"
+  fi
+fi
+
+if [[ -z "$REMOTE_REGISTRY" ]]; then
+  if [[ "$SERVER" == "root@111.228.39.103" || "$SERVER" == "manman" ]]; then
+    REMOTE_REGISTRY="127.0.0.1:3000/root"
+  else
+    REMOTE_REGISTRY="$REGISTRY"
   fi
 fi
 
@@ -331,7 +345,7 @@ if [[ "$SKIP_UPLOAD" -eq 0 ]]; then
 
   if [[ "$USE_REGISTRY" -eq 1 ]]; then
     step "Pull images and restart containers"
-    remote_command="cd '$REMOTE_DIR'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REGISTRY/' docker compose -f '$COMPOSE_FILE' pull ${SERVICES[*]}; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REGISTRY/' docker compose -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
+    remote_command="cd '$REMOTE_DIR'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REMOTE_REGISTRY/' docker compose -f '$COMPOSE_FILE' pull ${SERVICES[*]}; FRONTEND_IMAGE_TAG='$IMAGE_TAG' FRONTEND_IMAGE_REGISTRY_PREFIX='$REMOTE_REGISTRY/' docker compose -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
     ssh_run "$SERVER" "$remote_command"
   else
     step "Upload image archive"

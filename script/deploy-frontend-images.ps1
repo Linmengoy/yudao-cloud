@@ -15,6 +15,7 @@ param(
   [string]$ComposeFile = "docker-compose.frontend.yml",
   [switch]$UseRegistry,
   [string]$Registry = "111.228.39.103:3000/root",
+  [string]$RemoteRegistry = "",
   [switch]$SkipBuild,
   [switch]$SkipSave,
   [switch]$SkipUpload
@@ -40,6 +41,14 @@ if ([string]::IsNullOrWhiteSpace($ArchiveName)) {
     $ArchiveName = "draw2video-frontend.tar"
   } else {
     $ArchiveName = "draw2video-${Target}.tar"
+  }
+}
+
+if ([string]::IsNullOrWhiteSpace($RemoteRegistry)) {
+  if ($Server -eq "manman" -or $Server -eq "root@111.228.39.103") {
+    $RemoteRegistry = "127.0.0.1:3000/root"
+  } else {
+    $RemoteRegistry = $Registry
   }
 }
 
@@ -209,7 +218,7 @@ if (!$SkipUpload) {
 
   if ($UseRegistry) {
     Invoke-Step "Pull images and restart containers" {
-      $RemoteCommand = "cd $RemoteDir; FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${Registry}/ docker compose -f $ComposeFile pull $($Services -join ' '); FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${Registry}/ docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
+      $RemoteCommand = "cd $RemoteDir; FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${RemoteRegistry}/ docker compose -f $ComposeFile pull $($Services -join ' '); FRONTEND_IMAGE_TAG=$ImageTag FRONTEND_IMAGE_REGISTRY_PREFIX=${RemoteRegistry}/ docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
       Run-Command "ssh" @($Server, $RemoteCommand)
     }
   } else {

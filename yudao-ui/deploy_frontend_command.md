@@ -16,29 +16,32 @@ PC
 
 ## 发布命令
 
-全量发布用户端和管理端：
+全量发布前端服务：
 
 ```powershell
-./script/deploy-frontend-images.ps1 -Server manman
+./script/deploy-frontend-images.ps1 -Server manman -UseRegistry
+./script/deploy-frontend-images.ps1 -Server manman2 -UseRegistry
 ```
 
-使用 Gitea Container Registry 发布，推荐用于生产，避免上传大 tar 包：
+manman 是测试环境，manman2 是生产环境。两边都推荐使用 Gitea Container Registry 发布，避免上传大 tar 包。
+
+如果只想临时走旧的 tar 包模式，可以去掉 `-UseRegistry`：
 
 ```powershell
-./script/deploy-frontend-images.ps1 -Server manman2 -UseRegistry
+./script/deploy-frontend-images.ps1 -Server manman -Target admin
 ```
 
 只发布管理端：
 
 ```powershell
-./script/deploy-frontend-images.ps1 -Server manman -Target admin
+./script/deploy-frontend-images.ps1 -Server manman -Target admin -UseRegistry
 ./script/deploy-frontend-images.ps1 -Server manman2 -Target admin -UseRegistry
 ```
 
 只发布用户端：
 
 ```powershell
-./script/deploy-frontend-images.ps1 -Server manman -Target client
+./script/deploy-frontend-images.ps1 -Server manman -Target client -UseRegistry
 ./script/deploy-frontend-images.ps1 -Server manman2 -Target client -UseRegistry
 ```
 
@@ -61,7 +64,15 @@ Registry 模式的发布链路：
 3. 服务器执行 `docker compose pull`。
 4. 服务器执行 `docker compose up -d --no-build --force-recreate`。
 
-manman2 已配置 Docker 信任 `111.228.39.103:3000` 和 `10.66.0.2:3000` 作为 HTTP registry，并已完成 Docker 登录。你的本地 Docker Desktop 也需要把 `111.228.39.103:3000` 加到 insecure registries，或后续给 Gitea registry 配置 HTTPS 域名。
+manman 和 manman2 都已配置 Docker 信任 `111.228.39.103:3000` 和 `10.66.0.2:3000` 作为 HTTP registry。由于 manman 与 Gitea Registry 在同一台机器上，脚本默认本机推送到 `111.228.39.103:3000/root`，manman 远端拉取时使用 `127.0.0.1:3000/root`；manman2 远端拉取时使用 `111.228.39.103:3000/root`。
+
+如需手动指定远端拉取地址，可以使用：
+
+```powershell
+./script/deploy-frontend-images.ps1 -Server manman -UseRegistry -RemoteRegistry 127.0.0.1:3000/root
+```
+
+你的本地 Docker Desktop 也需要把 `111.228.39.103:3000` 加到 insecure registries，或后续给 Gitea registry 配置 HTTPS 域名。
 
 ## 关键配置
 
