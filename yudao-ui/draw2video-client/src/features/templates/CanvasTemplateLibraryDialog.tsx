@@ -5,9 +5,9 @@ import { AnimatePresence, motion } from "motion/react";
 import { ChevronDown, Loader2, Search, X } from "lucide-react";
 import { getPromptTemplateModels, getPromptTemplatePage } from "./template-api";
 import type { PromptTemplate, PromptTemplateModel } from "./template-types";
-import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 24;
+const LOAD_MORE_THRESHOLD = 320;
 
 type CanvasTemplateLibraryDialogProps = {
   open: boolean;
@@ -17,6 +17,14 @@ type CanvasTemplateLibraryDialogProps = {
 
 function getModelLabel(model: PromptTemplateModel) {
   return model.modelName || model.modelCode;
+}
+
+function getTemplateModelLabel(template: PromptTemplate, models: PromptTemplateModel[], selectedModel: PromptTemplateModel | null) {
+  if (template.modelName) return template.modelName;
+  if (template.modelCode) {
+    return models.find((model) => model.modelCode === template.modelCode)?.modelName || template.modelCode;
+  }
+  return selectedModel?.modelName || selectedModel?.modelCode || "";
 }
 
 export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasTemplateLibraryDialogProps) {
@@ -99,6 +107,14 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
     onClose();
   }, [onClose, onSelect]);
 
+  const handleScroll = useCallback((event: React.UIEvent<HTMLElement>) => {
+    const target = event.currentTarget;
+    const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (distanceToBottom > LOAD_MORE_THRESHOLD) return;
+    if (!hasMore || loading || loadingMore || error) return;
+    void loadPage(pageNo + 1, false);
+  }, [error, hasMore, loadPage, loading, loadingMore, pageNo]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -173,7 +189,7 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
               </label>
             </div>
 
-            <main className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <main className="min-h-0 flex-1 overflow-y-auto px-6 py-5" onScroll={handleScroll}>
               {error ? (
                 <div className="flex h-full items-center justify-center text-sm text-red-600">{error}</div>
               ) : loading ? (
@@ -187,7 +203,9 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-                  {items.map((template) => (
+                  {items.map((template) => {
+                    const modelLabel = getTemplateModelLabel(template, models, selectedModel);
+                    return (
                     <button
                       key={template.id}
                       type="button"
@@ -217,30 +235,22 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
                           {template.promptPreview || template.prompt}
                         </p>
                         <div className="flex items-center justify-between gap-2 text-[11px] text-muted-gray">
-                          <span className="truncate">{template.modelName || selectedModel?.modelName || "未标注模型"}</span>
+                          {modelLabel ? <span className="truncate">{modelLabel}</span> : <span />}
                           {template.category ? <span className="shrink-0 truncate">{template.category}</span> : null}
                         </div>
                       </div>
                     </button>
-                  ))}
+                    );
+                  })}
+                  {loadingMore ? (
+                    <div className="col-span-full flex items-center justify-center gap-2 py-4 text-sm text-muted-gray">
+                      <Loader2 className="size-4 animate-spin" />
+                      加载更多素材
+                    </div>
+                  ) : null}
                 </div>
               )}
             </main>
-
-            <footer className="flex shrink-0 items-center justify-between border-t border-border-warm px-6 py-3 text-xs text-muted-gray">
-              <span>已显示 {items.length} / {total}</span>
-              <button
-                type="button"
-                disabled={!hasMore || loadingMore}
-                onClick={() => void loadPage(pageNo + 1, false)}
-                className={cn(
-                  "rounded-full px-4 py-2 text-sm transition-colors",
-                  hasMore ? "bg-charcoal text-off-white hover:opacity-90" : "bg-muted text-muted-gray"
-                )}
-              >
-                {loadingMore ? "加载中..." : hasMore ? "加载更多" : "没有更多"}
-              </button>
-            </footer>
           </motion.div>
         </motion.div>
       )}
