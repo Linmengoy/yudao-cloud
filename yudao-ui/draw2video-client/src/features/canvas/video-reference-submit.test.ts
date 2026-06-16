@@ -54,4 +54,20 @@ describe("video reference submit helpers", () => {
       referenceImageIds: ["sketch-node", "image-node"],
     });
   });
+
+  it("omits runtime reference image urls for server canvas submissions", () => {
+    const params = appendReferenceSubmitParams(
+      {},
+      [{ nodeId: "image-node", data: imageData({ outputAssetId: 202 }) }],
+      ["data:image/png;base64,abc", "https://signed.example.com/reference.png"],
+      { allowRuntimeImageUrls: false },
+    );
+
+    expect(params).toEqual({
+      referenceAssetIds: [202],
+      referenceImageIds: ["image-node"],
+    });
+    expect(JSON.stringify(params)).not.toContain("data:image");
+    expect(JSON.stringify(params)).not.toContain("signed.example.com");
+  });
 });

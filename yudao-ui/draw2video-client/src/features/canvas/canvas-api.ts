@@ -215,17 +215,21 @@ export const canvasApi = {
 
   getSnapshot: (projectId: string | number) => api.get<CanvasSnapshotRecord | null>(`/canvas/projects/${projectId}/snapshot`),
 
-  saveSnapshot: (projectId: string | number, input: SaveCanvasSnapshotInput) =>
-    api.post<CanvasSnapshotRecord>(`/canvas/projects/${projectId}/snapshot`, {
+  saveSnapshot: (projectId: string | number, input: SaveCanvasSnapshotInput) => {
+    const nodes = sanitizeNodesForCanvasSnapshot(input.nodes);
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const edges = input.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+    return api.post<CanvasSnapshotRecord>(`/canvas/projects/${projectId}/snapshot`, {
       projectId,
       baseVersion: input.baseVersion,
       clientId: input.clientId,
-      nodesJson: JSON.stringify(input.nodes),
-      edgesJson: JSON.stringify(input.edges),
+      nodesJson: JSON.stringify(nodes),
+      edgesJson: JSON.stringify(edges),
       viewportJson: input.viewport ? JSON.stringify(input.viewport) : undefined,
-      nodeCount: input.nodeCount ?? input.nodes.length,
+      nodeCount: input.nodeCount ?? nodes.length,
       assetCount: input.assetCount ?? 0,
-    }),
+    });
+  },
 
   getOperations: (projectId: string | number, afterVersion = 0) =>
     api.get<CanvasOperationRecord[]>(`/canvas/projects/${projectId}/operations?afterVersion=${afterVersion}`),

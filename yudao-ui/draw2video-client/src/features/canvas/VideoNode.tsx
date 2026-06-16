@@ -1674,6 +1674,7 @@ export function VideoNodeComponent({
       },
       orderedReferenceImages,
       resolvedReferenceImages,
+      { allowRuntimeImageUrls: !isServerCanvasProjectId(new URLSearchParams(window.location.search).get("projectId")) },
     );
 
     const projectId = new URLSearchParams(window.location.search).get(

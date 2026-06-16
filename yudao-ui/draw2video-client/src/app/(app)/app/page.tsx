@@ -234,21 +234,11 @@ function buildReferenceInputParams(referenceImages: ReferenceImage[]) {
   if (referenceImages.length === 0) return {};
   const referenceAssetIds = referenceImages.map((image) => image.assetId);
   const referenceImageIds = referenceAssetIds.map(String);
-  const referenceImageUrls = referenceImages.map((image) => image.previewUrl).filter(Boolean) as string[];
 
   return {
     referenceAssetIds,
     referenceImageIds,
-    referenceImages: referenceImageUrls,
-    referencePreviewUrls: referenceImageUrls,
     inputImageIds: referenceImageIds,
-    inputImageUrls: referenceImageUrls,
-    inputImages: referenceImages.map((image) => ({
-      imageId: String(image.assetId),
-      fileName: image.fileName,
-      dataUrl: image.previewUrl ?? "",
-      mimeType: image.mimeType,
-    })),
   };
 }
 
@@ -813,7 +803,6 @@ export default function WorkspacePage() {
     try {
       const isVideo = selectedModel.type === 3;
       const firstReferenceImage = referenceImages[0] ?? null;
-      const referencePreviewUrls = referenceImages.map((image) => image.previewUrl).filter(Boolean) as string[];
       const result = await canvasApi.quickGenerateProject({
         name: projectName,
         prompt: promptText,
@@ -830,8 +819,6 @@ export default function WorkspacePage() {
         }),
         referenceAssetId: firstReferenceImage?.assetId ?? null,
         referenceAssetIds: referenceImages.map((image) => image.assetId),
-        referencePreviewUrl: firstReferenceImage?.previewUrl ?? null,
-        referencePreviewUrls,
       });
       router.push(`/canvas?projectId=${encodeURIComponent(String(result.projectId))}`);
       setPrompt("");

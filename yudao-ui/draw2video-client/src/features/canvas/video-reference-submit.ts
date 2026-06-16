@@ -5,6 +5,10 @@ type ReferenceInput = {
   data: ImageNodeData | SketchNodeData;
 };
 
+export type ReferenceSubmitOptions = {
+  allowRuntimeImageUrls?: boolean;
+};
+
 export function getReferenceAssetId(data: ImageNodeData | SketchNodeData) {
   if ("assetId" in data && typeof data.assetId === "number")
     return data.assetId;
@@ -23,13 +27,15 @@ export function appendReferenceSubmitParams(
   params: Record<string, unknown>,
   references: ReferenceInput[],
   referenceImages: string[],
+  options: ReferenceSubmitOptions = {},
 ) {
   const referenceAssetIds = references
     .map((image) => getReferenceAssetId(image.data))
     .filter((assetId): assetId is number => typeof assetId === "number");
+  const allowRuntimeImageUrls = options.allowRuntimeImageUrls ?? true;
 
   if (referenceAssetIds.length > 0) params.referenceAssetIds = referenceAssetIds;
-  if (referenceImages.length > 0) params.referenceImages = referenceImages;
+  if (allowRuntimeImageUrls && referenceImages.length > 0) params.referenceImages = referenceImages;
   if (references.length > 0) {
     params.referenceImageIds = references.map((img) => img.nodeId);
   }
