@@ -349,6 +349,73 @@ class ReviewReadyContractTest(unittest.TestCase):
             self.assertIn("previous stable image tag:", workflow)
             self.assertIn("rollback command:", workflow)
 
+    def test_issue_214_admin_asset_pages_use_i18n_keys_without_chinese_literals(self):
+        target_paths = [
+            "yudao-ui/draw2video-admin/src/views/aigc/asset/index.vue",
+            "yudao-ui/draw2video-admin/src/views/aigc/asset/download-log/index.vue",
+            "yudao-ui/draw2video-admin/src/views/aigc/asset/prompt-template/index.vue",
+            "yudao-ui/draw2video-admin/src/api/aigc/asset/index.ts",
+            "yudao-ui/draw2video-admin/src/api/aigc/asset/prompt-template/index.ts",
+        ]
+        target_text = "\n".join(read(path) for path in target_paths)
+        zh_locale = read("yudao-ui/draw2video-admin/src/locales/zh-CN.ts")
+        en_locale = read("yudao-ui/draw2video-admin/src/locales/en.ts")
+
+        self.assertNotRegex(target_text, r"[\u4e00-\u9fff]")
+        for vue_path in target_paths[:3]:
+            vue = read(vue_path)
+            self.assertIn("const { t } = useI18n()", vue)
+
+        for key in self._i18n_keys(target_text):
+            if key.startswith("aigc.asset."):
+                self.assertTrue(self._locale_has_path(zh_locale, key), key)
+                self.assertTrue(self._locale_has_path(en_locale, key), key)
+
+        for required in [
+            "aigc.asset.assetTypes.image",
+            "aigc.asset.sourceTypes.generate",
+            "aigc.asset.auditStatus.pending",
+            "aigc.asset.visibility.public",
+            "aigc.asset.promptTemplate.rules.casesJsonFile",
+            "aigc.asset.promptTemplate.result.totalCount",
+            "aigc.asset.promptTemplate.errors.batchUploadFailed",
+        ]:
+            self.assertTrue(self._locale_has_path(zh_locale, required), required)
+            self.assertTrue(self._locale_has_path(en_locale, required), required)
+
+        asset_api = read("yudao-ui/draw2video-admin/src/api/aigc/asset/index.ts")
+        prompt_template_api = read("yudao-ui/draw2video-admin/src/api/aigc/asset/prompt-template/index.ts")
+        self.assertIn("url: '/aigc/asset/page'", asset_api)
+        self.assertIn("url: '/aigc/asset/audit'", asset_api)
+        self.assertIn("url: '/aigc/asset/prompt-template/import-awesome-gpt-image-files'", prompt_template_api)
+
+        aigc_en_block = self._object_block(en_locale, "aigc")
+        self.assertNotRegex(aigc_en_block, r"[\u4e00-\u9fff]")
+
+    def test_issue_215_admin_aigc_i18n_scan_records_remaining_work_and_matching_locale_paths(self):
+        scan = read("yudao-ui/draw2video-admin/src/views/aigc/i18n-hardcoded-scan-20260616.md")
+        zh_locale = read("yudao-ui/draw2video-admin/src/locales/zh-CN.ts")
+        en_locale = read("yudao-ui/draw2video-admin/src/locales/en.ts")
+
+        for required in [
+            "src/views/aigc/",
+            "src/api/aigc/",
+            "Asset pages already migrated",
+            "Remaining user-visible Chinese by area:",
+            "Model tenant and usage pages",
+            "Billing pages",
+            "Safety pages",
+            "Release notes",
+            'rg -n "[\\u4e00-\\u9fff]"',
+        ]:
+            self.assertIn(required, scan)
+
+        zh_aigc_paths = self._locale_leaf_paths(zh_locale, "aigc")
+        en_aigc_paths = self._locale_leaf_paths(en_locale, "aigc")
+        self.assertEqual(zh_aigc_paths, en_aigc_paths)
+        self.assertIn("aigc.asset.promptTemplate.importTip", zh_aigc_paths)
+        self.assertIn("aigc.model.options.capabilities.textToImage", zh_aigc_paths)
+
     def _setter_for(self, field: str, source: str) -> str:
         suffix = field[0].upper() + field[1:]
         source_getters = {
@@ -378,6 +445,123 @@ class ReviewReadyContractTest(unittest.TestCase):
         if field == "thumbnailPublicAccess":
             return "Boolean"
         return "String"
+
+    def _i18n_keys(self, text: str) -> set[str]:
+        return set(re.findall(r"\bt\('([^']+)'\)", text))
+
+    def _locale_has_path(self, locale_text: str, dotted_path: str) -> bool:
+        keys = dotted_path.split(".")
+        block = locale_text
+        for key in keys:
+            if not re.search(rf"(?:^|[\s,]){re.escape(key)}\s*:", block):
+                return False
+            if key != keys[-1]:
+                block = self._object_block(block, key)
+        return True
+
+    def _locale_leaf_paths(self, locale_text: str, root_key: str) -> set[str]:
+        block = self._object_block(locale_text, root_key)
+        return {f"{root_key}.{path}" for path in self._leaf_paths(block)}
+
+    def _leaf_paths(self, block: str, prefix: str = "") -> set[str]:
+        paths: set[str] = set()
+        index = 1
+        while index < len(block) - 1:
+            match = re.search(r"([A-Za-z0-9_]+)\s*:", block[index:])
+            if not match:
+                break
+            key_start = index + match.start(1)
+            key = match.group(1)
+            value_start = index + match.end()
+            if self._inside_string(block, key_start):
+                index = value_start
+                continue
+            path = f"{prefix}.{key}" if prefix else key
+            next_value = self._skip_ws(block, value_start)
+            if next_value < len(block) and block[next_value] == "{":
+                child = self._balanced_block(block, next_value)
+                paths.update(self._leaf_paths(child, path))
+                index = next_value + len(child)
+            else:
+                paths.add(path)
+                index = self._skip_value(block, next_value)
+        return paths
+
+    def _object_block(self, text: str, key: str) -> str:
+        match = re.search(rf"(?:^|[\s,]){re.escape(key)}\s*:\s*\{{", text)
+        self.assertIsNotNone(match, key)
+        brace_index = text.find("{", match.start())
+        return self._balanced_block(text, brace_index)
+
+    def _balanced_block(self, text: str, brace_index: int) -> str:
+        depth = 0
+        quote = ""
+        escaped = False
+        for index in range(brace_index, len(text)):
+            char = text[index]
+            if quote:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = ""
+                continue
+            if char in {"'", '"', "`"}:
+                quote = char
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[brace_index:index + 1]
+        self.fail("Unbalanced locale object block")
+
+    def _inside_string(self, text: str, position: int) -> bool:
+        quote = ""
+        escaped = False
+        for char in text[:position]:
+            if quote:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = ""
+            elif char in {"'", '"', "`"}:
+                quote = char
+        return bool(quote)
+
+    def _skip_ws(self, text: str, index: int) -> int:
+        while index < len(text) and text[index].isspace():
+            index += 1
+        return index
+
+    def _skip_value(self, text: str, index: int) -> int:
+        quote = ""
+        escaped = False
+        depth = 0
+        while index < len(text):
+            char = text[index]
+            if quote:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = ""
+            elif char in {"'", '"', "`"}:
+                quote = char
+            elif char in "([{":
+                depth += 1
+            elif char in ")]}":
+                if depth == 0 and char == "}":
+                    return index
+                depth = max(0, depth - 1)
+            elif char == "," and depth == 0:
+                return index + 1
+            index += 1
+        return index
 
 
 if __name__ == "__main__":
