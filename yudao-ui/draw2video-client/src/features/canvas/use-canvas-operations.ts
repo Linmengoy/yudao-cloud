@@ -11,6 +11,7 @@ type PendingCanvasOperation = {
   retryAt: number;
   attempts: number;
   sending: boolean;
+  reliable: boolean;
 };
 
 function createOperationId() {
@@ -50,7 +51,7 @@ export function useCanvasOperations(
     const operation = [...pendingRef.current.values()].find((item) => item.retryAt <= now);
     if (!operation) return;
 
-    if (sendRealtimeOperation?.(operation.operationType, operation.payload, operation.opId, operation.baseVersion)) {
+    if (!operation.reliable && sendRealtimeOperation?.(operation.operationType, operation.payload, operation.opId, operation.baseVersion)) {
       operation.sending = true;
       operation.attempts += 1;
       operation.retryAt = now + Math.min(20_000, 2_000 * 2 ** Math.min(operation.attempts, 4));
@@ -85,7 +86,7 @@ export function useCanvasOperations(
     flushPendingOperationsRef.current = flushPendingOperations;
   }, [flushPendingOperations]);
 
-  const submitOperation = useCallback((operationType: string, payload: Record<string, unknown>) => {
+  const submitOperation = useCallback((operationType: string, payload: Record<string, unknown>, options?: { reliable?: boolean }) => {
     if (!projectId) return;
     const pendingKey = `${operationType}:${JSON.stringify(payload)}`;
     for (const operation of pendingRef.current.values()) {
@@ -100,6 +101,7 @@ export function useCanvasOperations(
       retryAt: 0,
       attempts: 0,
       sending: false,
+      reliable: options?.reliable === true,
     });
     updatePendingOperationCount();
     flushPendingOperations();

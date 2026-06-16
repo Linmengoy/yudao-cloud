@@ -648,12 +648,18 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   }, [id, referencePickerPromptId, selected]);
 
   const updateData = useCallback(
-    (patch: Partial<ImageNodeData>, options?: { flush?: boolean }) => {
+    (patch: Partial<ImageNodeData>, options?: { flush?: boolean; includeSnapshotOnly?: boolean; reliable?: boolean }) => {
       setNodes((nds) =>
         nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
       );
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
-        detail: { nodeId: id, patch, flush: options?.flush },
+        detail: {
+          nodeId: id,
+          patch,
+          flush: options?.flush,
+          includeSnapshotOnly: options?.includeSnapshotOnly,
+          reliable: options?.reliable,
+        },
       }));
     },
     [id, setNodes]
@@ -881,7 +887,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       providerModel: nextModel.providerModel ?? nextModel.model,
       modelName: nextModel.name,
       aigcModelId: nextModel.id,
-    }, { flush: true });
+    }, { flush: true, includeSnapshotOnly: true });
   }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, data.modelCode, data.modelName, selectedAigcModelId, updateData]);
 
   const handleNodeClick = useCallback(
@@ -1063,6 +1069,8 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     };
 
     updateData({
+      prompt: cleanPrompt,
+      params: effectiveParams,
       status: "pending",
       errorMessage: null,
       safetyStatus: null,
@@ -1073,12 +1081,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       taskStatus: "SUBMITTING",
       upstreamStatus: "SUBMITTING",
       generationCount,
+      kind: "generated",
       outputsExpanded: false,
       modelId: runAigcModelId ? String(runAigcModelId) : modelId,
       providerModel: runProviderModel,
       aigcModelId: runAigcModelId,
       modelName: runModelName,
-    }, { flush: true });
+    }, { flush: true, includeSnapshotOnly: true, reliable: true });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
     if (isServerCanvasProjectId(projectId) && runAigcModelId) {
@@ -1100,7 +1109,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           taskId: String(run.taskId),
           taskStatus: run.status,
           upstreamStatus: run.status,
-        }, { flush: true });
+        }, { flush: true, reliable: true });
         await waitAndApplyServerRun(projectId, run.taskId, startedAt);
         return;
       } catch (error) {
@@ -1134,6 +1143,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     }
     const completedAt = typeof updates.completedAt === "string" ? updates.completedAt : new Date().toISOString();
     const nextData: Partial<ImageNodeData> = {
+      prompt: cleanPrompt,
       status: updates.status === "complete" ? "idle" : "failed",
       taskId: typeof updates.taskId === "string" ? updates.taskId : null,
       errorMessage: typeof updates.errorMessage === "string" ? updates.errorMessage : null,

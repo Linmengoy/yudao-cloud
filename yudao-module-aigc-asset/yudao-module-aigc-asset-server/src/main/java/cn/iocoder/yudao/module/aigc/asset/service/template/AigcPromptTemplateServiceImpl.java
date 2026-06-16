@@ -12,6 +12,7 @@ import cn.iocoder.yudao.module.aigc.asset.enums.AigcAssetAccessTypeEnum;
 import cn.iocoder.yudao.module.infra.api.file.FileApi;
 import cn.iocoder.yudao.module.infra.api.file.dto.FilePresignRespDTO;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
@@ -26,6 +27,7 @@ import static cn.iocoder.yudao.module.aigc.asset.enums.ErrorCodeConstants.PROMPT
 
 @Service
 @Validated
+@Slf4j
 public class AigcPromptTemplateServiceImpl implements AigcPromptTemplateService {
 
     @Resource
@@ -129,9 +131,18 @@ public class AigcPromptTemplateServiceImpl implements AigcPromptTemplateService 
         if (template.getStorageConfigId() == null || StrUtil.isBlank(template.getFilePath())) {
             return new AccessUrl(template.getPublicUrl(), null, false);
         }
-        FilePresignRespDTO presign = fileApi.presignGetUrlV2(template.getStorageConfigId(), template.getFilePath(),
-                AigcAssetAccessTypeEnum.PREVIEW.getExpireSeconds()).getCheckedData();
-        return new AccessUrl(presign.getUrl(), presign.getExpireTime(), presign.getPublicAccess());
+        try {
+            FilePresignRespDTO presign = fileApi.presignGetUrlV2(template.getStorageConfigId(), template.getFilePath(),
+                    AigcAssetAccessTypeEnum.PREVIEW.getExpireSeconds()).getCheckedData();
+            if (presign == null || StrUtil.isBlank(presign.getUrl())) {
+                return new AccessUrl(template.getPublicUrl(), null, false);
+            }
+            return new AccessUrl(presign.getUrl(), presign.getExpireTime(), presign.getPublicAccess());
+        } catch (Exception ex) {
+            log.warn("[resolveImageUrl][templateId({}) storageConfigId({}) filePath({}) presign failed]",
+                    template.getId(), template.getStorageConfigId(), template.getFilePath(), ex);
+            return new AccessUrl(template.getPublicUrl(), null, false);
+        }
     }
 
     private record AccessUrl(String url, LocalDateTime expireTime, Boolean publicAccess) {
