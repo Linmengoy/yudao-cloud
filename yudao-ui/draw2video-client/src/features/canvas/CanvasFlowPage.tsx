@@ -1690,6 +1690,30 @@ function CanvasFlow() {
   }, [canvasOperations.pendingOperationCount, syncFromVersion]);
 
   useEffect(() => {
+    if (!serverProjectId || isReadOnly) return;
+    const flushPendingBeforeUnload = () => {
+      if (pendingOperationCountRef.current <= 0) return;
+      canvasOperations.flushPendingOperations({ keepalive: true });
+    };
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (pendingOperationCountRef.current <= 0) return;
+      flushPendingBeforeUnload();
+      event.preventDefault();
+      event.returnValue = "";
+      return "";
+    };
+    const handlePageHide = () => {
+      flushPendingBeforeUnload();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [canvasOperations, isReadOnly, serverProjectId]);
+
+  useEffect(() => {
     const newMessages = canvasRealtime.messages.slice(processedRealtimeMessageCountRef.current);
     processedRealtimeMessageCountRef.current = canvasRealtime.messages.length;
     const isCurrentProjectMessage = (message: { type: string; projectId?: unknown }) => {
@@ -1820,7 +1844,7 @@ function CanvasFlow() {
           canvasOperations.submitOperation("NODE_UPDATE_DATA", {
             nodeId: detail.nodeId,
             patch,
-          });
+          }, { reliable: detail.reliable === true });
         }
         delete nodeDataPatchTimersRef.current[key];
       };

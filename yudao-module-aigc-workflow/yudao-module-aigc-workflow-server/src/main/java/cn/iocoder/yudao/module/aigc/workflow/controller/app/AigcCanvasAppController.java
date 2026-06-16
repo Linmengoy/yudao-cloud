@@ -226,7 +226,7 @@ public class AigcCanvasAppController {
     public CommonResult<AigcCanvasOperationRespVO> submitOperation(@PathVariable("id") Long id,
                                                                    @Valid @RequestBody AigcCanvasOperationSubmitReqVO reqVO) {
         reqVO.setProjectId(id);
-        return success(BeanUtils.toBean(operationService.submitOperation(reqVO, getLoginUserId()), AigcCanvasOperationRespVO.class));
+        return success(BeanUtils.toBean(projectService.submitOperation(reqVO, getLoginUserId()), AigcCanvasOperationRespVO.class));
     }
 
     @PostMapping("/projects/{id}/nodes/{nodeId}/assets")

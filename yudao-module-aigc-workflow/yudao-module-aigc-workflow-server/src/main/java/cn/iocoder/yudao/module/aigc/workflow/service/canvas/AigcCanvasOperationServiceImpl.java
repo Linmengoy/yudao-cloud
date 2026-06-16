@@ -44,7 +44,7 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
     private static final Set<String> SYNCABLE_NODE_DATA_KEYS = new HashSet<>(Arrays.asList(
             "imageId", "sketchId", "videoId", "projectId", "assetId", "assetVersionId", "background", "fileName", "mimeType",
             "width", "height", "durationSec", "sizeBytes", "kind", "prompt", "content", "modelId",
-            "provider", "providerModel", "modelName", "aigcModelId", "params", "status", "taskId",
+            "provider", "providerModel", "modelName", "aigcModelId", "params", "inputParams", "status", "taskId",
             "errorMessage", "taskStatus", "progress", "outputAssetId", "sourceTaskId",
             "assetIds", "assetIdList", "outputs", "primaryOutputId", "outputsExpanded", "generationCount",
             "safetyStatus", "safetyReason", "generationStartedAt", "generationCompletedAt",

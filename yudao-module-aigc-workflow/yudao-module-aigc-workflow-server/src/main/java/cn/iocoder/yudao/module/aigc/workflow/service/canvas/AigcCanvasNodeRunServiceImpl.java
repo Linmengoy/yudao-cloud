@@ -41,6 +41,8 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             AigcGenerateStatusEnum.SUBMITTED.getCode(),
             AigcGenerateStatusEnum.CALLBACK_WAITING.getCode(),
             AigcGenerateStatusEnum.SYNCING.getCode());
+    private static final Set<String> NON_PARAM_NODE_DATA_KEYS = Set.of(
+            "inputImages", "inputImageUrls", "referenceImages", "imageUrls");
 
     @Resource
     private AigcCanvasProjectService projectService;
@@ -82,7 +84,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         // 提交任务状态更新
         AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(),
                 reqVO.getBaseVersion(), userId,
-                "task_status_" + reqVO.getNodeId() + "_" + runId, buildSubmitPatch(submit));
+                "task_status_" + reqVO.getNodeId() + "_" + runId, buildSubmitPatch(submit, reqVO));
         // 广播操作日志
         roomService.broadcast(operation.getProjectId(), "canvas-op-applied", buildAppliedMessage(operation), null);
         // 返回结果
@@ -160,8 +162,8 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         }
     }
 
-    private JSONObject buildSubmitPatch(AigcGenerateSubmitRespDTO submit) {
-        return new JSONObject()
+    private JSONObject buildSubmitPatch(AigcGenerateSubmitRespDTO submit, AigcCanvasNodeRunReqVO reqVO) {
+        JSONObject patch = new JSONObject()
                 .set("status", "pending")
                 .set("taskId", String.valueOf(submit.getTaskId()))
                 .set("errorMessage", null)
@@ -172,6 +174,34 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
                 .set("elapsedMs", null)
                 .set("upstreamStatus", submit.getStatus())
                 .set("updatedAt", LocalDateTime.now().toString());
+        if (StrUtil.isNotBlank(reqVO.getPrompt())) {
+            patch.set("prompt", reqVO.getPrompt());
+        }
+        if (reqVO.getModelId() != null) {
+            patch.set("aigcModelId", reqVO.getModelId())
+                    .set("modelId", String.valueOf(reqVO.getModelId()));
+        }
+        if (StrUtil.isNotBlank(reqVO.getInputParams())) {
+            applyInputParamsPatch(patch, reqVO.getInputParams());
+        }
+        return patch;
+    }
+
+    private void applyInputParamsPatch(JSONObject patch, String inputParams) {
+        if (!JSONUtil.isTypeJSONObject(inputParams)) {
+            return;
+        }
+        JSONObject params = JSONUtil.parseObj(inputParams);
+        NON_PARAM_NODE_DATA_KEYS.forEach(params::remove);
+        patch.set("inputParams", params.toString());
+        if (!params.isEmpty() && !patch.containsKey("params")) {
+            patch.set("params", params);
+        }
+        for (String key : params.keySet()) {
+            if (!patch.containsKey(key)) {
+                patch.set(key, params.get(key));
+            }
+        }
     }
 
     private JSONObject buildResultPatch(String nodeType, AigcGenerateResultRespDTO result) {

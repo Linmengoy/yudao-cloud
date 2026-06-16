@@ -713,6 +713,14 @@ public class AigcCanvasProjectServiceImpl implements AigcCanvasProjectService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigcCanvasOperationLogDO submitOperation(AigcCanvasOperationSubmitReqVO reqVO, Long userId) {
+        AigcCanvasOperationLogDO operation = operationService.submitOperation(reqVO, userId);
+        roomService.broadcast(operation.getProjectId(), "canvas-op-applied", buildAppliedMessage(operation), null);
+        return operation;
+    }
+
+    @Override
     public AigcCanvasSketchDO getSketch(Long projectId, String nodeId, Long userId) {
         validateReadableProject(projectId, userId);
         return sketchMapper.selectByProjectIdAndNodeId(projectId, nodeId);

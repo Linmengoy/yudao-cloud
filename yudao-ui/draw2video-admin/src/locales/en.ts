@@ -458,5 +458,119 @@ export default {
     btn_zoom_in: 'Zoom in',
     btn_zoom_out: 'Zoom out',
     preview: 'Preivew'
+  },
+  aigc: {
+    asset: {
+      tabs: {
+        assets: 'Assets',
+        projects: 'Canvas Projects'
+      },
+      fields: {
+        userId: 'User ID',
+        title: 'Title',
+        type: 'Type',
+        audit: 'Audit',
+        preview: 'Preview',
+        assetNo: 'Asset No',
+        source: 'Source',
+        taskNo: 'Task No',
+        visibility: 'Visibility',
+        downloads: 'Downloads',
+        cover: 'Cover',
+        projectId: 'Project ID',
+        name: 'Name',
+        version: 'Version',
+        nodes: 'Nodes',
+        assets: 'Assets',
+        size: 'Size',
+        fileSize: 'File Size',
+        tags: 'Tags',
+        description: 'Description',
+        role: 'Role',
+        fileName: 'File Name',
+        mime: 'MIME',
+        accessUrl: 'Access URL'
+      },
+      placeholders: {
+        title: 'Asset title keyword',
+        allTypes: 'All types',
+        allAuditStates: 'All audit states'
+      },
+      labels: {
+        project: 'Project'
+      },
+      assetTypes: {
+        image: 'Image',
+        video: 'Video',
+        audio: 'Audio',
+        text: 'Text',
+        other: 'Other'
+      },
+      sourceTypes: {
+        generate: 'Generate',
+        upload: 'Upload',
+        import: 'Import'
+      },
+      auditStatus: {
+        pending: 'Pending',
+        pass: 'Pass',
+        reject: 'Reject',
+        manualReview: 'Manual Review'
+      },
+      visibility: {
+        private: 'Private',
+        public: 'Public'
+      },
+      audit: {
+        pass: 'Pass',
+        reject: 'Reject',
+        rejectedByAdmin: 'Rejected by admin'
+      },
+      messages: {
+        auditUpdated: 'Audit status updated'
+      },
+      detail: {
+        title: 'Asset Detail',
+        files: 'Files',
+        promptSnapshot: 'Prompt Snapshot',
+        generationSnapshot: 'Generation Snapshot',
+        metadata: 'Metadata'
+      },
+      downloadLog: {
+        empty: 'Download logs are not connected yet'
+      },
+      promptTemplate: {
+        importTip: 'Upload awesome-gpt-image-2 cases.json and images from data/images. The system matches by file name and uploads them to OSS.',
+        storageDirectory: 'OSS Directory',
+        storageDirectoryPlaceholder: 'Please enter OSS storage directory',
+        selectJson: 'Select JSON',
+        casesTip: 'Select data/cases.json. Text content is uploaded as UTF-8.',
+        imageFiles: 'Image Files',
+        selectImages: 'Select Images',
+        imagesTip: 'Select all images from data/images. File names must match the image field in cases.json.',
+        startImport: 'Start Import',
+        batchProgress: '{current}/{total} batches',
+        rules: {
+          storageDirectory: 'Please enter OSS storage directory',
+          casesJsonFile: 'Please select cases.json',
+          imageFiles: 'Please select image files'
+        },
+        result: {
+          totalCount: 'Cases Read',
+          createCount: 'Created',
+          updateCount: 'Updated',
+          skipCount: 'Skipped'
+        },
+        messages: {
+          importDone: 'Import completed',
+          importFailed: 'Import failed'
+        },
+        errors: {
+          batchUploadFailed: 'Batch {batch} upload failed: {files}. {message}',
+          casesArrayMissing: 'cases.json is missing the cases array',
+          noMatchedCases: 'No cases in cases.json matched this batch: {files}'
+        }
+      }
+    }
   }
 }

@@ -1,7 +1,7 @@
 <template>
   <ContentWrap>
     <el-alert
-      title="上传 awesome-gpt-image-2 的 cases.json 和 data/images 目录内图片，系统会按文件名匹配并上传到 OSS。"
+      :title="t('aigc.asset.promptTemplate.importTip')"
       type="info"
       :closable="false"
       show-icon
@@ -13,11 +13,11 @@
       label-width="120px"
       class="mt-20px max-w-860px"
     >
-      <el-form-item label="OSS 目录" prop="storageDirectory">
+      <el-form-item :label="t('aigc.asset.promptTemplate.storageDirectory')" prop="storageDirectory">
         <el-input
           v-model="formData.storageDirectory"
           class="!w-360px"
-          placeholder="请输入 OSS 存储目录"
+          :placeholder="t('aigc.asset.promptTemplate.storageDirectoryPlaceholder')"
         />
       </el-form-item>
       <el-form-item label="cases.json" prop="casesJsonFile">
@@ -33,14 +33,14 @@
           :on-exceed="handleCasesExceed"
         >
           <el-button type="primary" plain>
-            <Icon icon="ep:document" class="mr-5px" />选择 JSON
+            <Icon icon="ep:document" class="mr-5px" />{{ t('aigc.asset.promptTemplate.selectJson') }}
           </el-button>
           <template #tip>
-            <div class="el-upload__tip">请选择 data/cases.json，中文内容会按 UTF-8 上传。</div>
+            <div class="el-upload__tip">{{ t('aigc.asset.promptTemplate.casesTip') }}</div>
           </template>
         </el-upload>
       </el-form-item>
-      <el-form-item label="图片文件" prop="imageFiles">
+      <el-form-item :label="t('aigc.asset.promptTemplate.imageFiles')" prop="imageFiles">
         <el-upload
           ref="imagesUploadRef"
           action="#"
@@ -52,21 +52,21 @@
           :on-remove="handleImagesRemove"
         >
           <el-button type="primary" plain>
-            <Icon icon="ep:picture" class="mr-5px" />选择图片
+            <Icon icon="ep:picture" class="mr-5px" />{{ t('aigc.asset.promptTemplate.selectImages') }}
           </el-button>
           <template #tip>
             <div class="el-upload__tip">
-              在 data/images 目录中全选图片上传，文件名需与 cases.json 的 image 字段一致。
+              {{ t('aigc.asset.promptTemplate.imagesTip') }}
             </div>
           </template>
         </el-upload>
       </el-form-item>
       <el-form-item>
         <el-button type="primary" :loading="loading" @click="handleImport" v-hasPermi="['aigc:asset:create']">
-          <Icon icon="ep:upload-filled" class="mr-5px" />开始导入
+          <Icon icon="ep:upload-filled" class="mr-5px" />{{ t('aigc.asset.promptTemplate.startImport') }}
         </el-button>
         <el-button :disabled="loading" @click="resetForm">
-          <Icon icon="ep:refresh" class="mr-5px" />重置
+          <Icon icon="ep:refresh" class="mr-5px" />{{ t('common.reset') }}
         </el-button>
       </el-form-item>
     </el-form>
@@ -107,6 +107,7 @@ import { AigcPromptTemplateApi, type AigcPromptTemplateImportRespVO } from '@/ap
 defineOptions({ name: 'AigcPromptTemplate' })
 
 const message = useMessage()
+const { t } = useI18n()
 const BATCH_SIZE = 1
 const formRef = ref<FormInstance>()
 const casesUploadRef = ref<UploadInstance>()
@@ -124,16 +125,16 @@ const formData = reactive({
 })
 
 const formRules = reactive<FormRules>({
-  storageDirectory: [{ required: true, message: '请输入 OSS 存储目录', trigger: 'blur' }],
-  casesJsonFile: [{ required: true, message: '请选择 cases.json', trigger: 'change' }],
-  imageFiles: [{ required: true, message: '请选择图片文件', trigger: 'change' }]
+  storageDirectory: [{ required: true, message: t('aigc.asset.promptTemplate.rules.storageDirectory'), trigger: 'blur' }],
+  casesJsonFile: [{ required: true, message: t('aigc.asset.promptTemplate.rules.casesJsonFile'), trigger: 'change' }],
+  imageFiles: [{ required: true, message: t('aigc.asset.promptTemplate.rules.imageFiles'), trigger: 'change' }]
 })
 
 const resultCards = computed(() => [
-  { label: '读取案例数', value: importResult.value?.totalCount || 0 },
-  { label: '新增数量', value: importResult.value?.createCount || 0 },
-  { label: '更新数量', value: importResult.value?.updateCount || 0 },
-  { label: '跳过数量', value: importResult.value?.skipCount || 0 }
+  { label: t('aigc.asset.promptTemplate.result.totalCount'), value: importResult.value?.totalCount || 0 },
+  { label: t('aigc.asset.promptTemplate.result.createCount'), value: importResult.value?.createCount || 0 },
+  { label: t('aigc.asset.promptTemplate.result.updateCount'), value: importResult.value?.updateCount || 0 },
+  { label: t('aigc.asset.promptTemplate.result.skipCount'), value: importResult.value?.skipCount || 0 }
 ])
 
 const importProgress = computed(() => {
@@ -143,7 +144,7 @@ const importProgress = computed(() => {
   return Math.min(100, Math.round((currentBatch.value / totalBatch.value) * 100))
 })
 
-const formatProgress = () => `${currentBatch.value}/${totalBatch.value} 批`
+const formatProgress = () => t('aigc.asset.promptTemplate.batchProgress', { current: currentBatch.value, total: totalBatch.value })
 
 interface AwesomeGptImageCase {
   image?: string
@@ -208,7 +209,11 @@ const handleImport = async () => {
       batch.forEach((file) => data.append('images', file))
       data.append('storageDirectory', formData.storageDirectory)
       const result = await AigcPromptTemplateApi.importAwesomeGptImageFiles(data).catch((error) => {
-        throw new Error(`第 ${currentBatch.value + 1} 批上传失败：${batch.map((file) => file.name).join(', ')}。${error?.message || ''}`)
+        throw new Error(t('aigc.asset.promptTemplate.errors.batchUploadFailed', {
+          batch: currentBatch.value + 1,
+          files: batch.map((file) => file.name).join(', '),
+          message: error?.message || ''
+        }))
       })
       importResult.value.totalCount += result.totalCount || 0
       importResult.value.createCount += result.createCount || 0
@@ -216,9 +221,9 @@ const handleImport = async () => {
       importResult.value.skipCount += result.skipCount || 0
       currentBatch.value += 1
     }
-    message.success('导入完成')
+    message.success(t('aigc.asset.promptTemplate.messages.importDone'))
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '导入失败')
+    message.error(error instanceof Error ? error.message : t('aigc.asset.promptTemplate.messages.importFailed'))
   } finally {
     loading.value = false
   }
@@ -228,7 +233,7 @@ const readCasesJson = async (file: File): Promise<AwesomeGptImageCasesJson> => {
   const text = await file.text()
   const parsed = JSON.parse(text) as AwesomeGptImageCasesJson
   if (!Array.isArray(parsed.cases)) {
-    throw new Error('cases.json 缺少 cases 数组')
+    throw new Error(t('aigc.asset.promptTemplate.errors.casesArrayMissing'))
   }
   return parsed
 }
@@ -237,7 +242,9 @@ const buildBatchCasesJsonFile = (casesJson: AwesomeGptImageCasesJson, images: Fi
   const imageNames = new Set(images.map((file) => file.name))
   const batchCases = (casesJson.cases || []).filter((item) => imageNames.has(getImageFileName(item.image)))
   if (batchCases.length === 0) {
-    throw new Error(`本批图片没有在 cases.json 中匹配到案例：${images.map((file) => file.name).join(', ')}`)
+    throw new Error(t('aigc.asset.promptTemplate.errors.noMatchedCases', {
+      files: images.map((file) => file.name).join(', ')
+    }))
   }
   const batchJson = JSON.stringify({ ...casesJson, cases: batchCases })
   return new File([batchJson], 'cases.json', { type: 'application/json' })

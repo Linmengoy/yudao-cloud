@@ -454,5 +454,119 @@ export default {
     btn_zoom_out: '缩小',
     preview: '预览'
   },
+  aigc: {
+    asset: {
+      tabs: {
+        assets: '资产',
+        projects: '画布项目'
+      },
+      fields: {
+        userId: '用户 ID',
+        title: '标题',
+        type: '类型',
+        audit: '审核',
+        preview: '预览',
+        assetNo: '资产编号',
+        source: '来源',
+        taskNo: '任务编号',
+        visibility: '可见性',
+        downloads: '下载数',
+        cover: '封面',
+        projectId: '项目 ID',
+        name: '名称',
+        version: '版本',
+        nodes: '节点数',
+        assets: '资产数',
+        size: '尺寸',
+        fileSize: '文件大小',
+        tags: '标签',
+        description: '描述',
+        role: '角色',
+        fileName: '文件名',
+        mime: 'MIME',
+        accessUrl: '访问地址'
+      },
+      placeholders: {
+        title: '资产标题关键词',
+        allTypes: '全部类型',
+        allAuditStates: '全部审核状态'
+      },
+      labels: {
+        project: '项目'
+      },
+      assetTypes: {
+        image: '图片',
+        video: '视频',
+        audio: '音频',
+        text: '文本',
+        other: '其它'
+      },
+      sourceTypes: {
+        generate: '生成',
+        upload: '上传',
+        import: '导入'
+      },
+      auditStatus: {
+        pending: '待审核',
+        pass: '通过',
+        reject: '拒绝',
+        manualReview: '人工复核'
+      },
+      visibility: {
+        private: '私有',
+        public: '公开'
+      },
+      audit: {
+        pass: '通过',
+        reject: '拒绝',
+        rejectedByAdmin: '管理员拒绝'
+      },
+      messages: {
+        auditUpdated: '审核状态已更新'
+      },
+      detail: {
+        title: '资产详情',
+        files: '文件',
+        promptSnapshot: '提示词快照',
+        generationSnapshot: '生成快照',
+        metadata: '元数据'
+      },
+      downloadLog: {
+        empty: '下载日志页面暂未接入'
+      },
+      promptTemplate: {
+        importTip: '上传 awesome-gpt-image-2 的 cases.json 和 data/images 目录内图片，系统会按文件名匹配并上传到 OSS。',
+        storageDirectory: 'OSS 目录',
+        storageDirectoryPlaceholder: '请输入 OSS 存储目录',
+        selectJson: '选择 JSON',
+        casesTip: '请选择 data/cases.json，中文内容会按 UTF-8 上传。',
+        imageFiles: '图片文件',
+        selectImages: '选择图片',
+        imagesTip: '在 data/images 目录中全选图片上传，文件名需与 cases.json 的 image 字段一致。',
+        startImport: '开始导入',
+        batchProgress: '{current}/{total} 批',
+        rules: {
+          storageDirectory: '请输入 OSS 存储目录',
+          casesJsonFile: '请选择 cases.json',
+          imageFiles: '请选择图片文件'
+        },
+        result: {
+          totalCount: '读取案例数',
+          createCount: '新增数量',
+          updateCount: '更新数量',
+          skipCount: '跳过数量'
+        },
+        messages: {
+          importDone: '导入完成',
+          importFailed: '导入失败'
+        },
+        errors: {
+          batchUploadFailed: '第 {batch} 批上传失败：{files}。{message}',
+          casesArrayMissing: 'cases.json 缺少 cases 数组',
+          noMatchedCases: '本批图片没有在 cases.json 中匹配到案例：{files}'
+        }
+      }
+    }
+  },
   'OAuth 2.0': 'OAuth 2.0' // 避免菜单名是 OAuth 2.0 时，一直 warn 报错
 }

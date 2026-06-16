@@ -1,9 +1,11 @@
 <template>
   <ContentWrap>
-    <el-empty description="下载日志页面暂未接入" />
+    <el-empty :description="t('aigc.asset.downloadLog.empty')" />
   </ContentWrap>
 </template>
 
 <script setup lang="ts">
 defineOptions({ name: 'AigcAssetDownloadLog' })
+
+const { t } = useI18n()
 </script>
