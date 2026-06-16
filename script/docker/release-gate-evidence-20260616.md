@@ -1,6 +1,6 @@
 # Release gate evidence - 2026-06-16
 
-This file records the repository-side evidence for release gate issues #242, #243, #244, #245, and #233.
+This file records the repository-side evidence for release gate issues #242, #243, #244, #245, #233, #252, #253, #232, #224, and #221.
 
 ## Scope
 
@@ -9,6 +9,11 @@ This file records the repository-side evidence for release gate issues #242, #24
 - #243 release note database gate: identify the exact SQL files and verification commands for `aigc_release_note` and `system_menu` permissions.
 - #242 release ref gate: record the current HEAD and the command set used to prove review/test/build coverage.
 - #233 admin build gate: run `pnpm build:test` serially and keep the log path.
+- #252 frontend stable tags: record both test and prod running frontend images and reject `latest` as rollback evidence.
+- #253 frontend release gate rerun: collect review/test/build/stable evidence and produce the exact `-UseRegistry` publish commands only when all gates pass.
+- #232 client pnpm build-script approval: keep `draw2video-client/pnpm-workspace.yaml` allowBuilds in-repo and collect `pnpm test`.
+- #224 canvas fallback polling: keep 30s visible-page `syncFromVersion` polling and defer remote snapshots while local operations are pending.
+- #221 canvas operation confirmation queue: `submitOperation` returns `{ opId, promise }`; ack/HTTP resolve, rejection/timeout/page switch reject.
 
 ## Machine-checkable targets
 
@@ -17,6 +22,8 @@ This file records the repository-side evidence for release gate issues #242, #24
 - Rollback evidence must include a non-`latest` immutable tag; missing `prod-stable-*` tags keep the stable-version gate failed.
 - Release-note SQL evidence must include table DDL, `uk_version`, `idx_status_release_date`, and all five permissions: query, create, update, publish, delete.
 - `draw2video-admin` build evidence must include command, start time, end time, exit code, and log path.
+- `draw2video-client` test evidence must enter Vitest without `ERR_PNPM_IGNORED_BUILDS`.
+- Frontend release commands must include target environment, target services, and `-UseRegistry`.
 
 ## Current evidence
 
@@ -52,7 +59,7 @@ test draw2video-admin image: 127.0.0.1:3000/root/draw2video-admin:latest
 local test image cache: draw2video-client:f13afed66360, draw2video-client:fa841db5b28b, latest tags.
 ```
 
-Conclusion for #244: the repository now has a repeatable collection script, but the release gate remains failed until each service has a pullable previous stable tag that is not `latest`.
+Conclusion for #244/#252: the repository now has a repeatable collection script for both test and prod, but the release gate remains failed until each service has a pullable previous stable tag that is not `latest`.
 
 Release-note database evidence:
 
@@ -89,6 +96,58 @@ Repeatable command: script/release-gate-checks.ps1 -Check admin-build
 ```
 
 Conclusion for #233: a prior same-day serial build log is available and passes. The current retry was interrupted by automation timeout, so the previous passing log remains the evidence to attach.
+
+Client test and pnpm approval evidence:
+
+```text
+Approval source: yudao-ui/draw2video-client/pnpm-workspace.yaml
+Approved build scripts: @swc/core, @parcel/watcher, msw, sharp, unrs-resolver
+Repeatable command: script/release-gate-checks.ps1 -Check client-test
+Current log: tmp/release-gates/20260616-231316-938-b228ae06/draw2video-client-pnpm-test.log
+Current result: 11 test files passed, 33 tests passed, exit 0.
+Expected result: Vitest starts and exits through test results, not ERR_PNPM_IGNORED_BUILDS.
+```
+
+Conclusion for #232: build-script approval is stored in the repository. Attach the generated `draw2video-client-pnpm-test.log` from `tmp/release-gates/<timestamp>/` to prove the current candidate.
+
+Canvas sync evidence:
+
+```text
+Confirmation queue: yudao-ui/draw2video-client/src/features/canvas/use-canvas-operations.ts
+Fallback polling: yudao-ui/draw2video-client/src/features/canvas/CanvasFlowPage.tsx
+Polling cadence: 30s while the page is visible and hydrated.
+Pending protection: remote snapshots are deferred while pendingOperationCount > 0.
+Failure signal: server rejection, retry exhaustion, or page/project switch rejects pending promises.
+```
+
+Conclusion for #221/#224: implementation is present in the client and is validated by the TypeScript/Vitest client gate.
+
+Frontend release gate rerun:
+
+```powershell
+script/release-gate-checks.ps1 -Check stable-versions
+script/release-gate-checks.ps1 -Check client-test
+script/release-gate-checks.ps1 -Check admin-build
+./script/deploy-frontend-images.ps1 -Server manman -DeployEnv test -Target client -UseRegistry
+./script/deploy-frontend-images.ps1 -Server manman -DeployEnv test -Target admin -UseRegistry
+./script/deploy-frontend-images.ps1 -Server manman2 -DeployEnv prod -Target client -UseRegistry
+./script/deploy-frontend-images.ps1 -Server manman2 -DeployEnv prod -Target admin -UseRegistry
+```
+
+Current stable-version rerun:
+
+```text
+Command: script/release-gate-checks.ps1 -Check stable-versions
+Summary: tmp/release-gates/20260616-231612-972-16a930e4/summary.json
+Git HEAD: e49ddb5dfd94fe7ebca5f0f7420980dc95557966
+test client image: 127.0.0.1:3000/root/draw2video-client:latest
+test admin image: 127.0.0.1:3000/root/draw2video-admin:latest
+prod client image: 111.228.39.103:3000/root/draw2video-client:prod-f506dd425e34
+prod admin image: 111.228.39.103:3000/root/draw2video-admin:prod-f506dd425e34
+Gate result: failed, because test frontend images are `latest` and fail immutable rollback tag validation.
+```
+
+Conclusion for #253: do not execute the publish commands until the stable-version gate returns non-`latest` rollback tags for both environments.
 
 ## Collection script
 

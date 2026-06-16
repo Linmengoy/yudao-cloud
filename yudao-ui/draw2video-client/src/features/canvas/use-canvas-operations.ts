@@ -109,6 +109,17 @@ export function useCanvasOperations(
     scheduleFlushPendingOperations();
   }, [scheduleFlushPendingOperations, updatePendingOperationCount]);
 
+  const rejectPendingOperations = useCallback((message: string) => {
+    if (pendingRef.current.size === 0) return;
+    const operations = [...pendingRef.current.values()];
+    pendingRef.current.clear();
+    const error = createOperationError(message);
+    for (const operation of operations) {
+      operation.reject(error);
+    }
+    updatePendingOperationCount();
+  }, [updatePendingOperationCount]);
+
   const flushPendingOperations = useCallback((options?: { keepalive?: boolean }) => {
     if (!projectId) return;
     const now = Date.now();
@@ -234,6 +245,10 @@ export function useCanvasOperations(
   useEffect(() => {
     flushPendingOperations();
   }, [flushPendingOperations, isRealtimeConnected]);
+
+  useEffect(() => {
+    return () => rejectPendingOperations("画布操作尚未确认，已因页面切换或关闭取消");
+  }, [projectId, rejectPendingOperations]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

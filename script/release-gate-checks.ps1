@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("all", "nacos", "stable-versions", "release-note-db", "release-ref", "admin-build")]
+    [ValidateSet("all", "nacos", "stable-versions", "release-note-db", "release-ref", "admin-build", "client-test")]
     [string] $Check = "all",
     [ValidateSet("test", "prod")]
     [string] $Environment = "test",
@@ -66,8 +66,13 @@ if (Test-Selected "stable-versions") {
         git -C $repoRoot rev-parse --short=12 HEAD
         git -C $repoRoot tag --sort=-creatordate | Select-String '^prod-stable-' | Select-Object -First 10
     }
-    $results += Invoke-Logged "frontend-running-images" {
-        ssh -o BatchMode=yes -o ConnectTimeout=$TimeoutSeconds $targetHost "docker inspect draw2video-client --format '{{.Config.Image}}'; docker inspect draw2video-admin --format '{{.Config.Image}}'; docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'draw2video-(client|admin)' | head -20"
+    $results += Invoke-Logged "frontend-running-images-test" {
+        $remoteCommand = 'client=$(docker inspect draw2video-client --format ''{{.Config.Image}}''); admin=$(docker inspect draw2video-admin --format ''{{.Config.Image}}''); echo client=$client; echo admin=$admin; docker images --format ''{{.Repository}}:{{.Tag}}'' | grep -E ''draw2video-(client|admin)'' | head -20; case "$client" in *:test-[0-9a-f]*) ;; *) echo invalid-test-client-tag=$client; exit 2;; esac; case "$admin" in *:test-[0-9a-f]*) ;; *) echo invalid-test-admin-tag=$admin; exit 2;; esac'
+        ssh -o BatchMode=yes -o ConnectTimeout=$TimeoutSeconds $TestHost $remoteCommand
+    }
+    $results += Invoke-Logged "frontend-running-images-prod" {
+        $remoteCommand = 'client=$(docker inspect draw2video-client --format ''{{.Config.Image}}''); admin=$(docker inspect draw2video-admin --format ''{{.Config.Image}}''); echo client=$client; echo admin=$admin; docker images --format ''{{.Repository}}:{{.Tag}}'' | grep -E ''draw2video-(client|admin)'' | head -20; case "$client" in *:prod-[0-9a-f]*) ;; *) echo invalid-prod-client-tag=$client; exit 2;; esac; case "$admin" in *:prod-[0-9a-f]*) ;; *) echo invalid-prod-admin-tag=$admin; exit 2;; esac'
+        ssh -o BatchMode=yes -o ConnectTimeout=$TimeoutSeconds $ProdHost $remoteCommand
     }
 }
 
@@ -96,6 +101,17 @@ if (Test-Selected "admin-build") {
         Push-Location (Join-Path $repoRoot "yudao-ui/draw2video-admin")
         try {
             pnpm build:test
+        } finally {
+            Pop-Location
+        }
+    }
+}
+
+if (Test-Selected "client-test") {
+    $results += Invoke-Logged "draw2video-client-pnpm-test" {
+        Push-Location (Join-Path $repoRoot "yudao-ui/draw2video-client")
+        try {
+            pnpm test
         } finally {
             Pop-Location
         }
