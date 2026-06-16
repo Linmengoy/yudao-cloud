@@ -234,6 +234,8 @@ export default function TemplatesPage() {
       setHasMore(nextHasMore);
     } catch (err) {
       setError(err instanceof Error ? err.message : "模板库加载失败");
+      hasMoreRef.current = false;
+      setHasMore(false);
     } finally {
       setLoading(false);
       setLoadingMore(false);
