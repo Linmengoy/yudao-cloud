@@ -1,5 +1,6 @@
 import re
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -20,6 +21,19 @@ EXPECTED_TABLES = {
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def parse_pom(path: str) -> ET.Element:
+    return ET.fromstring(read(path))
+
+
+def pom_texts(root: ET.Element, xpath: str) -> list[str]:
+    namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+    return [
+        element.text.strip()
+        for element in root.findall(xpath, namespace)
+        if element.text and element.text.strip()
+    ]
 
 
 def service_block(compose: str, service: str) -> str:
@@ -59,6 +73,38 @@ class CommunityReleaseGateTest(unittest.TestCase):
 
         for dependency in ["mysql", "redis", "nacos", "yudao-system", "yudao-infra", "yudao-member", "aigc-asset", "aigc-workflow"]:
             self.assertIn(f"{dependency}:", block)
+
+    def test_maven_aggregator_and_server_dependencies_cover_build_gate(self):
+        root_pom = parse_pom("pom.xml")
+        community_pom = parse_pom("yudao-module-aigc-community/pom.xml")
+        server_pom = parse_pom("yudao-module-aigc-community/yudao-module-aigc-community-server/pom.xml")
+
+        self.assertIn("yudao-module-aigc-community", pom_texts(root_pom, "m:modules/m:module"))
+        self.assertEqual(
+            ["yudao-module-aigc-community-api", "yudao-module-aigc-community-server"],
+            pom_texts(community_pom, "m:modules/m:module"),
+        )
+
+        artifact_ids = pom_texts(server_pom, "m:dependencies/m:dependency/m:artifactId")
+        for artifact_id in [
+            "yudao-module-aigc-community-api",
+            "yudao-module-aigc-asset-api",
+            "yudao-module-aigc-workflow-api",
+            "yudao-module-member-api",
+            "yudao-spring-boot-starter-rpc",
+        ]:
+            self.assertIn(artifact_id, artifact_ids)
+
+        self.assertNotIn("system", pom_texts(server_pom, "m:dependencies/m:dependency/m:scope"))
+        self.assertEqual([], pom_texts(server_pom, "m:dependencies/m:dependency/m:systemPath"))
+
+    def test_boot_repackage_is_enabled_for_runnable_community_jar(self):
+        server_pom = parse_pom("yudao-module-aigc-community/yudao-module-aigc-community-server/pom.xml")
+
+        artifact_ids = pom_texts(server_pom, "m:build/m:plugins/m:plugin/m:artifactId")
+        self.assertIn("spring-boot-maven-plugin", artifact_ids)
+        self.assertIn("repackage", pom_texts(server_pom, "m:build/m:plugins/m:plugin/m:executions/m:execution/m:goals/m:goal"))
+        self.assertEqual(["${project.artifactId}"], pom_texts(server_pom, "m:build/m:finalName"))
 
     def test_dockerfile_supports_healthcheck_probe(self):
         dockerfile = read("yudao-module-aigc-community/yudao-module-aigc-community-server/Dockerfile")
