@@ -69,7 +69,7 @@ services:
       - /opt/data/yudao-nacos-data-prod:/home/nacos/data
       - /opt/data/yudao-nacos-logs-prod:/home/nacos/logs
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8848/nacos/v1/console/health/readiness"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/v3/console/health/readiness"]
       interval: 10s
       timeout: 5s
       retries: 30
