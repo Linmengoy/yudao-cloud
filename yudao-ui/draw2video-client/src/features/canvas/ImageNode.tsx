@@ -220,6 +220,10 @@ function normalizeGenerationCount(value: unknown) {
   return Math.min(4, Math.max(1, Math.round(count)));
 }
 
+function normalizeModelMatchText(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
 function getOutputId(assetId: number | null | undefined, url: string, index: number) {
   return assetId ? `asset-${assetId}` : `url-${index}-${url.slice(0, 48)}`;
 }
@@ -887,12 +891,19 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   useEffect(() => {
     if (aigcModels.loading || aigcModels.models.length === 0) return;
     if (selectedAigcModelId) return;
-    const templateModelCode = typeof data.modelCode === "string" ? data.modelCode : "";
-    const matchedTemplateModel = templateModelCode
+    const templateModelCode = normalizeModelMatchText(data.modelCode);
+    const templateModelName = normalizeModelMatchText(data.modelName);
+    const matchedTemplateModel = templateModelCode || templateModelName
       ? aigcModels.models.find((model) => (
-          model.code === templateModelCode ||
-          model.model === templateModelCode ||
-          model.providerModel === templateModelCode
+          [model.code, model.model, model.providerModel, model.name]
+            .map(normalizeModelMatchText)
+            .filter(Boolean)
+            .some((field) => (
+              field === templateModelCode ||
+              field === templateModelName ||
+              Boolean(templateModelCode && field.includes(templateModelCode)) ||
+              Boolean(templateModelName && field.includes(templateModelName))
+            ))
         ))
       : null;
     const nextModel = matchedTemplateModel ?? aigcModels.selectedModel ?? aigcModels.models[0];
@@ -904,7 +915,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       modelName: nextModel.name,
       aigcModelId: nextModel.id,
     }, { flush: true });
-  }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, data.modelCode, selectedAigcModelId, updateData]);
+  }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, data.modelCode, data.modelName, selectedAigcModelId, updateData]);
 
   const handleNodeClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
