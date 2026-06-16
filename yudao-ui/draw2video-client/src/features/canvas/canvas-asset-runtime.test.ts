@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { collectNodeAssetIds, withFreshAssetUrl } from "./canvas-asset-runtime";
-import { sanitizeNodeForCanvasOperation, stripRuntimeAssetUrlsFromPatch } from "./canvas-syncable-data";
-import type { AppNode, ImageNodeData } from "./types";
+import { sanitizeCanvasStateForPersistence, sanitizeNodeForCanvasOperation, stripRuntimeAssetUrlsFromPatch } from "./canvas-syncable-data";
+import type { AppEdge, AppNode, ImageNodeData } from "./types";
 
 function imageNode(data: Partial<ImageNodeData>): AppNode {
   return {
@@ -97,5 +97,38 @@ describe("canvas asset runtime helpers", () => {
     });
     expect(sanitized.data.previewUrl).toBeUndefined();
     expect(sanitized.data.outputPreviewUrl).toBeUndefined();
+  });
+
+  it("keeps local media nodes and edges in persisted canvas snapshots without data urls", () => {
+    const referenceNode = imageNode({
+      imageId: "reference-image",
+      dataUrl: "data:image/png;base64,abc",
+      prompt: "reference prompt",
+    });
+    const resultNode = imageNode({
+      imageId: "generated-image",
+      prompt: "combine two references",
+      outputAssetId: 88,
+      outputs: [{ id: "asset-88", assetId: 88, previewUrl: "https://signed.example.com/result.png" }],
+    });
+    resultNode.id = "result-image";
+    const edge: AppEdge = {
+      id: "edge-reference-result",
+      source: referenceNode.id,
+      target: resultNode.id,
+      type: "signal",
+    };
+
+    const sanitized = sanitizeCanvasStateForPersistence({
+      nodes: [referenceNode, resultNode],
+      edges: [edge],
+    });
+
+    expect(sanitized.nodes).toHaveLength(2);
+    expect(sanitized.edges).toEqual([edge]);
+    expect(sanitized.nodes[0].data.prompt).toBe("reference prompt");
+    expect(sanitized.nodes[0].data.dataUrl).toBeUndefined();
+    expect(sanitized.nodes[1].data.prompt).toBe("combine two references");
+    expect((sanitized.nodes[1].data as ImageNodeData).outputs).toEqual([{ id: "asset-88", assetId: 88 }]);
   });
 });
