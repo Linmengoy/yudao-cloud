@@ -12,6 +12,10 @@ Apply `community_db.sql` to `community_db` for `aigc-community-server`.
 - Suggested window: low traffic window with no community writes
 - Failure path: stop application rollout, preserve logs and SQL output, then restore from backup or apply rollback SQL below
 
+Before execution, fill the release record template at the bottom of this file and attach it to the release issue. The
+release may proceed only after the approval owner confirms the backup path, checksum command, rollback owner, and
+verification SQL.
+
 ## Preflight
 
 ```bash
@@ -30,6 +34,10 @@ mysqldump -h <mysql-host> -uroot -p \
 ```
 
 Record the backup file path, SHA256, executor, start time, and end time in the release issue.
+
+```bash
+sha256sum /opt/data/mysql-backup/community/<backup-file>.sql
+```
 
 ## Execute
 
@@ -63,6 +71,12 @@ SHOW INDEX FROM aigc_guide_content;
 
 Expected result: all eight tables exist, collations are `utf8mb4`, and indexes from `community_db.sql` are present.
 
+Also verify the service health endpoint after the application deployment:
+
+```bash
+curl -fsS http://<gateway-or-service-host>:48097/actuator/health
+```
+
 ## Rollback
 
 If the migration fails before data is written, drop the new tables in reverse dependency order:
@@ -95,3 +109,26 @@ Write the following back to the release issue:
 - SQL commit SHA
 - Verification SQL output summary
 - Rollback decision or "rollback not required"
+
+Template:
+
+```text
+community_db migration record
+- issue:
+- environment:
+- approval owner:
+- executor:
+- verifier:
+- planned window:
+- actual start:
+- actual end:
+- backup file:
+- backup sha256:
+- sql commit sha:
+- execute command:
+- verification summary:
+- service health result:
+- rollback owner:
+- rollback decision:
+- notes:
+```
