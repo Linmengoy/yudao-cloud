@@ -561,7 +561,12 @@ public class AigcCommunityServiceImpl implements AigcCommunityService {
             AigcCommunityAuthorStatsDO stats = statsMap.get(authorId);
             if (stats == null) {
                 ensureAuthorStats(authorId);
-                stats = authorStatsMapper.selectByUserId(authorId);
+                stats = new AigcCommunityAuthorStatsDO()
+                        .setUserId(authorId)
+                        .setFollowerCount(0)
+                        .setFollowingCount(0)
+                        .setPublicPostCount(0)
+                        .setLikeReceivedCount(0);
             }
             MemberUserRespDTO user = userMap.get(authorId);
             return new AigcCommunityAuthorRespVO()
