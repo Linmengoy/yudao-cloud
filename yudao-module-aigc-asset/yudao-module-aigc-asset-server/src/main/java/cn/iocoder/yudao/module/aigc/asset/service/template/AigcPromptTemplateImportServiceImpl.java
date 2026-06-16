@@ -40,6 +40,8 @@ import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionU
 public class AigcPromptTemplateImportServiceImpl implements AigcPromptTemplateImportService {
 
     private static final String SOURCE_REPO = "https://github.com/freestylefly/awesome-gpt-image-2";
+    private static final String MODEL_CODE = "gpt-image-2";
+    private static final String MODEL_NAME = "GPT Image 2";
 
     @Resource
     private AigcPromptTemplateMapper promptTemplateMapper;
@@ -136,6 +138,8 @@ public class AigcPromptTemplateImportServiceImpl implements AigcPromptTemplateIm
                 .setSourceCaseId(caseId)
                 .setSourceRepo(SOURCE_REPO)
                 .setSourceLabel(caseJson.getStr("sourceLabel"))
+                .setModelCode(MODEL_CODE)
+                .setModelName(MODEL_NAME)
                 .setSourceUrl(caseJson.getStr("sourceUrl"))
                 .setGithubUrl(caseJson.getStr("githubUrl"))
                 .setTitle(caseJson.getStr("title"))

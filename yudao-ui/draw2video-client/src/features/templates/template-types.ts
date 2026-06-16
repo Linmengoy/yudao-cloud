@@ -10,6 +10,8 @@ export interface PromptTemplate {
   prompt: string;
   promptPreview?: string;
   category?: string;
+  modelCode?: string;
+  modelName?: string;
   styles?: string;
   scenes?: string;
   tags?: string;

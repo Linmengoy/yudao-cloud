@@ -94,6 +94,8 @@ public class AigcPromptTemplateServiceImpl implements AigcPromptTemplateService 
                 .setPrompt(template.getPrompt())
                 .setPromptPreview(template.getPromptPreview())
                 .setCategory(template.getCategory())
+                .setModelCode(template.getModelCode())
+                .setModelName(template.getModelName())
                 .setStyles(template.getStyles())
                 .setScenes(template.getScenes())
                 .setTags(template.getTags())
