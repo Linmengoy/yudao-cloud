@@ -15,6 +15,7 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStore,
   useStoreApi,
   addEdge,
   applyNodeChanges,
@@ -166,6 +167,21 @@ function unionSelectionRects(rects: SelectionRectSnapshot[]): SelectionRectSnaps
   const right = Math.max(...rects.map((rect) => rect.x + rect.width));
   const bottom = Math.max(...rects.map((rect) => rect.y + rect.height));
   return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function getNodeScreenRect(node: AppNode | undefined, transform: readonly [number, number, number]): SelectionRectSnapshot | null {
+  if (!node) return null;
+  const data = node.data as Record<string, unknown> | undefined;
+  const width = node.measured?.width ?? (typeof data?.width === "number" ? (data.width as number) : null);
+  const height = node.measured?.height ?? (typeof data?.height === "number" ? (data.height as number) : null);
+  if (width == null || height == null) return null;
+  const [x, y, zoom] = transform;
+  return {
+    x: node.position.x * zoom + x,
+    y: node.position.y * zoom + y,
+    width: width * zoom,
+    height: height * zoom,
+  };
 }
 
 function getPreviewCardViewportRect(nodeId: string): SelectionRectSnapshot | null {
@@ -1269,6 +1285,38 @@ function CanvasFlow() {
   const [remotePresences, setRemotePresences] = useState<Record<string, RemoteCanvasPresence>>({});
   // 初始化最后发送存在时间
   const lastPresenceSentAtRef = useRef(0);
+
+  const canvasTransform = useStore((state) => state.transform);
+
+  const membersByUserId = useMemo(() => {
+    const map = new Map<number, CanvasMember>();
+    for (const member of projectMembers) map.set(member.userId, member);
+    return map;
+  }, [projectMembers]);
+
+  const getPresenceDisplay = useCallback((presence: RemoteCanvasPresence) => {
+    const member = typeof presence.userId === "number" ? membersByUserId.get(presence.userId) : undefined;
+    return {
+      name: member?.nickname?.trim() || "协作者",
+      avatar: member?.avatar || null,
+    };
+  }, [membersByUserId]);
+
+  const remoteSelectionHighlights = useMemo(() => {
+    const highlights: Array<{ key: string; nodeId: string; color: string; name: string; editing: boolean; rect: SelectionRectSnapshot }> = [];
+    for (const [presenceClientId, presence] of Object.entries(remotePresences)) {
+      if (!presence.selectedNodeIds?.length) continue;
+      const color = getPresenceColor(presenceClientId);
+      const { name } = getPresenceDisplay(presence);
+      for (const nodeId of presence.selectedNodeIds) {
+        const node = nodes.find((candidate) => candidate.id === nodeId);
+        const rect = getNodeScreenRect(node, canvasTransform);
+        if (!rect) continue;
+        highlights.push({ key: `${presenceClientId}:${nodeId}`, nodeId, color, name, editing: presence.editingNodeId === nodeId, rect });
+      }
+    }
+    return highlights;
+  }, [remotePresences, getPresenceDisplay, nodes, canvasTransform]);
   // 初始化编辑编辑节点ID
    const editingNodeIdRef = useRef<string | null>(null);
   // 初始化节点数据补丁定时器
@@ -3420,14 +3468,39 @@ function CanvasFlow() {
         onZoomChange={handleToolbarZoomChange}
       />
 
+      {remoteSelectionHighlights.map((highlight) => (
+        <div
+          key={highlight.key}
+          className="pointer-events-none absolute z-40 rounded-lg transition-[left,top,width,height] duration-100 ease-linear"
+          style={{
+            left: highlight.rect.x,
+            top: highlight.rect.y,
+            width: highlight.rect.width,
+            height: highlight.rect.height,
+            border: `2px ${highlight.editing ? "solid" : "dashed"} ${highlight.color}`,
+            boxShadow: highlight.editing ? `0 0 0 3px ${highlight.color}33` : undefined,
+          }}
+        >
+          <div
+            className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm"
+            style={{ backgroundColor: highlight.color }}
+          >
+            {highlight.editing && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />}
+            {highlight.name}
+            {highlight.editing ? " 正在编辑" : ""}
+          </div>
+        </div>
+      ))}
+
       {Object.entries(remotePresences).map(([presenceClientId, presence]) => {
         const cursor = presence.screenCursor;
         if (!cursor) return null;
         const color = getPresenceColor(presenceClientId);
+        const { name, avatar } = getPresenceDisplay(presence);
         return (
           <div
             key={presenceClientId}
-            className="pointer-events-none absolute z-50"
+            className="pointer-events-none absolute z-50 transition-[left,top] duration-100 ease-linear"
             style={{ left: cursor.x, top: cursor.y, color }}
           >
             <div
@@ -3435,34 +3508,59 @@ function CanvasFlow() {
               style={{ borderLeftColor: color }}
             />
             <div
-              className="mt-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm"
+              className="mt-1 flex items-center gap-1.5 rounded-full pl-0.5 pr-2 py-0.5 text-[10px] font-medium text-white shadow-sm"
               style={{ backgroundColor: color }}
             >
-              协作者
+              {avatar ? (
+                <img src={avatar} alt={name} className="h-4 w-4 rounded-full object-cover ring-1 ring-white/60" />
+              ) : (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-white/25 text-[9px]">
+                  {name.slice(0, 1)}
+                </span>
+              )}
+              {name}
             </div>
           </div>
         );
       })}
 
       {Object.keys(remotePresences).length > 0 && (
-        <div className="pointer-events-none absolute right-4 top-4 z-50 rounded-full border border-border-warm bg-background px-3 py-1.5 text-xs text-charcoal/70 shadow-sm">
-          {Object.keys(remotePresences).length} 人在线协作 · {projectMembers.length || Object.keys(remotePresences).length + 1} 位成员
+        <div className="pointer-events-none absolute right-4 top-4 z-50 flex items-center gap-2 rounded-full border border-border-warm bg-background px-2 py-1 shadow-sm">
+          <div className="flex -space-x-2">
+            {Object.entries(remotePresences).slice(0, 5).map(([presenceClientId, presence]) => {
+              const color = getPresenceColor(presenceClientId);
+              const { name, avatar } = getPresenceDisplay(presence);
+              return avatar ? (
+                <img
+                  key={presenceClientId}
+                  src={avatar}
+                  alt={name}
+                  title={name}
+                  className="h-6 w-6 rounded-full object-cover ring-2 ring-background"
+                  style={{ boxShadow: `0 0 0 1px ${color}` }}
+                />
+              ) : (
+                <div
+                  key={presenceClientId}
+                  title={name}
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-medium text-white ring-2 ring-background"
+                  style={{ backgroundColor: color }}
+                >
+                  {name.slice(0, 1)}
+                </div>
+              );
+            })}
+            {Object.keys(remotePresences).length > 5 && (
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-charcoal/10 text-[10px] font-medium text-charcoal/70 ring-2 ring-background">
+                +{Object.keys(remotePresences).length - 5}
+              </div>
+            )}
+          </div>
+          <span className="text-xs text-charcoal/70">
+            {Object.keys(remotePresences).length} 人在线协作
+          </span>
         </div>
       )}
-
-      {Object.entries(remotePresences).map(([presenceClientId, presence]) => {
-        if (!presence.editingNodeId) return null;
-        const color = getPresenceColor(presenceClientId);
-        return (
-          <div
-            key={`${presenceClientId}:${presence.editingNodeId}`}
-            className="pointer-events-none absolute left-4 top-16 z-50 rounded-full px-3 py-1.5 text-xs font-medium text-white shadow-sm"
-            style={{ backgroundColor: color }}
-          >
-            协作者正在编辑 {presence.editingNodeId}
-          </div>
-        );
-      })}
 
       {isReadOnly && (
         <div className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border border-border-warm bg-background px-3 py-1.5 text-xs text-charcoal/70 shadow-sm">

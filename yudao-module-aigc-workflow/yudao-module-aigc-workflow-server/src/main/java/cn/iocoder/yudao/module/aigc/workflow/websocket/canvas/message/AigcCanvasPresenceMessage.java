@@ -10,6 +10,7 @@ public class AigcCanvasPresenceMessage {
 
     private Long projectId;
     private String clientId;
+    private Long userId;
     private Map<String, Object> cursor;
     private List<String> selectedNodeIds;
     private String editingNodeId;

@@ -23,6 +23,7 @@ public class AigcCanvasPresenceMessageListener implements WebSocketMessageListen
         if (!roomService.isJoined(message.getProjectId(), session.getId())) {
             return;
         }
+        message.setUserId(userId);
         roomService.broadcast(message.getProjectId(), "canvas-presence", message, session.getId());
     }
 
