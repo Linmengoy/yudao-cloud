@@ -215,6 +215,10 @@ class CommunityReleaseGateTest(unittest.TestCase):
         workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
 
         self.assertIn("previous_stable_image_tag", workflow)
+        self.assertIn("Enforce rollback version gate", workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh preflight", workflow)
+        self.assertIn("Enforce community DB evidence gate", workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh db-evidence", workflow)
         self.assertIn("Write release evidence summary", workflow)
         self.assertIn("RELEASE_EVIDENCE_FILE=tmp/release-evidence/${service}-${image_tag}.md", workflow)
         self.assertIn("workflow run url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", workflow)
@@ -224,8 +228,9 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("Append release verification evidence", workflow)
         self.assertIn("deployment verification", workflow)
         self.assertIn("docker compose -f script/docker/docker-compose-micro.yml ps", workflow)
-        self.assertIn("curl -fsS http://127.0.0.1:48097/actuator/health", workflow)
-        self.assertIn("curl -fsS http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1", workflow)
+        self.assertIn("COMMUNITY_HEALTH_URL=\"http://127.0.0.1:48097/actuator/health\"", workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh verify-http", workflow)
+        self.assertIn("curl -i -sS --fail-with-body http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1", workflow)
         self.assertIn("script/docker/community-release-gates.md", workflow)
         self.assertIn("script/docker/community-release-evidence-index.md", workflow)
 
@@ -246,9 +251,9 @@ class CommunityReleaseGateTest(unittest.TestCase):
             "docker compose -f docker-compose-micro.yml up -d --no-deps",
             "docker compose -f docker-compose-micro.yml ps --status running --services",
             "docker compose -f docker-compose-micro.yml logs --tail=100",
-            "curl -fsS http://127.0.0.1:48097/actuator/health",
-            "curl -i -sS ${admin_url}",
-            "curl -i -sS ${app_url}",
+            "COMMUNITY_HEALTH_URL=\"http://127.0.0.1:48097/actuator/health\"",
+            "curl -i -sS --fail-with-body ${admin_url}",
+            "curl -i -sS --fail-with-body ${app_url}",
             "gateway admin smoke result:",
             "gateway app smoke result:",
             "service logs tail:",
@@ -259,6 +264,10 @@ class CommunityReleaseGateTest(unittest.TestCase):
         workflow = read(".gitea/workflows/yudao-micro-cicd-prod.yml")
 
         self.assertIn("previous_stable_image_tag", workflow)
+        self.assertIn("Enforce rollback version gate", workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh preflight", workflow)
+        self.assertIn("Enforce community DB evidence gate", workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh db-evidence", workflow)
         self.assertIn("RELEASE_EVIDENCE_FILE=tmp/release-evidence/prod-${service}-${image_tag}.md", workflow)
         self.assertIn("Write release evidence summary", workflow)
         self.assertIn("immutable image tag: ${MICRO_IMAGE_TAG}", workflow)
@@ -270,8 +279,32 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("Append release verification evidence", workflow)
         self.assertIn("deployment verification", workflow)
         self.assertIn("docker compose -f docker-compose-micro.yml ps", workflow)
-        self.assertIn("curl -fsS http://127.0.0.1:48097/actuator/health", workflow)
+        self.assertIn("COMMUNITY_HEALTH_URL=\"http://127.0.0.1:48097/actuator/health\"", workflow)
+        self.assertIn("verify-release-evidence.sh\" verify-http", workflow)
         self.assertIn("script/docker/community-release-evidence-index.md", workflow)
+
+    def test_release_gate_script_enforces_rollback_db_and_http_evidence(self):
+        script = read("script/docker/verify-release-evidence.sh")
+
+        for required in [
+            "set -euo pipefail",
+            "previous_stable_image_tag is required for rollback evidence",
+            "previous_stable_image_tag must be a Git SHA tag",
+            "COMMUNITY_DB_RELEASE_RECORD must point to the completed community_db migration record",
+            "backup sha256:",
+            "verification SQL output summary:",
+            "rollback drill:",
+            "aigc_guide_content",
+            "aigc_community_post_like",
+            "utf8mb4",
+            "curl -i -sS --fail-with-body",
+            "COMMUNITY_GATEWAY_ADMIN_SMOKE_URL",
+            "COMMUNITY_GATEWAY_APP_SMOKE_URL",
+            "verify-http",
+        ]:
+            self.assertIn(required, script)
+
+        self.assertNotIn("|| true", script)
 
     def test_release_evidence_index_covers_all_release_gate_templates(self):
         index = read("script/docker/community-release-evidence-index.md")

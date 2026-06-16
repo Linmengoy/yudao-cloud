@@ -49,6 +49,10 @@ For `aigc-community`, the workflow must run Maven package, image build, `docker 
 tail service logs on failure. The workflow also appends deployment verification evidence after the compose rollout,
 including the compose ps summary, service health result, and gateway smoke commands.
 
+The workflow must run `script/docker/verify-release-evidence.sh preflight` before build. This gate fails when
+`previous_stable_image_tag` is empty or is not a Git SHA tag, so rollback evidence cannot silently degrade to `latest` or
+`not-provided`.
+
 ## Runner Docker and Compose recovery evidence for #161
 
 Record these fields before rerunning `service=aigc-community` or `service=all`:
@@ -202,6 +206,11 @@ rollback owner:
 rollback decision:
 ```
 
+For `aigc-community` and `all` releases, set `COMMUNITY_DB_RELEASE_RECORD` to a filled migration record before running
+the workflow. `script/docker/verify-release-evidence.sh db-evidence` blocks the release when the backup path, SHA256,
+SQL commit SHA, executor, verifier, execution window, table verification, utf8mb4 collation, service health result, or
+rollback drill is missing.
+
 Validation must confirm `aigc_guide_content` and all `aigc_community_*` tables use `utf8mb4` collation and have the
 indexes defined by `community_db.sql`.
 
@@ -283,6 +292,10 @@ aigc-community smoke route evidence
 #164 is complete only when `/actuator/health` returns `UP` or an explicitly accepted equivalent healthy state and both
 Gateway routes prove they reach `aigc-community-server`. Authentication failures may be acceptable route proof when the
 response and service log identify the community service; 404 route misses are not acceptable.
+
+`script/docker/verify-release-evidence.sh verify-http` is the executable gate for this section. It must run without
+`|| true`; health and gateway smoke failures must fail the workflow and leave the release evidence file with the failed
+command context.
 
 ## Evidence archive and bridge write-back for #165
 

@@ -123,6 +123,8 @@ aigc-community CI build evidence
 ```
 
 Do not mark #151 complete when the evidence cannot tie the build output to a Git SHA and immutable image tag.
+The workflow must execute `script/docker/verify-release-evidence.sh preflight` and fail when
+`previous_stable_image_tag` is empty or not a Git SHA tag.
 
 ## Database execution evidence for #152
 
@@ -147,6 +149,9 @@ community_db migration record
 
 The verification summary must cover `aigc_guide_content`, every `aigc_community_*` table, utf8mb4 collation, and the
 indexes declared in `community_db.sql`.
+For `aigc-community` and `all` workflow runs, `COMMUNITY_DB_RELEASE_RECORD` must point to this completed record so
+`script/docker/verify-release-evidence.sh db-evidence` can block missing backup, checksum, SQL SHA, verifier, health, or
+rollback drill evidence.
 
 ## Rollback version evidence for #153
 
@@ -193,6 +198,7 @@ aigc-community deployment health evidence
 
 Do not mark #154 complete until the health response and gateway smoke results are real command output from the target
 environment, or the release owner explicitly accepts the missing evidence and the issue is marked failed.
+The HTTP proof is enforced by `script/docker/verify-release-evidence.sh verify-http`; do not wrap the gate in `|| true`.
 
 ## Runner Docker recovery evidence for #161
 

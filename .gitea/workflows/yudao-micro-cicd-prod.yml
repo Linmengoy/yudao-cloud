@@ -104,6 +104,10 @@ jobs:
           echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
           echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/prod-${service}-${image_tag}.md" >> "${GITHUB_ENV}"
 
+      - name: Enforce rollback version gate
+        run: |
+          bash script/docker/verify-release-evidence.sh preflight
+
       - name: Write release evidence summary
         run: |
           mkdir -p tmp/release-evidence
@@ -127,6 +131,11 @@ jobs:
             echo "- smoke checklist: script/docker/community-release-gates.md"
             echo "- evidence index: script/docker/community-release-evidence-index.md"
           } | tee "${evidence}"
+
+      - name: Enforce community DB evidence gate
+        if: env.BUILD_SERVICE == 'aigc-community' || env.BUILD_SERVICE == 'all'
+        run: |
+          bash script/docker/verify-release-evidence.sh db-evidence
 
       - name: Build jar
         run: |
@@ -235,6 +244,13 @@ jobs:
             exit 1
           done
 
+          if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+            COMMUNITY_HEALTH_URL="http://127.0.0.1:48097/actuator/health" \
+            GATEWAY_BASE_URL="http://127.0.0.1:48080" \
+            COMPOSE_FILE_PATH="docker-compose-micro.yml" \
+              bash "${GITHUB_WORKSPACE}/script/docker/verify-release-evidence.sh" verify-http
+          fi
+
       - name: Append release verification evidence
         if: always()
         run: |
@@ -252,19 +268,15 @@ jobs:
             echo "- compose ps summary:"
             cd "${deploy_dir}" && docker compose -f docker-compose-micro.yml ps || true
             if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
-              echo "- service health result:"
-              docker compose -f docker-compose-micro.yml exec -T aigc-community curl -fsS http://127.0.0.1:48097/actuator/health || true
-              echo
+              echo "- strict gate:"
+              echo "  script/docker/verify-release-evidence.sh verify-http must pass before this workflow can succeed"
               echo "- gateway smoke commands:"
               admin_url="http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1"
               app_url="http://127.0.0.1:48080/app-api/aigc/community/post/page?pageNo=1&pageSize=1"
-              echo "  curl -i -sS ${admin_url}"
-              echo "  curl -i -sS ${app_url}"
-              echo "- gateway admin smoke result:"
-              curl -i -sS "${admin_url}" 2>&1 | head -n 40 || true
-              echo
-              echo "- gateway app smoke result:"
-              curl -i -sS "${app_url}" 2>&1 | head -n 40 || true
+              echo "  curl -i -sS --fail-with-body ${admin_url}"
+              echo "  curl -i -sS --fail-with-body ${app_url}"
+              echo "- gateway admin smoke result: captured by strict verify-http gate"
+              echo "- gateway app smoke result: captured by strict verify-http gate"
               echo
               echo "- service logs tail:"
               docker compose -f docker-compose-micro.yml logs --tail=80 aigc-community || true
