@@ -42,11 +42,11 @@ import { VideoNodeComponent } from "@/features/canvas/VideoNode";
 import { GroupNodeComponent } from "@/features/canvas/GroupNode";
 import { CanvasSignalEdge } from "@/features/canvas/CanvasSignalEdge";
 import { collectNodeAssetIds, getNodeAssetAccessRequest, withFreshAssetUrl } from "@/features/canvas/canvas-asset-runtime";
-import { filterSyncableNodeDataPatch, isCanvasNodeSyncable, sanitizeNodeForCanvasOperation, sanitizeNodesForCanvasSnapshot, stripRuntimeAssetUrlsFromPatch } from "@/features/canvas/canvas-syncable-data";
+import { filterSyncableNodeDataPatch, isCanvasNodeSyncable, sanitizeCanvasStateForPersistence, sanitizeNodeForCanvasOperation, stripRuntimeAssetUrlsFromPatch } from "@/features/canvas/canvas-syncable-data";
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
-import { saveImage, saveVideo } from "@/features/canvas/image-store";
+import { loadImage, loadVideo, saveImage, saveVideo } from "@/features/canvas/image-store";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
 import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
 import { getAssetAccessUrls, getMyAsset } from "@/features/assets/asset-api";
@@ -1837,6 +1837,29 @@ function CanvasFlow() {
     }));
   }, [serverProjectId, setNodes]);
 
+  const hydrateLocalMediaNodes = useCallback(async (nodesToHydrate: AppNode[]) => {
+    const hydrated = await Promise.all(nodesToHydrate.map(async (node) => {
+      try {
+        if (node.type === "image") {
+          const data = node.data as ImageNodeData;
+          if (data.previewUrl || data.dataUrl || data.assetId || !data.imageId) return node;
+          const stored = await loadImage(data.imageId, mediaStoreScope);
+          return stored ? { ...node, data: { ...data, ...stored, projectId: data.projectId ?? stored.projectId } } as AppNode : node;
+        }
+        if (node.type === "video") {
+          const data = node.data as VideoNodeData;
+          if (data.previewUrl || data.videoUrl || data.assetId || !data.videoId) return node;
+          const stored = await loadVideo(data.videoId, mediaStoreScope);
+          return stored ? { ...node, data: { ...data, ...stored, projectId: data.projectId ?? stored.projectId } } as AppNode : node;
+        }
+      } catch {
+        return node;
+      }
+      return node;
+    }));
+    setNodes((currentNodes) => currentNodes.map((node) => hydrated.find((item) => item.id === node.id) ?? node));
+  }, [mediaStoreScope, setNodes]);
+
   const refreshVisibleAssetUrls = useCallback((nodesToRefresh?: AppNode[]) => {
     const visibleNodes = filterNodesInExpandedCanvasViewport(nodesToRefresh ?? getNodes() as AppNode[], screenToFlowPosition);
     if (visibleNodes.length > 0) {
@@ -2683,7 +2706,10 @@ function CanvasFlow() {
           setEdges(migratedEdges);
           setViewport(saved.viewport ?? DEFAULT_CANVAS_VIEWPORT);
           setIsHydrated(true);
-          window.requestAnimationFrame(() => refreshVisibleAssetUrlsRef.current(migratedNodes));
+          window.requestAnimationFrame(() => {
+            hydrateLocalMediaNodes(migratedNodes);
+            refreshVisibleAssetUrlsRef.current(migratedNodes);
+          });
         }
 
         if (currentVersion > snapshotVersion) syncFromVersionRef.current(snapshotVersion);
@@ -2698,7 +2724,7 @@ function CanvasFlow() {
 
     hydrate();
     return () => { cancelled = true; };
-  }, [activeProjectId, loadProject, markAppliedVersion, resetAppliedVersion, router, setNodes, setEdges, setViewport]);
+  }, [activeProjectId, hydrateLocalMediaNodes, loadProject, markAppliedVersion, resetAppliedVersion, router, setNodes, setEdges, setViewport]);
 
   // Debounced save — only after hydration completes
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -2711,11 +2737,15 @@ function CanvasFlow() {
         const summary = summarizeCanvas(nodes);
         if (!isReadOnly && serverProjectId && canvasOperations.pendingOperationCount === 0) {
           setIsSavingSnapshot(true);
-          const snapshotNodes = sanitizeNodesForCanvasSnapshot(nodes);
-          saveSnapshot(serverProjectId, {
-            nodes: snapshotNodes,
+          const snapshotState = sanitizeCanvasStateForPersistence({
+            nodes,
             edges,
             viewport: getViewport(),
+          });
+          saveSnapshot(serverProjectId, {
+            nodes: snapshotState.nodes,
+            edges: snapshotState.edges,
+            viewport: snapshotState.viewport,
             baseVersion: lastAppliedVersionRef.current,
             clientId,
             ...summary,

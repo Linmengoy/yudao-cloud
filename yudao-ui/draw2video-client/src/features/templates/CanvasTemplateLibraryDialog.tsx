@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronDown, Loader2, Search, X } from "lucide-react";
 import { getAigcModelList, type AigcModel } from "@/features/generation/model-api";
@@ -9,6 +9,10 @@ import type { PromptTemplate, PromptTemplateModel } from "./template-types";
 
 const PAGE_SIZE = 24;
 const LOAD_MORE_THRESHOLD = 320;
+
+function createRandomSeed() {
+  return Math.floor(Math.random() * 1_000_000_000);
+}
 
 type CanvasTemplateLibraryDialogProps = {
   open: boolean;
@@ -66,6 +70,7 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const randomSeedRef = useRef(createRandomSeed());
 
   const hasMore = items.length < total;
   const selectedModel = useMemo(
@@ -77,6 +82,7 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
   const loadPage = useCallback(async (nextPageNo: number, replace: boolean) => {
     if (!open) return;
     if (replace) {
+      randomSeedRef.current = createRandomSeed();
       setLoading(true);
     } else {
       setLoadingMore(true);
@@ -88,6 +94,7 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
         pageSize: PAGE_SIZE,
         keyword: keyword.trim() || undefined,
         modelCode: modelCode || undefined,
+        randomSeed: randomSeedRef.current,
       });
       setItems((current) => replace ? page.list : [...current, ...page.list]);
       setTotal(page.total);

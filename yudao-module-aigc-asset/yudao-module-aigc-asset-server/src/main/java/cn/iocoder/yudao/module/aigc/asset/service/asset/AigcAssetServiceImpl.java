@@ -1040,7 +1040,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 continue;
             }
             String accessType = accessTypeForRole(file.getFileRole());
-            if (!Objects.equals(AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode(), file.getAccessMode())) {
+            if (!canGenerateSignedAccessUrl(file)) {
                 accessUrlMap.put(file.getId(), buildPublicAccessUrl(asset, file, accessType));
                 continue;
             }
@@ -1081,7 +1081,7 @@ public class AigcAssetServiceImpl implements AigcAssetService {
 
     private AigcAssetAccessUrlRespDTO getAccessUrl(AigcAssetDO asset, AigcAssetFileDO file, String accessType,
             Long userId) {
-        if (!Objects.equals(AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode(), file.getAccessMode())) {
+        if (!canGenerateSignedAccessUrl(file)) {
             return buildPublicAccessUrl(asset, file, accessType);
         }
         String key = buildAccessUrlCacheKey(file, accessType, userId);
@@ -1114,9 +1114,15 @@ public class AigcAssetServiceImpl implements AigcAssetService {
                 .setAssetFileId(file.getId())
                 .setFileRole(file.getFileRole())
                 .setAccessType(accessType)
-                .setUrl(file.getPublicUrl())
-                .setPublicAccess(true)
+                .setUrl(StrUtil.blankToDefault(file.getPublicUrl(), file.getOriginUrl()))
+                .setPublicAccess(file.getPublicUrl() != null)
                 .setCacheHit(false);
+    }
+
+    private boolean canGenerateSignedAccessUrl(AigcAssetFileDO file) {
+        return Objects.equals(AigcAssetAccessModeEnum.PRIVATE_SIGNED.getCode(), file.getAccessMode())
+                && file.getStorageConfigId() != null
+                && StrUtil.isNotBlank(file.getFilePath());
     }
 
     private List<AigcAssetAccessUrlRespDTO> generateAccessUrls(List<AccessUrlGenerateContext> contexts) {

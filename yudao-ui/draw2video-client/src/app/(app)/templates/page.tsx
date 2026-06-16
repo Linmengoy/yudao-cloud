@@ -19,6 +19,10 @@ import { cn } from "@/lib/utils";
 const PAGE_SIZE = 30;
 const MIN_TEMPLATE_COLUMN_WIDTH = 230;
 
+function createRandomSeed() {
+  return Math.floor(Math.random() * 1_000_000_000);
+}
+
 function parseJsonArray(value?: string) {
   if (!value) return [];
   try {
@@ -174,6 +178,7 @@ export default function TemplatesPage() {
   const hasMoreRef = useRef(true);
   const templatesLengthRef = useRef(0);
   const categoryKeywordFallbackRef = useRef(false);
+  const randomSeedRef = useRef(createRandomSeed());
 
   const loadTemplates = useCallback(async (reset = false) => {
     if (loadingPageRef.current) return;
@@ -184,6 +189,7 @@ export default function TemplatesPage() {
     setLoadingMore(!reset);
     setError("");
     if (reset) {
+      randomSeedRef.current = createRandomSeed();
       pageNoRef.current = 1;
       hasMoreRef.current = true;
       templatesLengthRef.current = 0;
@@ -201,6 +207,7 @@ export default function TemplatesPage() {
         pageSize: PAGE_SIZE,
         keyword: categoryKeywordFallbackRef.current ? category : keyword,
         category: categoryKeywordFallbackRef.current ? undefined : category || undefined,
+        randomSeed: randomSeedRef.current,
       });
       let nextList = data.list ?? [];
       let nextTotal = data.total ?? 0;
@@ -209,6 +216,7 @@ export default function TemplatesPage() {
           pageNo: 1,
           pageSize: PAGE_SIZE,
           keyword: category,
+          randomSeed: randomSeedRef.current,
         });
         nextList = fallbackData.list ?? [];
         nextTotal = fallbackData.total ?? 0;
