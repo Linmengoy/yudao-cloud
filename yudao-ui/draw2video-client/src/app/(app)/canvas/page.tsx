@@ -2162,7 +2162,9 @@ function CanvasFlow() {
       clearTimeout(nodeDataPatchTimersRef.current[key]);
       const submitPatch = () => {
         const patch = Object.fromEntries(
-          Object.entries(filterSyncableNodeDataPatch(detail.patch)).filter(([patchKey]) => !SNAPSHOT_ONLY_NODE_DATA_KEYS.has(patchKey))
+          Object.entries(filterSyncableNodeDataPatch(detail.patch)).filter(([patchKey]) =>
+            detail.includeSnapshotOnly || !SNAPSHOT_ONLY_NODE_DATA_KEYS.has(patchKey)
+          )
         );
         if (Object.keys(patch).length > 0) {
           canvasOperations.submitOperation("NODE_UPDATE_DATA", {

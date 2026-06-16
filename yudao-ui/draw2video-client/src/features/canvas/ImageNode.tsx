@@ -648,12 +648,12 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   }, [id, referencePickerPromptId, selected]);
 
   const updateData = useCallback(
-    (patch: Partial<ImageNodeData>, options?: { flush?: boolean }) => {
+    (patch: Partial<ImageNodeData>, options?: { flush?: boolean; includeSnapshotOnly?: boolean }) => {
       setNodes((nds) =>
         nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
       );
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
-        detail: { nodeId: id, patch, flush: options?.flush },
+        detail: { nodeId: id, patch, flush: options?.flush, includeSnapshotOnly: options?.includeSnapshotOnly },
       }));
     },
     [id, setNodes]
@@ -881,7 +881,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       providerModel: nextModel.providerModel ?? nextModel.model,
       modelName: nextModel.name,
       aigcModelId: nextModel.id,
-    }, { flush: true });
+    }, { flush: true, includeSnapshotOnly: true });
   }, [aigcModels.loading, aigcModels.models, aigcModels.selectedModel, data.modelCode, data.modelName, selectedAigcModelId, updateData]);
 
   const handleNodeClick = useCallback(
