@@ -458,6 +458,62 @@ class ReviewReadyContractTest(unittest.TestCase):
         aigc_en_block = self._object_block(en_locale, "aigc")
         self.assertNotRegex(aigc_en_block, r"[\u4e00-\u9fff]")
 
+    def test_issue_213_model_price_route_proxy_param_pages_use_i18n_options(self):
+        target_paths = [
+            "yudao-ui/draw2video-admin/src/views/aigc/model/price/index.vue",
+            "yudao-ui/draw2video-admin/src/views/aigc/model/price/PriceForm.vue",
+            "yudao-ui/draw2video-admin/src/views/aigc/model/route/index.vue",
+            "yudao-ui/draw2video-admin/src/views/aigc/model/route/RouteForm.vue",
+            "yudao-ui/draw2video-admin/src/views/aigc/model/proxy/index.vue",
+            "yudao-ui/draw2video-admin/src/views/aigc/model/proxy/ProxyForm.vue",
+            "yudao-ui/draw2video-admin/src/views/aigc/model/param/index.vue",
+            "yudao-ui/draw2video-admin/src/views/aigc/model/param/ParamForm.vue",
+        ]
+        target_text = "\n".join(read(path) for path in target_paths)
+        constants = read("yudao-ui/draw2video-admin/src/views/aigc/model/constants.ts")
+        zh_locale = read("yudao-ui/draw2video-admin/src/locales/zh-CN.ts")
+        en_locale = read("yudao-ui/draw2video-admin/src/locales/en.ts")
+
+        for vue_path in target_paths:
+            vue = read(vue_path)
+            self.assertIn("const { t } = useI18n()", vue, vue_path)
+
+        for dynamic_option in [
+            "AIGC_MODEL_CAPABILITIES",
+            "AIGC_BILLING_UNITS",
+            "AIGC_ROUTE_STRATEGIES",
+            "AIGC_PROXY_PROTOCOLS",
+            "AIGC_PARAM_TYPES",
+        ]:
+            self.assertRegex(target_text, rf"getOptionLabel\((?:\[item\]|{dynamic_option}), [^,\n]+, t\)")
+
+        for label_key in [
+            "aigc.model.options.capabilities.textToImage",
+            "aigc.model.options.billingUnits.perTask",
+            "aigc.model.options.routeStrategies.fixedModel",
+            "aigc.model.options.proxyProtocols.socks5h",
+            "aigc.model.options.paramTypes.string",
+        ]:
+            self.assertIn(f"labelKey: '{label_key}'", constants)
+
+        zh_model_paths = self._locale_leaf_paths(zh_locale, "aigc")
+        en_model_paths = self._locale_leaf_paths(en_locale, "aigc")
+        for key in self._i18n_keys(target_text) | set(label_key for label_key in [
+            "aigc.model.options.capabilities.textToImage",
+            "aigc.model.options.billingUnits.perTask",
+            "aigc.model.options.routeStrategies.fixedModel",
+            "aigc.model.options.proxyProtocols.socks5h",
+            "aigc.model.options.paramTypes.string",
+        ]):
+            if key.startswith("aigc.model."):
+                self.assertIn(key, zh_model_paths)
+                self.assertIn(key, en_model_paths)
+
+        self.assertIn("t('aigc.model.fields.platformCostPrice')", target_text)
+        self.assertIn("t('aigc.model.tips.platformCostPrice')", target_text)
+        self.assertIn("t('aigc.model.fields.userSalePrice')", target_text)
+        self.assertIn("t('aigc.model.fields.required') : t('aigc.model.fields.optional')", target_text)
+
     def test_issue_215_admin_aigc_i18n_scan_records_remaining_work_and_matching_locale_paths(self):
         scan = read("yudao-ui/draw2video-admin/src/views/aigc/i18n-hardcoded-scan-20260616.md")
         zh_locale = read("yudao-ui/draw2video-admin/src/locales/zh-CN.ts")
