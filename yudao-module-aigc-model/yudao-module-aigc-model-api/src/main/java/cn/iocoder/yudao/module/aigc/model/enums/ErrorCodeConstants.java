@@ -25,6 +25,7 @@ public interface ErrorCodeConstants {
     ErrorCode MODEL_CHANNEL_DISABLED = new ErrorCode(1_041_001_101, "模型渠道实现已禁用");
     ErrorCode MODEL_CHANNEL_DUPLICATE = new ErrorCode(1_041_001_102, "模型渠道实现重复");
     ErrorCode MODEL_CHANNEL_NOT_FOUND = new ErrorCode(1_041_001_103, "模型没有可用渠道实现");
+    ErrorCode MODEL_CHANNEL_REFERENCED_BY_ROUTE = new ErrorCode(1_041_001_104, "模型渠道实现已被路由引用，无法删除：{}");
 
     ErrorCode MODEL_PARAM_NOT_EXISTS = new ErrorCode(1_041_002_000, "模型参数不存在");
     ErrorCode MODEL_PARAM_INVALID = new ErrorCode(1_041_002_001, "模型参数不合法");

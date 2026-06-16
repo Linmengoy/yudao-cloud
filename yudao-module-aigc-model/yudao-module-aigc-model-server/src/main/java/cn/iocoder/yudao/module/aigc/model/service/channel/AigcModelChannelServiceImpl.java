@@ -1,20 +1,27 @@
 package cn.iocoder.yudao.module.aigc.model.service.channel;
 
+import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelChannelCloneReqVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelChannelPageReqVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelChannelSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelChannelDO;
+import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelRouteDO;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelChannelMapper;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelMapper;
 import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelProviderMapper;
+import cn.iocoder.yudao.module.aigc.model.dal.mysql.AigcModelRouteMapper;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.*;
@@ -31,6 +38,9 @@ public class AigcModelChannelServiceImpl implements AigcModelChannelService {
 
     @Resource
     private AigcModelProviderMapper providerMapper;
+
+    @Resource
+    private AigcModelRouteMapper routeMapper;
 
     @Override
     public Long createChannel(AigcModelChannelSaveReqVO reqVO) {
@@ -50,6 +60,25 @@ public class AigcModelChannelServiceImpl implements AigcModelChannelService {
     }
 
     @Override
+    public Long cloneChannel(AigcModelChannelCloneReqVO reqVO) {
+        AigcModelChannelDO source = validateChannelExists(reqVO.getSourceChannelId());
+        validateProviderExists(reqVO.getTargetProviderId());
+
+        String providerModel = StrUtil.blankToDefault(reqVO.getProviderModel(), source.getProviderModel());
+        validateChannelUnique(null, source.getModelId(), reqVO.getTargetProviderId(), providerModel);
+
+        AigcModelChannelDO clone = BeanUtils.toBean(source, AigcModelChannelDO.class);
+        clone.setId(null);
+        clone.setProviderId(reqVO.getTargetProviderId());
+        clone.setProviderModel(providerModel);
+        clone.setName(StrUtil.blankToDefault(reqVO.getName(), source.getName() + "-克隆"));
+        clone.setWeight(ObjectUtil.defaultIfNull(reqVO.getWeight(), source.getWeight()));
+        clone.setStatus(CommonStatusEnum.DISABLE.getStatus());
+        channelMapper.insert(clone);
+        return clone.getId();
+    }
+
+    @Override
     public void updateChannel(AigcModelChannelSaveReqVO reqVO) {
         validateChannelExists(reqVO.getId());
         validateModelExists(reqVO.getModelId());
@@ -62,6 +91,7 @@ public class AigcModelChannelServiceImpl implements AigcModelChannelService {
     @Override
     public void deleteChannel(Long id) {
         validateChannelExists(id);
+        validateChannelNotReferencedByRoute(id);
         channelMapper.deleteById(id);
     }
 
@@ -126,6 +156,26 @@ public class AigcModelChannelServiceImpl implements AigcModelChannelService {
         if (count > 0) {
             throw exception(MODEL_CHANNEL_DUPLICATE);
         }
+    }
+
+    private void validateChannelNotReferencedByRoute(Long channelId) {
+        List<AigcModelRouteDO> routes = routeMapper.selectListWithChannelIds().stream()
+                .filter(route -> containsChannelId(route.getChannelIds(), channelId))
+                .toList();
+        if (routes.isEmpty()) {
+            return;
+        }
+        String routeNames = routes.stream()
+                .map(AigcModelRouteDO::getName)
+                .collect(Collectors.joining("、"));
+        throw exception(MODEL_CHANNEL_REFERENCED_BY_ROUTE, routeNames);
+    }
+
+    private boolean containsChannelId(String channelIds, Long channelId) {
+        if (StrUtil.isBlank(channelIds) || !JSONUtil.isTypeJSONArray(channelIds)) {
+            return false;
+        }
+        return JSONUtil.toList(channelIds, Long.class).contains(channelId);
     }
 
 }

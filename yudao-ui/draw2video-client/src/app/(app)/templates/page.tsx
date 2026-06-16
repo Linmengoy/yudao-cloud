@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Copy, Loader2, RefreshCw, Search, Sparkles } from "lucide-react";
 import { MasonryWall } from "@/components/MasonryWall";
 import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
@@ -70,11 +71,17 @@ function TemplateCard({
   onPreview,
   onReuse,
   onImageLoad,
+  reuseLabel,
+  reuseTitle,
+  featuredLabel,
 }: {
   template: PromptTemplate;
   onPreview: (template: PromptTemplate) => void;
   onReuse: (template: PromptTemplate) => void;
   onImageLoad: (ratio?: number) => void;
+  reuseLabel: string;
+  reuseTitle: string;
+  featuredLabel: string;
 }) {
   const styles = parseJsonArray(template.styles).slice(0, 3);
   const promptPreview = template.promptPreview || template.prompt;
@@ -108,10 +115,10 @@ function TemplateCard({
           }}
           className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-background/92 px-3 py-1.5 text-xs text-charcoal opacity-0 shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] backdrop-blur transition-opacity hover:bg-background group-hover:opacity-100 focus:opacity-100 focus:outline-none focus:shadow-[rgba(0,0,0,0.1)_0px_4px_12px]"
           aria-label={`复用模板 ${template.title}`}
-          title="复用到画布"
+          title={reuseTitle}
         >
           <Sparkles className="size-3.5" />
-          复用
+          {reuseLabel}
         </button>
       </div>
       <button
@@ -123,7 +130,7 @@ function TemplateCard({
           <h2 className="line-clamp-2 text-sm font-medium leading-5 text-charcoal">{template.title}</h2>
           {template.featured && (
             <span className="shrink-0 rounded-full border border-border-warm px-2 py-0.5 text-[11px] text-muted-gray">
-              精选
+              {featuredLabel}
             </span>
           )}
         </div>
@@ -149,15 +156,18 @@ function TemplateCard({
 }
 
 function EmptyState() {
+  const t = useTranslations("templates.empty");
   return (
     <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-border-warm bg-background/70 px-6 py-16 text-center">
-      <p className="text-sm font-medium text-charcoal">没有找到匹配模板</p>
-      <p className="mt-1 text-xs text-muted-gray">换一个关键词或分类试试。</p>
+      <p className="text-sm font-medium text-charcoal">{t("title")}</p>
+      <p className="mt-1 text-xs text-muted-gray">{t("hint")}</p>
     </div>
   );
 }
 
 export default function TemplatesPage() {
+  const t = useTranslations("templates");
+  const commonT = useTranslations("common");
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -233,7 +243,7 @@ export default function TemplatesPage() {
       setPageCursor(nextPageCursor);
       setHasMore(nextHasMore);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "模板库加载失败");
+      setError(err instanceof Error ? err.message : t("loading"));
       hasMoreRef.current = false;
       setHasMore(false);
     } finally {
@@ -241,7 +251,7 @@ export default function TemplatesPage() {
       setLoadingMore(false);
       loadingPageRef.current = false;
     }
-  }, [category, debouncedQuery]);
+  }, [category, debouncedQuery, t]);
 
   useEffect(() => {
     getPromptTemplateCategories().then(setCategories).catch(() => setCategories([]));
@@ -292,19 +302,19 @@ export default function TemplatesPage() {
     <main className="mx-auto flex max-w-[1180px] flex-col px-6 py-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-charcoal">模板库</h1>
-          <p className="mt-1 text-sm text-muted-gray">搜索可复用的提示词和生成结果，快速带入画布继续创作。</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-charcoal">{t("title")}</h1>
+          <p className="mt-1 text-sm text-muted-gray">{t("subtitle")}</p>
         </div>
         <button
           type="button"
           onClick={() => loadTemplates(true)}
           disabled={loading}
           className="inline-flex items-center gap-2 rounded-md border border-[rgba(28,28,28,0.4)] px-3 py-2 text-sm text-charcoal hover:bg-muted active:opacity-80 disabled:opacity-50"
-          aria-label="刷新模板列表"
-          title="刷新模板列表"
+          aria-label={commonT("refresh")}
+          title={commonT("refresh")}
         >
           <RefreshCw className="size-4" />
-          刷新
+          {commonT("refresh")}
         </button>
       </div>
 
@@ -314,7 +324,7 @@ export default function TemplatesPage() {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索提示词、标题或标签"
+            placeholder={t("searchPlaceholder")}
             className="w-full bg-transparent text-sm text-charcoal placeholder:text-muted-gray focus:outline-none"
           />
         </div>
@@ -328,7 +338,7 @@ export default function TemplatesPage() {
               category === "" ? "bg-charcoal text-off-white" : "bg-muted text-muted-gray hover:text-charcoal"
             )}
           >
-            全部
+            {commonT("all")}
           </button>
           {categories.map((item) => (
             <button
@@ -347,8 +357,8 @@ export default function TemplatesPage() {
       </div>
 
       <div className="mt-5 flex items-center justify-between text-xs text-muted-gray">
-        <span>{total > 0 ? `共 ${total} 个模板` : "模板库"}</span>
-        <span>{pageCursor > 1 && templates.length > 0 ? `已加载 ${templates.length}` : ""}</span>
+        <span>{total > 0 ? t("count", { total }) : t("title")}</span>
+        <span>{pageCursor > 1 && templates.length > 0 ? t("loaded", { count: templates.length }) : ""}</span>
       </div>
 
       {error && <div className="mt-4 rounded-lg border border-border-warm bg-background px-4 py-3 text-sm text-muted-gray">{error}</div>}
@@ -356,7 +366,7 @@ export default function TemplatesPage() {
       {loading && !templates.length ? (
         <div className="mt-16 flex items-center justify-center text-sm text-muted-gray">
           <Loader2 className="mr-2 size-4 animate-spin" />
-          加载模板库...
+          {t("loading")}
         </div>
       ) : templates.length === 0 ? (
         <EmptyState />
@@ -379,16 +389,19 @@ export default function TemplatesPage() {
                     setMeasuredRatios((values) => values[key] === ratio ? values : { ...values, [key]: ratio });
                   }
                 }}
+                reuseLabel={t("reuse")}
+                reuseTitle={t("reuseToCanvas")}
+                featuredLabel={t("featured")}
               />
             )}
           />
           <div ref={loadMoreElementRef} className="mt-8 flex justify-center py-4 text-xs text-muted-gray">
             {loadingMore ? (
-              <span className="inline-flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" />加载更多...</span>
+              <span className="inline-flex items-center gap-2"><Loader2 className="size-3.5 animate-spin" />{t("loadMore")}</span>
             ) : hasMore ? (
-              <span>继续下滑加载更多</span>
+              <span>{t("scrollMore")}</span>
             ) : total > 0 ? (
-              <span>已加载全部</span>
+              <span>{t("allLoaded")}</span>
             ) : null}
           </div>
         </>
@@ -406,7 +419,7 @@ export default function TemplatesPage() {
               className="flex flex-1 items-center justify-center gap-2 rounded-md border border-border-warm bg-background px-4 py-2.5 text-sm font-medium text-charcoal shadow-[rgba(0,0,0,0.05)_0px_1px_2px_0px] transition-colors hover:bg-muted active:opacity-80"
             >
               <Copy className="size-4" />
-              复制提示词
+              {t("copyPrompt")}
             </button>
             <button
               type="button"
@@ -414,7 +427,7 @@ export default function TemplatesPage() {
               className="flex flex-1 items-center justify-center gap-2 rounded-md bg-charcoal px-4 py-2.5 text-sm font-medium text-off-white shadow-[rgba(255,255,255,0.2)_0px_0.5px_0px_0px_inset,rgba(0,0,0,0.2)_0px_0px_0px_0.5px_inset,rgba(0,0,0,0.05)_0px_1px_2px_0px] active:opacity-80"
             >
               <Sparkles className="size-4" />
-              复用模板
+              {t("reuseTemplate")}
             </button>
           </div>
         ) : undefined}

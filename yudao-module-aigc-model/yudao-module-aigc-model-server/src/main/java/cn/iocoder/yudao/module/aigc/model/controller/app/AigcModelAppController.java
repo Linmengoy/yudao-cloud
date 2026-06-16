@@ -10,6 +10,7 @@ import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateReqDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelPriceCalculateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelParamTemplateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelRespDTO;
+import cn.iocoder.yudao.module.aigc.model.enums.AigcModelCapabilityEnum;
 import cn.iocoder.yudao.module.aigc.model.service.model.AigcModelService;
 import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
 import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
@@ -53,7 +54,8 @@ public class AigcModelAppController {
     @Parameter(name = "id", description = "模型ID", required = true)
     public CommonResult<AigcModelRespDTO> getModel(@RequestParam("id") Long id) {
         AigcModelDO model = modelService.getTenantVisibleModel(id);
-        return success(BeanUtils.toBean(model, AigcModelRespDTO.class));
+        return success(BeanUtils.toBean(model, AigcModelRespDTO.class,
+                resp -> resp.setCapabilities(modelService.getModelCapabilities(model.getId()))));
     }
 
     @GetMapping("/list")
@@ -96,6 +98,7 @@ public class AigcModelAppController {
 
     private void fillModelListFields(AigcModelRespDTO resp, AigcModelDO model, String capability) {
         resp.setCapabilities(modelService.getModelCapabilities(model.getId()));
+        fillCapabilityLabels(resp, capability);
         Long channelId = routeService.routeChannel(model.getId(), model.getCode(), capability);
         AigcModelChannelDO channel = channelId == null ? null : channelMapper.selectById(channelId);
         if (channel == null) {
@@ -111,6 +114,15 @@ public class AigcModelAppController {
         if (channel.getMaxConcurrent() != null) {
             resp.setMaxConcurrent(channel.getMaxConcurrent());
         }
+    }
+
+    private void fillCapabilityLabels(AigcModelRespDTO resp, String capability) {
+        if (capability == null) {
+            return;
+        }
+        AigcModelCapabilityEnum capabilityEnum = AigcModelCapabilityEnum.fromCode(capability);
+        resp.setCapabilityLabel(capabilityEnum.getDescription());
+        resp.setCapabilityLabelEn(capabilityEnum.getLabelEn());
     }
 
 }

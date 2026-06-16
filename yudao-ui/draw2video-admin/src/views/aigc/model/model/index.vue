@@ -20,6 +20,7 @@
     <el-table v-loading="loading" :data="list" :stripe="true" :show-overflow-tooltip="true">
       <el-table-column label="模型编码" align="center" prop="code" min-width="120" />
       <el-table-column label="模型名称" align="center" prop="name" min-width="140" />
+      <el-table-column label="英文名称" align="center" prop="nameEn" min-width="160" />
       <el-table-column label="模型标识" align="center" prop="model" min-width="180" />
       <el-table-column label="类型" align="center" prop="type" min-width="90"><template #default="scope">{{ getOptionLabel(AIGC_MODEL_TYPES, scope.row.type) }}</template></el-table-column>
       <el-table-column label="渠道商" align="center" prop="providerName" min-width="140" />
@@ -27,7 +28,7 @@
       <el-table-column label="用户端展示" align="center" prop="publicVisible" min-width="110"><template #default="scope"><el-tag :type="scope.row.publicVisible ? 'success' : 'info'">{{ scope.row.publicVisible ? '展示' : '隐藏' }}</el-tag></template></el-table-column>
       <el-table-column label="默认" align="center" prop="defaultModel" min-width="80"><template #default="scope"><el-tag v-if="scope.row.defaultModel" type="warning">默认</el-tag><span v-else>-</span></template></el-table-column>
       <el-table-column label="状态" align="center" prop="status" min-width="90"><template #default="scope"><dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" /></template></el-table-column>
-      <el-table-column label="操作" align="center" width="160" fixed="right"><template #default="scope"><el-button link type="primary" @click="openForm('update', scope.row.id)" v-hasPermi="['aigc:model:update']">编辑</el-button><el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['aigc:model:delete']">删除</el-button></template></el-table-column>
+      <el-table-column label="操作" align="center" width="180" fixed="right"><template #default="scope"><el-button link type="primary" @click="openDetail(scope.row.id)" v-hasPermi="['aigc:model:update']">编辑</el-button><el-button link type="danger" @click="handleDelete(scope.row.id)" v-hasPermi="['aigc:model:delete']">删除</el-button></template></el-table-column>
     </el-table>
     <Pagination :total="total" v-model:page="queryParams.pageNo" v-model:limit="queryParams.pageSize" @pagination="getList" />
   </ContentWrap>
@@ -44,6 +45,7 @@ defineOptions({ name: 'AigcModel' })
 
 const message = useMessage()
 const { t } = useI18n()
+const router = useRouter()
 const loading = ref(true)
 const list = ref<AigcModelRespVO[]>([])
 const total = ref(0)
@@ -63,6 +65,7 @@ const handleQuery = () => { queryParams.pageNo = 1; getList() }
 const resetQuery = () => { queryFormRef.value.resetFields(); handleQuery() }
 const formRef = ref()
 const openForm = (type: string, id?: number) => formRef.value.open(type, id)
+const openDetail = (id: number) => router.push(`/aigc/model/detail/${id}`)
 const handleDelete = async (id: number) => {
   try {
     await message.delConfirm()
@@ -73,4 +76,3 @@ const handleDelete = async (id: number) => {
 }
 onMounted(() => getList())
 </script>
-

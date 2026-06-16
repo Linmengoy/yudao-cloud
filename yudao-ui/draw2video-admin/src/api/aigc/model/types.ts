@@ -11,6 +11,7 @@ export interface AigcModelRespVO {
   providerModel?: string
   code?: string
   name?: string
+  nameEn?: string
   model?: string
   type?: number
   publicVisible?: boolean
@@ -21,6 +22,8 @@ export interface AigcModelRespVO {
   queuePriority?: number
   status?: number
   capabilities?: string[]
+  capabilityLabel?: string
+  capabilityLabelEn?: string
   remark?: string
   createTime?: Date
 }

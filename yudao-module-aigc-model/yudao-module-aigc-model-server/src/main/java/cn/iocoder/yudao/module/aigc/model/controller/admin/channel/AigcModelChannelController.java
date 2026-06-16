@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.aigc.model.controller.admin.channel;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelChannelCloneReqVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelChannelPageReqVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelChannelSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelChannelDO;
@@ -31,6 +32,13 @@ public class AigcModelChannelController {
     @PreAuthorize("@ss.hasPermission('aigc:model:channel:create')")
     public CommonResult<Long> createChannel(@Valid @RequestBody AigcModelChannelSaveReqVO reqVO) {
         return success(channelService.createChannel(reqVO));
+    }
+
+    @PostMapping("/clone")
+    @Operation(summary = "克隆模型渠道实现")
+    @PreAuthorize("@ss.hasPermission('aigc:model:channel:create')")
+    public CommonResult<Long> cloneChannel(@Valid @RequestBody AigcModelChannelCloneReqVO reqVO) {
+        return success(channelService.cloneChannel(reqVO));
     }
 
     @PutMapping("/update")

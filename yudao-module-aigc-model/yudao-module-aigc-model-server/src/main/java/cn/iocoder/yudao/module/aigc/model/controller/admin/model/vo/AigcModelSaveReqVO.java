@@ -24,6 +24,9 @@ public class AigcModelSaveReqVO {
     @NotBlank(message = "模型名称不能为空")
     private String name;
 
+    @Schema(description = "模型英文名称", example = "Kling Video Model")
+    private String nameEn;
+
     @Schema(description = "兼容字段：旧渠道商模型标识，新逻辑使用渠道实现", example = "kling-v1")
     private String model;
 

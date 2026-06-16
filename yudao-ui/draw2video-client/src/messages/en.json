@@ -1,0 +1,106 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "refresh": "Refresh",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "close": "Close",
+    "all": "All"
+  },
+  "layout": {
+    "title": "Copse — AI Creative Platform",
+    "description": "AI image generation for faster creative work"
+  },
+  "app": {
+    "heroEyebrow": "Copse makes creation simpler",
+    "heroTitle": "A creative agent that understands what you want",
+    "promptPlaceholder": "Ask Copse to create...",
+    "tabs": {
+      "image": "Image",
+      "video": "Video"
+    },
+    "actions": {
+      "newCanvas": "New Canvas",
+      "fromTemplate": "Start from Template",
+      "community": "Explore Community",
+      "assets": "My Assets",
+      "newProject": "New Project",
+      "viewAll": "View All"
+    },
+    "sections": {
+      "recentProjects": "Recent Projects",
+      "communityPicks": "Community Picks"
+    },
+    "emptyProjects": "No projects yet. Start here."
+  },
+  "projects": {
+    "title": "Projects",
+    "subtitle": "Open a project to enter its canvas. Nodes and assets are saved independently per project.",
+    "searchPlaceholder": "Search projects",
+    "newProject": "New Project",
+    "trash": "Trash",
+    "loadingTitle": "Loading projects",
+    "loadingHint": "Syncing your projects from the cloud.",
+    "emptyTitle": "No projects yet",
+    "emptySearchTitle": "No matching projects",
+    "emptyHint": "Create a project to continue in its own canvas.",
+    "unnamed": "Untitled Project",
+    "localDraft": "Local draft",
+    "roles": {
+      "owner": "Manage",
+      "viewer": "View",
+      "editor": "Edit"
+    }
+  },
+  "templates": {
+    "title": "Templates",
+    "subtitle": "Search reusable prompts and results, then bring them into the canvas.",
+    "searchPlaceholder": "Search prompts, titles, or tags",
+    "reuse": "Reuse",
+    "reuseToCanvas": "Reuse in canvas",
+    "featured": "Featured",
+    "empty": {
+      "title": "No matching templates",
+      "hint": "Try another keyword or category."
+    },
+    "loading": "Loading templates...",
+    "loadMore": "Loading more...",
+    "scrollMore": "Scroll to load more",
+    "allLoaded": "All templates loaded",
+    "count": "{total} templates",
+    "loaded": "{count} loaded",
+    "copyPrompt": "Copy Prompt",
+    "reuseTemplate": "Reuse Template"
+  },
+  "canvas": {
+    "status": {
+      "saved": "Saved",
+      "saving": "Saving",
+      "offline": "Offline",
+      "failed": "Save failed"
+    },
+    "nodes": {
+      "image": "Image",
+      "video": "Video",
+      "text": "Text",
+      "sketch": "Sketch",
+      "prompt": "Prompt"
+    },
+    "empty": {
+      "video": "Create clip",
+      "image": "Create image",
+      "text": "Write copy",
+      "sketch": "Plan frame",
+      "prompt": "Standalone prompt",
+      "hint": "Click any empty canvas area to quickly create a prompt node"
+    },
+    "toolbar": {
+      "addNode": "Add Node",
+      "closeAddNode": "Close Add Node Menu",
+      "canvas": "Canvas",
+      "templates": "Templates",
+      "help": "Help"
+    }
+  }
+}

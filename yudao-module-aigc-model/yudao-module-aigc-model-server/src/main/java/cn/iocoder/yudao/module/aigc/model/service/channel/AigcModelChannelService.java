@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.aigc.model.service.channel;
 
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelChannelCloneReqVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelChannelPageReqVO;
 import cn.iocoder.yudao.module.aigc.model.controller.admin.channel.vo.AigcModelChannelSaveReqVO;
 import cn.iocoder.yudao.module.aigc.model.dal.dataobject.AigcModelChannelDO;
@@ -10,6 +11,8 @@ import java.util.List;
 public interface AigcModelChannelService {
 
     Long createChannel(AigcModelChannelSaveReqVO reqVO);
+
+    Long cloneChannel(AigcModelChannelCloneReqVO reqVO);
 
     void updateChannel(AigcModelChannelSaveReqVO reqVO);
 

@@ -18,6 +18,9 @@ public class AigcModelRespDTO {
     @Schema(description = "模型名称", requiredMode = Schema.RequiredMode.REQUIRED, example = "可灵视频模型")
     private String name;
 
+    @Schema(description = "模型英文名称", example = "Kling Video Model")
+    private String nameEn;
+
     @Schema(description = "模型标识", requiredMode = Schema.RequiredMode.REQUIRED, example = "kling-v1")
     private String model;
 
@@ -62,6 +65,12 @@ public class AigcModelRespDTO {
 
     @Schema(description = "模型能力列表", example = "TEXT_TO_IMAGE")
     private List<String> capabilities;
+
+    @Schema(description = "当前能力中文显示名", example = "文生图")
+    private String capabilityLabel;
+
+    @Schema(description = "当前能力英文显示名", example = "Text to Image")
+    private String capabilityLabelEn;
 
     @Schema(description = "备注", example = "主力模型")
     private String remark;

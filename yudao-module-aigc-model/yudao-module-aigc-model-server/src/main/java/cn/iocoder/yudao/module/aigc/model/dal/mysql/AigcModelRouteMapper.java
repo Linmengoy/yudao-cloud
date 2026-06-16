@@ -38,4 +38,10 @@ public interface AigcModelRouteMapper extends BaseMapperX<AigcModelRouteDO> {
                 .orderByDesc(AigcModelRouteDO::getId));
     }
 
+    default List<AigcModelRouteDO> selectListWithChannelIds() {
+        return selectList(new LambdaQueryWrapperX<AigcModelRouteDO>()
+                .isNotNull(AigcModelRouteDO::getChannelIds)
+                .orderByDesc(AigcModelRouteDO::getId));
+    }
+
 }

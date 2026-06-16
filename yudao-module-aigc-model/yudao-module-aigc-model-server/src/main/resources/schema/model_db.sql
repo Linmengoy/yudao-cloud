@@ -59,6 +59,7 @@ CREATE TABLE `aigc_model` (
   `provider_id` bigint DEFAULT NULL COMMENT '兼容字段：旧渠道商ID，新逻辑使用 aigc_model_channel',
   `code` varchar(64) NOT NULL COMMENT '平台内部模型编码',
   `name` varchar(128) NOT NULL COMMENT '模型展示名称',
+  `name_en` varchar(128) DEFAULT NULL COMMENT '英文展示名（选填，不填则回退到 name）',
   `model` varchar(128) DEFAULT NULL COMMENT '兼容字段：旧渠道商模型标识，新逻辑使用 aigc_model_channel.provider_model',
   `type` int NOT NULL COMMENT '模型类型',
   `public_visible` tinyint(1) DEFAULT 0 COMMENT '用户端是否展示',
@@ -268,9 +269,9 @@ INSERT INTO `aigc_model_provider` (`id`, `code`, `name`, `api_base_url`, `auth_t
 (2, 'provider_jimeng', '即梦AI', 'https://api.jimengai.com', 'API_KEY', 0, 0),
 (3, 'provider_openai', 'OpenAI', 'https://api.openai.com', 'API_KEY', 0, 0);
 
-INSERT INTO `aigc_model` (`id`, `provider_id`, `code`, `name`, `model`, `type`, `public_visible`, `default_model`, `status`, `tenant_id`) VALUES
-(1, 1, 'model_image_kling', '可灵图片生成', 'kling-image-v1', 2, 0, 0, 0, 0),
-(2, 1, 'model_video_kling', '可灵视频生成', 'kling-video-v1', 3, 0, 0, 0, 0);
+INSERT INTO `aigc_model` (`id`, `provider_id`, `code`, `name`, `name_en`, `model`, `type`, `public_visible`, `default_model`, `status`, `tenant_id`) VALUES
+(1, 1, 'model_image_kling', '可灵图片生成', 'Kling Image Generation', 'kling-image-v1', 2, 0, 0, 0, 0),
+(2, 1, 'model_video_kling', '可灵视频生成', 'Kling Video Generation', 'kling-video-v1', 3, 0, 0, 0, 0);
 
 INSERT INTO `aigc_model_capability` (`id`, `model_id`, `capability`, `status`) VALUES
 (1, 1, 'TEXT_TO_IMAGE', 1),

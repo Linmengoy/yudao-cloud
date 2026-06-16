@@ -5,6 +5,7 @@ import "tldraw/tldraw.css";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ReactFlow,
@@ -67,7 +68,7 @@ import { CanvasTemplateLibraryDialog } from "@/features/templates/CanvasTemplate
 import type { PromptTemplate } from "@/features/templates/template-types";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
-import { ImagePlus, PenLine, Type, Video } from "lucide-react";
+import { ImagePlus, MousePointerClick, PenLine, Sparkles, Type, Video } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -119,7 +120,7 @@ type PointerSnapshot = {
   y: number;
 };
 
-const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video"];
+const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video", "prompt"];
 const DEFAULT_CANVAS_VIEWPORT = { x: 110, y: 90, zoom: 0.78 };
 const NODE_DATA_PATCH_DEBOUNCE_MS = 200;
 const CANVAS_SAVE_DEBOUNCE_MS = 1500;
@@ -143,7 +144,12 @@ function isValidNodeKindConnection(sourceType: AppNode["type"] | CreateNodeKind,
     (sourceType === "sketch" && targetType === "video") ||
     (sourceType === "text" && targetType === "image") ||
     (sourceType === "text" && targetType === "sketch") ||
-    (sourceType === "text" && targetType === "text")
+    (sourceType === "text" && targetType === "text") ||
+    (sourceType === "prompt" && targetType === "image") ||
+    (sourceType === "prompt" && targetType === "video") ||
+    (sourceType === "prompt" && targetType === "text") ||
+    (sourceType === "text" && targetType === "prompt") ||
+    (sourceType === "image" && targetType === "prompt")
   );
 }
 
@@ -1085,11 +1091,36 @@ async function bindUploadedNodeAsset(projectId: string | null, node: AppNode, us
   });
 }
 
+function EmptyCanvasButton({
+  icon,
+  label,
+  description,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-w-[104px] flex-col items-center gap-1 rounded-[14px] border border-border-warm bg-background/92 px-4 py-3 text-center text-sm text-charcoal shadow-sm backdrop-blur transition-colors hover:border-[rgba(28,28,28,0.4)] hover:bg-background active:opacity-80"
+    >
+      <span className="text-muted-gray [&>svg]:size-4">{icon}</span>
+      <span className="font-medium">{label}</span>
+      <span className="text-[10px] leading-3 text-muted-gray">{description}</span>
+    </button>
+  );
+}
+
 function isServerProjectId(projectId: string | null | undefined): projectId is string {
   return typeof projectId === "string" && /^\d+$/.test(projectId);
 }
 
 function CanvasFlow() {
+  const canvasT = useTranslations("canvas");
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -2540,6 +2571,34 @@ function CanvasFlow() {
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
 
+  const addPromptNode = useCallback((position?: { x: number; y: number }) => {
+    if (isReadOnly) return null;
+    const center = position ?? screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const id = `prompt_${Date.now()}`;
+    const currentNodes = getNodes() as AppNode[];
+    const newNode: AppNode = withCardNodeInteraction({
+      id,
+      type: "prompt",
+      position: findOpenNodePosition(
+        center,
+        { width: 280, height: 240 },
+        currentNodes,
+        { padding: 28, stepX: 150, stepY: 130 }
+      ),
+      data: {
+        ...DEFAULT_PROMPT_DATA,
+        params: { ...DEFAULT_PROMPT_DATA.params },
+      },
+      selected: true,
+    });
+    setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
+    return newNode;
+  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, setNodes]);
+
   const addVideoNode = useCallback((position?: { x: number; y: number }) => {
     if (isReadOnly) return null;
     const center = position ?? screenToFlowPosition({
@@ -3122,7 +3181,9 @@ function CanvasFlow() {
             ? addImageDraftNode(position)
             : kind === "sketch"
               ? addSketchNode(position)
-              : addVideoNode(position);
+              : kind === "video"
+                ? addVideoNode(position)
+                : addPromptNode(position);
 
       if (!newNode) return;
 
@@ -3155,7 +3216,7 @@ function CanvasFlow() {
 
       closeCreateMenu();
     },
-    [addImageDraftNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
+    [addImageDraftNode, addPromptNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
   );
 
   const handleConnectEnd = useCallback(
@@ -3258,6 +3319,7 @@ function CanvasFlow() {
 
   const createMenuOrigin = createMenu.originNodeId ? nodes.find((node) => node.id === createMenu.originNodeId) : undefined;
   const createMenuKinds = getCreateKindsForOrigin(createMenuOrigin?.type, createMenu.direction);
+  const isCanvasEmpty = nodes.filter((node) => node.type !== "canvasGroup").length === 0;
 
   const handleRenameProject = (name: string) => {
     if (!serverProjectId || isReadOnly) return;
@@ -3278,6 +3340,7 @@ function CanvasFlow() {
     if (kind === "image") addImageDraftNode(position);
     if (kind === "sketch") addSketchNode(position);
     if (kind === "video") addVideoNode(position);
+    if (kind === "prompt") addPromptNode(position);
   };
 
   return (
@@ -3360,6 +3423,31 @@ function CanvasFlow() {
         onSelect={handleSelectTemplateFromLibrary}
       />
 
+      <AnimatePresence>
+        {isCanvasEmpty && !isReadOnly && !referencePickerPromptId && (
+          <motion.div
+            key="canvas-empty-hint"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="pointer-events-none absolute inset-0 z-[50] flex flex-col items-center justify-center gap-4 px-6"
+          >
+            <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2">
+              <EmptyCanvasButton icon={<Video />} label={canvasT("nodes.video")} description={canvasT("empty.video")} onClick={() => addNodeFromDock("video")} />
+              <EmptyCanvasButton icon={<ImagePlus />} label={canvasT("nodes.image")} description={canvasT("empty.image")} onClick={() => addNodeFromDock("image")} />
+              <EmptyCanvasButton icon={<Type />} label={canvasT("nodes.text")} description={canvasT("empty.text")} onClick={() => addNodeFromDock("text")} />
+              <EmptyCanvasButton icon={<PenLine />} label={canvasT("nodes.sketch")} description={canvasT("empty.sketch")} onClick={() => addNodeFromDock("sketch")} />
+              <EmptyCanvasButton icon={<Sparkles />} label={canvasT("nodes.prompt")} description={canvasT("empty.prompt")} onClick={() => addNodeFromDock("prompt")} />
+            </div>
+            <p className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-gray">
+              <MousePointerClick className="size-3.5" />
+              {canvasT("empty.hint")}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -3409,6 +3497,9 @@ function CanvasFlow() {
           if (ignoreNextPaneClickRef.current) {
             ignoreNextPaneClickRef.current = false;
             return;
+          }
+          if (isCanvasEmpty && !isReadOnly) {
+            addPromptNode();
           }
           closeContextMenu();
           closeCreateMenu();

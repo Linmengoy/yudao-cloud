@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, BookOpen, Boxes, ChevronRight, Folder, Globe, Grid2X2, Grid3X3, HelpCircle, ImagePlus, LogOut, Map as MapIcon, MessageCircle, Palette, PenLine, Plus, Scan, Settings, Share2, Sparkles, Type, Video, Wallet } from "lucide-react";
 import { useAuth } from "@/features/auth/auth-store";
@@ -11,7 +12,7 @@ import { ThemeToggle } from "@/features/theme/ThemeToggle";
 import { formatCompactPoints } from "@/features/wallet/wallet-api";
 import { cn } from "@/lib/utils";
 
-export type CreateNodeKind = "text" | "image" | "sketch" | "video";
+export type CreateNodeKind = "text" | "image" | "sketch" | "video" | "prompt";
 
 export type SelectionRectSnapshot = {
   x: number;
@@ -362,6 +363,7 @@ type CanvasToolDockProps = {
 
 export function CanvasToolDock({ readOnly, onAddNode, onOpenTemplateLibrary }: CanvasToolDockProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const t = useTranslations("canvas");
 
   if (readOnly) return null;
 
@@ -382,8 +384,8 @@ export function CanvasToolDock({ readOnly, onAddNode, onOpenTemplateLibrary }: C
           onClick={() => setMenuOpen((value) => !value)}
           className="flex size-11 items-center justify-center rounded-full bg-charcoal text-off-white transition-opacity hover:opacity-90"
           aria-expanded={menuOpen}
-          aria-label={menuOpen ? "关闭添加节点菜单" : "添加节点"}
-          title={menuOpen ? "关闭添加节点菜单" : "添加节点"}
+          aria-label={menuOpen ? t("toolbar.closeAddNode") : t("toolbar.addNode")}
+          title={menuOpen ? t("toolbar.closeAddNode") : t("toolbar.addNode")}
         >
           <Plus
             className={cn(
@@ -392,9 +394,9 @@ export function CanvasToolDock({ readOnly, onAddNode, onOpenTemplateLibrary }: C
             )}
           />
         </button>
-        <ToolDockButton label="画板" icon={<Palette className="size-5" />} />
-        <ToolDockButton label="素材库" icon={<Folder className="size-5" />} onClick={onOpenTemplateLibrary} />
-        <ToolDockButton label="帮助" icon={<HelpCircle className="size-5" />} />
+        <ToolDockButton label={t("toolbar.canvas")} icon={<Palette className="size-5" />} />
+        <ToolDockButton label={t("toolbar.templates")} icon={<Folder className="size-5" />} onClick={onOpenTemplateLibrary} />
+        <ToolDockButton label={t("toolbar.help")} icon={<HelpCircle className="size-5" />} />
       </nav>
 
       <AnimatePresence>
@@ -408,12 +410,13 @@ export function CanvasToolDock({ readOnly, onAddNode, onOpenTemplateLibrary }: C
               transition={{ duration: 0.14, ease: "easeOut" }}
               className="absolute left-[76px] top-0 w-[300px] rounded-[28px] border border-border-warm bg-background/98 p-4 shadow-[0_18px_50px_rgba(28,28,28,0.16)] backdrop-blur-md"
             >
-              <p className="px-2 pb-2 text-xs text-muted-gray">添加节点</p>
+              <p className="px-2 pb-2 text-xs text-muted-gray">{t("toolbar.addNode")}</p>
               <div className="space-y-1">
-                <CreateNodeMenuButton icon={<Type className="size-5" />} title="文字" description="文本提示词、设定和旁白内容" onClick={() => createNode("text")} />
-                <CreateNodeMenuButton icon={<PenLine className="size-5" />} title="画板" description="草图画板，用来规划镜头和构图" onClick={() => createNode("sketch")} />
-                <CreateNodeMenuButton icon={<ImagePlus className="size-5" />} title="图片" description="图片生成和图像参考节点" onClick={() => createNode("image")} />
-                <CreateNodeMenuButton icon={<Video className="size-5" />} title="视频" description="视频生成节点" onClick={() => createNode("video")} />
+                <CreateNodeMenuButton icon={<Type className="size-5" />} title={t("nodes.text")} description="Text prompts and narration" onClick={() => createNode("text")} />
+                <CreateNodeMenuButton icon={<PenLine className="size-5" />} title={t("nodes.sketch")} description="Sketch and frame planning" onClick={() => createNode("sketch")} />
+                <CreateNodeMenuButton icon={<ImagePlus className="size-5" />} title={t("nodes.image")} description="Image generation and references" onClick={() => createNode("image")} />
+                <CreateNodeMenuButton icon={<Video className="size-5" />} title={t("nodes.video")} description="Video generation node" onClick={() => createNode("video")} />
+                <CreateNodeMenuButton icon={<Sparkles className="size-5" />} title={t("nodes.prompt")} description="Standalone prompt node" onClick={() => createNode("prompt")} />
               </div>
             </motion.div>
           </>

@@ -28,6 +28,8 @@ public class AigcModelDO extends BaseDO {
 
     private String name;
 
+    private String nameEn;
+
     private String model;
 
     private Integer type;

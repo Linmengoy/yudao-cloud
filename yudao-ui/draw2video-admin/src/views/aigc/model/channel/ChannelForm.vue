@@ -58,12 +58,12 @@ const formType = ref('')
 const formRef = ref()
 const modelList = ref<AigcModelRespVO[]>([])
 const providerList = ref<AigcModelProviderRespVO[]>([])
-const formData = ref<AigcModelChannelSaveReqVO>({ id: undefined, modelId: undefined, providerId: undefined, providerModel: undefined, name: undefined, costPrice: 0, currencyType: 'POINT', weight: 100, priority: 100, maxConcurrent: undefined, timeoutSeconds: undefined, status: CommonStatusEnum.ENABLE, remark: undefined })
+const formData = ref<AigcModelChannelSaveReqVO & { sourceChannelId?: number }>({ id: undefined, sourceChannelId: undefined, modelId: undefined, providerId: undefined, providerModel: undefined, name: undefined, costPrice: 0, currencyType: 'POINT', weight: 100, priority: 100, maxConcurrent: undefined, timeoutSeconds: undefined, status: CommonStatusEnum.ENABLE, remark: undefined })
 const formRules = reactive({ modelId: [{ required: true, message: '业务模型不能为空', trigger: 'change' }], providerId: [{ required: true, message: '渠道商不能为空', trigger: 'change' }], providerModel: [{ required: true, message: '上游模型不能为空', trigger: 'blur' }], status: [{ required: true, message: '状态不能为空', trigger: 'change' }] })
 
 const open = async (type: string, id?: number, modelId?: number) => {
   dialogVisible.value = true
-  dialogTitle.value = t('action.' + type)
+  dialogTitle.value = type === 'clone' ? '克隆' : t('action.' + type)
   formType.value = type
   resetForm()
   const [modelPage, providerPage] = await Promise.all([
@@ -77,6 +77,15 @@ const open = async (type: string, id?: number, modelId?: number) => {
     formLoading.value = true
     try {
       formData.value = await AigcModelChannelApi.getChannel(id)
+      if (type === 'clone') {
+        formData.value = {
+          ...formData.value,
+          id: undefined,
+          sourceChannelId: id,
+          status: CommonStatusEnum.DISABLE,
+          name: formData.value.name ? `${formData.value.name}-克隆` : undefined
+        }
+      }
     } finally {
       formLoading.value = false
     }
@@ -92,6 +101,15 @@ const submitForm = async () => {
     if (formType.value === 'create') {
       await AigcModelChannelApi.createChannel(formData.value)
       message.success(t('common.createSuccess'))
+    } else if (formType.value === 'clone') {
+      await AigcModelChannelApi.cloneChannel({
+        sourceChannelId: Number(formData.value.sourceChannelId),
+        targetProviderId: Number(formData.value.providerId),
+        providerModel: formData.value.providerModel,
+        name: formData.value.name,
+        weight: formData.value.weight
+      })
+      message.success(t('common.createSuccess'))
     } else {
       await AigcModelChannelApi.updateChannel(formData.value)
       message.success(t('common.updateSuccess'))
@@ -104,7 +122,7 @@ const submitForm = async () => {
 }
 
 const resetForm = () => {
-  formData.value = { id: undefined, modelId: undefined, providerId: undefined, providerModel: undefined, name: undefined, costPrice: 0, currencyType: 'POINT', weight: 100, priority: 100, maxConcurrent: undefined, timeoutSeconds: undefined, status: CommonStatusEnum.ENABLE, remark: undefined }
+  formData.value = { id: undefined, sourceChannelId: undefined, modelId: undefined, providerId: undefined, providerModel: undefined, name: undefined, costPrice: 0, currencyType: 'POINT', weight: 100, priority: 100, maxConcurrent: undefined, timeoutSeconds: undefined, status: CommonStatusEnum.ENABLE, remark: undefined }
   formRef.value?.resetFields()
 }
 </script>

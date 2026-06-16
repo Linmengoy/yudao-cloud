@@ -1,0 +1,106 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "refresh": "刷新",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "close": "关闭",
+    "all": "全部"
+  },
+  "layout": {
+    "title": "Copse — AI 创意平台",
+    "description": "AI 图片生成，释放你的创意"
+  },
+  "app": {
+    "heroEyebrow": "Copse 让创作更简单",
+    "heroTitle": "懂你的创意代理，帮你搞定一切",
+    "promptPlaceholder": "让 Copse 创作一张...",
+    "tabs": {
+      "image": "图片",
+      "video": "视频"
+    },
+    "actions": {
+      "newCanvas": "新建画布",
+      "fromTemplate": "从模板开始",
+      "community": "浏览社区",
+      "assets": "我的资产",
+      "newProject": "新建项目",
+      "viewAll": "查看全部"
+    },
+    "sections": {
+      "recentProjects": "最近项目",
+      "communityPicks": "社区精选"
+    },
+    "emptyProjects": "还没有项目，从这里开始吧"
+  },
+  "projects": {
+    "title": "项目库",
+    "subtitle": "从项目进入画布，所有节点和素材都会按项目独立保存。",
+    "searchPlaceholder": "搜索项目",
+    "newProject": "新建项目",
+    "trash": "回收站",
+    "loadingTitle": "正在加载项目",
+    "loadingHint": "从云端同步你的项目库。",
+    "emptyTitle": "还没有项目",
+    "emptySearchTitle": "没有匹配的项目",
+    "emptyHint": "新建一个项目后，就可以进入独立画布继续创作。",
+    "unnamed": "未命名项目",
+    "localDraft": "本机草稿",
+    "roles": {
+      "owner": "可管理",
+      "viewer": "可浏览",
+      "editor": "可编辑"
+    }
+  },
+  "templates": {
+    "title": "模板库",
+    "subtitle": "搜索可复用的提示词和生成结果，快速带入画布继续创作。",
+    "searchPlaceholder": "搜索提示词、标题或标签",
+    "reuse": "复用",
+    "reuseToCanvas": "复用到画布",
+    "featured": "精选",
+    "empty": {
+      "title": "没有找到匹配模板",
+      "hint": "换一个关键词或分类试试。"
+    },
+    "loading": "加载模板库...",
+    "loadMore": "加载更多...",
+    "scrollMore": "继续下滑加载更多",
+    "allLoaded": "已加载全部",
+    "count": "共 {total} 个模板",
+    "loaded": "已加载 {count}",
+    "copyPrompt": "复制提示词",
+    "reuseTemplate": "复用模板"
+  },
+  "canvas": {
+    "status": {
+      "saved": "已保存",
+      "saving": "保存中",
+      "offline": "离线",
+      "failed": "保存失败"
+    },
+    "nodes": {
+      "image": "图片",
+      "video": "视频",
+      "text": "文本",
+      "sketch": "草图",
+      "prompt": "提示词"
+    },
+    "empty": {
+      "video": "生成镜头",
+      "image": "生成图片",
+      "text": "设定旁白",
+      "sketch": "规划构图",
+      "prompt": "独立提示",
+      "hint": "在画布任意空白处单击，快速新建提示词节点"
+    },
+    "toolbar": {
+      "addNode": "添加节点",
+      "closeAddNode": "关闭添加节点菜单",
+      "canvas": "画板",
+      "templates": "素材库",
+      "help": "帮助"
+    }
+  }
+}

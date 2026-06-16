@@ -16,6 +16,7 @@ import cn.iocoder.yudao.module.aigc.model.dto.AigcModelSubmitCandidateRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelSubmitPrepareRespDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelUsageRecordReqDTO;
 import cn.iocoder.yudao.module.aigc.model.dto.AigcModelValidateReqDTO;
+import cn.iocoder.yudao.module.aigc.model.enums.AigcModelCapabilityEnum;
 import cn.iocoder.yudao.module.aigc.model.service.model.AigcModelService;
 import cn.iocoder.yudao.module.aigc.model.service.param.AigcModelParamService;
 import cn.iocoder.yudao.module.aigc.model.service.price.AigcModelPriceService;
@@ -89,7 +90,10 @@ public class AigcModelApiImpl implements AigcModelApi {
         List<AigcModelDO> models = modelService.listTenantAvailableModels(type);
         return success(models.stream()
                 .filter(model -> capability == null || modelService.hasModelCapability(model.getId(), capability))
-                .map(model -> BeanUtils.toBean(model, AigcModelRespDTO.class))
+                .map(model -> BeanUtils.toBean(model, AigcModelRespDTO.class, resp -> {
+                    resp.setCapabilities(modelService.getModelCapabilities(model.getId()));
+                    fillCapabilityLabels(resp, capability);
+                }))
                 .collect(Collectors.toList()));
     }
 
@@ -169,7 +173,7 @@ public class AigcModelApiImpl implements AigcModelApi {
                     continue;
                 }
                 candidates.add(new AigcModelSubmitCandidateRespDTO.Candidate()
-                        .setModel(convertModel(model, channel))
+                        .setModel(convertModel(model, channel, reqDTO.getCapability()))
                         .setProvider(BeanUtils.toBean(provider, AigcModelProviderRespDTO.class))
                         .setPrice(price)
                         .setStrategy(reqDTO.getStrategy())
@@ -246,11 +250,13 @@ public class AigcModelApiImpl implements AigcModelApi {
         }
         AigcModelChannelDO channel = channelService.validateChannelExistsAndEnable(channelId);
         AigcModelProviderDO provider = providerService.validateProviderExistsAndEnable(channel.getProviderId());
-        return new AigcModelRouteResult(convertModel(model, channel), provider);
+        return new AigcModelRouteResult(convertModel(model, channel, capability), provider);
     }
 
-    private AigcModelRespDTO convertModel(AigcModelDO model, AigcModelChannelDO channel) {
+    private AigcModelRespDTO convertModel(AigcModelDO model, AigcModelChannelDO channel, String capability) {
         return BeanUtils.toBean(model, AigcModelRespDTO.class, resp -> {
+            resp.setCapabilities(modelService.getModelCapabilities(model.getId()));
+            fillCapabilityLabels(resp, capability);
             if (channel != null) {
                 resp.setChannelId(channel.getId());
                 resp.setProviderId(channel.getProviderId());
@@ -264,6 +270,15 @@ public class AigcModelApiImpl implements AigcModelApi {
                 }
             }
         });
+    }
+
+    private void fillCapabilityLabels(AigcModelRespDTO resp, String capability) {
+        if (capability == null) {
+            return;
+        }
+        AigcModelCapabilityEnum capabilityEnum = AigcModelCapabilityEnum.fromCode(capability);
+        resp.setCapabilityLabel(capabilityEnum.getDescription());
+        resp.setCapabilityLabelEn(capabilityEnum.getLabelEn());
     }
 
     private static class AigcModelRouteResult {

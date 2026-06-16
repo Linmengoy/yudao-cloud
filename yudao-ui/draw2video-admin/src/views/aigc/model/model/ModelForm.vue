@@ -17,6 +17,13 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
+          <el-form-item label="英文名称" prop="nameEn">
+            <el-input v-model="formData.nameEn" placeholder="请输入英文名称（选填）" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="20">
+        <el-col :span="12">
           <el-form-item label="模型名称" prop="name">
             <el-input v-model="formData.name" placeholder="请输入模型名称" />
           </el-form-item>
@@ -83,6 +90,7 @@ defineOptions({ name: 'AigcModelForm' })
 
 const { t } = useI18n()
 const message = useMessage()
+const router = useRouter()
 const dialogVisible = ref(false)
 const dialogTitle = ref('')
 const formLoading = ref(false)
@@ -93,6 +101,7 @@ const formData = ref<AigcModelSaveReqVO>({
   providerId: undefined,
   code: undefined,
   name: undefined,
+  nameEn: undefined,
   model: undefined,
   type: undefined,
   capabilities: [],
@@ -134,8 +143,14 @@ const submitForm = async () => {
   formLoading.value = true
   try {
     if (formType.value === 'create') {
-      await AigcModelApi.createModel(formData.value)
+      const id = await AigcModelApi.createModel(formData.value)
       message.success(t('common.createSuccess'))
+      if (id) {
+        dialogVisible.value = false
+        emit('success')
+        await router.push(`/aigc/model/detail/${id}`)
+        return
+      }
     } else {
       await AigcModelApi.updateModel(formData.value)
       message.success(t('common.updateSuccess'))
@@ -153,6 +168,7 @@ const resetForm = () => {
     providerId: undefined,
     code: undefined,
     name: undefined,
+    nameEn: undefined,
     model: undefined,
     type: undefined,
     capabilities: [],

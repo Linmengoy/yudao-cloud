@@ -9,6 +9,13 @@ export interface AigcModelChannelPageReqVO extends PageParam {
 }
 
 export type AigcModelChannelSaveReqVO = AigcModelChannelRespVO
+export interface AigcModelChannelCloneReqVO {
+  sourceChannelId: number
+  targetProviderId: number
+  providerModel?: string
+  name?: string
+  weight?: number
+}
 
 export const AigcModelChannelApi = {
   getChannelPage: async (params: AigcModelChannelPageReqVO) => {
@@ -19,6 +26,9 @@ export const AigcModelChannelApi = {
   },
   createChannel: async (data: AigcModelChannelSaveReqVO) => {
     return await request.post({ url: '/aigc/model/channel/create', data })
+  },
+  cloneChannel: async (data: AigcModelChannelCloneReqVO) => {
+    return await request.post({ url: '/aigc/model/channel/clone', data })
   },
   updateChannel: async (data: AigcModelChannelSaveReqVO) => {
     return await request.put({ url: '/aigc/model/channel/update', data })
