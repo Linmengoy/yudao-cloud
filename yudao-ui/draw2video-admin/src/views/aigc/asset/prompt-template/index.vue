@@ -189,19 +189,19 @@ const handleImagesRemove = (_file: UploadFile, files: UploadFiles) => {
 }
 
 const handleImport = async () => {
-  await formRef.value?.validate()
-  const casesJson = await readCasesJson(formData.casesJsonFile as File)
-  const imageBatches = chunkFiles(formData.imageFiles, BATCH_SIZE)
-  totalBatch.value = imageBatches.length
-  currentBatch.value = 0
-  importResult.value = {
-    totalCount: 0,
-    createCount: 0,
-    updateCount: 0,
-    skipCount: 0
-  }
-  loading.value = true
   try {
+    await formRef.value?.validate()
+    const casesJson = await readCasesJson(formData.casesJsonFile as File)
+    const imageBatches = chunkFiles(formData.imageFiles, BATCH_SIZE)
+    totalBatch.value = imageBatches.length
+    currentBatch.value = 0
+    importResult.value = {
+      totalCount: 0,
+      createCount: 0,
+      updateCount: 0,
+      skipCount: 0
+    }
+    loading.value = true
     for (const batch of imageBatches) {
       const data = new FormData()
       data.append('casesJson', buildBatchCasesJsonFile(casesJson, batch))
@@ -217,6 +217,8 @@ const handleImport = async () => {
       currentBatch.value += 1
     }
     message.success('导入完成')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导入失败')
   } finally {
     loading.value = false
   }
