@@ -6,6 +6,7 @@ const STORAGE_KEY = "copse_canvas_draft";
 type StoredCanvasState = CanvasState & {
   projectId?: string | null;
   ownerKey?: string | null;
+  savedAt?: number;
 };
 
 function normalizeScopeValue(value?: string | number | null) {
@@ -63,6 +64,7 @@ export function saveCanvas(state: CanvasState, projectId?: string | null, ownerK
     ...sanitized,
     projectId: projectId ?? null,
     ownerKey: normalizeScopeValue(ownerKey),
+    savedAt: Date.now(),
     nodes: stripDataUrlFromNodes(sanitized.nodes),
   };
   localStorage.setItem(storageKey(projectId, ownerKey), JSON.stringify(lightweight));
