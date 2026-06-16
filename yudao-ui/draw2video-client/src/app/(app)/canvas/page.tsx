@@ -2170,7 +2170,7 @@ function CanvasFlow() {
           canvasOperations.submitOperation("NODE_UPDATE_DATA", {
             nodeId: detail.nodeId,
             patch,
-          });
+          }, { reliable: detail.reliable === true });
         }
         delete nodeDataPatchTimersRef.current[key];
       };

@@ -648,12 +648,18 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   }, [id, referencePickerPromptId, selected]);
 
   const updateData = useCallback(
-    (patch: Partial<ImageNodeData>, options?: { flush?: boolean; includeSnapshotOnly?: boolean }) => {
+    (patch: Partial<ImageNodeData>, options?: { flush?: boolean; includeSnapshotOnly?: boolean; reliable?: boolean }) => {
       setNodes((nds) =>
         nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
       );
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
-        detail: { nodeId: id, patch, flush: options?.flush, includeSnapshotOnly: options?.includeSnapshotOnly },
+        detail: {
+          nodeId: id,
+          patch,
+          flush: options?.flush,
+          includeSnapshotOnly: options?.includeSnapshotOnly,
+          reliable: options?.reliable,
+        },
       }));
     },
     [id, setNodes]
@@ -1064,6 +1070,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
     updateData({
       prompt: cleanPrompt,
+      params: effectiveParams,
       status: "pending",
       errorMessage: null,
       safetyStatus: null,
@@ -1074,12 +1081,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       taskStatus: "SUBMITTING",
       upstreamStatus: "SUBMITTING",
       generationCount,
+      kind: "generated",
       outputsExpanded: false,
       modelId: runAigcModelId ? String(runAigcModelId) : modelId,
       providerModel: runProviderModel,
       aigcModelId: runAigcModelId,
       modelName: runModelName,
-    }, { flush: true });
+    }, { flush: true, includeSnapshotOnly: true, reliable: true });
 
     const projectId = new URLSearchParams(window.location.search).get("projectId");
     if (isServerCanvasProjectId(projectId) && runAigcModelId) {
@@ -1101,7 +1109,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           taskId: String(run.taskId),
           taskStatus: run.status,
           upstreamStatus: run.status,
-        }, { flush: true });
+        }, { flush: true, reliable: true });
         await waitAndApplyServerRun(projectId, run.taskId, startedAt);
         return;
       } catch (error) {

@@ -32,6 +32,7 @@ export type NodeDataPatchEventDetail = {
   patch: Record<string, unknown>;
   flush?: boolean;
   includeSnapshotOnly?: boolean;
+  reliable?: boolean;
 };
 
 export type NodePositionPatchEventDetail = {
