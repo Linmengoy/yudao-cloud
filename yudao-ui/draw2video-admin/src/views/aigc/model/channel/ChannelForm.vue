@@ -3,39 +3,39 @@
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="120px" v-loading="formLoading">
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="业务模型" prop="modelId">
-            <el-select v-model="formData.modelId" class="!w-1/1" filterable placeholder="请选择业务模型">
+          <el-form-item :label="t('aigc.model.fields.businessModel')" prop="modelId">
+            <el-select v-model="formData.modelId" class="!w-1/1" filterable :placeholder="t('aigc.model.placeholders.businessModel')">
               <el-option v-for="item in modelList" :key="item.id" :label="item.name" :value="Number(item.id)" />
             </el-select>
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="渠道商" prop="providerId">
-            <el-select v-model="formData.providerId" class="!w-1/1" filterable placeholder="请选择渠道商">
+          <el-form-item :label="t('aigc.model.fields.provider')" prop="providerId">
+            <el-select v-model="formData.providerId" class="!w-1/1" filterable :placeholder="t('aigc.model.placeholders.provider')">
               <el-option v-for="item in providerList" :key="item.id" :label="item.name" :value="Number(item.id)" />
             </el-select>
           </el-form-item>
         </el-col>
       </el-row>
       <el-row :gutter="20">
-        <el-col :span="12"><el-form-item label="实现名称" prop="name"><el-input v-model="formData.name" placeholder="请输入实现名称" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="上游模型" prop="providerModel"><el-input v-model="formData.providerModel" placeholder="请输入上游模型标识" /></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.implementationName')" prop="name"><el-input v-model="formData.name" :placeholder="t('aigc.model.placeholders.implementationName')" /></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.upstreamModel')" prop="providerModel"><el-input v-model="formData.providerModel" :placeholder="t('aigc.model.placeholders.upstreamModel')" /></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
-        <el-col :span="8"><el-form-item label="成本价" prop="costPrice"><el-input-number v-model="formData.costPrice" class="!w-1/1" :min="0" :precision="6" /></el-form-item></el-col>
-        <el-col :span="8"><el-form-item label="权重" prop="weight"><el-input-number v-model="formData.weight" class="!w-1/1" :min="0" /></el-form-item></el-col>
-        <el-col :span="8"><el-form-item label="优先级" prop="priority"><el-input-number v-model="formData.priority" class="!w-1/1" :min="0" /></el-form-item></el-col>
+        <el-col :span="8"><el-form-item :label="t('aigc.model.fields.costPrice')" prop="costPrice"><el-input-number v-model="formData.costPrice" class="!w-1/1" :min="0" :precision="6" /></el-form-item></el-col>
+        <el-col :span="8"><el-form-item :label="t('aigc.model.fields.weight')" prop="weight"><el-input-number v-model="formData.weight" class="!w-1/1" :min="0" /></el-form-item></el-col>
+        <el-col :span="8"><el-form-item :label="t('aigc.model.fields.priority')" prop="priority"><el-input-number v-model="formData.priority" class="!w-1/1" :min="0" /></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
-        <el-col :span="8"><el-form-item label="最大并发" prop="maxConcurrent"><el-input-number v-model="formData.maxConcurrent" class="!w-1/1" :min="1" /></el-form-item></el-col>
-        <el-col :span="8"><el-form-item label="超时时间" prop="timeoutSeconds"><el-input-number v-model="formData.timeoutSeconds" class="!w-1/1" :min="1" /></el-form-item></el-col>
-        <el-col :span="8"><el-form-item label="状态" prop="status"><el-radio-group v-model="formData.status"><el-radio v-for="dict in getIntDictOptions(DICT_TYPE.COMMON_STATUS)" :key="dict.value" :value="dict.value">{{ dict.label }}</el-radio></el-radio-group></el-form-item></el-col>
+        <el-col :span="8"><el-form-item :label="t('aigc.model.fields.maxConcurrent')" prop="maxConcurrent"><el-input-number v-model="formData.maxConcurrent" class="!w-1/1" :min="1" /></el-form-item></el-col>
+        <el-col :span="8"><el-form-item :label="t('aigc.model.fields.timeoutSeconds')" prop="timeoutSeconds"><el-input-number v-model="formData.timeoutSeconds" class="!w-1/1" :min="1" /></el-form-item></el-col>
+        <el-col :span="8"><el-form-item :label="t('common.status')" prop="status"><el-radio-group v-model="formData.status"><el-radio v-for="dict in getIntDictOptions(DICT_TYPE.COMMON_STATUS)" :key="dict.value" :value="dict.value">{{ dict.label }}</el-radio></el-radio-group></el-form-item></el-col>
       </el-row>
-      <el-form-item label="备注" prop="remark"><el-input v-model="formData.remark" type="textarea" placeholder="请输入备注" /></el-form-item>
+      <el-form-item :label="t('aigc.model.fields.remark')" prop="remark"><el-input v-model="formData.remark" type="textarea" :placeholder="t('aigc.model.placeholders.remark')" /></el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="submitForm" type="primary" :disabled="formLoading">确 定</el-button>
-      <el-button @click="dialogVisible = false">取 消</el-button>
+      <el-button @click="submitForm" type="primary" :disabled="formLoading">{{ t('common.ok') }}</el-button>
+      <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
     </template>
   </Dialog>
 </template>
@@ -63,7 +63,7 @@ const formRules = reactive({ modelId: [{ required: true, message: '业务模型�
 
 const open = async (type: string, id?: number, modelId?: number) => {
   dialogVisible.value = true
-  dialogTitle.value = type === 'clone' ? '克隆' : t('action.' + type)
+  dialogTitle.value = type === 'clone' ? t('aigc.model.actions.clone') : t('action.' + type)
   formType.value = type
   resetForm()
   const [modelPage, providerPage] = await Promise.all([

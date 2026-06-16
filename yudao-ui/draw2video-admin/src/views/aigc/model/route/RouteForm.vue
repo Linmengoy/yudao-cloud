@@ -1,25 +1,25 @@
 <template>
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="720px">
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="110px" v-loading="formLoading">
-      <el-form-item label="规则名称" prop="name"><el-input v-model="formData.name" placeholder="请输入规则名称" /></el-form-item>
+      <el-form-item :label="t('aigc.model.fields.ruleName')" prop="name"><el-input v-model="formData.name" :placeholder="t('aigc.model.placeholders.ruleName')" /></el-form-item>
       <el-row :gutter="20">
-        <el-col :span="12"><el-form-item label="业务模型" prop="modelId"><el-select v-model="formData.modelId" class="!w-1/1" filterable placeholder="请选择业务模型" @change="loadChannelList"><el-option v-for="item in modelList" :key="item.id" :label="getModelName(item)" :value="getModelOptionValue(item)" /></el-select></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="能力" prop="capability"><el-select v-model="formData.capability" class="!w-1/1" :multiple="formType === 'create'" collapse-tags collapse-tags-tooltip clearable placeholder="请选择能力"><el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.businessModel')" prop="modelId"><el-select v-model="formData.modelId" class="!w-1/1" filterable :placeholder="t('aigc.model.placeholders.businessModel')" @change="loadChannelList"><el-option v-for="item in modelList" :key="item.id" :label="getModelName(item)" :value="getModelOptionValue(item)" /></el-select></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.capability')" prop="capability"><el-select v-model="formData.capability" class="!w-1/1" :multiple="formType === 'create'" collapse-tags collapse-tags-tooltip clearable :placeholder="t('aigc.model.placeholders.capability')"><el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="getOptionLabel([item], item.value, t)" :value="item.value" /></el-select></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
-        <el-col :span="12"><el-form-item label="路由策略" prop="strategy"><el-select v-model="formData.strategy" class="!w-1/1" placeholder="请选择路由策略"><el-option v-for="item in AIGC_ROUTE_STRATEGIES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="用户等级" prop="userLevel"><el-input v-model="formData.userLevel" placeholder="请输入用户等级" /></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.routeStrategy')" prop="strategy"><el-select v-model="formData.strategy" class="!w-1/1" :placeholder="t('aigc.model.placeholders.routeStrategy')"><el-option v-for="item in AIGC_ROUTE_STRATEGIES" :key="item.value" :label="getOptionLabel([item], item.value, t)" :value="item.value" /></el-select></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.userLevel')" prop="userLevel"><el-input v-model="formData.userLevel" :placeholder="t('aigc.model.placeholders.userLevel')" /></el-form-item></el-col>
       </el-row>
-      <el-form-item label="候选渠道" prop="channelIds">
-        <el-select v-model="selectedChannelIds" class="!w-1/1" multiple filterable collapse-tags collapse-tags-tooltip placeholder="请选择候选渠道实现">
+      <el-form-item :label="t('aigc.model.fields.candidateChannels')" prop="channelIds">
+        <el-select v-model="selectedChannelIds" class="!w-1/1" multiple filterable collapse-tags collapse-tags-tooltip :placeholder="t('aigc.model.placeholders.candidateChannels')">
           <el-option v-for="item in channelList" :key="item.id" :label="getChannelName(item)" :value="Number(item.id)" />
         </el-select>
       </el-form-item>
-      <el-form-item label="状态" prop="status"><el-radio-group v-model="formData.status"><el-radio v-for="dict in getIntDictOptions(DICT_TYPE.COMMON_STATUS)" :key="dict.value" :value="dict.value">{{ dict.label }}</el-radio></el-radio-group></el-form-item>
+      <el-form-item :label="t('common.status')" prop="status"><el-radio-group v-model="formData.status"><el-radio v-for="dict in getIntDictOptions(DICT_TYPE.COMMON_STATUS)" :key="dict.value" :value="dict.value">{{ dict.label }}</el-radio></el-radio-group></el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="submitForm" type="primary" :disabled="formLoading">确 定</el-button>
-      <el-button @click="dialogVisible = false">取 消</el-button>
+      <el-button @click="submitForm" type="primary" :disabled="formLoading">{{ t('common.ok') }}</el-button>
+      <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
     </template>
   </Dialog>
 </template>
@@ -30,7 +30,7 @@ import { AigcModelApi } from '@/api/aigc/model/model'
 import { AigcModelChannelApi } from '@/api/aigc/model/channel'
 import { AigcModelRouteApi, type AigcModelRouteSaveReqVO } from '@/api/aigc/model/route'
 import type { AigcModelChannelRespVO, AigcModelRespVO } from '@/api/aigc/model/types'
-import { AIGC_MODEL_CAPABILITIES, AIGC_ROUTE_STRATEGIES } from '../constants'
+import { AIGC_MODEL_CAPABILITIES, AIGC_ROUTE_STRATEGIES, getOptionLabel } from '../constants'
 
 defineOptions({ name: 'AigcModelRouteForm' })
 

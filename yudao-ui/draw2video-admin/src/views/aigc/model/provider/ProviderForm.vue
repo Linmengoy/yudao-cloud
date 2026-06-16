@@ -3,29 +3,29 @@
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="120px" v-loading="formLoading">
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="渠道编码" prop="code">
-            <el-input v-model="formData.code" placeholder="请输入渠道编码" />
+          <el-form-item :label="t('aigc.model.fields.providerCode')" prop="code">
+            <el-input v-model="formData.code" :placeholder="t('aigc.model.placeholders.providerCode')" />
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="渠道名称" prop="name">
-            <el-input v-model="formData.name" placeholder="请输入渠道名称" />
+          <el-form-item :label="t('aigc.model.fields.providerName')" prop="name">
+            <el-input v-model="formData.name" :placeholder="t('aigc.model.placeholders.providerName')" />
           </el-form-item>
         </el-col>
       </el-row>
-      <el-form-item label="API 地址" prop="apiBaseUrl">
-        <el-input v-model="formData.apiBaseUrl" placeholder="请输入 API 地址" />
+      <el-form-item :label="t('aigc.model.fields.apiBaseUrl')" prop="apiBaseUrl">
+        <el-input v-model="formData.apiBaseUrl" :placeholder="t('aigc.model.placeholders.apiBaseUrl')" />
       </el-form-item>
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="鉴权方式" prop="authType">
-            <el-select v-model="formData.authType" class="!w-1/1" placeholder="请选择鉴权方式">
-              <el-option v-for="item in AIGC_PROVIDER_AUTH_TYPES" :key="item.value" :label="item.label" :value="item.value" />
+          <el-form-item :label="t('aigc.model.fields.authType')" prop="authType">
+            <el-select v-model="formData.authType" class="!w-1/1" :placeholder="t('aigc.model.placeholders.authType')">
+              <el-option v-for="item in AIGC_PROVIDER_AUTH_TYPES" :key="item.value" :label="getOptionLabel([item], item.value, t)" :value="item.value" />
             </el-select>
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="状态" prop="status">
+          <el-form-item :label="t('common.status')" prop="status">
             <el-radio-group v-model="formData.status">
               <el-radio v-for="dict in getIntDictOptions(DICT_TYPE.COMMON_STATUS)" :key="dict.value" :value="dict.value">{{ dict.label }}</el-radio>
             </el-radio-group>
@@ -35,67 +35,67 @@
       <el-row :gutter="20">
         <el-col :span="12">
           <el-form-item label="API Key" prop="apiKey">
-            <el-input v-model="formData.apiKey" show-password placeholder="不修改请留空" />
+            <el-input v-model="formData.apiKey" show-password :placeholder="t('aigc.model.placeholders.passwordKeepEmpty')" />
           </el-form-item>
         </el-col>
         <el-col :span="12">
           <el-form-item label="Secret Key" prop="secretKey">
-            <el-input v-model="formData.secretKey" show-password placeholder="不修改请留空" />
+            <el-input v-model="formData.secretKey" show-password :placeholder="t('aigc.model.placeholders.passwordKeepEmpty')" />
           </el-form-item>
         </el-col>
       </el-row>
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="超时时间" prop="timeoutSeconds">
-            <el-input-number v-model="formData.timeoutSeconds" class="!w-1/1" :min="1" placeholder="单位：秒" />
+          <el-form-item :label="t('aigc.model.fields.timeoutSeconds')" prop="timeoutSeconds">
+            <el-input-number v-model="formData.timeoutSeconds" class="!w-1/1" :min="1" :placeholder="t('aigc.model.fields.timeoutSeconds')" />
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="健康状态" prop="healthStatus">
-            <el-select v-model="formData.healthStatus" class="!w-1/1" clearable placeholder="请选择健康状态">
-              <el-option v-for="item in AIGC_HEALTH_STATUSES" :key="item.value" :label="item.label" :value="item.value" />
+          <el-form-item :label="t('aigc.model.fields.healthStatus')" prop="healthStatus">
+            <el-select v-model="formData.healthStatus" class="!w-1/1" clearable :placeholder="t('aigc.model.placeholders.healthStatus')">
+              <el-option v-for="item in AIGC_HEALTH_STATUSES" :key="item.value" :label="getOptionLabel([item], item.value, t)" :value="item.value" />
             </el-select>
           </el-form-item>
         </el-col>
       </el-row>
-      <el-form-item label="启用代理" prop="proxyEnabled">
+      <el-form-item :label="t('aigc.model.fields.proxy')" prop="proxyEnabled">
         <el-switch v-model="formData.proxyEnabled" />
       </el-form-item>
       <template v-if="formData.proxyEnabled">
-        <el-form-item label="代理" prop="proxyId">
+        <el-form-item :label="t('aigc.model.fields.proxy')" prop="proxyId">
           <div class="flex w-1/1 gap-8px">
             <el-select
               v-model="formData.proxyId"
               class="flex-1"
               clearable
               filterable
-              placeholder="请选择已配置代理"
+              :placeholder="t('aigc.model.placeholders.proxy')"
               :loading="proxyLoading"
             >
               <el-option
                 v-for="item in proxyList"
                 :key="item.id"
-                :label="`${item.name}（${getOptionLabel(AIGC_PROXY_PROTOCOLS, item.protocol)} ${item.host}:${item.port}）`"
+                :label="`${item.name}（${getOptionLabel(AIGC_PROXY_PROTOCOLS, item.protocol, t)} ${item.host}:${item.port}）`"
                 :value="item.id!"
               />
             </el-select>
-            <el-button @click="openProxyManage">新建代理</el-button>
+            <el-button @click="openProxyManage">{{ t('aigc.model.actions.createProxy') }}</el-button>
           </div>
         </el-form-item>
       </template>
-      <el-form-item label="扩展配置" prop="extraConfig">
-        <el-input v-model="formData.extraConfig" type="textarea" :rows="3" placeholder="请输入 JSON 扩展配置" />
+      <el-form-item :label="t('aigc.model.fields.extraConfig')" prop="extraConfig">
+        <el-input v-model="formData.extraConfig" type="textarea" :rows="3" placeholder="JSON" />
       </el-form-item>
-      <el-form-item label="限流配置" prop="rateLimitConfig">
-        <el-input v-model="formData.rateLimitConfig" type="textarea" :rows="3" placeholder="请输入 JSON 限流配置" />
+      <el-form-item :label="t('aigc.model.fields.rateLimitConfig')" prop="rateLimitConfig">
+        <el-input v-model="formData.rateLimitConfig" type="textarea" :rows="3" placeholder="JSON" />
       </el-form-item>
-      <el-form-item label="备注" prop="remark">
-        <el-input v-model="formData.remark" type="textarea" placeholder="请输入备注" />
+      <el-form-item :label="t('aigc.model.fields.remark')" prop="remark">
+        <el-input v-model="formData.remark" type="textarea" :placeholder="t('aigc.model.placeholders.remark')" />
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="submitForm" type="primary" :disabled="formLoading">确 定</el-button>
-      <el-button @click="dialogVisible = false">取 消</el-button>
+      <el-button @click="submitForm" type="primary" :disabled="formLoading">{{ t('common.ok') }}</el-button>
+      <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
     </template>
   </Dialog>
 </template>

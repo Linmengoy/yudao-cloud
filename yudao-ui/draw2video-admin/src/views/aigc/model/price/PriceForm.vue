@@ -3,54 +3,54 @@
     <el-form ref="formRef" :model="formData" :rules="formRules" label-width="120px" v-loading="formLoading">
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="Model" prop="modelId">
+          <el-form-item :label="t('aigc.model.fields.model')" prop="modelId">
             <el-select v-model="formData.modelId" class="!w-1/1" filterable>
               <el-option v-for="item in modelList" :key="item.id" :label="getModelName(item)" :value="getModelOptionValue(item)" />
             </el-select>
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="Capability" prop="capability">
+          <el-form-item :label="t('aigc.model.fields.capability')" prop="capability">
             <el-select v-model="formData.capability" class="!w-1/1" :multiple="formType === 'create'" collapse-tags collapse-tags-tooltip>
-              <el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="item.label" :value="item.value" />
+              <el-option v-for="item in AIGC_MODEL_CAPABILITIES" :key="item.value" :label="getOptionLabel([item], item.value, t)" :value="item.value" />
             </el-select>
           </el-form-item>
         </el-col>
       </el-row>
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="Billing Unit" prop="billingUnit">
+          <el-form-item :label="t('aigc.model.fields.billingUnit')" prop="billingUnit">
             <el-select v-model="formData.billingUnit" class="!w-1/1">
-              <el-option v-for="item in AIGC_BILLING_UNITS" :key="item.value" :label="item.label" :value="item.value" />
+              <el-option v-for="item in AIGC_BILLING_UNITS" :key="item.value" :label="getOptionLabel([item], item.value, t)" :value="item.value" />
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="12"><el-form-item label="Currency" prop="currencyType"><el-input v-model="formData.currencyType" placeholder="POINT" /></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.currency')" prop="currencyType"><el-input v-model="formData.currencyType" placeholder="POINT" /></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
-        <el-col :span="12"><el-form-item label="Cost Price" prop="costPrice"><el-input-number v-model="formData.costPrice" class="!w-1/1" :min="0" :precision="2" controls-position="right" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="Sale Price" prop="salePrice"><el-input-number v-model="formData.salePrice" class="!w-1/1" :min="0" :precision="2" controls-position="right" /></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.costPrice')" prop="costPrice"><el-input-number v-model="formData.costPrice" class="!w-1/1" :min="0" :precision="2" controls-position="right" /></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.salePrice')" prop="salePrice"><el-input-number v-model="formData.salePrice" class="!w-1/1" :min="0" :precision="2" controls-position="right" /></el-form-item></el-col>
       </el-row>
       <el-row :gutter="20">
-        <el-col :span="12"><el-form-item label="Start Time" prop="effectiveStartTime"><el-date-picker v-model="formData.effectiveStartTime" class="!w-1/1" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" /></el-form-item></el-col>
-        <el-col :span="12"><el-form-item label="End Time" prop="effectiveEndTime"><el-date-picker v-model="formData.effectiveEndTime" class="!w-1/1" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" /></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.effectiveStart')" prop="effectiveStartTime"><el-date-picker v-model="formData.effectiveStartTime" class="!w-1/1" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" /></el-form-item></el-col>
+        <el-col :span="12"><el-form-item :label="t('aigc.model.fields.effectiveEnd')" prop="effectiveEndTime"><el-date-picker v-model="formData.effectiveEndTime" class="!w-1/1" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" /></el-form-item></el-col>
       </el-row>
 
-      <el-form-item label="Rule Toggles">
+      <el-form-item :label="t('aigc.model.fields.ruleToggles')">
         <el-checkbox v-model="priceRule.batchMultiplier">Batch multiplier</el-checkbox>
         <el-checkbox v-model="priceRule.durationMultiplier">Duration multiplier</el-checkbox>
       </el-form-item>
 
-      <el-form-item label="Resolution Extra">
+      <el-form-item :label="t('aigc.model.fields.resolutionExtra')">
         <el-input v-model="resolutionExtraText" type="textarea" :rows="2" placeholder='{"720p":0,"1080p":20}' />
       </el-form-item>
 
-      <el-form-item label="Param Multipliers">
+      <el-form-item :label="t('aigc.model.fields.paramMultipliers')">
         <el-table :data="priceRule.paramMultipliers" border>
-          <el-table-column label="Param" min-width="140">
+          <el-table-column :label="t('aigc.model.fields.param')" min-width="140">
             <template #default="{ row }"><el-input v-model="row.param" placeholder="quality" /></template>
           </el-table-column>
-          <el-table-column label="Operator" width="120">
+          <el-table-column :label="t('aigc.model.fields.operator')" width="120">
             <template #default="{ row }">
               <el-select v-model="row.operator">
                 <el-option label="eq" value="eq" />
@@ -58,34 +58,34 @@
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="Value(s)" min-width="180">
+          <el-table-column :label="t('aigc.model.fields.values')" min-width="180">
             <template #default="{ row }"><el-input v-model="row.valueText" placeholder="high or high,ultra" /></template>
           </el-table-column>
-          <el-table-column label="Sale x" width="120">
+          <el-table-column :label="t('aigc.model.fields.saleMultiplier')" width="120">
             <template #default="{ row }"><el-input-number v-model="row.saleMultiplier" :min="0.01" :max="100" :precision="2" controls-position="right" /></template>
           </el-table-column>
-          <el-table-column label="Cost x" width="120">
+          <el-table-column :label="t('aigc.model.fields.costMultiplier')" width="120">
             <template #default="{ row }"><el-input-number v-model="row.costMultiplier" :min="0.01" :max="100" :precision="2" controls-position="right" /></template>
           </el-table-column>
-          <el-table-column label="Actions" width="90">
-            <template #default="{ $index }"><el-button link type="danger" @click="removeMultiplier($index)">Remove</el-button></template>
+          <el-table-column :label="t('table.action')" width="90">
+            <template #default="{ $index }"><el-button link type="danger" @click="removeMultiplier($index)">{{ t('aigc.model.actions.remove') }}</el-button></template>
           </el-table-column>
         </el-table>
-        <el-button class="mt-10px" @click="addMultiplier"><Icon icon="ep:plus" class="mr-5px" />Add Rule</el-button>
+        <el-button class="mt-10px" @click="addMultiplier"><Icon icon="ep:plus" class="mr-5px" />{{ t('aigc.model.actions.addRule') }}</el-button>
       </el-form-item>
 
-      <el-form-item label="Advanced JSON" prop="priceConfig">
+      <el-form-item :label="t('aigc.model.fields.advancedJson')" prop="priceConfig">
         <el-input v-model="formData.priceConfig" type="textarea" :rows="5" @change="parsePriceConfig" />
       </el-form-item>
-      <el-form-item label="Status" prop="status">
+      <el-form-item :label="t('common.status')" prop="status">
         <el-radio-group v-model="formData.status">
           <el-radio v-for="dict in getIntDictOptions(DICT_TYPE.COMMON_STATUS)" :key="dict.value" :value="dict.value">{{ dict.label }}</el-radio>
         </el-radio-group>
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="submitForm" type="primary" :disabled="formLoading">OK</el-button>
-      <el-button @click="dialogVisible = false">Cancel</el-button>
+      <el-button @click="submitForm" type="primary" :disabled="formLoading">{{ t('common.ok') }}</el-button>
+      <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
     </template>
   </Dialog>
 </template>
@@ -96,7 +96,7 @@ import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { AigcModelApi } from '@/api/aigc/model/model'
 import { AigcModelPriceApi, type AigcModelPriceSaveReqVO } from '@/api/aigc/model/price'
 import type { AigcModelRespVO } from '@/api/aigc/model/types'
-import { AIGC_BILLING_UNITS, AIGC_MODEL_CAPABILITIES } from '../constants'
+import { AIGC_BILLING_UNITS, AIGC_MODEL_CAPABILITIES, getOptionLabel } from '../constants'
 
 interface ParamMultiplierRow {
   param: string

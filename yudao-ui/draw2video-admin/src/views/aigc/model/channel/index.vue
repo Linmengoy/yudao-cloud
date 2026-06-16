@@ -1,26 +1,26 @@
 <template>
   <ContentWrap>
     <el-form :model="queryParams" ref="queryFormRef" inline>
-      <el-form-item label="业务模型" prop="modelId"><el-select v-model="queryParams.modelId" class="!w-240px" clearable filterable placeholder="请选择业务模型"><el-option v-for="item in modelList" :key="item.id" :label="item.name" :value="Number(item.id)" /></el-select></el-form-item>
-      <el-form-item label="渠道商" prop="providerId"><el-select v-model="queryParams.providerId" class="!w-220px" clearable filterable placeholder="请选择渠道商"><el-option v-for="item in providerList" :key="item.id" :label="item.name" :value="Number(item.id)" /></el-select></el-form-item>
-      <el-form-item label="状态" prop="status"><el-select v-model="queryParams.status" class="!w-160px" clearable placeholder="请选择状态"><el-option v-for="dict in getIntDictOptions(DICT_TYPE.COMMON_STATUS)" :key="dict.value" :label="dict.label" :value="dict.value" /></el-select></el-form-item>
-      <el-form-item><el-button @click="handleQuery"><Icon icon="ep:search" />搜索</el-button><el-button @click="resetQuery"><Icon icon="ep:refresh" />重置</el-button><el-button type="primary" @click="openForm('create')"><Icon icon="ep:plus" />新增</el-button></el-form-item>
+      <el-form-item :label="t('aigc.model.fields.businessModel')" prop="modelId"><el-select v-model="queryParams.modelId" class="!w-240px" clearable filterable :placeholder="t('aigc.model.placeholders.businessModel')"><el-option v-for="item in modelList" :key="item.id" :label="item.name" :value="Number(item.id)" /></el-select></el-form-item>
+      <el-form-item :label="t('aigc.model.fields.provider')" prop="providerId"><el-select v-model="queryParams.providerId" class="!w-220px" clearable filterable :placeholder="t('aigc.model.placeholders.provider')"><el-option v-for="item in providerList" :key="item.id" :label="item.name" :value="Number(item.id)" /></el-select></el-form-item>
+      <el-form-item :label="t('common.status')" prop="status"><el-select v-model="queryParams.status" class="!w-160px" clearable :placeholder="t('aigc.model.placeholders.status')"><el-option v-for="dict in getIntDictOptions(DICT_TYPE.COMMON_STATUS)" :key="dict.value" :label="dict.label" :value="dict.value" /></el-select></el-form-item>
+      <el-form-item><el-button @click="handleQuery"><Icon icon="ep:search" />{{ t('aigc.model.actions.search') }}</el-button><el-button @click="resetQuery"><Icon icon="ep:refresh" />{{ t('aigc.model.actions.reset') }}</el-button><el-button type="primary" @click="openForm('create')"><Icon icon="ep:plus" />{{ t('aigc.model.actions.create') }}</el-button></el-form-item>
     </el-form>
   </ContentWrap>
   <ContentWrap>
     <el-table v-loading="loading" :data="list">
-      <el-table-column label="业务模型" align="center" prop="modelId" min-width="160"><template #default="scope">{{ getModelName(scope.row.modelId) }}</template></el-table-column>
-      <el-table-column label="渠道商" align="center" prop="providerId" min-width="140"><template #default="scope">{{ getProviderName(scope.row.providerId) }}</template></el-table-column>
-      <el-table-column label="上游模型" align="center" prop="providerModel" min-width="180" />
-      <el-table-column label="成本价" align="center" prop="costPrice" width="110" />
-      <el-table-column label="权重" align="center" prop="weight" width="90" />
-      <el-table-column label="优先级" align="center" prop="priority" width="90" />
-      <el-table-column label="状态" align="center" prop="status" width="100"><template #default="scope"><dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" /></template></el-table-column>
-      <el-table-column label="操作" align="center" width="180" fixed="right">
+      <el-table-column :label="t('aigc.model.fields.businessModel')" align="center" prop="modelId" min-width="160"><template #default="scope">{{ getModelName(scope.row.modelId) }}</template></el-table-column>
+      <el-table-column :label="t('aigc.model.fields.provider')" align="center" prop="providerId" min-width="140"><template #default="scope">{{ getProviderName(scope.row.providerId) }}</template></el-table-column>
+      <el-table-column :label="t('aigc.model.fields.upstreamModel')" align="center" prop="providerModel" min-width="180" />
+      <el-table-column :label="t('aigc.model.fields.costPrice')" align="center" prop="costPrice" width="110" />
+      <el-table-column :label="t('aigc.model.fields.weight')" align="center" prop="weight" width="90" />
+      <el-table-column :label="t('aigc.model.fields.priority')" align="center" prop="priority" width="90" />
+      <el-table-column :label="t('common.status')" align="center" prop="status" width="100"><template #default="scope"><dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" /></template></el-table-column>
+      <el-table-column :label="t('table.action')" align="center" width="180" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openForm('update', scope.row.id)">编辑</el-button>
-          <el-button link type="primary" @click="openForm('clone', scope.row.id)">克隆</el-button>
-          <el-button link type="danger" @click="handleDelete(scope.row.id)">删除</el-button>
+          <el-button link type="primary" @click="openForm('update', scope.row.id)">{{ t('aigc.model.actions.edit') }}</el-button>
+          <el-button link type="primary" @click="openForm('clone', scope.row.id)">{{ t('aigc.model.actions.clone') }}</el-button>
+          <el-button link type="danger" @click="handleDelete(scope.row.id)">{{ t('aigc.model.actions.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -39,6 +39,7 @@ import ChannelForm from './ChannelForm.vue'
 defineOptions({ name: 'AigcModelChannel' })
 
 const message = useMessage()
+const { t } = useI18n()
 const loading = ref(false)
 const list = ref<AigcModelChannelRespVO[]>([])
 const total = ref(0)
@@ -65,11 +66,11 @@ const handleDelete = async (id?: number) => {
   if (!id) return
   await message.delConfirm()
   await AigcModelChannelApi.deleteChannel(id)
-  message.success('删除成功')
+  message.success(t('common.delSuccess'))
   await getList()
 }
-const getModelName = (id?: number) => modelList.value.find((item) => item.id === id)?.name || `模型 ${id}`
-const getProviderName = (id?: number) => providerList.value.find((item) => item.id === id)?.name || `渠道 ${id}`
+const getModelName = (id?: number) => modelList.value.find((item) => item.id === id)?.name || `Model ${id}`
+const getProviderName = (id?: number) => providerList.value.find((item) => item.id === id)?.name || `Provider ${id}`
 
 onMounted(async () => {
   const [modelPage, providerPage] = await Promise.all([

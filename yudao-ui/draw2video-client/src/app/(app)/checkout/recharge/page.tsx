@@ -83,7 +83,7 @@ function getOrderPayAppId(rechargeOrder: AigcRechargeOrder | null, payOrder: Pay
 }
 
 function getRechargeOrderStatusName(rechargeOrder: AigcRechargeOrder | null, payOrder: PayOrder | null) {
-  if (rechargeOrder?.statusName) return rechargeOrder.statusName;
+  if (rechargeOrder?.statusName) return getPayStatusName(rechargeOrder.statusName);
   if (rechargeOrder?.status !== undefined && rechargeOrder.status !== null) return getPayStatusName(rechargeOrder.status);
   if (payOrder?.status !== undefined && payOrder.status !== null) return getPayStatusName(payOrder.status);
   return "待支付";
