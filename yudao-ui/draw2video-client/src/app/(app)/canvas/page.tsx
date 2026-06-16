@@ -2773,7 +2773,7 @@ function CanvasFlow() {
     return newNode;
   }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
 
-  const addPromptTemplateNode = useCallback((template: Pick<PromptTemplate, "id" | "title" | "prompt" | "imageUrl" | "width" | "height" | "mimeType" | "modelCode" | "modelName">) => {
+  const addPromptTemplateNode = useCallback((template: Pick<PromptTemplate, "id" | "title" | "prompt" | "imageUrl" | "width" | "height" | "mimeType" | "modelCode" | "modelName" | "aigcModelId" | "providerModel">) => {
     if (isReadOnly) return null;
     const center = screenToFlowPosition({
       x: window.innerWidth / 2,
@@ -2803,9 +2803,11 @@ function CanvasFlow() {
         kind: "draft",
         prompt: template.prompt,
         sourceTemplateId: template.id,
-        modelId: template.modelCode || DEFAULT_PROMPT_DATA.modelId,
+        modelId: template.aigcModelId ? String(template.aigcModelId) : template.modelCode || DEFAULT_PROMPT_DATA.modelId,
         modelCode: template.modelCode,
+        providerModel: template.providerModel,
         modelName: template.modelName,
+        aigcModelId: template.aigcModelId,
         params: { ...DEFAULT_PROMPT_DATA.params },
         status: "idle",
         taskId: null,

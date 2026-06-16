@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronDown, Loader2, Search, X } from "lucide-react";
+import { getAigcModelList, type AigcModel } from "@/features/generation/model-api";
 import { getPromptTemplateModels, getPromptTemplatePage } from "./template-api";
 import type { PromptTemplate, PromptTemplateModel } from "./template-types";
 
@@ -27,10 +28,38 @@ function getTemplateModelLabel(template: PromptTemplate, models: PromptTemplateM
   return selectedModel?.modelName || selectedModel?.modelCode || "";
 }
 
+function normalizeModelText(value: string | undefined | null) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function resolveTemplateAigcModel(template: PromptTemplate, aigcModels: AigcModel[]) {
+  const modelCode = normalizeModelText(template.modelCode);
+  const modelName = normalizeModelText(template.modelName);
+  if (!modelCode && !modelName) return null;
+
+  return aigcModels.find((model) => {
+    const fields = [
+      model.code,
+      model.model,
+      model.providerModel,
+      model.name,
+    ].map(normalizeModelText).filter(Boolean);
+
+    return fields.some((field) => (
+      field === modelCode ||
+      field === modelName ||
+      Boolean(modelCode && field.includes(modelCode)) ||
+      Boolean(modelName && field.includes(modelName))
+    ));
+  }) ?? null;
+}
+
 export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasTemplateLibraryDialogProps) {
   const [keyword, setKeyword] = useState("");
   const [modelCode, setModelCode] = useState("");
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [models, setModels] = useState<PromptTemplateModel[]>([]);
+  const [aigcModels, setAigcModels] = useState<AigcModel[]>([]);
   const [items, setItems] = useState<PromptTemplate[]>([]);
   const [pageNo, setPageNo] = useState(1);
   const [total, setTotal] = useState(0);
@@ -43,6 +72,7 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
     () => models.find((model) => model.modelCode === modelCode) ?? null,
     [modelCode, models]
   );
+  const selectedModelLabel = selectedModel ? getModelLabel(selectedModel) : "全部模型";
 
   const loadPage = useCallback(async (nextPageNo: number, replace: boolean) => {
     if (!open) return;
@@ -73,12 +103,20 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    getPromptTemplateModels()
-      .then((data) => {
-        if (!cancelled) setModels(data);
+    Promise.all([
+      getPromptTemplateModels().catch(() => []),
+      getAigcModelList(2, "TEXT_TO_IMAGE").catch(() => []),
+    ])
+      .then(([templateModels, imageModels]) => {
+        if (cancelled) return;
+        setModels(templateModels);
+        setAigcModels(imageModels);
       })
       .catch(() => {
-        if (!cancelled) setModels([]);
+        if (!cancelled) {
+          setModels([]);
+          setAigcModels([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -103,17 +141,31 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
   }, [onClose, open]);
 
   const handleSelect = useCallback((template: PromptTemplate) => {
-    onSelect(template);
+    const matchedModel = resolveTemplateAigcModel(template, aigcModels);
+    onSelect({
+      ...template,
+      aigcModelId: matchedModel?.id,
+      modelCode: matchedModel?.code ?? template.modelCode,
+      modelName: matchedModel?.name ?? template.modelName,
+      providerModel: matchedModel?.providerModel ?? matchedModel?.model,
+    });
+    setModelMenuOpen(false);
     onClose();
-  }, [onClose, onSelect]);
+  }, [aigcModels, onClose, onSelect]);
 
   const handleScroll = useCallback((event: React.UIEvent<HTMLElement>) => {
+    if (modelMenuOpen) setModelMenuOpen(false);
     const target = event.currentTarget;
     const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
     if (distanceToBottom > LOAD_MORE_THRESHOLD) return;
     if (!hasMore || loading || loadingMore || error) return;
     void loadPage(pageNo + 1, false);
-  }, [error, hasMore, loadPage, loading, loadingMore, pageNo]);
+  }, [error, hasMore, loadPage, loading, loadingMore, modelMenuOpen, pageNo]);
+
+  const selectModelFilter = useCallback((nextModelCode: string) => {
+    setModelCode(nextModelCode);
+    setModelMenuOpen(false);
+  }, []);
 
   return (
     <AnimatePresence>
@@ -144,30 +196,72 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
                   <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-gray" />
                   <input
                     value={keyword}
-                    onChange={(event) => setKeyword(event.target.value)}
+                    onChange={(event) => {
+                      setKeyword(event.target.value);
+                      setModelMenuOpen(false);
+                    }}
                     placeholder="搜索标题或提示词"
                     className="h-10 w-[240px] rounded-full border border-border-warm bg-muted/40 pl-9 pr-3 text-sm text-charcoal outline-none transition-colors placeholder:text-muted-gray focus:border-charcoal"
                   />
                 </label>
-                <label className="relative">
-                  <select
-                    value={modelCode}
-                    onChange={(event) => setModelCode(event.target.value)}
-                    className="h-10 min-w-[156px] appearance-none rounded-full border border-border-warm bg-muted/40 pl-4 pr-9 text-sm text-charcoal outline-none transition-colors focus:border-charcoal"
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setModelMenuOpen((value) => !value)}
+                    className="flex h-10 min-w-[156px] items-center justify-between gap-3 rounded-full border border-border-warm bg-muted/40 pl-4 pr-3 text-left text-sm text-charcoal outline-none transition-colors hover:bg-muted focus:border-charcoal"
+                    aria-haspopup="listbox"
+                    aria-expanded={modelMenuOpen}
                     aria-label="按模型筛选"
                   >
-                    <option value="">全部模型</option>
-                    {models.map((model) => (
-                      <option key={model.modelCode} value={model.modelCode}>
-                        {getModelLabel(model)}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-gray" />
-                </label>
+                    <span className="max-w-[168px] truncate">{selectedModelLabel}</span>
+                    <ChevronDown className={`size-4 shrink-0 text-muted-gray transition-transform ${modelMenuOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  <AnimatePresence>
+                    {modelMenuOpen ? (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                        transition={{ duration: 0.12, ease: "easeOut" }}
+                        className="absolute right-0 top-12 z-[240] w-[220px] overflow-hidden rounded-2xl border border-border-warm bg-background p-1 shadow-[0_14px_36px_rgba(28,28,28,0.18)]"
+                        role="listbox"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => selectModelFilter("")}
+                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${modelCode ? "text-muted-gray hover:bg-muted hover:text-charcoal" : "bg-charcoal text-off-white"}`}
+                          role="option"
+                          aria-selected={!modelCode}
+                        >
+                          <span>全部模型</span>
+                          {!modelCode ? <span className="text-xs">✓</span> : null}
+                        </button>
+                        {models.map((model) => {
+                          const isSelected = model.modelCode === modelCode;
+                          return (
+                            <button
+                              key={model.modelCode}
+                              type="button"
+                              onClick={() => selectModelFilter(model.modelCode)}
+                              className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition-colors ${isSelected ? "bg-charcoal text-off-white" : "text-muted-gray hover:bg-muted hover:text-charcoal"}`}
+                              role="option"
+                              aria-selected={isSelected}
+                            >
+                              <span className="truncate">{getModelLabel(model)}</span>
+                              {isSelected ? <span className="text-xs">✓</span> : null}
+                            </button>
+                          );
+                        })}
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => {
+                    setModelMenuOpen(false);
+                    onClose();
+                  }}
                   className="flex size-10 items-center justify-center rounded-full text-charcoal transition-colors hover:bg-muted"
                   aria-label="关闭素材库"
                   title="关闭"
@@ -182,7 +276,10 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-gray" />
                 <input
                   value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
+                  onChange={(event) => {
+                    setKeyword(event.target.value);
+                    setModelMenuOpen(false);
+                  }}
                   placeholder="搜索标题或提示词"
                   className="h-10 w-full rounded-full border border-border-warm bg-muted/40 pl-9 pr-3 text-sm text-charcoal outline-none transition-colors placeholder:text-muted-gray focus:border-charcoal"
                 />
