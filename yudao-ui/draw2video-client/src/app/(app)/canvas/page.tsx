@@ -2369,7 +2369,10 @@ function CanvasFlow() {
       createServerProject("未命名项目")
         .then((projectId) => {
           const id = String(projectId);
-          router.replace(`/canvas?projectId=${encodeURIComponent(id)}`);
+          const nextUrl = routeTemplateId
+            ? `/canvas?projectId=${encodeURIComponent(id)}&templateId=${encodeURIComponent(routeTemplateId)}`
+            : `/canvas?projectId=${encodeURIComponent(id)}`;
+          router.replace(nextUrl);
           setActiveProjectId(id);
         })
         .catch(() => {
@@ -2378,7 +2381,7 @@ function CanvasFlow() {
         });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [createServerProject, routeProjectId, router]);
+  }, [createServerProject, routeProjectId, routeTemplateId, router]);
 
   useEffect(() => {
     if (!isHydrated) return;
