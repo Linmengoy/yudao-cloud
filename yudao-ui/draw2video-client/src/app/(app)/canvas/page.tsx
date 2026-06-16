@@ -2775,12 +2775,12 @@ function CanvasFlow() {
 
   const addPromptTemplateNode = useCallback((template: Pick<PromptTemplate, "id" | "title" | "prompt" | "imageUrl" | "width" | "height" | "mimeType" | "modelCode" | "modelName" | "aigcModelId" | "providerModel">) => {
     if (isReadOnly) return null;
+    const currentViewport = getViewport();
     const center = screenToFlowPosition({
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
     });
     const id = `template_${template.id}_${Date.now()}`;
-    const outputPreviewUrl = template.imageUrl || null;
     const newNode: AppNode = withCardNodeInteraction({
       id,
       type: "image",
@@ -2795,8 +2795,6 @@ function CanvasFlow() {
         fileName: template.title || "Template",
         dataUrl: "",
         mimeType: template.mimeType || "image/png",
-        previewUrl: outputPreviewUrl,
-        outputPreviewUrl,
         width: template.width,
         height: template.height,
         createdAt: new Date().toISOString(),
@@ -2813,22 +2811,14 @@ function CanvasFlow() {
         taskId: null,
         errorMessage: null,
         elapsedMs: null,
-        outputs: outputPreviewUrl ? [{
-          id: `template-${template.id}`,
-          previewUrl: outputPreviewUrl,
-          width: template.width,
-          height: template.height,
-          fileName: template.title || "Template",
-          mimeType: template.mimeType || "image/png",
-        }] : [],
-        primaryOutputId: outputPreviewUrl ? `template-${template.id}` : null,
       },
       selected: true,
     });
     setNodes((nds) => [...nds.map((node) => ({ ...node, selected: false })), newNode]);
+    window.requestAnimationFrame(() => setViewport(currentViewport));
     canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(newNode) });
     return newNode;
-  }, [canvasOperations, getNodes, isReadOnly, screenToFlowPosition, serverProjectId, setNodes]);
+  }, [canvasOperations, getNodes, getViewport, isReadOnly, screenToFlowPosition, serverProjectId, setNodes, setViewport]);
 
   const handleSelectTemplateFromLibrary = useCallback((template: PromptTemplate) => {
     const node = addPromptTemplateNode(template);
