@@ -1,31 +1,31 @@
 CREATE TABLE IF NOT EXISTS `aigc_community_post` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Post ID',
-  `post_no` varchar(64) NOT NULL COMMENT 'Post number',
-  `author_user_id` bigint NOT NULL COMMENT 'Author user ID',
-  `asset_id` bigint DEFAULT NULL COMMENT 'Asset ID',
-  `asset_type` varchar(32) DEFAULT NULL COMMENT 'Asset type snapshot',
-  `project_id` bigint DEFAULT NULL COMMENT 'Canvas project ID',
-  `cover_asset_id` bigint DEFAULT NULL COMMENT 'Cover asset ID',
-  `title` varchar(128) NOT NULL COMMENT 'Title',
-  `summary` varchar(1024) DEFAULT NULL COMMENT 'Summary',
-  `tags` varchar(512) DEFAULT NULL COMMENT 'Tags',
-  `prompt_snapshot` text COMMENT 'Prompt snapshot',
-  `metadata` text COMMENT 'Metadata',
-  `visibility` varchar(32) NOT NULL DEFAULT 'PUBLIC' COMMENT 'Visibility',
-  `publish_status` varchar(32) NOT NULL COMMENT 'Publish status',
-  `audit_status` varchar(32) NOT NULL COMMENT 'Audit status',
-  `audit_reason` varchar(512) DEFAULT NULL COMMENT 'Audit reason',
-  `auditor_user_id` bigint DEFAULT NULL COMMENT 'Auditor user ID',
-  `audit_time` datetime DEFAULT NULL COMMENT 'Audit time',
-  `offline_reason` varchar(512) DEFAULT NULL COMMENT 'Offline reason',
-  `offline_time` datetime DEFAULT NULL COMMENT 'Offline time',
-  `publish_time` datetime DEFAULT NULL COMMENT 'Publish time',
-  `view_count` int NOT NULL DEFAULT 0 COMMENT 'View count',
-  `like_count` int NOT NULL DEFAULT 0 COMMENT 'Like count',
-  `comment_count` int NOT NULL DEFAULT 0 COMMENT 'Visible comment count',
-  `share_count` int NOT NULL DEFAULT 0 COMMENT 'Share count',
-  `download_count` int NOT NULL DEFAULT 0 COMMENT 'Download count',
-  `hot_score` decimal(18,4) NOT NULL DEFAULT 0 COMMENT 'Hot score',
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '帖子ID',
+  `post_no` varchar(64) NOT NULL COMMENT '帖子编号',
+  `author_user_id` bigint NOT NULL COMMENT '作者用户ID',
+  `asset_id` bigint DEFAULT NULL COMMENT '资产ID',
+  `asset_type` varchar(32) DEFAULT NULL COMMENT '资产类型快照',
+  `project_id` bigint DEFAULT NULL COMMENT '画布项目ID',
+  `cover_asset_id` bigint DEFAULT NULL COMMENT '封面资产ID',
+  `title` varchar(128) NOT NULL COMMENT '标题',
+  `summary` varchar(1024) DEFAULT NULL COMMENT '摘要',
+  `tags` varchar(512) DEFAULT NULL COMMENT '标签',
+  `prompt_snapshot` text COMMENT '提示词快照',
+  `metadata` text COMMENT '元数据',
+  `visibility` varchar(32) NOT NULL DEFAULT 'PUBLIC' COMMENT '可见性',
+  `publish_status` varchar(32) NOT NULL COMMENT '发布状态',
+  `audit_status` varchar(32) NOT NULL COMMENT '审核状态',
+  `audit_reason` varchar(512) DEFAULT NULL COMMENT '审核原因',
+  `auditor_user_id` bigint DEFAULT NULL COMMENT '审核员用户ID',
+  `audit_time` datetime DEFAULT NULL COMMENT '审核时间',
+  `offline_reason` varchar(512) DEFAULT NULL COMMENT '下线原因',
+  `offline_time` datetime DEFAULT NULL COMMENT '下线时间',
+  `publish_time` datetime DEFAULT NULL COMMENT '发布时间',
+  `view_count` int NOT NULL DEFAULT 0 COMMENT '浏览次数',
+  `like_count` int NOT NULL DEFAULT 0 COMMENT '点赞次数',
+  `comment_count` int NOT NULL DEFAULT 0 COMMENT '可见评论数',
+  `share_count` int NOT NULL DEFAULT 0 COMMENT '分享次数',
+  `download_count` int NOT NULL DEFAULT 0 COMMENT '下载次数',
+  `hot_score` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '热度分数',
   `creator` varchar(64) DEFAULT '',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updater` varchar(64) DEFAULT '',
@@ -39,13 +39,13 @@ CREATE TABLE IF NOT EXISTS `aigc_community_post` (
   KEY `idx_author` (`tenant_id`, `author_user_id`, `publish_status`, `publish_time`),
   KEY `idx_asset_type` (`tenant_id`, `asset_type`, `publish_status`, `audit_status`),
   KEY `idx_asset` (`asset_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC community post';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC社区帖子';
 
 CREATE TABLE IF NOT EXISTS `aigc_community_post_like` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Like ID',
-  `post_id` bigint NOT NULL COMMENT 'Post ID',
-  `user_id` bigint NOT NULL COMMENT 'User ID',
-  `status` varchar(32) NOT NULL COMMENT 'FOLLOWING/NORMAL or CANCELLED',
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '点赞ID',
+  `post_id` bigint NOT NULL COMMENT '帖子ID',
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `status` varchar(32) NOT NULL COMMENT '关注/正常或已取消',
   `creator` varchar(64) DEFAULT '',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updater` varchar(64) DEFAULT '',
@@ -55,18 +55,18 @@ CREATE TABLE IF NOT EXISTS `aigc_community_post_like` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_post_user` (`tenant_id`, `post_id`, `user_id`),
   KEY `idx_user_status` (`tenant_id`, `user_id`, `status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC community post like';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC社区帖子点赞';
 
 CREATE TABLE IF NOT EXISTS `aigc_community_comment` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Comment ID',
-  `post_id` bigint NOT NULL COMMENT 'Post ID',
-  `user_id` bigint NOT NULL COMMENT 'User ID',
-  `parent_id` bigint NOT NULL DEFAULT 0 COMMENT 'Parent comment ID',
-  `content` varchar(1000) NOT NULL COMMENT 'Content',
-  `audit_status` varchar(32) NOT NULL COMMENT 'Audit status',
-  `audit_reason` varchar(512) DEFAULT NULL COMMENT 'Audit reason',
-  `status` varchar(32) NOT NULL COMMENT 'Status',
-  `like_count` int NOT NULL DEFAULT 0 COMMENT 'Like count',
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '评论ID',
+  `post_id` bigint NOT NULL COMMENT '帖子ID',
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `parent_id` bigint NOT NULL DEFAULT 0 COMMENT '父评论ID',
+  `content` varchar(1000) NOT NULL COMMENT '内容',
+  `audit_status` varchar(32) NOT NULL COMMENT '审核状态',
+  `audit_reason` varchar(512) DEFAULT NULL COMMENT '审核原因',
+  `status` varchar(32) NOT NULL COMMENT '状态',
+  `like_count` int NOT NULL DEFAULT 0 COMMENT '点赞次数',
   `creator` varchar(64) DEFAULT '',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updater` varchar(64) DEFAULT '',
@@ -76,16 +76,16 @@ CREATE TABLE IF NOT EXISTS `aigc_community_comment` (
   PRIMARY KEY (`id`),
   KEY `idx_post_status_time` (`tenant_id`, `post_id`, `status`, `audit_status`, `create_time`),
   KEY `idx_user_time` (`tenant_id`, `user_id`, `create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC community comment';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC社区评论';
 
 CREATE TABLE IF NOT EXISTS `aigc_community_share_log` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Share log ID',
-  `post_id` bigint NOT NULL COMMENT 'Post ID',
-  `user_id` bigint DEFAULT NULL COMMENT 'User ID',
-  `share_channel` varchar(32) DEFAULT NULL COMMENT 'Share channel',
-  `share_token` varchar(64) DEFAULT NULL COMMENT 'Share token',
-  `client_ip` varchar(64) DEFAULT NULL COMMENT 'Client IP',
-  `user_agent` varchar(512) DEFAULT NULL COMMENT 'User agent',
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '分享日志ID',
+  `post_id` bigint NOT NULL COMMENT '帖子ID',
+  `user_id` bigint DEFAULT NULL COMMENT '用户ID',
+  `share_channel` varchar(32) DEFAULT NULL COMMENT '分享渠道',
+  `share_token` varchar(64) DEFAULT NULL COMMENT '分享令牌',
+  `client_ip` varchar(64) DEFAULT NULL COMMENT '客户端IP',
+  `user_agent` varchar(512) DEFAULT NULL COMMENT '用户代理',
   `creator` varchar(64) DEFAULT '',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updater` varchar(64) DEFAULT '',
@@ -94,15 +94,15 @@ CREATE TABLE IF NOT EXISTS `aigc_community_share_log` (
   `tenant_id` bigint NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_post_time` (`tenant_id`, `post_id`, `create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC community share log';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC社区分享日志';
 
 CREATE TABLE IF NOT EXISTS `aigc_community_follow` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Follow ID',
-  `follower_user_id` bigint NOT NULL COMMENT 'Follower user ID',
-  `followee_user_id` bigint NOT NULL COMMENT 'Followee user ID',
-  `status` varchar(32) NOT NULL COMMENT 'Follow status',
-  `follow_time` datetime DEFAULT NULL COMMENT 'Follow time',
-  `cancel_time` datetime DEFAULT NULL COMMENT 'Cancel time',
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '关注ID',
+  `follower_user_id` bigint NOT NULL COMMENT '关注者用户ID',
+  `followee_user_id` bigint NOT NULL COMMENT '被关注者用户ID',
+  `status` varchar(32) NOT NULL COMMENT '关注状态',
+  `follow_time` datetime DEFAULT NULL COMMENT '关注时间',
+  `cancel_time` datetime DEFAULT NULL COMMENT '取消时间',
   `creator` varchar(64) DEFAULT '',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updater` varchar(64) DEFAULT '',
@@ -113,16 +113,16 @@ CREATE TABLE IF NOT EXISTS `aigc_community_follow` (
   UNIQUE KEY `uk_follow_pair` (`tenant_id`, `follower_user_id`, `followee_user_id`),
   KEY `idx_followee_status` (`tenant_id`, `followee_user_id`, `status`, `follow_time`),
   KEY `idx_follower_status` (`tenant_id`, `follower_user_id`, `status`, `follow_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC community follow';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC社区关注';
 
 CREATE TABLE IF NOT EXISTS `aigc_community_author_stats` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Stats ID',
-  `user_id` bigint NOT NULL COMMENT 'User ID',
-  `follower_count` int NOT NULL DEFAULT 0 COMMENT 'Follower count',
-  `following_count` int NOT NULL DEFAULT 0 COMMENT 'Following count',
-  `public_post_count` int NOT NULL DEFAULT 0 COMMENT 'Public post count',
-  `like_received_count` int NOT NULL DEFAULT 0 COMMENT 'Like received count',
-  `last_publish_time` datetime DEFAULT NULL COMMENT 'Last publish time',
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '统计ID',
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `follower_count` int NOT NULL DEFAULT 0 COMMENT '粉丝数',
+  `following_count` int NOT NULL DEFAULT 0 COMMENT '关注数',
+  `public_post_count` int NOT NULL DEFAULT 0 COMMENT '公开帖子数',
+  `like_received_count` int NOT NULL DEFAULT 0 COMMENT '获赞数',
+  `last_publish_time` datetime DEFAULT NULL COMMENT '最后发布时间',
   `creator` varchar(64) DEFAULT '',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updater` varchar(64) DEFAULT '',
@@ -131,15 +131,15 @@ CREATE TABLE IF NOT EXISTS `aigc_community_author_stats` (
   `tenant_id` bigint NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user` (`tenant_id`, `user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC community author stats';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC社区作者统计';
 
 CREATE TABLE IF NOT EXISTS `aigc_community_audit_log` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Audit log ID',
-  `object_type` varchar(32) NOT NULL COMMENT 'Object type',
-  `object_id` bigint NOT NULL COMMENT 'Object ID',
-  `action` varchar(32) NOT NULL COMMENT 'Action',
-  `reason` varchar(512) DEFAULT NULL COMMENT 'Reason',
-  `operator_user_id` bigint DEFAULT NULL COMMENT 'Operator user ID',
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '审核日志ID',
+  `object_type` varchar(32) NOT NULL COMMENT '对象类型',
+  `object_id` bigint NOT NULL COMMENT '对象ID',
+  `action` varchar(32) NOT NULL COMMENT '操作',
+  `reason` varchar(512) DEFAULT NULL COMMENT '原因',
+  `operator_user_id` bigint DEFAULT NULL COMMENT '操作者用户ID',
   `creator` varchar(64) DEFAULT '',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updater` varchar(64) DEFAULT '',
@@ -148,19 +148,19 @@ CREATE TABLE IF NOT EXISTS `aigc_community_audit_log` (
   `tenant_id` bigint NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_object` (`tenant_id`, `object_type`, `object_id`, `create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC community audit log';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC社区审核日志';
 
 CREATE TABLE IF NOT EXISTS `aigc_guide_content` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Guide content ID',
-  `slug` varchar(128) NOT NULL COMMENT 'Stable URL slug',
-  `title` varchar(128) NOT NULL COMMENT 'Title',
-  `category` varchar(64) DEFAULT NULL COMMENT 'Category',
-  `summary` varchar(512) DEFAULT NULL COMMENT 'Summary',
-  `content` mediumtext NOT NULL COMMENT 'Markdown content',
-  `sort` int NOT NULL DEFAULT 0 COMMENT 'Sort',
-  `publish_status` varchar(32) NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT/PUBLISHED',
-  `publish_time` datetime DEFAULT NULL COMMENT 'Publish time',
-  `publisher_user_id` bigint DEFAULT NULL COMMENT 'Publisher user ID',
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '指南内容ID',
+  `slug` varchar(128) NOT NULL COMMENT '稳定URL标识',
+  `title` varchar(128) NOT NULL COMMENT '标题',
+  `category` varchar(64) DEFAULT NULL COMMENT '分类',
+  `summary` varchar(512) DEFAULT NULL COMMENT '摘要',
+  `content` mediumtext NOT NULL COMMENT 'Markdown内容',
+  `sort` int NOT NULL DEFAULT 0 COMMENT '排序',
+  `publish_status` varchar(32) NOT NULL DEFAULT 'DRAFT' COMMENT '草稿/已发布',
+  `publish_time` datetime DEFAULT NULL COMMENT '发布时间',
+  `publisher_user_id` bigint DEFAULT NULL COMMENT '发布者用户ID',
   `creator` varchar(64) DEFAULT '',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updater` varchar(64) DEFAULT '',
@@ -171,4 +171,4 @@ CREATE TABLE IF NOT EXISTS `aigc_guide_content` (
   UNIQUE KEY `uk_slug` (`tenant_id`, `slug`),
   KEY `idx_publish_snapshot` (`tenant_id`, `publish_status`, `sort`, `id`),
   KEY `idx_category` (`tenant_id`, `category`, `publish_status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC guide content';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AIGC指南内容';

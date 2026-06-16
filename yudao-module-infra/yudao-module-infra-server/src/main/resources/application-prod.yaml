@@ -15,57 +15,8 @@ spring:
         namespace: prod
         group: DEFAULT_GROUP
 
---- #################### 数据库相关配置 ####################
+    
 
-spring:
-  datasource:
-    druid:
-      web-stat-filter:
-        enabled: true
-      stat-view-servlet:
-        enabled: false
-      filter:
-        stat:
-          enabled: true
-          log-slow-sql: true
-          slow-sql-millis: 500
-          merge-sql: true
-        wall:
-          config:
-            multi-statement-allow: true
-    dynamic:
-      druid:
-        initial-size: 5
-        min-idle: 10
-        max-active: 50
-        max-wait: 60000
-        time-between-eviction-runs-millis: 60000
-        min-evictable-idle-time-millis: 600000
-        max-evictable-idle-time-millis: 1800000
-        validation-query: SELECT 1 FROM DUAL
-        test-while-idle: true
-        test-on-borrow: false
-        test-on-return: false
-        pool-prepared-statements: true
-        max-pool-prepared-statement-per-connection-size: 20
-      primary: master
-      datasource:
-        master:
-          url: ${INFRA_DB_MASTER_URL:jdbc:mysql://mysql:3306/infra_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true}
-          username: ${INFRA_DB_USERNAME:root}
-          password: ${INFRA_DB_PASSWORD:123456}
-        slave:
-          lazy: true
-          url: ${INFRA_DB_SLAVE_URL:${INFRA_DB_MASTER_URL:jdbc:mysql://mysql:3306/infra_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true}}
-          username: ${INFRA_DB_SLAVE_USERNAME:${INFRA_DB_USERNAME:root}}
-          password: ${INFRA_DB_SLAVE_PASSWORD:${INFRA_DB_PASSWORD:123456}}
-
-  data:
-    redis:
-      host: ${REDIS_HOST:redis}
-      port: ${REDIS_PORT:6379}
-      database: ${INFRA_REDIS_DATABASE:2}
-      password: ${REDIS_PASSWORD:}
 
 --- #################### MQ 消息队列相关配置 ####################
 
