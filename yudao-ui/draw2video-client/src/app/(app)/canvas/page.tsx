@@ -2211,7 +2211,7 @@ function CanvasFlow() {
       });
       canvasOperations.submitOperation("EDGE_DELETE", {
         edgeId: detail.edgeId,
-      });
+      }, { reliable: true });
     }
 
     window.addEventListener("copse:edge-delete", handleEdgeDelete);
@@ -2575,7 +2575,7 @@ function CanvasFlow() {
         if (change.type === "remove") {
           canvasOperations.submitOperation("EDGE_DELETE", {
             edgeId: change.id,
-          });
+          }, { reliable: true });
         }
       }
     },
@@ -2637,7 +2637,7 @@ function CanvasFlow() {
       if (eds.some((item) => isSameCanvasEdge(item, edge))) return eds;
       return addEdge(edge, eds);
     });
-    canvasOperations.submitOperation("EDGE_CREATE", { edge });
+    canvasOperations.submitOperation("EDGE_CREATE", { edge }, { reliable: true });
     if (nextVideoPatch && connection.target) {
       setNodes((nds) => nds.map((n) => n.id === connection.target ? { ...n, data: { ...(n.data as Record<string, unknown>), ...nextVideoPatch } } as AppNode : n));
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
@@ -3541,7 +3541,7 @@ function CanvasFlow() {
             shouldSubmit = true;
             return addEdge(edge, eds);
           });
-          if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge });
+          if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge }, { reliable: true });
         }
       }
 
@@ -3578,7 +3578,7 @@ function CanvasFlow() {
             shouldSubmit = true;
             return addEdge(edge, eds);
           });
-          if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge });
+          if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge }, { reliable: true });
         }
         closeCreateMenu();
         return;
