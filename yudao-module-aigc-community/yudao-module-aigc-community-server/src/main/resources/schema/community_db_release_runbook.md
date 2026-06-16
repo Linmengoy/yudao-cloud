@@ -65,11 +65,16 @@ ORDER BY TABLE_NAME;
 
 SHOW INDEX FROM aigc_community_post;
 SHOW INDEX FROM aigc_community_post_like;
+SHOW INDEX FROM aigc_community_comment;
+SHOW INDEX FROM aigc_community_share_log;
 SHOW INDEX FROM aigc_community_follow;
+SHOW INDEX FROM aigc_community_author_stats;
+SHOW INDEX FROM aigc_community_audit_log;
 SHOW INDEX FROM aigc_guide_content;
 ```
 
 Expected result: all eight tables exist, collations are `utf8mb4`, and indexes from `community_db.sql` are present.
+This version of `community_db.sql` does not insert initialization data, so there is no seed-data rollback step.
 
 Also verify the service health endpoint after the application deployment:
 

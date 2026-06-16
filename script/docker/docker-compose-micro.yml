@@ -428,6 +428,8 @@ services:
         condition: service_started
       yudao-infra:
         condition: service_started
+      yudao-member:
+        condition: service_started
       aigc-asset:
         condition: service_started
       aigc-workflow:
