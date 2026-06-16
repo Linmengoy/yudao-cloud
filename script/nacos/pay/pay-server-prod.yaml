@@ -1,3 +1,6 @@
+
+
+#################### 数据库相关配置 ####################
 spring:
   # 数据源配置项
   autoconfigure:
@@ -27,7 +30,7 @@ spring:
         min-idle: 1 # 最小连接池数量
         max-active: 20 # 最大连接池数量
         max-wait: 60000 # 配置获取连接等待超时的时间，单位：毫秒（1 分钟）
-        time-between-eviction-runs-millis: 60000 # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位：毫秒（1 分钟）
+        time-between-eviction-runs-millis: 60000 # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位：毫秒
         min-evictable-idle-time-millis: 600000 # 配置一个连接在池中最小生存的时间，单位：毫秒（10 分钟）
         max-evictable-idle-time-millis: 1800000 # 配置一个连接在池中最大生存的时间，单位：毫秒（30 分钟）
         validation-query: SELECT 1 FROM DUAL # 配置检测连接是否有效
@@ -39,7 +42,7 @@ spring:
       primary: master
       datasource:
         master:
-          url: jdbc:mysql://mysql:3306/member_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
+          url: jdbc:mysql://mysql:3306/pay_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true # MySQL Connector/J 8.X 连接的示例
           #          url: jdbc:mysql://127.0.0.1:3306/ruoyi-vue-pro?useSSL=true&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true # MySQL Connector/J 5.X 连接的示例
           #          url: jdbc:postgresql://127.0.0.1:5432/ruoyi-vue-pro # PostgreSQL 连接的示例
           #          url: jdbc:oracle:thin:@127.0.0.1:1521:xe # Oracle 连接的示例
@@ -53,7 +56,7 @@ spring:
         #          password: SYSDBA # DM 连接的示例
         slave: # 模拟从库，可根据自己需要修改
           lazy: true # 开启懒加载，保证启动速度
-          url: jdbc:mysql://mysql:3306/member_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+          url: jdbc:mysql://mysql:3306/pay_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
           username: root
           password: 123456
 
@@ -62,15 +65,22 @@ spring:
     redis:
       host: redis # 地址
       port: 6379 # 端口
-      database: 1 # 数据库索引
-#      password: 123456 # 密码，建议生产环境开启
+      database: 0 # 数据库索引
+  #    password: 123456 # 密码，建议生产环境开启
 
 --- #################### MQ 消息队列相关配置 ####################
 
 --- #################### 定时任务相关配置 ####################
-
 xxl:
   job:
     enabled: false # 是否开启调度中心，默认为 true 开启
     admin:
       addresses: http://xxl-job-admin:8080/xxl-job-admin # 调度中心部署跟地址
+
+
+# 芋道配置项，设置当前项目所有自定义的配置
+yudao:
+  pay:
+    order-notify-url: http://111.228.39.103:48080/admin-api/pay/notify/order # 支付渠道的【支付】回调地址
+    refund-notify-url: http://111.228.39.103:48080/admin-api/pay/notify/refund # 支付渠道的【退款】回调地址
+    transfer-notify-url: http://111.228.39.103:48080/admin-api/pay/notify/transfer # 支付渠道的【转账】回调地址

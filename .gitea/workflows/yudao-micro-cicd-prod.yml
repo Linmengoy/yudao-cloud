@@ -1,0 +1,211 @@
+name: yudao-micro-cicd-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Docker service to build/deploy, use all for all services'
+        type: choice
+        required: false
+        default: 'aigc-gen'
+        options:
+          - aigc-gen
+          - all
+          - yudao-gateway
+          - yudao-system
+          - yudao-infra
+          - yudao-member
+          - yudao-pay
+          - aigc-model
+          - aigc-billing
+          - aigc-task
+          - aigc-asset
+          - aigc-safety
+          - aigc-workflow
+          - aigc-community
+          - draw2video-admin
+          - draw2video-client
+          - draw2video-guide
+
+jobs:
+  build-deploy:
+    runs-on: manman
+
+    steps:
+      - name: Checkout
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -d .git ]; then
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+            git fetch --prune origin
+            git clean -fdx
+          else
+            git init .
+            git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          fi
+
+          git -c http.extraHeader="Authorization: token ${GITEA_TOKEN}" fetch --depth=1 origin "${{ github.ref }}"
+          git checkout -f FETCH_HEAD
+          git clean -fdx
+
+      - name: Show host environment
+        run: |
+          whoami
+          hostname
+          pwd
+          git --version
+          java -version
+          mvn -version
+          docker version
+          docker compose version
+
+      - name: Resolve build target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SERVICE: ${{ github.event.inputs.service }}
+        run: |
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            service="${INPUT_SERVICE:-aigc-gen}"
+          else
+            service="all"
+          fi
+
+          image_tag="$(git rev-parse --short=12 HEAD)"
+
+          case "${service}" in
+            all) module="all" ;;
+            yudao-gateway) module="yudao-gateway" ;;
+            yudao-system) module="yudao-module-system/yudao-module-system-server" ;;
+            yudao-infra) module="yudao-module-infra/yudao-module-infra-server" ;;
+            yudao-member) module="yudao-module-member/yudao-module-member-server" ;;
+            yudao-pay) module="yudao-module-pay/yudao-module-pay-server" ;;
+            aigc-model) module="yudao-module-aigc-model/yudao-module-aigc-model-server" ;;
+            aigc-billing) module="yudao-module-aigc-billing/yudao-module-aigc-billing-server" ;;
+            aigc-task) module="yudao-module-aigc-task/yudao-module-aigc-task-server" ;;
+            aigc-asset) module="yudao-module-aigc-asset/yudao-module-aigc-asset-server" ;;
+            aigc-safety) module="yudao-module-aigc-safety/yudao-module-aigc-safety-server" ;;
+            aigc-workflow) module="yudao-module-aigc-workflow/yudao-module-aigc-workflow-server" ;;
+            aigc-community) module="yudao-module-aigc-community/yudao-module-aigc-community-server" ;;
+            aigc-gen) module="yudao-module-aigc-gen/yudao-module-aigc-gen-server" ;;
+            draw2video-admin) module="frontend" ;;
+            draw2video-client) module="frontend" ;;
+            draw2video-guide) module="frontend" ;;
+            *) echo "Unknown service: ${service}" && exit 1 ;;
+          esac
+
+          if [ "${service}" != "all" ]; then
+            docker compose -f script/docker/docker-compose-micro-prod.yml config --services | grep -Fx "${service}"
+          fi
+
+          echo "BUILD_SERVICE=${service}" >> "${GITHUB_ENV}"
+          echo "BUILD_MODULE=${module}" >> "${GITHUB_ENV}"
+          echo "MICRO_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
+          echo "FRONTEND_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
+          echo "REMOTE_HOST=172.16.0.5" >> "${GITHUB_ENV}"
+
+      - name: Build jar
+        run: |
+          echo "Build service: ${BUILD_SERVICE}"
+          echo "Build module: ${BUILD_MODULE}"
+
+          if [ "${BUILD_MODULE}" = "frontend" ]; then
+            echo "Skip Maven build for frontend service: ${BUILD_SERVICE}"
+          elif [ "${BUILD_MODULE}" = "all" ]; then
+            mvn clean package -DskipTests
+          else
+            mvn clean package -pl "${BUILD_MODULE}" -am -DskipTests
+          fi
+
+      - name: Build image
+        run: |
+          echo "Build service: ${BUILD_SERVICE}"
+
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            docker compose -f script/docker/docker-compose-micro-prod.yml build
+          else
+            docker compose -f script/docker/docker-compose-micro-prod.yml build "${BUILD_SERVICE}"
+          fi
+
+      - name: Prepare docker compose files for remote deployment
+        run: |
+          mkdir -p /tmp/deploy
+          cp script/docker/docker-compose-micro-prod.yml /tmp/deploy/docker-compose-micro.yml
+          if [ -f script/docker/.env ]; then
+            cp script/docker/.env /tmp/deploy/
+          fi
+
+      - name: Transfer images and compose files to remote server
+        run: |
+          deploy_dir="/opt/deploy/yudao-micro"
+          echo "Transferring to remote host: ${REMOTE_HOST}"
+
+          ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "mkdir -p ${deploy_dir}"
+
+          scp -o StrictHostKeyChecking=no /tmp/deploy/docker-compose-micro.yml root@${REMOTE_HOST}:${deploy_dir}/
+          if [ -f /tmp/deploy/.env ]; then
+            scp -o StrictHostKeyChecking=no /tmp/deploy/.env root@${REMOTE_HOST}:${deploy_dir}/
+          fi
+
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            services="yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community draw2video-admin draw2video-client draw2video-guide"
+          else
+            services="${BUILD_SERVICE}"
+          fi
+
+          for service in ${services}; do
+            image_name=$(docker compose -f script/docker/docker-compose-micro-prod.yml config --images | grep -E "^${service}" || echo "${service}:latest")
+            echo "Transferring image: ${image_name}"
+            docker save "${image_name}" | gzip | ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "gunzip | docker load"
+          done
+
+      - name: Deploy services on remote server
+        run: |
+          deploy_env="prod"
+          deploy_dir="/opt/deploy/yudao-micro"
+          echo "Deploy env: ${deploy_env}"
+          echo "Remote host: ${REMOTE_HOST}"
+
+          ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && \
+            if [ \"${BUILD_SERVICE}\" = \"all\" ]; then \
+              docker compose -f docker-compose-micro.yml up -d; \
+            else \
+              docker compose -f docker-compose-micro.yml up -d \"${BUILD_SERVICE}\"; \
+            fi"
+
+      - name: Verify services on remote server
+        run: |
+          deploy_env="prod"
+          deploy_dir="/opt/deploy/yudao-micro"
+          echo "Verify env: ${deploy_env}"
+          echo "Remote host: ${REMOTE_HOST}"
+          echo "Build service: ${BUILD_SERVICE}"
+
+          ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && docker compose -f docker-compose-micro.yml ps"
+
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            verify_services="yudao-gateway yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community draw2video-admin draw2video-client draw2video-guide"
+          else
+            verify_services="${BUILD_SERVICE}"
+          fi
+
+          for service in ${verify_services}; do
+            service_running="false"
+            for i in $(seq 1 30); do
+              state=$(ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && docker compose -f docker-compose-micro.yml ps --status running --services | grep -Fx \"${service}\"" || true)
+              echo "${service}: ${state:-not-running}"
+              if [ "${state}" = "${service}" ]; then
+                service_running="true"
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "${service_running}" = "true" ]; then
+              continue
+            fi
+
+            ssh -o StrictHostKeyChecking=no root@${REMOTE_HOST} "cd ${deploy_dir} && docker compose -f docker-compose-micro.yml logs --tail=100 \"${service}\""
+            exit 1
+          done

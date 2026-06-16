@@ -20,8 +20,8 @@ spring:
             multi-statement-allow: true
     dynamic:
       druid:
-        initial-size: 5
-        min-idle: 10
+        initial-size: 1
+        min-idle: 1
         max-active: 20
         max-wait: 60000
         time-between-eviction-runs-millis: 60000
@@ -36,59 +36,37 @@ spring:
       primary: master
       datasource:
         master:
-          url: jdbc:mysql://mysql:3306/infra_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+          url: jdbc:mysql://mysql:3306/community_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
           username: root
           password: 123456
         slave:
           lazy: true
-          url: jdbc:mysql://mysql:3306/infra_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
+          url: jdbc:mysql://mysql:3306/community_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true
           username: root
           password: 123456
-
   data:
     redis:
       host: redis
       port: 6379
-      database: 2
+      database: 3
 
-  boot:
-    admin:
-      client:
-        instance:
-          service-host-type: IP
-        username: admin
-        password: admin
-      context-path: /admin
 
-xxl:
-  job:
-    admin:
-      addresses: http://xxl-job-admin:8080/xxl-job-admin
-    accessToken: default_token
-
-lock4j:
-  acquire-timeout: 3000
-  expire: 30000
+logging:
+  level:
+    cn.iocoder.yudao.module.aigc.community: info
 
 management:
   endpoints:
     web:
       base-path: /actuator
       exposure:
-        include: "*"
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
 
 yudao:
-  demo: false
   env:
-    tag: ${HOSTNAME:dev}
-  security:
-    mock-enable: false
+    tag: ${HOSTNAME}
   access-log:
     enable: true
-
-logging:
-  level:
-    cn.iocoder.yudao.module.infra.dal.mysql: INFO
-    cn.iocoder.yudao.module.infra.dal.mysql.logger.ApiErrorLogMapper: INFO
-    cn.iocoder.yudao.module.infra.dal.mysql.file.FileConfigMapper: INFO
-    org.springframework.context.support.PostProcessorRegistrationDelegate: ERROR
