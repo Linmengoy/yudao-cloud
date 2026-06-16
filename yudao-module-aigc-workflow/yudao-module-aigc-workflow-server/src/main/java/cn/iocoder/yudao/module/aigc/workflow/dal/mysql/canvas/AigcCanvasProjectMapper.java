@@ -26,6 +26,14 @@ public interface AigcCanvasProjectMapper extends BaseMapperX<AigcCanvasProjectDO
                 .orderByDesc(AigcCanvasProjectDO::getUpdateTime));
     }
 
+    default PageResult<AigcCanvasProjectDO> selectAdminPage(AigcCanvasProjectPageReqVO reqVO, Long ownerUserId) {
+        return selectPage(reqVO, new LambdaQueryWrapperX<AigcCanvasProjectDO>()
+                .eqIfPresent(AigcCanvasProjectDO::getOwnerUserId, ownerUserId)
+                .likeIfPresent(AigcCanvasProjectDO::getName, reqVO.getName())
+                .eqIfPresent(AigcCanvasProjectDO::getStatus, reqVO.getStatus())
+                .orderByDesc(AigcCanvasProjectDO::getUpdateTime));
+    }
+
     default AigcCanvasProjectDO selectByIdForUpdate(Long id) {
         return selectOneForUpdate(AigcCanvasProjectDO::getId, id);
     }

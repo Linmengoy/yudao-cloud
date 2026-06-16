@@ -20,6 +20,16 @@ export function writePageCache<T>(key: string, value: T) {
   pageCache.set(key, { value, updatedAt: Date.now() });
 }
 
+export function clearPageCache(prefix?: string) {
+  if (!prefix) {
+    pageCache.clear();
+    return;
+  }
+  Array.from(pageCache.keys()).forEach((key) => {
+    if (key.startsWith(prefix)) pageCache.delete(key);
+  });
+}
+
 export function isSamePageCacheValue(left: unknown, right: unknown) {
   if (Object.is(left, right)) return true;
   try {

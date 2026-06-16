@@ -63,7 +63,7 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
                         .timeout(timeoutMillis(reqDTO)),
                     reqDTO)) {
                 if (!response.isOk()) {
-                    return failed("HTTP_" + response.getStatus(), safeBody(response.body()))
+                    return failed("HTTP_" + response.getStatus(), safeErrorMessage(response.body()))
                             .setDurationMillis(System.currentTimeMillis() - start);
                 }
                 return parseSubmitResponse(response.body(), reqDTO).setDurationMillis(System.currentTimeMillis() - start);
@@ -96,7 +96,7 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
                         .timeout(timeoutMillis(reqDTO)),
                 reqDTO)) {
             if (!response.isOk()) {
-                return failed("HTTP_" + response.getStatus(), safeBody(response.body()))
+                return failed("HTTP_" + response.getStatus(), safeErrorMessage(response.body()))
                         .setDurationMillis(System.currentTimeMillis() - start);
             }
             return parseQueryResponse(response.body(), reqDTO.getProviderTaskId())
@@ -522,8 +522,42 @@ public class OpenApiGenerationsProviderClient implements AigcProviderClient {
         return new AigcProviderSubmitRespDTO()
                 .setSuccess(false)
                 .setFinished(true)
-                .setErrorCode(code)
+                .setErrorCode(classifyErrorCode(code, message))
                 .setErrorMessage(message);
+    }
+
+    private String classifyErrorCode(String code, String message) {
+        String normalizedCode = StrUtil.nullToEmpty(code).toUpperCase();
+        String normalizedMessage = StrUtil.nullToEmpty(message).toLowerCase();
+        if (normalizedCode.contains("ASSET_REVIEW")) {
+            return code;
+        }
+        if (normalizedCode.contains("MEDIA_URL")
+                || normalizedMessage.contains("media url") || normalizedMessage.contains("media_urls")
+                || normalizedMessage.contains("image url") || normalizedMessage.contains("image_url")
+                || normalizedMessage.contains("reference") || normalizedMessage.contains("asset")) {
+            return "MEDIA_URL_INVALID";
+        }
+        if (normalizedCode.equals("HTTP_400") || normalizedCode.contains("PARAM")
+                || normalizedMessage.contains("request parameters were rejected")
+                || normalizedMessage.contains("verify the prompt")
+                || normalizedMessage.contains("invalid parameter")
+                || normalizedMessage.contains("invalid params")
+                || normalizedMessage.contains("bad request")) {
+            return "PARAM_REJECTED";
+        }
+        return code;
+    }
+
+    private String safeErrorMessage(String body) {
+        if (StrUtil.isBlank(body)) {
+            return body;
+        }
+        try {
+            return resolveErrorMessage(JSONUtil.parseObj(body));
+        } catch (Exception ignored) {
+            return safeBody(body);
+        }
     }
 
     private String safeBody(String body) {

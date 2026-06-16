@@ -79,6 +79,7 @@ import {
   appendReferenceSubmitParams,
   getReferenceAssetId,
 } from "./video-reference-submit";
+import { formatVideoGenerationError } from "./video-generation-error";
 
 type VideoNodeProps = NodeProps<Node<VideoNodeData, "video">>;
 
@@ -580,37 +581,6 @@ function validateVideoGenerationRequest({
   }
 
   return validateTemplateParams(params, templates);
-}
-
-function formatVideoGenerationError(message: unknown) {
-  const rawMessage = typeof message === "string" ? message.trim() : "";
-  const lowerMessage = rawMessage.toLowerCase();
-  const isParameterRejected =
-    lowerMessage.includes("request parameters were rejected") ||
-    lowerMessage.includes("verify the prompt") ||
-    lowerMessage.includes("media url") ||
-    lowerMessage.includes("invalid parameter") ||
-    lowerMessage.includes("invalid params") ||
-    lowerMessage.includes("invalid request") ||
-    lowerMessage.includes("parameter rejected") ||
-    lowerMessage.includes("parameter error") ||
-    lowerMessage.includes("bad request");
-  const isReferenceUrlError =
-    lowerMessage.includes("image_url") ||
-    lowerMessage.includes("image url") ||
-    lowerMessage.includes("media_url") ||
-    lowerMessage.includes("media url") ||
-    lowerMessage.includes("media") ||
-    lowerMessage.includes("reference") ||
-    lowerMessage.includes("url");
-
-  if (isParameterRejected) {
-    return isReferenceUrlError
-      ? "生成参数未通过模型校验，请检查提示词、参考图是否可访问，以及视频模式、比例、分辨率和时长后重试。"
-      : "生成参数未通过模型校验，请检查提示词和视频参数后重试。";
-  }
-
-  return rawMessage || "视频生成失败，请稍后重试。";
 }
 
 function getOrderedReferences(
@@ -1809,7 +1779,7 @@ export function VideoNodeComponent({
       updateData({
         status: "failed",
         taskId: String(submit.taskId),
-        errorMessage: formatVideoGenerationError(result.failMessage),
+        errorMessage: formatVideoGenerationError(result.failMessage, result.failReason),
         taskStatus: result.status,
         upstreamStatus: result.status,
         generationCompletedAt: completedAt,

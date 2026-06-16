@@ -50,6 +50,11 @@ const config: Config = {
           sidebarId: 'guideSidebar',
           position: 'left',
           label: '指南'
+        },
+        {
+          to: '/search',
+          position: 'left',
+          label: 'Search'
         }
       ]
     },

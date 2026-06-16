@@ -45,6 +45,9 @@ public class AigcGenerateResultRespDTO {
     private String assetIds;
 
     @Schema(description = "失败原因")
+    private String failReason;
+
+    @Schema(description = "失败信息")
     private String failMessage;
 
     @Schema(description = "创建时间")

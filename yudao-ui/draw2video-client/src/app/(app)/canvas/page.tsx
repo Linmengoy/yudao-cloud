@@ -41,6 +41,7 @@ import { TextNodeComponent } from "@/features/canvas/TextNode";
 import { VideoNodeComponent } from "@/features/canvas/VideoNode";
 import { GroupNodeComponent } from "@/features/canvas/GroupNode";
 import { CanvasSignalEdge } from "@/features/canvas/CanvasSignalEdge";
+import { collectNodeAssetIds, getNodeAssetAccessRequest, withFreshAssetUrl } from "@/features/canvas/canvas-asset-runtime";
 import { filterSyncableNodeDataPatch, isCanvasNodeSyncable, sanitizeNodeForCanvasOperation, sanitizeNodesForCanvasSnapshot, stripRuntimeAssetUrlsFromPatch } from "@/features/canvas/canvas-syncable-data";
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
@@ -1114,34 +1115,6 @@ function withCardNodeInteraction(node: AppNode): AppNode {
   };
 }
 
-function getNodeAssetId(node: AppNode) {
-  if (node.type !== "image" && node.type !== "video") return null;
-  const data = node.data as ImageNodeData | VideoNodeData;
-  return data.assetId ?? data.outputAssetId ?? null;
-}
-
-function collectNodeAssetIds(node: AppNode) {
-  if (node.type !== "image" && node.type !== "video") return [];
-  const data = node.data as ImageNodeData | VideoNodeData;
-  const ids = new Set<number>();
-  [data.assetId, data.outputAssetId].forEach((assetId) => {
-    if (typeof assetId === "number") ids.add(assetId);
-  });
-  if (Array.isArray(data.outputs)) {
-    data.outputs.forEach((output) => {
-      if (typeof output.assetId === "number") ids.add(output.assetId);
-    });
-  }
-  return [...ids];
-}
-
-function getNodeAssetAccessRequest(node: AppNode, assetId: number) {
-  if (node.type === "video") {
-    return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
-  }
-  return { assetId, fileRole: "ORIGINAL", accessType: "PREVIEW" };
-}
-
 function getImageOutputIdentity(output: Record<string, unknown>) {
   if (typeof output.id === "string" && output.id) return output.id;
   if (typeof output.assetId === "number") return `asset-${output.assetId}`;
@@ -1182,6 +1155,15 @@ function mergeImageOutputPatch(node: AppNode, patch: Record<string, unknown>) {
   return { ...patch, outputs: mergedOutputs };
 }
 
+function stripStaleImageOutputUrls(outputs: unknown) {
+  if (!Array.isArray(outputs)) return outputs;
+  return outputs.map((output) => {
+    if (!output || typeof output !== "object") return output;
+    const item = output as Record<string, unknown>;
+    return typeof item.assetId === "number" ? { ...item, previewUrl: "" } : item;
+  });
+}
+
 function mergeVideoOutputPatch(node: AppNode, patch: Record<string, unknown>) {
   if (node.type !== "video" || !Array.isArray(patch.outputs)) return patch;
 
@@ -1213,48 +1195,6 @@ function mergeVideoOutputPatch(node: AppNode, patch: Record<string, unknown>) {
   });
 
   return { ...patch, outputs: mergedOutputs };
-}
-
-function withFreshAssetUrl(node: AppNode, url: string, expireTime?: string | null, assetId = getNodeAssetId(node)): AppNode {
-  if (node.type === "video") {
-    const outputs = Array.isArray(node.data.outputs)
-      ? node.data.outputs.map((output) => (
-          output.assetId === assetId
-            ? { ...output, previewUrl: url, videoUrl: url }
-            : output
-        ))
-      : node.data.outputs;
-    const shouldUpdatePrimary = assetId === getNodeAssetId(node);
-    return {
-      ...node,
-      data: {
-        ...node.data,
-        ...(shouldUpdatePrimary ? { assetId, previewUrl: url, videoUrl: url } : {}),
-        outputs,
-        assetUrlExpireTime: expireTime ?? null,
-      },
-    } as AppNode;
-  }
-  if (node.type === "image") {
-    const outputs = Array.isArray(node.data.outputs)
-      ? node.data.outputs.map((output) => (
-          output.assetId === assetId
-            ? { ...output, previewUrl: url }
-            : output
-        ))
-      : node.data.outputs;
-    const shouldUpdatePrimary = assetId === getNodeAssetId(node);
-    return {
-      ...node,
-      data: {
-        ...node.data,
-        ...(shouldUpdatePrimary ? { assetId, previewUrl: url, outputPreviewUrl: url } : {}),
-        outputs,
-        assetUrlExpireTime: expireTime ?? null,
-      },
-    } as AppNode;
-  }
-  return node;
 }
 
 function defaultNodes(): AppNode[] {
@@ -1324,6 +1264,7 @@ function migrateNode(n: AppNode): AppNode {
         assetId,
         previewUrl: assetId ? null : typeof d.previewUrl === "string" ? d.previewUrl : null,
         outputPreviewUrl: assetId ? null : typeof d.outputPreviewUrl === "string" ? d.outputPreviewUrl : null,
+        outputs: stripStaleImageOutputUrls(d.outputs) as ImageNodeData["outputs"],
         assetUrlExpireTime: null,
       },
     } as AppNode);
@@ -1966,12 +1907,18 @@ function CanvasFlow() {
     }
     if ((operationType === "NODE_UPDATE_DATA" || operationType === "TASK_STATUS_PATCH") && typeof payload.nodeId === "string" && payload.patch) {
       const patch = stripRuntimeAssetUrlsFromPatch(payload.patch as Record<string, unknown>);
+      let nodeToRefresh: AppNode | null = null;
       setNodes((nds) => nds.map((node) => {
         if (node.id !== payload.nodeId) return node;
         const imageMergedPatch = mergeImageOutputPatch(node as AppNode, patch);
         const mergedPatch = mergeVideoOutputPatch(node as AppNode, imageMergedPatch);
-        return migrateNode({ ...node, data: { ...node.data, ...mergedPatch } } as AppNode);
+        const nextNode = migrateNode({ ...node, data: { ...node.data, ...mergedPatch } } as AppNode);
+        nodeToRefresh = nextNode;
+        return nextNode;
       }));
+      if (nodeToRefresh && collectNodeAssetIds(nodeToRefresh).length > 0) {
+        window.requestAnimationFrame(() => refreshAssetUrls([nodeToRefresh as AppNode]));
+      }
       return;
     }
     if (operationType === "ASSET_ATTACH" && typeof payload.nodeId === "string") {

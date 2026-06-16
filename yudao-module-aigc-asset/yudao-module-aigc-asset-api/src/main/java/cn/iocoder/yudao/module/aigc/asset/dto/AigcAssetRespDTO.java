@@ -91,6 +91,12 @@ public class AigcAssetRespDTO {
     @Schema(description = "扩展元数据 JSON")
     private String metadata;
 
+    @Schema(description = "提示词快照 JSON")
+    private String promptSnapshot;
+
+    @Schema(description = "生成参数快照 JSON")
+    private String generateSnapshot;
+
     @Schema(description = "可见性")
     private String visibility;
 

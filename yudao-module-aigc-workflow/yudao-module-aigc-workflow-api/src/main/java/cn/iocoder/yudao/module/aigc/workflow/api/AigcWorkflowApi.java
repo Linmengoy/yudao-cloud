@@ -48,6 +48,11 @@ public interface AigcWorkflowApi {
     @Operation(summary = "预估工作流费用")
     CommonResult<AigcWorkflowCostEstimateRespDTO> estimateCost(@Valid @RequestBody AigcWorkflowCostEstimateReqDTO reqDTO);
 
+    @GetMapping(PREFIX + "/validate-readable-canvas-project")
+    @Operation(summary = "Validate canvas project read permission")
+    CommonResult<Boolean> validateReadableCanvasProject(@RequestParam("projectId") Long projectId,
+                                                        @RequestParam("userId") Long userId);
+
     @PostMapping(PREFIX + "/handle-node-callback")
     @Operation(summary = "处理节点回调")
     CommonResult<Boolean> handleNodeCallback(@Valid @RequestBody AigcWorkflowNodeCallbackReqDTO reqDTO);

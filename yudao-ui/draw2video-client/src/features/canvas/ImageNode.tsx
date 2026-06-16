@@ -587,7 +587,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const selectedModelCapabilityBadge = useMemo(() => getSizeCapabilityBadge(aigcModels.templates), [aigcModels.templates]);
   const outputs = useMemo(() => data.outputs ?? [], [data.outputs]);
   const hasOutputGroup = outputs.length > 1;
-  const outputsExpanded = Boolean(data.outputsExpanded && hasOutputGroup);
+  const outputsExpanded = data.outputsExpanded === true && hasOutputGroup;
   const primaryOutput = getPrimaryOutput(outputs, data.primaryOutputId);
   const imageSrc = primaryOutput?.previewUrl || data.previewUrl || data.dataUrl;
   const costLabel = aigcModels.priceLoading
@@ -1016,6 +1016,29 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     [outputs, params, updateData]
   );
 
+  const refreshBrokenOutputUrl = useCallback(
+    (output?: ImageNodeOutput | null) => {
+      const assetId = output?.assetId ?? data.outputAssetId ?? data.assetId;
+      if (!assetId) return;
+
+      const nextOutputs = output
+        ? outputs.map((item) => (
+            item.id === output.id || (item.assetId && item.assetId === output.assetId)
+              ? { ...item, previewUrl: "" }
+              : item
+          ))
+        : outputs;
+      const clearsPrimaryUrl = !output || output.id === primaryOutput?.id || output.assetId === data.assetId || output.assetId === data.outputAssetId;
+
+      updateRuntimeData({
+        outputs: nextOutputs,
+        assetUrlExpireTime: null,
+        ...(clearsPrimaryUrl ? { previewUrl: null, outputPreviewUrl: null } : {}),
+      });
+    },
+    [data.assetId, data.outputAssetId, outputs, primaryOutput?.id, updateRuntimeData]
+  );
+
   const handleGenerate = useCallback(async () => {
     const cleanPrompt = promptValueToSubmitPrompt(prompt, mentionOptions).trim();
     if (!cleanPrompt || isGenerating || aigcModels.loading || aigcModels.templateLoading) return;
@@ -1407,7 +1430,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                         zIndex: -index - 1,
                       }}
                     >
-                      <img src={output.previewUrl} alt={output.fileName ?? data.fileName} className="size-full object-cover opacity-65" draggable={false} />
+                      <img
+                        src={output.previewUrl}
+                        alt={output.fileName ?? data.fileName}
+                        className="size-full object-cover opacity-65"
+                        draggable={false}
+                        onError={() => refreshBrokenOutputUrl(output)}
+                      />
                     </div>
                   ))}
                 </div>
@@ -1430,7 +1459,13 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                           className="group relative overflow-hidden rounded-xl border border-off-white/15 bg-charcoal shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
                           style={{ width: displaySize.width, height: displaySize.height }}
                         >
-                          <img src={output.previewUrl} alt={output.fileName ?? `生成图片 ${index + 1}`} className="size-full object-cover" draggable={false} />
+                          <img
+                            src={output.previewUrl}
+                            alt={output.fileName ?? `生成图片 ${index + 1}`}
+                            className="size-full object-cover"
+                            draggable={false}
+                            onError={() => refreshBrokenOutputUrl(output)}
+                          />
                           <div className="absolute right-3 top-3 z-10 flex gap-2 opacity-100 transition-opacity">
                             <button
                               type="button"
@@ -1483,6 +1518,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
                     alt={data.fileName}
                     className="size-full object-contain"
                     draggable={false}
+                    onError={() => refreshBrokenOutputUrl(primaryOutput)}
                     onLoad={(event) => {
                       const image = event.currentTarget;
                       if (image.naturalWidth > 0 && image.naturalHeight > 0) {

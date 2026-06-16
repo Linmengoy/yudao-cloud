@@ -8,6 +8,7 @@ CLIENT_API_BASE_URL=""
 CLIENT_APP_API_PREFIX="/app-api"
 CLIENT_WS_BASE_URL="wss://beta.copse.top"
 TARGET="all"
+IMAGE_TAG=""
 ARCHIVE_NAME=""
 COMPOSE_FILE="docker-compose.frontend.yml"
 SSH_KEY="$HOME/.ssh/jd_ssh_5675.pem"
@@ -28,7 +29,9 @@ Options:
   --client-api-base-url URL    NEXT_PUBLIC_API_BASE_URL, default empty
   --client-app-api-prefix PATH NEXT_PUBLIC_APP_API_PREFIX, default /app-api
   --client-ws-base-url URL     NEXT_PUBLIC_WS_BASE_URL, default wss://beta.copse.top
-  --target all|admin|client    Build/deploy target, default all
+  --target all|admin|client|guide
+                                Build/deploy target, default all
+  --image-tag TAG              Docker image tag, default current git SHA
   --archive-name NAME          Image archive name
   --compose-file NAME          Compose file name, default docker-compose.frontend.yml
   --ssh-key PATH               SSH private key, default ~/.ssh/jd_ssh_5675.pem
@@ -42,6 +45,7 @@ Examples:
   script/deploy-frontend-images.sh --server manman
   script/deploy-frontend-images.sh --server manman --target admin
   script/deploy-frontend-images.sh --server manman --target client
+  script/deploy-frontend-images.sh --server manman --target guide
 EOF
 }
 
@@ -73,6 +77,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --target)
       TARGET="${2:-}"
+      shift 2
+      ;;
+    --image-tag)
+      IMAGE_TAG="${2:-}"
       shift 2
       ;;
     --archive-name)
@@ -126,9 +134,9 @@ if [[ "$SERVER" == "manman" ]]; then
 fi
 
 case "$TARGET" in
-  all|admin|client) ;;
+  all|admin|client|guide) ;;
   *)
-    echo "--target must be one of: all, admin, client" >&2
+    echo "--target must be one of: all, admin, client, guide" >&2
     exit 1
     ;;
 esac
@@ -136,7 +144,13 @@ esac
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ADMIN_DIR="$ROOT_DIR/yudao-ui/draw2video-admin"
 CLIENT_DIR="$ROOT_DIR/yudao-ui/draw2video-client"
+GUIDE_DIR="$ROOT_DIR/yudao-ui/draw2video-guide"
 COMPOSE_SOURCE_PATH="$ROOT_DIR/script/docker/$COMPOSE_FILE"
+
+if [[ -z "$IMAGE_TAG" ]]; then
+  IMAGE_TAG="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || true)"
+  IMAGE_TAG="${IMAGE_TAG:-latest}"
+fi
 
 if [[ -z "$ARCHIVE_NAME" ]]; then
   if [[ "$TARGET" == "all" ]]; then
@@ -151,13 +165,17 @@ IMAGES=()
 SERVICES=()
 
 if [[ "$TARGET" == "all" || "$TARGET" == "admin" ]]; then
-  IMAGES+=("draw2video-admin:latest")
+  IMAGES+=("draw2video-admin:$IMAGE_TAG")
   SERVICES+=("draw2video-admin")
 fi
 
 if [[ "$TARGET" == "all" || "$TARGET" == "client" ]]; then
-  IMAGES+=("draw2video-client:latest")
+  IMAGES+=("draw2video-client:$IMAGE_TAG")
   SERVICES+=("draw2video-client")
+fi
+if [[ "$TARGET" == "all" || "$TARGET" == "guide" ]]; then
+  IMAGES+=("draw2video-guide:$IMAGE_TAG")
+  SERVICES+=("draw2video-guide")
 fi
 
 step() {
@@ -239,13 +257,16 @@ fi
 if [[ "$TARGET" == "all" || "$TARGET" == "client" ]]; then
   [[ -d "$CLIENT_DIR" ]] || { echo "Client directory not found: $CLIENT_DIR" >&2; exit 1; }
 fi
+if [[ "$TARGET" == "all" || "$TARGET" == "guide" ]]; then
+  [[ -d "$GUIDE_DIR" ]] || { echo "Guide directory not found: $GUIDE_DIR" >&2; exit 1; }
+fi
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   if [[ "$TARGET" == "all" || "$TARGET" == "admin" ]]; then
     step "Build draw2video-admin image"
     run docker buildx build \
       --platform "$PLATFORM" \
-      -t draw2video-admin:latest \
+      -t "draw2video-admin:$IMAGE_TAG" \
       --load \
       "$ADMIN_DIR"
   fi
@@ -257,9 +278,18 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       --build-arg "NEXT_PUBLIC_API_BASE_URL=$CLIENT_API_BASE_URL" \
       --build-arg "NEXT_PUBLIC_APP_API_PREFIX=$CLIENT_APP_API_PREFIX" \
       --build-arg "NEXT_PUBLIC_WS_BASE_URL=$CLIENT_WS_BASE_URL" \
-      -t draw2video-client:latest \
+      -t "draw2video-client:$IMAGE_TAG" \
       --load \
       "$CLIENT_DIR"
+  fi
+
+  if [[ "$TARGET" == "all" || "$TARGET" == "guide" ]]; then
+    step "Build draw2video-guide image"
+    run docker buildx build \
+      --platform "$PLATFORM" \
+      -t "draw2video-guide:$IMAGE_TAG" \
+      --load \
+      "$GUIDE_DIR"
   fi
 fi
 
@@ -279,7 +309,7 @@ if [[ "$SKIP_UPLOAD" -eq 0 ]]; then
   scp_run "$ARCHIVE_PATH" "${SERVER}:${REMOTE_DIR}/${ARCHIVE_NAME}"
 
   step "Load images and restart containers"
-  remote_command="cd '$REMOTE_DIR'; docker load -i '$ARCHIVE_NAME'; docker compose -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
+  remote_command="cd '$REMOTE_DIR'; docker load -i '$ARCHIVE_NAME'; FRONTEND_IMAGE_TAG='$IMAGE_TAG' docker compose -f '$COMPOSE_FILE' up -d --no-build --force-recreate ${SERVICES[*]}"
   ssh_run "$SERVER" "$remote_command"
 fi
 

@@ -207,13 +207,23 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         }
         if (failed) {
             patch.set("status", "failed")
-                    .set("errorMessage", StrUtil.blankToDefault(result.getFailMessage(), "生成失败，请稍后重试。"))
+                    .set("errorMessage", formatGenerateFailureMessage(result.getFailReason(), result.getFailMessage()))
                     .set("generationCompletedAt", result.getFinishTime() == null ? LocalDateTime.now().toString()
                             : result.getFinishTime().toString());
             return patch;
         }
         patch.set("status", "pending");
         return patch;
+    }
+
+    private String formatGenerateFailureMessage(String failReason, String failMessage) {
+        if ("MEDIA_URL_INVALID".equalsIgnoreCase(failReason)) {
+            return "生成参数未通过模型校验，请检查参考图是否可访问，并确认视频模式、比例、分辨率和时长后重试。";
+        }
+        if ("PARAM_REJECTED".equalsIgnoreCase(failReason)) {
+            return "生成参数未通过模型校验，请检查提示词、参考图和视频参数后重试。";
+        }
+        return StrUtil.blankToDefault(failMessage, "生成失败，请稍后重试。");
     }
 
     private void applySuccessfulAssetSideEffects(AigcCanvasNodeRunSyncReqVO reqVO, AigcGenerateResultRespDTO result) {
