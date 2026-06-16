@@ -8,8 +8,9 @@ param(
   [string]$ClientAppApiPrefix = "/app-api",
   # [string]$ClientWsBaseUrl = "ws://111.228.39.103:48080",
   [string]$ClientWsBaseUrl = "wss://beta.copse.top",
-  [ValidateSet("all", "admin", "client")]
+  [ValidateSet("all", "admin", "client", "guide")]
   [string]$Target = "all",
+  [string]$ImageTag = "",
   [string]$ArchiveName = "",
   [string]$ComposeFile = "docker-compose.frontend.yml",
   [switch]$SkipBuild,
@@ -22,7 +23,15 @@ $ErrorActionPreference = "Stop"
 $RootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 $AdminDir = Join-Path $RootDir "yudao-ui\draw2video-admin"
 $ClientDir = Join-Path $RootDir "yudao-ui\draw2video-client"
+$GuideDir = Join-Path $RootDir "yudao-ui\draw2video-guide"
 $ComposeSourcePath = Join-Path $RootDir "script\docker\$ComposeFile"
+
+if ([string]::IsNullOrWhiteSpace($ImageTag)) {
+  $ImageTag = (git -C $RootDir rev-parse --short=12 HEAD 2>$null)
+  if ([string]::IsNullOrWhiteSpace($ImageTag)) {
+    $ImageTag = "latest"
+  }
+}
 
 if ([string]::IsNullOrWhiteSpace($ArchiveName)) {
   if ($Target -eq "all") {
@@ -37,12 +46,16 @@ $ArchivePath = Join-Path $RootDir $ArchiveName
 $Images = @()
 $Services = @()
 if ($Target -eq "all" -or $Target -eq "admin") {
-  $Images += "draw2video-admin:latest"
+  $Images += "draw2video-admin:$ImageTag"
   $Services += "draw2video-admin"
 }
 if ($Target -eq "all" -or $Target -eq "client") {
-  $Images += "draw2video-client:latest"
+  $Images += "draw2video-client:$ImageTag"
   $Services += "draw2video-client"
+}
+if ($Target -eq "all" -or $Target -eq "guide") {
+  $Images += "draw2video-guide:$ImageTag"
+  $Services += "draw2video-guide"
 }
 
 function Invoke-Step {
@@ -121,6 +134,7 @@ function Save-DockerImages {
 Invoke-Step "Check directories" {
   if (($Target -eq "all" -or $Target -eq "admin") -and !(Test-Path $AdminDir)) { throw "Admin directory not found: $AdminDir" }
   if (($Target -eq "all" -or $Target -eq "client") -and !(Test-Path $ClientDir)) { throw "Client directory not found: $ClientDir" }
+  if (($Target -eq "all" -or $Target -eq "guide") -and !(Test-Path $GuideDir)) { throw "Guide directory not found: $GuideDir" }
 }
 
 if (!$SkipBuild) {
@@ -129,7 +143,7 @@ if (!$SkipBuild) {
       Run-Command "docker" @(
         "buildx", "build",
         "--platform", $Platform,
-        "-t", "draw2video-admin:latest",
+        "-t", "draw2video-admin:$ImageTag",
         "--load",
         $AdminDir
       )
@@ -144,9 +158,21 @@ if (!$SkipBuild) {
         "--build-arg", "NEXT_PUBLIC_API_BASE_URL=$ClientApiBaseUrl",
         "--build-arg", "NEXT_PUBLIC_APP_API_PREFIX=$ClientAppApiPrefix",
         "--build-arg", "NEXT_PUBLIC_WS_BASE_URL=$ClientWsBaseUrl",
-        "-t", "draw2video-client:latest",
+        "-t", "draw2video-client:$ImageTag",
         "--load",
         $ClientDir
+      )
+    }
+  }
+
+  if ($Target -eq "all" -or $Target -eq "guide") {
+    Invoke-Step "Build draw2video-guide image" {
+      Run-Command "docker" @(
+        "buildx", "build",
+        "--platform", $Platform,
+        "-t", "draw2video-guide:$ImageTag",
+        "--load",
+        $GuideDir
       )
     }
   }
@@ -170,7 +196,7 @@ if (!$SkipUpload) {
   }
 
   Invoke-Step "Load images and restart containers" {
-    $RemoteCommand = "cd $RemoteDir; docker load -i $ArchiveName; docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
+    $RemoteCommand = "cd $RemoteDir; docker load -i $ArchiveName; FRONTEND_IMAGE_TAG=$ImageTag docker compose -f $ComposeFile up -d --no-build --force-recreate $($Services -join ' ')"
     Run-Command "ssh" @($Server, $RemoteCommand)
   }
 }

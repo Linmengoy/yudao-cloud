@@ -392,7 +392,7 @@ services:
     build:
       context: ../../yudao-module-aigc-community/yudao-module-aigc-community-server
       dockerfile: Dockerfile
-    image: aigc-community:latest
+    image: aigc-community:${MICRO_IMAGE_TAG:-latest}
     container_name: aigc-community
     restart: always
     environment:
@@ -495,7 +495,7 @@ services:
     build:
       context: ../../yudao-ui/draw2video-admin
       dockerfile: Dockerfile
-    image: draw2video-admin:latest
+    image: draw2video-admin:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-admin
     restart: always
     environment:
@@ -515,7 +515,7 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: ""
         NEXT_PUBLIC_APP_API_PREFIX: /app-api
-    image: draw2video-client:latest
+    image: draw2video-client:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-client
     restart: always
     environment:
@@ -526,6 +526,28 @@ services:
       - yudao-network
     ports:
       - "3000:3000"
+    depends_on:
+      yudao-gateway:
+        condition: service_started
+
+  draw2video-guide:
+    build:
+      context: ../../yudao-ui/draw2video-guide
+      dockerfile: Dockerfile
+    image: draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}
+    container_name: draw2video-guide
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - yudao-network
+    ports:
+      - "8082:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     depends_on:
       yudao-gateway:
         condition: service_started
