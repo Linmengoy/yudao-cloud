@@ -37,6 +37,7 @@ preflight() {
 
   [ -n "$evidence" ] || fail "RELEASE_EVIDENCE_FILE is required"
   evidence="$(evidence_path "$evidence")"
+  mkdir -p "$(dirname "$evidence")"
   [ -n "${MICRO_IMAGE_TAG:-}" ] || fail "MICRO_IMAGE_TAG is required"
   is_sha_tag "$MICRO_IMAGE_TAG" || fail "MICRO_IMAGE_TAG must be an immutable Git SHA tag: ${MICRO_IMAGE_TAG}"
   [ -n "$previous_tag" ] || fail "previous_stable_image_tag is required for rollback evidence"

@@ -1,9 +1,5 @@
 name: yudao-cloud-micro-prod
 
-x-java-prod-env: &java-prod-env
-  REDIS_PASSWORD: ${REDIS_PASSWORD:-123456}
-  SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-123456}
-
 services:
   mysql:
     image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/mysql:8.0
@@ -35,16 +31,15 @@ services:
     restart: always
     environment:
       TZ: Asia/Shanghai
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-123456}
     networks:
       - yudao-network-prod
     ports:
       - "6379:6379"
     volumes:
       - /opt/data/redis-data-prod:/data
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-123456}
+    command: redis-server --appendonly yes
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -111,7 +106,6 @@ services:
     container_name: yudao-system-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       SPRING_CLOUD_NACOS_SERVER_ADDR: 10.66.0.2:8848
@@ -143,7 +137,6 @@ services:
     container_name: yudao-infra-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       SPRING_CLOUD_NACOS_SERVER_ADDR: 10.66.0.2:8848
@@ -177,7 +170,6 @@ services:
     container_name: yudao-pay-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xms1024m -Xmx1024m
@@ -207,7 +199,6 @@ services:
     container_name: aigc-model-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xms1024m -Xmx1024m
@@ -237,7 +228,6 @@ services:
     container_name: aigc-billing-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xms1024m -Xmx1024m
@@ -265,7 +255,6 @@ services:
     container_name: aigc-task-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xms1024m -Xmx1024m
@@ -293,7 +282,6 @@ services:
     container_name: aigc-asset-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xms1024m -Xmx1024m
@@ -323,7 +311,6 @@ services:
     container_name: aigc-safety-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xms1024m -Xmx1024m
@@ -351,7 +338,6 @@ services:
     container_name: aigc-gen-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xms1024m -Xmx1024m
@@ -381,7 +367,6 @@ services:
     container_name: aigc-workflow-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xms1024m -Xmx1024m
@@ -411,7 +396,6 @@ services:
     container_name: aigc-community-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       SPRING_CLOUD_NACOS_SERVER_ADDR: 10.66.0.2:8848
@@ -459,7 +443,6 @@ services:
     container_name: yudao-member-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: -Xms1024m -Xmx1024m
@@ -489,7 +472,6 @@ services:
     container_name: yudao-gateway-prod
     restart: always
     environment:
-      <<: *java-prod-env
       TZ: Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       SPRING_CLOUD_NACOS_SERVER_ADDR: 10.66.0.2:8848
