@@ -25,6 +25,7 @@ public class AigcPromptTemplateDO extends TenantBaseDO {
     private String sourceLabel;
     private String modelCode;
     private String modelName;
+    private String modelParams;
     private String sourceUrl;
     private String githubUrl;
     private String title;

@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateModelRespVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplatePageReqVO;
 import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateRespVO;
+import cn.iocoder.yudao.module.aigc.asset.controller.app.vo.template.AigcPromptTemplateShareReqVO;
 import cn.iocoder.yudao.module.aigc.asset.dal.dataobject.AigcPromptTemplateDO;
 
 import java.util.List;
@@ -15,6 +16,8 @@ public interface AigcPromptTemplateService {
     AigcPromptTemplateRespVO getTemplate(Long id);
 
     PageResult<AigcPromptTemplateRespVO> getTemplatePage(AigcPromptTemplatePageReqVO reqVO);
+
+    Long shareTemplate(Long userId, AigcPromptTemplateShareReqVO reqVO);
 
     List<String> getCategoryList();
 

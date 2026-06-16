@@ -38,6 +38,9 @@ public class AigcPromptTemplateRespVO {
     @Schema(description = "适配模型名称")
     private String modelName;
 
+    @Schema(description = "生成参数 JSON")
+    private String modelParams;
+
     @Schema(description = "风格标签 JSON")
     private String styles;
 
