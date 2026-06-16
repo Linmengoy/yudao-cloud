@@ -23,19 +23,20 @@ import {
 import { listProjects, type ProjectMeta } from "@/features/projects/project-store";
 import { useAuth } from "@/features/auth/auth-store";
 import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache";
+import {
+  QUICK_GENERATION_MODE_LABELS,
+  communityPostCoverUrl,
+  getQuickGenerationMode,
+  getSelectedTabModels,
+  pickDefaultModelId,
+  workspaceCommunityCacheKey,
+  workspaceModelsCacheKey,
+  type GenerationTab,
+  type QuickGenerationMode,
+} from "./workspace-page-contracts";
 
 const REFERENCE_IMAGE_CACHE_KEY = "copse:workspace:reference-images";
 const REFERENCE_IMAGE_DRAG_DATA_TYPE = "application/x-copse-reference-image-index";
-
-type QuickGenerationMode = "TEXT_TO_IMAGE" | "IMAGE_TO_IMAGE" | "TEXT_TO_VIDEO" | "IMAGE_TO_VIDEO";
-type GenerationTab = "image" | "video";
-
-const QUICK_GENERATION_MODE_LABELS: Record<QuickGenerationMode, string> = {
-  TEXT_TO_IMAGE: "文生图",
-  IMAGE_TO_IMAGE: "图生图",
-  TEXT_TO_VIDEO: "文生视频",
-  IMAGE_TO_VIDEO: "图生视频",
-};
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -295,32 +296,12 @@ function workspaceProjectsCacheKey(ownerKey: string | number | null | undefined)
   return `workspace:projects:${ownerKey ?? "current"}`;
 }
 
-function workspaceModelsCacheKey(imageCapability: QuickGenerationMode, videoCapability: QuickGenerationMode) {
-  return `workspace:models:${imageCapability}:${videoCapability}`;
-}
-
-function workspaceCommunityCacheKey(ownerKey: string | number | null | undefined) {
-  return `workspace:community-hot:${ownerKey ?? "current"}`;
-}
-
 function getProjectKey(project: ProjectListItem) {
   return `${project.source}:${project.id}`;
 }
 
 function getModelKey(model: AigcModel) {
   return model.id;
-}
-
-function pickDefaultModelId(models: AigcModel[], tab: GenerationTab = "image") {
-  const type = tab === "video" ? 3 : 2;
-  return models.find((item) => item.defaultModel && item.type === type)?.id
-    ?? models.find((item) => item.type === type)?.id
-    ?? models[0]?.id
-    ?? null;
-}
-
-function communityPostCoverUrl(post: CommunityPost) {
-  return post.coverUrl || post.fileUrl || "";
 }
 
 function reorderItems<T>(items: T[], fromIndex: number, toIndex: number) {
@@ -473,10 +454,9 @@ export default function WorkspacePage() {
   const paramsButtonRef = useRef<HTMLButtonElement | null>(null);
   const recentProjects = useMemo(() => projects.slice(0, 7), [projects]);
   const quickModels = useMemo(() => models.filter((model) => model.type === 2 || model.type === 3), [models]);
-  const selectedTabType = selectedTab === "video" ? 3 : 2;
   const selectedTabModels = useMemo(
-    () => quickModels.filter((model) => model.type === selectedTabType),
-    [quickModels, selectedTabType]
+    () => getSelectedTabModels(quickModels, selectedTab),
+    [quickModels, selectedTab]
   );
   const selectedModel = useMemo(
     () => selectedTabModels.find((model) => model.id === selectedModelId) ?? null,
@@ -485,9 +465,9 @@ export default function WorkspacePage() {
   const selectedModelParamId = selectedModel?.id ?? null;
   const referenceImage = referenceImages[0] ?? null;
   const hasReferenceImages = referenceImages.length > 0;
-  const imageGenerationCapability: QuickGenerationMode = hasReferenceImages ? "IMAGE_TO_IMAGE" : "TEXT_TO_IMAGE";
-  const videoGenerationCapability: QuickGenerationMode = hasReferenceImages ? "IMAGE_TO_VIDEO" : "TEXT_TO_VIDEO";
-  const quickGenerationMode = selectedTab === "video" ? videoGenerationCapability : imageGenerationCapability;
+  const imageGenerationCapability: QuickGenerationMode = getQuickGenerationMode("image", hasReferenceImages);
+  const videoGenerationCapability: QuickGenerationMode = getQuickGenerationMode("video", hasReferenceImages);
+  const quickGenerationMode = getQuickGenerationMode(selectedTab, hasReferenceImages);
   const isQuickGenerationModel = Boolean(selectedModel && quickGenerationMode);
   const effectiveModelParams = useMemo(
     () => selectedModel
