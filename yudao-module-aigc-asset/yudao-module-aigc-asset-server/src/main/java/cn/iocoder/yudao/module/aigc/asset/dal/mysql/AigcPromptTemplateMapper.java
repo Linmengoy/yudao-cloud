@@ -31,8 +31,14 @@ public interface AigcPromptTemplateMapper extends BaseMapperX<AigcPromptTemplate
                 .eq(AigcPromptTemplateDO::getStatus, "NORMAL")
                 .eq(AigcPromptTemplateDO::getVisibility, "PUBLIC")
                 .eq(AigcPromptTemplateDO::getAuditStatus, "PASS")
-                .eqIfPresent(AigcPromptTemplateDO::getCategory, reqVO.getCategory())
                 .eqIfPresent(AigcPromptTemplateDO::getFeatured, reqVO.getFeatured());
+        if (reqVO.getCategory() != null && !reqVO.getCategory().isBlank()) {
+            String category = reqVO.getCategory().trim();
+            wrapper.and(w -> w.eq(AigcPromptTemplateDO::getCategory, category)
+                    .or().like(AigcPromptTemplateDO::getTags, category)
+                    .or().like(AigcPromptTemplateDO::getStyles, category)
+                    .or().like(AigcPromptTemplateDO::getScenes, category));
+        }
         if (reqVO.getKeyword() != null && !reqVO.getKeyword().isBlank()) {
             String keyword = reqVO.getKeyword().trim();
             wrapper.and(w -> w.like(AigcPromptTemplateDO::getTitle, keyword)
