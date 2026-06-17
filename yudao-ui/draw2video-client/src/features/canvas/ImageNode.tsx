@@ -52,6 +52,8 @@ import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/feature
 import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
 import { SelectedMediaToolbar } from "@/features/media-preview/SelectedMediaToolbar";
 import { downloadMedia, imageNodeToMediaPreview } from "@/features/media-preview/media-preview-utils";
+import { canvasApi } from "@/features/canvas/canvas-api";
+import { sanitizeNodeForCanvasOperation } from "@/features/canvas/canvas-syncable-data";
 import { cn } from "@/lib/utils";
 import { clampToViewport } from "./floating-position";
 import { EditableNodeTitle } from "./EditableNodeTitle";
@@ -377,6 +379,10 @@ function buildServerInputParams(params: Record<string, unknown>, ids: string[], 
       mimeType,
     })),
   });
+}
+
+function isDuplicateOrInvalidNodeCreate(error: unknown) {
+  return error instanceof Error && error.message.includes("画布操作内容不合法");
 }
 
 function getConnectedImagesSignature(nodeId: string, nodes: AppNode[], edges: AppEdge[]) {
@@ -771,6 +777,21 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     }
   }, [data.fileName, data.generationCount, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.width, getNode, id, outputs, params, updateData]);
 
+  const ensureServerCanvasNodeCreated = useCallback(async (projectId: string | number) => {
+    const node = getNode(id) as AppNode | undefined;
+    if (!node) return;
+    try {
+      await canvasApi.submitOperationPayload(projectId, {
+        clientId: `node_create_${id}`,
+        baseVersion: 0,
+        operationType: "NODE_CREATE",
+        payload: { node: sanitizeNodeForCanvasOperation(node) },
+      });
+    } catch (error) {
+      if (!isDuplicateOrInvalidNodeCreate(error)) throw error;
+    }
+  }, [getNode, id]);
+
   useEffect(() => {
     if (status !== "pending" || !data.taskId) return;
     const projectId = new URLSearchParams(window.location.search).get("projectId");
@@ -1079,6 +1100,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     if (isServerCanvasProjectId(projectId) && runAigcModelId) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
+        await ensureServerCanvasNodeCreated(projectId);
         const run = await canvasNodeRunApi.runNode(projectId, id, {
           clientId,
           baseVersion: 0,
@@ -1180,7 +1202,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, generationCount, getEdges, getNode, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, outputs, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, ensureServerCanvasNodeCreated, generationCount, getEdges, getNode, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, outputs, prompt, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen && !countPopoverOpen) return;
