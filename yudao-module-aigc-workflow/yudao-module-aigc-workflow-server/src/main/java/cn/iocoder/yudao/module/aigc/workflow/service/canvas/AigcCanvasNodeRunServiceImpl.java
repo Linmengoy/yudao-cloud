@@ -476,11 +476,6 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         if (!params.isEmpty() && !patch.containsKey("params")) {
             patch.set("params", params);
         }
-        for (String key : params.keySet()) {
-            if (!patch.containsKey(key)) {
-                patch.set(key, params.get(key));
-            }
-        }
     }
 
     private JSONObject buildResultPatch(String nodeType, AigcGenerateResultRespDTO result) {

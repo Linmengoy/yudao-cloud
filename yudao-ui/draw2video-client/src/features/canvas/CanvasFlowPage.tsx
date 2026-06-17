@@ -3270,14 +3270,9 @@ function CanvasFlow() {
             id: `e-${connection.source}-${connection.target}-${Date.now()}`,
             type: "signal",
           };
-          let shouldSubmit = false;
-          setEdges((eds) => {
-            const exists = eds.some((edge) => edge.source === connection.source && edge.target === connection.target);
-            if (exists) return eds;
-            shouldSubmit = true;
-            return addEdge(edge, eds);
-          });
-          if (shouldSubmit) {
+          const edgeExists = (getEdges() as AppEdge[]).some((edge) => edge.source === connection.source && edge.target === connection.target);
+          if (!edgeExists) {
+            setEdges((eds) => addEdge(edge, eds));
             canvasOperations.submitOperation("EDGE_CREATE", { edge });
             transferTextPromptForConnection(connection, connectionNodes);
           }
@@ -3286,7 +3281,7 @@ function CanvasFlow() {
 
       closeCreateMenu();
     },
-    [addImageDraftNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges, transferTextPromptForConnection]
+    [addImageDraftNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getEdges, getNodes, setEdges, transferTextPromptForConnection]
   );
 
   const handleConnectEnd = useCallback(
@@ -3312,13 +3307,9 @@ function CanvasFlow() {
             id: `e-${connection.source}-${connection.target}-${Date.now()}`,
             type: "signal",
           };
-          let shouldSubmit = false;
-          setEdges((eds) => {
-            if (eds.some((item) => isSameCanvasEdge(item, edge))) return eds;
-            shouldSubmit = true;
-            return addEdge(edge, eds);
-          });
-          if (shouldSubmit) {
+          const edgeExists = (getEdges() as AppEdge[]).some((item) => isSameCanvasEdge(item, edge));
+          if (!edgeExists) {
+            setEdges((eds) => addEdge(edge, eds));
             canvasOperations.submitOperation("EDGE_CREATE", { edge });
             transferTextPromptForConnection(connection, currentNodes);
           }
@@ -3338,7 +3329,7 @@ function CanvasFlow() {
         direction,
       });
     },
-    [canvasOperations, closeCreateMenu, flowToScreenPosition, getNodes, isReadOnly, openCreateMenuAt, screenToFlowPosition, setEdges, transferTextPromptForConnection]
+    [canvasOperations, closeCreateMenu, flowToScreenPosition, getEdges, getNodes, isReadOnly, openCreateMenuAt, screenToFlowPosition, setEdges, transferTextPromptForConnection]
   );
 
   useEffect(() => {
