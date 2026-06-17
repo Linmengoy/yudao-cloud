@@ -88,7 +88,15 @@ function assertSuccessfulNodeRun(result: CanvasNodeRunResponse) {
   if (result.status === "SUCCESS") return;
   throw new Error(getNodeRunFailureMessage(result));
 }
-
+/**
+ * todo
+ * 这里可能会成为性能瓶颈，考虑优化为批量查询多个节点的运行结果？
+ * - 通过待完成队列实现？
+ * @param projectId 
+ * @param nodeId 
+ * @param input 
+ * @returns 
+ */
 export async function waitCanvasNodeRunResult(projectId: string | number, nodeId: string, input: CanvasNodeRunSyncRequest) {
   const pollKey = getNodeRunPollKey(projectId, nodeId, input);
   const existingPoll = nodeRunPolls.get(pollKey);
