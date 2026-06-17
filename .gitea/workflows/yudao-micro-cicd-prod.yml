@@ -24,8 +24,8 @@ on:
           - aigc-workflow
           - aigc-community
       previous_stable_image_tag:
-        description: '上一稳定生产镜像 tag，用于回滚证据；必须填写 12 位 Git commit 短 SHA'
-        required: true
+        description: '上一稳定生产镜像 tag，用于回滚证据；留空时自动从当前生产部署或运行容器推导'
+        required: false
         default: ''
 
 jobs:
@@ -82,6 +82,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_SERVICE: ${{ github.event.inputs.service }}
+          INPUT_PREVIOUS_STABLE_IMAGE_TAG: ${{ github.event.inputs.previous_stable_image_tag }}
         run: |
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             service="${INPUT_SERVICE:-aigc-gen}"
@@ -90,6 +91,8 @@ jobs:
           fi
 
           image_tag="$(git rev-parse --short=12 HEAD)"
+          previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}"
+          previous_stable_image_tag_source="workflow_dispatch.previous_stable_image_tag"
 
           case "${service}" in
             all) module="all" ;;
@@ -113,6 +116,43 @@ jobs:
             docker compose -f script/docker/docker-compose-micro-prod.yml config --services | grep -Fx "${service}"
           fi
 
+          if [ -z "${previous_stable_image_tag}" ]; then
+            deploy_env_file="/opt/deploy/yudao-micro/.env"
+            if [ -f "${deploy_env_file}" ]; then
+              previous_stable_image_tag="$(sed -n 's/^MICRO_IMAGE_TAG=//p' "${deploy_env_file}" | tail -n 1 | tr -d '[:space:]')"
+              previous_stable_image_tag_source="${deploy_env_file}"
+            fi
+          fi
+
+          if [ -z "${previous_stable_image_tag}" ]; then
+            if [ "${service}" = "all" ]; then
+              inspect_containers="yudao-gateway-prod yudao-system-prod yudao-infra-prod yudao-member-prod yudao-pay-prod aigc-model-prod aigc-billing-prod aigc-task-prod aigc-asset-prod aigc-safety-prod aigc-gen-prod aigc-workflow-prod aigc-community-prod"
+            else
+              inspect_containers="${service}-prod"
+            fi
+            for container in ${inspect_containers}; do
+              running_image="$(docker inspect "${container}" --format '{{.Config.Image}}' 2>/dev/null || true)"
+              if [ -n "${running_image}" ]; then
+                previous_stable_image_tag="${running_image##*:}"
+                previous_stable_image_tag_source="running container ${container}"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "${previous_stable_image_tag}" ]; then
+            echo "previous_stable_image_tag could not be inferred from workflow input, /opt/deploy/yudao-micro/.env, or the selected service container"
+            exit 1
+          fi
+          if ! printf '%s' "${previous_stable_image_tag}" | grep -Eq '^[0-9a-f]{12}$'; then
+            echo "previous_stable_image_tag must be a 12-character Git SHA tag: ${previous_stable_image_tag}"
+            exit 1
+          fi
+          if [ "${previous_stable_image_tag}" = "${image_tag}" ]; then
+            echo "previous_stable_image_tag equals current image tag; create a new commit or choose the last known stable SHA"
+            exit 1
+          fi
+
           echo "BUILD_SERVICE=${service}" >> "${GITHUB_ENV}"
           echo "BUILD_MODULE=${module}" >> "${GITHUB_ENV}"
           echo "DEPLOY_ENV=prod" >> "${GITHUB_ENV}"
@@ -121,7 +161,8 @@ jobs:
           echo "REGISTRY_HOST=111.228.39.103:3000" >> "${GITHUB_ENV}"
           echo "REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root/manman" >> "${GITHUB_ENV}"
           echo "REGISTRY_DEPLOY_PREFIX=111.228.39.103:3000/root/manman" >> "${GITHUB_ENV}"
-          echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
+          echo "PREVIOUS_STABLE_IMAGE_TAG=${previous_stable_image_tag}" >> "${GITHUB_ENV}"
+          echo "PREVIOUS_STABLE_IMAGE_TAG_SOURCE=${previous_stable_image_tag_source}" >> "${GITHUB_ENV}"
           echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/prod-${service}-${image_tag}.md" >> "${GITHUB_ENV}"
 
       - name: Login to Gitea container registry
@@ -158,6 +199,7 @@ jobs:
             echo "- commit sha: $(git rev-parse HEAD)"
             echo "- immutable image tag: ${MICRO_IMAGE_TAG}"
             echo "- frontend image tag: ${FRONTEND_IMAGE_TAG}"
+            echo "- previous stable image tag source: ${PREVIOUS_STABLE_IMAGE_TAG_SOURCE}"
             echo "- previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}"
             echo "- registry push prefix: ${REGISTRY_PUSH_PREFIX}"
             echo "- registry deploy prefix: ${REGISTRY_DEPLOY_PREFIX}"

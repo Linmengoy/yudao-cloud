@@ -80,6 +80,28 @@ class ReleaseWorkflowManualDispatchContractsTest(unittest.TestCase):
                 self.assertIn('docker login "${REGISTRY_HOST}" -u "${registry_username}" --password-stdin', workflow)
                 self.assertNotIn('echo "${GITEA_TOKEN}" | docker login', workflow)
 
+    def test_prod_workflow_infers_previous_stable_sha_before_preflight(self):
+        workflow = read(".gitea/workflows/yudao-micro-cicd-prod.yml")
+        runbook = read("script/deployment-runbook.md")
+
+        self.assertIn("required: false", workflow)
+        self.assertIn("INPUT_PREVIOUS_STABLE_IMAGE_TAG: ${{ github.event.inputs.previous_stable_image_tag }}", workflow)
+        self.assertIn('previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}"', workflow)
+        self.assertIn('deploy_env_file="/opt/deploy/yudao-micro/.env"', workflow)
+        self.assertIn('sed -n \'s/^MICRO_IMAGE_TAG=//p\' "${deploy_env_file}"', workflow)
+        self.assertIn('inspect_containers="yudao-gateway-prod yudao-system-prod', workflow)
+        self.assertIn('running_image="$(docker inspect "${container}" --format \'{{.Config.Image}}\'', workflow)
+        self.assertIn('previous_stable_image_tag="${running_image##*:}"', workflow)
+        self.assertIn('previous_stable_image_tag_source="running container ${container}"', workflow)
+        self.assertIn("previous_stable_image_tag could not be inferred", workflow)
+        self.assertIn("previous_stable_image_tag must be a 12-character Git SHA tag", workflow)
+        self.assertIn("previous_stable_image_tag equals current image tag", workflow)
+        self.assertIn("PREVIOUS_STABLE_IMAGE_TAG_SOURCE=${previous_stable_image_tag_source}", workflow)
+        self.assertIn("previous stable image tag source: ${PREVIOUS_STABLE_IMAGE_TAG_SOURCE}", workflow)
+
+        self.assertIn("prod 当前 tag 始终使用当前 12 位 Git SHA", runbook)
+        self.assertIn("留空时 workflow 会先读 `/opt/deploy/yudao-micro/.env`", runbook)
+
 
 if __name__ == "__main__":
     unittest.main()
