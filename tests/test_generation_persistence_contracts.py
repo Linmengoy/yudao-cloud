@@ -52,6 +52,33 @@ class GenerationPersistenceContractsTest(unittest.TestCase):
         self.assertIn("switches default video model away from first-frame-only models", test_file)
         self.assertIn("IMAGE_TO_VIDEO", test_file)
 
+    def test_issue_247_video_outputs_are_stored_as_urls_and_assets(self):
+        archive_service_test = read(
+            "yudao-module-aigc-gen/yudao-module-aigc-gen-server/src/test/java/"
+            "cn/iocoder/yudao/module/aigc/gen/service/media/AigcMediaArchiveServiceTest.java"
+        )
+        record_service = read(
+            "yudao-module-aigc-gen/yudao-module-aigc-gen-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/gen/service/record/AigcGenerateRecordServiceImpl.java"
+        )
+
+        self.assertIn("testArchiveOutputUrls_uploadsVideoDataUrlBeforePersistence", archive_service_test)
+        self.assertIn('eq("video/mp4")', archive_service_test)
+        self.assertIn('mediaArchiveService.assertNoPersistentInlineMedia(archived, "aigc_gen_record.output_urls")', archive_service_test)
+        self.assertIn('case "VIDEO" -> assetApi.createVideoAsset(reqDTO).getCheckedData();', record_service)
+        self.assertIn(".setOutputUrls(JSONUtil.toJsonStr(storedUrls))", record_service)
+        self.assertIn(".setAssetIds(JSONUtil.toJsonStr(assetIds))", record_service)
+
+    def test_issue_248_marketing_home_reuses_www_visuals_and_public_community(self):
+        page = read("yudao-ui/draw2video-client/src/app/(marketing)/page.tsx")
+
+        self.assertIn("/www-home/assets/images/hero-cinema.webp", page)
+        self.assertIn("/www-home/assets/images/inspiration-portrait.webp", page)
+        self.assertIn("getCommunityPosts({ pageNo: 1, pageSize: 6, sort: \"hot\" })", page)
+        self.assertIn("CommunityPostCard", page)
+        self.assertIn("公开作品", page)
+        self.assertIn("Seedance 2.0", page)
+
 
 if __name__ == "__main__":
     unittest.main()
