@@ -246,6 +246,22 @@ curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=p
 
 证据文件必须记录完整 commit SHA、短 SHA、构建输入文件清单和 clean 证明。若构建输入文件存在未提交、未暂存或未跟踪变更，脚本必须失败，不能继续构建镜像。
 
+#308 发布候选只允许纳入图生图候选本身；仍处于处理或等待复核的 #306/#176/#170/#150 必须作为 excluded processing issues 写入发布说明：
+
+```powershell
+./script/release-scope-audit.ps1 `
+  -AllowedIssues '#308' `
+  -IncludedIssues '#308' `
+  -ProcessingIssues '#306','#176','#170','#150' `
+  -FrontendTarget admin `
+  -BackendServices aigc-workflow,aigc-gen
+
+./script/release-candidate-evidence.ps1 `
+  -CandidateIssues '#308'
+```
+
+#308 证据回写必须包含 `full_commit_sha`、`short_commit_sha`、构建输入文件清单、`clean_result`、`included issues: #308`、`excluded processing issues: #306, #176, #170, #150`，并明确 `tests/__pycache__` 这类本地缓存产物不能作为构建输入变更。
+
 只发布用户端：
 
 ```powershell

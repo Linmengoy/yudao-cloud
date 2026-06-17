@@ -50,6 +50,18 @@ function Resolve-BashPath {
 Write-Log "START $(Get-Date -Format o)"
 Write-Log "command=$Command"
 Write-Log "script=$ScriptPath"
+Write-Log "log_path=$LogPath"
+foreach ($name in @(
+  "DEPLOY_ENV",
+  "BUILD_SERVICE",
+  "MICRO_IMAGE_TAG",
+  "PREVIOUS_STABLE_IMAGE_TAG",
+  "RELEASE_EVIDENCE_FILE",
+  "MICRO_IMAGE_REGISTRY_PREFIX",
+  "GIT_BASH_PATH"
+)) {
+  Write-Log "env:$name=$([Environment]::GetEnvironmentVariable($name))"
+}
 
 $bashPath = Resolve-BashPath
 if ([string]::IsNullOrWhiteSpace($bashPath)) {
