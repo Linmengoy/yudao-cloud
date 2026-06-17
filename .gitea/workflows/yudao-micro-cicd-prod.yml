@@ -36,18 +36,34 @@ jobs:
       - name: Checkout
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEA_SERVER_URL: ${{ github.server_url }}
+          GITEA_REPOSITORY: ${{ github.repository }}
+          GITEA_REF: ${{ github.ref }}
+          GITEA_SHA: ${{ github.sha }}
         run: |
+          auth_fetch() {
+            git -c http.extraHeader="Authorization: token ${GITEA_TOKEN}" fetch "$@"
+          }
+
+          repo_url="${GITEA_SERVER_URL}/${GITEA_REPOSITORY}.git"
           if [ -d .git ]; then
             git remote remove origin 2>/dev/null || true
-            git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
-            git fetch --prune origin
+            git remote add origin "${repo_url}"
+            auth_fetch --prune origin
             git clean -fdx
           else
             git init .
-            git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+            git remote add origin "${repo_url}"
           fi
 
-          git -c http.extraHeader="Authorization: token ${GITEA_TOKEN}" fetch --depth=1 origin "${{ github.ref }}"
+          checkout_ref="${GITEA_REF:-HEAD}"
+          echo "Checkout ref: ${checkout_ref}"
+          echo "Checkout sha: ${GITEA_SHA:-not-set}"
+          if [ -n "${GITEA_SHA:-}" ]; then
+            auth_fetch --depth=1 origin "${GITEA_SHA}" || auth_fetch --depth=1 origin "${checkout_ref}"
+          else
+            auth_fetch --depth=1 origin "${checkout_ref}"
+          fi
           git checkout -f FETCH_HEAD
           git clean -fdx
 

@@ -118,8 +118,9 @@ Gitea Web 操作：
 3. 点击手动运行。
 4. `ref` 选 `master-jdk17`。
 5. `service` 选择要发布的服务，例如 `yudao-system`。
-6. `previous_stable_image_tag` 填上一个稳定测试镜像版本，例如 `v0.0.1`。首次测试版本就是 `v0.0.1` 时可以留空。
-7. 等 workflow 成功后看 `docker compose ps` 和日志。
+6. `image_tag` 填本次要发布的测试镜像版本，例如 `v0.0.2`；留空时 workflow 会读取 `script/docker/test-image-version`，当前从 `v0.0.1` 开始。后端镜像版本没有更新，通常就是这里留空且版本文件仍是旧值，导致每次都推送和拉取同一个 tag。
+7. `previous_stable_image_tag` 填上一个稳定测试镜像版本，例如 `v0.0.1`。首次测试版本就是 `v0.0.1` 时可以留空。
+8. 等 workflow 成功后看 `docker compose ps` 和日志，确认镜像名是项目级 `127.0.0.1:3000/root/manman/<service>:<image_tag>`。
 
 不要在这个 workflow 里选择 `draw2video-admin`、`draw2video-client`、`draw2video-guide`。前端必须用本机脚本发布，避免服务器上触发前端打包。
 
@@ -129,7 +130,7 @@ API 触发示例：
 curl.exe -sS -u root:root -X POST `
   "http://111.228.39.103:3000/api/v1/repos/root/manman/actions/workflows/yudao-micro-cicd.yml/dispatches" `
   -H "Content-Type: application/json" `
-  -d "{\"ref\":\"master-jdk17\",\"inputs\":{\"service\":\"yudao-system\",\"previous_stable_image_tag\":\"v0.0.1\"}}"
+  -d "{\"ref\":\"master-jdk17\",\"inputs\":{\"service\":\"yudao-system\",\"image_tag\":\"v0.0.2\",\"previous_stable_image_tag\":\"v0.0.1\"}}"
 ```
 
 test 验证命令：
@@ -138,6 +139,12 @@ test 验证命令：
 ssh manman "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
 ssh manman "docker logs --tail=120 yudao-system"
 curl.exe -sS "http://111.228.39.103:48080/admin-api/system/auth/login"
+```
+
+历史用户级 Container Registry 镜像如果还在 `root/<service>:<tag>`，需要重新打到项目级 `root/manman/<service>:<tag>`；后续 workflow 只使用项目级路径：
+
+```powershell
+ssh manman "docker pull 127.0.0.1:3000/root/yudao-system:v0.0.1 && docker tag 127.0.0.1:3000/root/yudao-system:v0.0.1 127.0.0.1:3000/root/manman/yudao-system:v0.0.1 && docker push 127.0.0.1:3000/root/manman/yudao-system:v0.0.1"
 ```
 
 ## 后端 prod 发布
