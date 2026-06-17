@@ -1,3 +1,6 @@
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -52,6 +55,192 @@ class Issue318To321ReleaseCandidateFollowupContractTest(unittest.TestCase):
         self.assertIn("-CandidateIssues '#308'", runbook)
         self.assertIn("tests/__pycache__", runbook)
         self.assertIn("不能作为构建输入变更", runbook)
+
+    def test_issue_318_scope_audit_passes_for_308_and_excludes_processing_followups(self):
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if powershell is None:
+            self.skipTest("PowerShell is required for release scope audit execution")
+
+        script = ROOT / "script/release-scope-audit.ps1"
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "candidate-manifest.txt"
+            notes = Path(tmp) / "release-notes.md"
+            manifest.write_text(
+                "\n".join(
+                    [
+                        "script/release-candidate-evidence.ps1|#308|review:done",
+                        "script/deployment-runbook.md|#999|completed-dependency",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            notes.write_text(
+                "\n".join(
+                    [
+                        "included issues:",
+                        "- #308",
+                        "",
+                        "excluded processing issues:",
+                        "- #306",
+                        "- #176",
+                        "- #170",
+                        "- #150",
+                        "",
+                        "exclusion rationale:",
+                        "- candidate commits and files map only to #308 or completed dependencies",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    powershell,
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script),
+                    "-AllowedIssues",
+                    "#308",
+                    "-IncludedIssues",
+                    "#308",
+                    "-ProcessingIssues",
+                    "#306,#176,#170,#150",
+                    "-FrontendTarget",
+                    "admin",
+                    "-BackendServices",
+                    "aigc-workflow,aigc-gen",
+                    "-ManifestPath",
+                    str(manifest),
+                    "-ReleaseNotesPath",
+                    str(notes),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        output = result.stdout + result.stderr
+        self.assertEqual(0, result.returncode, output)
+        self.assertIn("release scope audit passed", output)
+        self.assertIn("included issues: #308", output)
+        self.assertIn("excluded processing issues: #306, #176, #170, #150", output)
+
+    def test_issue_316_scope_audit_rejects_release_notes_without_excluded_scope(self):
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if powershell is None:
+            self.skipTest("PowerShell is required for release scope audit execution")
+
+        script = ROOT / "script/release-scope-audit.ps1"
+        with tempfile.TemporaryDirectory() as tmp:
+            notes = Path(tmp) / "release-notes.md"
+            notes.write_text(
+                "\n".join(
+                    [
+                        "included issues:",
+                        "- #308",
+                        "",
+                        "exclusion rationale:",
+                        "- candidate files map only to allowed scope",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    powershell,
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script),
+                    "-AllowedIssues",
+                    "#308",
+                    "-IncludedIssues",
+                    "#308",
+                    "-ProcessingIssues",
+                    "#306,#176,#170,#150",
+                    "-FrontendTarget",
+                    "admin",
+                    "-ReleaseNotesPath",
+                    str(notes),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("release notes missing scope section field: excluded processing issues", output)
+
+    def test_issue_320_candidate_evidence_script_executes_and_rejects_dirty_inputs(self):
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if powershell is None:
+            self.skipTest("PowerShell is required for release candidate evidence execution")
+
+        script = ROOT / "script/release-candidate-evidence.ps1"
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence = Path(tmp) / "candidate.md"
+            clean_result = subprocess.run(
+                [
+                    powershell,
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script),
+                    "-CandidateIssues",
+                    "#308",
+                    "-BuildInputPaths",
+                    "script/release-candidate-evidence.ps1",
+                    "-EvidencePath",
+                    str(evidence),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            clean_output = clean_result.stdout + clean_result.stderr
+
+            self.assertEqual(0, clean_result.returncode, clean_output)
+            evidence_text = evidence.read_text(encoding="utf-8-sig")
+            self.assertIn("full_commit_sha:", evidence_text)
+            self.assertIn("short_commit_sha:", evidence_text)
+            self.assertIn("clean_result: clean for listed build input files", evidence_text)
+            self.assertIn("- script/release-candidate-evidence.ps1", evidence_text)
+
+            dirty_input = ROOT / "tests" / "__tmp_issue_320_dirty_input.txt"
+            try:
+                dirty_input.write_text("dirty candidate input\n", encoding="utf-8")
+                dirty_result = subprocess.run(
+                    [
+                        powershell,
+                        "-NoProfile",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        str(script),
+                        "-CandidateIssues",
+                        "#308",
+                        "-BuildInputPaths",
+                        "tests/__tmp_issue_320_dirty_input.txt",
+                        "-EvidencePath",
+                        str(Path(tmp) / "dirty.md"),
+                    ],
+                    cwd=ROOT,
+                    text=True,
+                    capture_output=True,
+                )
+            finally:
+                dirty_input.unlink(missing_ok=True)
+
+        dirty_output = dirty_result.stdout + dirty_result.stderr
+        self.assertNotEqual(0, dirty_result.returncode)
+        self.assertIn("Release candidate build input paths are not clean", dirty_output)
+        self.assertIn("tests/__tmp_issue_320_dirty_input.txt", dirty_output)
 
     def test_issue_321_windows_preflight_log_records_env_path_and_exit_classification(self):
         wrapper = read("script/docker/verify-release-evidence.ps1")
