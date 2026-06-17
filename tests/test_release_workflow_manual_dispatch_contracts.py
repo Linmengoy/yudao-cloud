@@ -48,6 +48,21 @@ class ReleaseWorkflowManualDispatchContractsTest(unittest.TestCase):
         self.assertIn("127.0.0.1:3000/root/manman/<service>:<image_tag>", runbook)
         self.assertIn("root/manman/<service>:<tag>", runbook)
 
+    def test_registry_login_uses_registry_credentials_not_github_token(self):
+        for path in [
+            ".gitea/workflows/yudao-micro-cicd.yml",
+            ".gitea/workflows/yudao-micro-cicd-prod.yml",
+        ]:
+            with self.subTest(path=path):
+                workflow = read(path)
+
+                self.assertIn("GITEA_REGISTRY_USERNAME: ${{ secrets.GITEA_REGISTRY_USERNAME }}", workflow)
+                self.assertIn("GITEA_REGISTRY_PASSWORD: ${{ secrets.GITEA_REGISTRY_PASSWORD }}", workflow)
+                self.assertIn('registry_username="${GITEA_REGISTRY_USERNAME:-root}"', workflow)
+                self.assertIn('registry_password="${GITEA_REGISTRY_PASSWORD:-root}"', workflow)
+                self.assertIn('docker login "${REGISTRY_HOST}" -u "${registry_username}" --password-stdin', workflow)
+                self.assertNotIn('echo "${GITEA_TOKEN}" | docker login', workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

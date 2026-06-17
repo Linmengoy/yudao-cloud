@@ -126,10 +126,16 @@ jobs:
 
       - name: Login to Gitea container registry
         env:
-          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITEA_ACTOR: ${{ github.actor }}
+          GITEA_REGISTRY_USERNAME: ${{ secrets.GITEA_REGISTRY_USERNAME }}
+          GITEA_REGISTRY_PASSWORD: ${{ secrets.GITEA_REGISTRY_PASSWORD }}
         run: |
-          echo "${GITEA_TOKEN}" | docker login "${REGISTRY_HOST}" -u "${GITEA_ACTOR:-root}" --password-stdin
+          registry_username="${GITEA_REGISTRY_USERNAME:-root}"
+          registry_password="${GITEA_REGISTRY_PASSWORD:-root}"
+          if [ -z "${registry_username}" ] || [ -z "${registry_password}" ]; then
+            echo "Gitea registry username/password is required"
+            exit 1
+          fi
+          echo "${registry_password}" | docker login "${REGISTRY_HOST}" -u "${registry_username}" --password-stdin
 
       - name: Enforce rollback version gate
         run: |
