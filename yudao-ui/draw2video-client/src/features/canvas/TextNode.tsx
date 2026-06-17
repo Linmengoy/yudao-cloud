@@ -13,7 +13,7 @@ import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitC
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
-import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, useComposerWheelPan, type PromptMentionOption } from "./PromptMentionInput";
+import { createPromptMentionToken, getComposerUiScale, PromptMentionInput, promptValueToSubmitPrompt, useComposerWheelPan, type PromptMentionOption } from "./PromptMentionInput";
 
 type TextNodeProps = NodeProps<Node<TextNodeData, "text">>;
 
@@ -51,7 +51,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
   const isGenerating = data.status === "pending";
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1;
-  const fixedUiScale = 1 / zoom;
+  const fixedUiScale = getComposerUiScale(zoom);
   const mentionOptions = useMemo<PromptMentionOption[]>(() => {
     void referenceImagesSignature;
     const currentNodes = getNodes() as AppNode[];

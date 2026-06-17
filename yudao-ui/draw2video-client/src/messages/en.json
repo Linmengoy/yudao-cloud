@@ -93,7 +93,7 @@
       "text": "Write copy",
       "sketch": "Plan frame",
       "prompt": "Standalone prompt",
-      "hint": "Click any empty canvas area to quickly create a prompt node"
+      "hint": "Click a button to quickly create a node, or double-click empty canvas to create a card node"
     },
     "toolbar": {
       "addNode": "Add Node",
