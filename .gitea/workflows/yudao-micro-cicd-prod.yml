@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       service:
-        description: 'Docker service to build/deploy, use all for all services'
+        description: '要构建并发布的服务；生产环境建议选择单个服务，all 表示发布全部后端服务'
         type: choice
         required: false
         default: 'aigc-gen'
@@ -24,7 +24,7 @@ on:
           - aigc-workflow
           - aigc-community
       previous_stable_image_tag:
-        description: 'Previous stable image tag for rollback evidence, usually a 12-char commit SHA'
+        description: '上一稳定生产镜像 tag，用于回滚证据；必须填写 12 位 Git commit 短 SHA'
         required: true
         default: ''
 

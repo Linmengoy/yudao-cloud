@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       service:
-        description: 'Docker service to build/deploy, use all for all services'
+        description: '要构建并发布的服务；选择 all 表示发布全部服务'
         type: choice
         required: false
         default: 'aigc-gen'
@@ -27,11 +27,11 @@ on:
           - draw2video-client
           - draw2video-guide
       previous_stable_image_tag:
-        description: 'Previous stable test image tag for rollback evidence, for example v0.0.1'
+        description: '上一稳定测试镜像 tag，用于回滚证据，例如 v0.0.1；首次发布可留空'
         required: false
         default: ''
       image_tag:
-        description: 'Test image tag to publish, for example v0.0.2; defaults to script/docker/test-image-version'
+        description: '本次要发布的测试镜像 tag，例如 v0.0.2；留空则读取 script/docker/test-image-version'
         required: false
         default: ''
 
