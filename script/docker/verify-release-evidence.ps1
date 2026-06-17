@@ -90,6 +90,12 @@ if (Test-Path -LiteralPath $stderr) {
 }
 
 $exitCode = $process.ExitCode
+if ($null -eq $exitCode) {
+  Write-Log "execution environment failure: bash process did not return an exit code"
+  Write-Log "END $(Get-Date -Format o) exit=126"
+  exit 126
+}
+
 if ($exitCode -ne 0) {
   Write-Log "release evidence gate failed: verify-release-evidence.sh returned $exitCode"
 } else {

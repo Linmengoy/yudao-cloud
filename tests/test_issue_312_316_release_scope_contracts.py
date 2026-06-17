@@ -49,6 +49,7 @@ class ReleaseScopeAndEvidenceContractTest(unittest.TestCase):
             "execution environment failure: bash executable was not found",
             "exit 126",
             "exit 124",
+            "execution environment failure: bash process did not return an exit code",
             "release evidence gate failed: verify-release-evidence.sh returned $exitCode",
             "START $(Get-Date -Format o)",
             "END $(Get-Date -Format o) exit=$exitCode",
