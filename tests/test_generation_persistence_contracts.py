@@ -109,7 +109,7 @@ class GenerationPersistenceContractsTest(unittest.TestCase):
         self.assertIn("ssh manman \"docker inspect draw2video-admin --format '{{.Config.Image}}'\"", runbook)
         self.assertIn("ssh manman \"curl -fsS -I http://127.0.0.1:8081/\"", runbook)
         self.assertIn("image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-admin:${FRONTEND_IMAGE_TAG:-latest}", compose)
-        self.assertIn('"8081:80"', compose)
+        self.assertIn('"${DRAW2VIDEO_ADMIN_PORT:-8081}:80"', compose)
         self.assertIn("healthcheck:", compose)
 
     def test_issue_248_marketing_home_reuses_www_visuals_and_public_community(self):
