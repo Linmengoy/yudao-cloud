@@ -103,8 +103,8 @@ jobs:
           echo "MICRO_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "FRONTEND_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "REGISTRY_HOST=111.228.39.103:3000" >> "${GITHUB_ENV}"
-          echo "REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root" >> "${GITHUB_ENV}"
-          echo "REGISTRY_DEPLOY_PREFIX=111.228.39.103:3000/root" >> "${GITHUB_ENV}"
+          echo "REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root/manman" >> "${GITHUB_ENV}"
+          echo "REGISTRY_DEPLOY_PREFIX=111.228.39.103:3000/root/manman" >> "${GITHUB_ENV}"
           echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
           echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/prod-${service}-${image_tag}.md" >> "${GITHUB_ENV}"
 

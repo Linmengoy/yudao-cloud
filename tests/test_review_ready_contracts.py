@@ -596,7 +596,7 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn('aigc-model) module="yudao-module-aigc-model/yudao-module-aigc-model-server" ;;', test_workflow)
         self.assertIn('image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', test_workflow)
         self.assertIn("MICRO_IMAGE_TAG=${image_tag}", test_workflow)
-        self.assertIn("REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root", test_workflow)
+        self.assertIn("REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root/manman", test_workflow)
         self.assertIn("Push image to Gitea registry", test_workflow)
         self.assertIn("docker compose -f script/docker/docker-compose-micro.yml pull", test_workflow)
         self.assertIn("--no-build --no-deps --force-recreate", test_workflow)
@@ -607,7 +607,7 @@ class ReviewReadyContractTest(unittest.TestCase):
 
         self.assertIn('image_tag="$(git rev-parse --short=12 HEAD)"', prod_workflow)
         self.assertIn("MICRO_IMAGE_TAG=${image_tag}", prod_workflow)
-        self.assertIn("REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root", prod_workflow)
+        self.assertIn("REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root/manman", prod_workflow)
         self.assertIn("Push image to Gitea registry", prod_workflow)
         self.assertIn("docker compose -f docker-compose-micro.yml pull", prod_workflow)
         self.assertIn("--no-build --no-deps --force-recreate", prod_workflow)

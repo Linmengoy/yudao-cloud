@@ -228,8 +228,8 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("test image version file: ${TEST_IMAGE_VERSION_FILE}", workflow)
         self.assertIn("immutable image tag: ${MICRO_IMAGE_TAG}", workflow)
         self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
-        self.assertIn("REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root", workflow)
-        self.assertIn("REGISTRY_DEPLOY_PREFIX=127.0.0.1:3000/root", workflow)
+        self.assertIn("REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root/manman", workflow)
+        self.assertIn("REGISTRY_DEPLOY_PREFIX=127.0.0.1:3000/root/manman", workflow)
         self.assertIn("DRAW2VIDEO_CLIENT_PORT=13000", workflow)
         self.assertIn("Login to Gitea container registry", workflow)
         self.assertIn("Push image to Gitea registry", workflow)
@@ -264,8 +264,8 @@ class CommunityReleaseGateTest(unittest.TestCase):
             "Prepare local prod network",
             "docker network inspect yudao-network-prod",
             "Required infra container is missing",
-            "REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root",
-            "REGISTRY_DEPLOY_PREFIX=111.228.39.103:3000/root",
+            "REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root/manman",
+            "REGISTRY_DEPLOY_PREFIX=111.228.39.103:3000/root/manman",
             "Login to Gitea container registry",
             "Push image to Gitea registry",
             "docker compose -f docker-compose-micro.yml pull",

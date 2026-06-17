@@ -282,7 +282,7 @@ curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=p
 
 1. 本机 Docker Desktop 构建镜像。
 2. test 镜像 tag 使用 `script/docker/test-image-version` 中的版本，当前为 `v0.0.1`；prod 镜像 tag 使用 `prod-<commit>`。
-3. 推送到 Gitea Registry `111.228.39.103:3000/root`。
+3. 推送到 Gitea 项目级 Registry `111.228.39.103:3000/root/manman`。
 4. 同步 `/opt/code/.frontend-test.env` 或 `/opt/code/.frontend-prod.env`。
 5. 目标服务器执行 `docker compose pull` 和 `docker compose up -d --no-build --force-recreate`。
 
@@ -290,7 +290,7 @@ curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=p
 
 ```text
 FRONTEND_IMAGE_TAG=<v0.0.1-style-test-tag>
-FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/
+FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/manman/
 DRAW2VIDEO_ADMIN_PORT=8081
 DRAW2VIDEO_CLIENT_PORT=13000
 DRAW2VIDEO_GUIDE_PORT=8082
@@ -335,7 +335,7 @@ ssh manman2 "curl -fsS -I http://127.0.0.1:8081/"
 前端回滚到旧镜像 tag：
 
 ```powershell
-ssh manman2 "cd /opt/code && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml pull draw2video-client && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client"
+ssh manman2 "cd /opt/code && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/manman/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml pull draw2video-client && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/manman/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client"
 ```
 
 前端发布单必须同时记录 `current image tag` 和 `previous stable image tag`。test 格式为 `v0.0.1` 这类语义化版本，prod 格式为 `prod-<commit>`。上一稳定 tag 优先从上一条成功发布 issue 写回、Gitea Registry 可拉取 tag、或目标服务器当前运行镜像获取：
@@ -357,7 +357,7 @@ $env:BUILD_SERVICE='aigc-model'
 $env:MICRO_IMAGE_TAG='123456789abc'
 $env:PREVIOUS_STABLE_IMAGE_TAG='abcdef123456'
 $env:RELEASE_EVIDENCE_FILE='tmp/release-evidence/prod-aigc-model-123456789abc.md'
-$env:MICRO_IMAGE_REGISTRY_PREFIX='111.228.39.103:3000/root/'
+$env:MICRO_IMAGE_REGISTRY_PREFIX='111.228.39.103:3000/root/manman/'
 ./script/docker/verify-release-evidence.ps1 -Command preflight -TimeoutSeconds 120
 ```
 

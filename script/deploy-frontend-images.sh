@@ -20,7 +20,7 @@ IMAGE_TAG=""
 ARCHIVE_NAME=""
 COMPOSE_FILE="docker-compose.frontend.yml"
 USE_REGISTRY=0
-REGISTRY="111.228.39.103:3000/root"
+REGISTRY="111.228.39.103:3000/root/manman"
 REMOTE_REGISTRY=""
 SSH_KEY="${SSH_KEY:-}"
 SKIP_BUILD=0
@@ -54,7 +54,7 @@ Options:
   --archive-name NAME          Image archive name
   --compose-file NAME          Compose file name, default docker-compose.frontend.yml
   --use-registry               Push images to Gitea registry and deploy by docker pull
-  --registry REGISTRY          Registry prefix, default 111.228.39.103:3000/root
+  --registry REGISTRY          Registry prefix, default 111.228.39.103:3000/root/manman
   --remote-registry REGISTRY   Registry prefix used by remote docker pull
   --ssh-key PATH               Optional SSH private key, default uses ssh config/agent
   --skip-build                 Skip docker buildx build
@@ -300,7 +300,7 @@ fi
 
 if [[ -z "$REMOTE_REGISTRY" ]]; then
   if is_manman "$SERVER"; then
-    REMOTE_REGISTRY="127.0.0.1:3000/root"
+    REMOTE_REGISTRY="127.0.0.1:3000/root/manman"
   else
     REMOTE_REGISTRY="$REGISTRY"
   fi

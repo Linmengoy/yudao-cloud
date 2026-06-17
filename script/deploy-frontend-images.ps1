@@ -23,7 +23,7 @@ param(
   [string]$ArchiveName = "",
   [string]$ComposeFile = "docker-compose.frontend.yml",
   [switch]$UseRegistry,
-  [string]$Registry = "111.228.39.103:3000/root",
+  [string]$Registry = "111.228.39.103:3000/root/manman",
   [string]$RemoteRegistry = "",
   [switch]$SkipBuild,
   [switch]$SkipSave,
@@ -89,7 +89,7 @@ if ([string]::IsNullOrWhiteSpace($ArchiveName)) {
 
 if ([string]::IsNullOrWhiteSpace($RemoteRegistry)) {
   if ($Server -eq "manman" -or $Server -eq "root@111.228.39.103") {
-    $RemoteRegistry = "127.0.0.1:3000/root"
+    $RemoteRegistry = "127.0.0.1:3000/root/manman"
   } else {
     $RemoteRegistry = $Registry
   }

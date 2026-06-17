@@ -52,7 +52,7 @@ manman 是测试环境，manman2 是生产环境。`-DeployEnv auto` 会根据 `
 
 1. 本地 Docker Desktop 执行 `docker buildx build --load`。
 2. 本地按环境生成镜像标签：test 使用 `script/docker/test-image-version`，当前从 `v0.0.1` 开始；prod 使用 `prod-<commit>`，避免 test/prod 共用 `latest` 串环境。
-3. 本地把镜像推送到 Gitea Container Registry：test 为 `111.228.39.103:3000/root/draw2video-*:v0.0.1` 这类 tag，prod 为 `111.228.39.103:3000/root/draw2video-*:prod-<commit>`。
+3. 本地把镜像推送到 Gitea 项目级 Container Registry：test 为 `111.228.39.103:3000/root/manman/draw2video-*:v0.0.1` 这类 tag，prod 为 `111.228.39.103:3000/root/manman/draw2video-*:prod-<commit>`。
 4. 脚本同步 `script/docker/docker-compose.frontend.yml` 和目标环境文件到服务器：`/opt/code/.frontend-test.env` 或 `/opt/code/.frontend-prod.env`。
 5. 服务器执行 `docker compose --env-file ... pull`。
 6. 服务器执行 `docker compose --env-file ... up -d --no-build --force-recreate`。
@@ -67,12 +67,12 @@ manman 是测试环境，manman2 是生产环境。`-DeployEnv auto` 会根据 `
 4. 上传 `script/docker/docker-compose.frontend.yml` 到目标服务器 `/opt/code/docker-compose.frontend.yml`。
 5. 服务器只执行 `docker load` 和 `docker compose up -d --no-build --force-recreate`。
 
-manman 和 manman2 都已配置 Docker 信任 `111.228.39.103:3000` 和 `10.66.0.2:3000` 作为 HTTP registry。由于 manman 与 Gitea Registry 在同一台机器上，脚本默认本机推送到 `111.228.39.103:3000/root`，manman 远端拉取时使用 `127.0.0.1:3000/root`；manman2 远端拉取时使用 `111.228.39.103:3000/root`。
+manman 和 manman2 都已配置 Docker 信任 `111.228.39.103:3000` 和 `10.66.0.2:3000` 作为 HTTP registry。由于 manman 与 Gitea Registry 在同一台机器上，脚本默认本机推送到 `111.228.39.103:3000/root/manman`，manman 远端拉取时使用 `127.0.0.1:3000/root/manman`；manman2 远端拉取时使用 `111.228.39.103:3000/root/manman`。
 
 如需手动指定远端拉取地址，可以使用：
 
 ```powershell
-./script/deploy-frontend-images.ps1 -Server manman -UseRegistry -RemoteRegistry 127.0.0.1:3000/root
+./script/deploy-frontend-images.ps1 -Server manman -UseRegistry -RemoteRegistry 127.0.0.1:3000/root/manman
 ```
 
 你的本地 Docker Desktop 也需要把 `111.228.39.103:3000` 加到 insecure registries，或后续给 Gitea registry 配置 HTTPS 域名。
@@ -149,13 +149,13 @@ curl.exe -k -sS -I "https://beta.copse.top/"
 test 回滚：
 
 ```powershell
-ssh manman "cd /opt/code && FRONTEND_IMAGE_TAG=<old-test-version> FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/ docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml pull draw2video-client draw2video-admin && FRONTEND_IMAGE_TAG=<old-test-version> FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/ docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client draw2video-admin"
+ssh manman "cd /opt/code && FRONTEND_IMAGE_TAG=<old-test-version> FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/manman/ docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml pull draw2video-client draw2video-admin && FRONTEND_IMAGE_TAG=<old-test-version> FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/manman/ docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client draw2video-admin"
 ```
 
 prod 回滚：
 
 ```powershell
-ssh manman2 "cd /opt/code && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml pull draw2video-client draw2video-admin && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client draw2video-admin"
+ssh manman2 "cd /opt/code && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/manman/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml pull draw2video-client draw2video-admin && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/manman/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client draw2video-admin"
 ```
 
 回滚后重复健康检查并把 `previous stable image tag`、回滚命令、`docker compose ps` 和 HTTP 探活结果写回工单。
