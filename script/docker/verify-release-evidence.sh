@@ -34,6 +34,56 @@ reject_latest_tag() {
   [ "$1" != "latest" ] || fail "$2 must not be latest"
 }
 
+service_list_for() {
+  local service="$1"
+  local deploy_env="${DEPLOY_ENV:-prod}"
+
+  if [ "$service" = "all" ]; then
+    local backend_services=(
+      yudao-gateway \
+      yudao-system \
+      yudao-infra \
+      yudao-member \
+      yudao-pay \
+      aigc-model \
+      aigc-billing \
+      aigc-task \
+      aigc-asset \
+      aigc-safety \
+      aigc-gen \
+      aigc-workflow \
+      aigc-community
+    )
+    printf '%s\n' "${backend_services[@]}"
+    if [ "$deploy_env" = "test" ]; then
+      printf '%s\n' \
+        draw2video-admin \
+        draw2video-client \
+        draw2video-guide
+    fi
+  else
+    printf '%s\n' "$service"
+  fi
+}
+
+registry_prefix_for() {
+  local service="$1"
+
+  case "$service" in
+    draw2video-*) printf '%s' "${FRONTEND_IMAGE_REGISTRY_PREFIX:-}" ;;
+    *) printf '%s' "${MICRO_IMAGE_REGISTRY_PREFIX:-}" ;;
+  esac
+}
+
+image_ref_for() {
+  local service="$1"
+  local tag="$2"
+  local prefix
+
+  prefix="$(registry_prefix_for "$service")"
+  printf '%s%s:%s' "$prefix" "$service" "$tag"
+}
+
 run_curl() {
   local url="$1"
   curl -i -sS --fail-with-body --max-time "${CURL_TIMEOUT_SECONDS:-15}" "$url"
@@ -78,20 +128,27 @@ preflight() {
     echo "- deploy env: ${deploy_env}"
     echo "- current image tag: ${MICRO_IMAGE_TAG}"
     echo "- previous stable image tag: ${previous_tag:-not-provided}"
+    echo "- micro image registry prefix: ${MICRO_IMAGE_REGISTRY_PREFIX:-not-set}"
+    echo "- frontend image registry prefix: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-not-set}"
     if command -v docker >/dev/null 2>&1; then
-      echo "- current image inspect command: docker image inspect ${service}:${MICRO_IMAGE_TAG}"
-      if ! docker image inspect "${service}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
-        echo "  image inspect pending until build completes"
-      fi
-      if [ -n "$previous_tag" ]; then
-        echo "- previous stable inspect command: docker image inspect ${service}:${previous_tag}"
-        if ! docker image inspect "${service}:${previous_tag}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
-          echo "  previous image not present locally; registry/manifest check required"
+      echo "- current image inspect:"
+      while IFS= read -r item; do
+        echo "  command: docker image inspect ${item}:${MICRO_IMAGE_TAG}"
+        if ! docker image inspect "${item}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
+          echo "  image inspect pending until build completes: ${item}:${MICRO_IMAGE_TAG}"
         fi
+      done < <(service_list_for "$service")
+      if [ -n "$previous_tag" ]; then
+        echo "- previous stable registry pull:"
+        while IFS= read -r item; do
+          previous_ref="$(image_ref_for "$item" "$previous_tag")"
+          echo "  command: docker pull ${previous_ref}"
+          docker pull "$previous_ref"
+        done < <(service_list_for "$service")
       fi
     fi
     if [ -n "$previous_tag" ]; then
-      echo "- rollback command: MICRO_IMAGE_TAG=${previous_tag} FRONTEND_IMAGE_TAG=${previous_tag} docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${service}"
+      echo "- rollback command: MICRO_IMAGE_TAG=${previous_tag} FRONTEND_IMAGE_TAG=${previous_tag} MICRO_IMAGE_REGISTRY_PREFIX=${MICRO_IMAGE_REGISTRY_PREFIX:-} FRONTEND_IMAGE_REGISTRY_PREFIX=${FRONTEND_IMAGE_REGISTRY_PREFIX:-} docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${service}"
     else
       echo "- rollback command: not available for initial test image version"
     fi

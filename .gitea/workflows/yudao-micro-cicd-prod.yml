@@ -102,12 +102,24 @@ jobs:
           echo "DEPLOY_ENV=prod" >> "${GITHUB_ENV}"
           echo "MICRO_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "FRONTEND_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
+          echo "REGISTRY_HOST=111.228.39.103:3000" >> "${GITHUB_ENV}"
+          echo "REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root" >> "${GITHUB_ENV}"
+          echo "REGISTRY_DEPLOY_PREFIX=111.228.39.103:3000/root" >> "${GITHUB_ENV}"
           echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
           echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/prod-${service}-${image_tag}.md" >> "${GITHUB_ENV}"
 
+      - name: Login to Gitea container registry
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEA_ACTOR: ${{ github.actor }}
+        run: |
+          echo "${GITEA_TOKEN}" | docker login "${REGISTRY_HOST}" -u "${GITEA_ACTOR:-root}" --password-stdin
+
       - name: Enforce rollback version gate
         run: |
-          bash script/docker/verify-release-evidence.sh preflight
+          MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" \
+          FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" \
+            bash script/docker/verify-release-evidence.sh preflight
 
       - name: Write release evidence summary
         run: |
@@ -125,11 +137,15 @@ jobs:
             echo "- immutable image tag: ${MICRO_IMAGE_TAG}"
             echo "- frontend image tag: ${FRONTEND_IMAGE_TAG}"
             echo "- previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}"
+            echo "- registry push prefix: ${REGISTRY_PUSH_PREFIX}"
+            echo "- registry deploy prefix: ${REGISTRY_DEPLOY_PREFIX}"
             echo "- maven command: mvn clean package -pl ${BUILD_MODULE} -am -DskipTests"
             echo "- image build command: docker compose -f script/docker/docker-compose-micro-prod.yml build ${BUILD_SERVICE}"
-            echo "- compose up command: MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG} FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG} docker compose -f docker-compose-micro.yml up -d --no-deps ${BUILD_SERVICE}"
-            echo "- rollback command: MICRO_IMAGE_TAG=<previous-stable-sha> FRONTEND_IMAGE_TAG=<previous-stable-sha> docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${BUILD_SERVICE}"
-            echo "- rollback command: MICRO_IMAGE_TAG=${PREVIOUS_STABLE_IMAGE_TAG} FRONTEND_IMAGE_TAG=${PREVIOUS_STABLE_IMAGE_TAG} docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${BUILD_SERVICE}"
+            echo "- image push command: docker push ${REGISTRY_PUSH_PREFIX}/${BUILD_SERVICE}:${MICRO_IMAGE_TAG}"
+            echo "- compose pull command: MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/ FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/ docker compose -f docker-compose-micro.yml pull ${BUILD_SERVICE}"
+            echo "- compose up command: MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG} FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG} MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/ FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/ docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${BUILD_SERVICE}"
+            echo "- rollback command: MICRO_IMAGE_TAG=<previous-stable-sha> FRONTEND_IMAGE_TAG=<previous-stable-sha> MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/ FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/ docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${BUILD_SERVICE}"
+            echo "- rollback command: MICRO_IMAGE_TAG=${PREVIOUS_STABLE_IMAGE_TAG} FRONTEND_IMAGE_TAG=${PREVIOUS_STABLE_IMAGE_TAG} MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/ FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/ docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${BUILD_SERVICE}"
             echo "- smoke checklist: script/docker/community-release-gates.md"
             echo "- evidence index: script/docker/community-release-evidence-index.md"
           } | tee "${evidence}"
@@ -161,6 +177,38 @@ jobs:
             docker compose -f script/docker/docker-compose-micro-prod.yml build "${BUILD_SERVICE}"
           fi
 
+      - name: Push image to Gitea registry
+        run: |
+          echo "Build service: ${BUILD_SERVICE}"
+          echo "Registry push prefix: ${REGISTRY_PUSH_PREFIX}"
+
+          push_with_retry() {
+            image="$1"
+            for attempt in 1 2 3; do
+              echo "Pushing ${image} (attempt ${attempt})"
+              if docker push "${image}"; then
+                return 0
+              fi
+              sleep 10
+            done
+            return 1
+          }
+
+          if [ "${BUILD_SERVICE}" = "all" ]; then
+            publish_services="yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway"
+          else
+            publish_services="${BUILD_SERVICE}"
+          fi
+
+          for service in ${publish_services}; do
+            local_image="${service}:${MICRO_IMAGE_TAG}"
+            registry_image="${REGISTRY_PUSH_PREFIX}/${service}:${MICRO_IMAGE_TAG}"
+            docker image inspect "${local_image}" --format='local image={{.RepoTags}} id={{.Id}} created={{.Created}}'
+            docker tag "${local_image}" "${registry_image}"
+            push_with_retry "${registry_image}"
+            docker pull "${registry_image}"
+          done
+
       - name: Prepare local docker compose files
         run: |
           deploy_dir="/opt/deploy/yudao-micro"
@@ -169,6 +217,8 @@ jobs:
           {
             echo "MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG}"
             echo "FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}"
+            echo "MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/"
+            echo "FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/"
           } > /tmp/prod-deploy.env
           if [ -f script/docker/.env ]; then
             cat script/docker/.env >> /tmp/prod-deploy.env
@@ -202,11 +252,16 @@ jobs:
 
           cd "${deploy_dir}"
           export MICRO_IMAGE_TAG="${MICRO_IMAGE_TAG}" FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"
+          export MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/"
           if [ "${BUILD_SERVICE}" = "all" ]; then
             services="xxl-job-admin yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway"
-            docker compose -f docker-compose-micro.yml up -d --no-deps ${services}
+            deploy_services="yudao-system yudao-infra yudao-member yudao-pay aigc-model aigc-billing aigc-task aigc-asset aigc-safety aigc-gen aigc-workflow aigc-community yudao-gateway"
+            docker compose -f docker-compose-micro.yml up -d xxl-job-admin
+            docker compose -f docker-compose-micro.yml pull ${deploy_services}
+            docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${deploy_services}
           else
-            docker compose -f docker-compose-micro.yml up -d --no-deps "${BUILD_SERVICE}"
+            docker compose -f docker-compose-micro.yml pull "${BUILD_SERVICE}"
+            docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate "${BUILD_SERVICE}"
           fi
 
       - name: Verify services locally
@@ -218,6 +273,7 @@ jobs:
           echo "Build service: ${BUILD_SERVICE}"
 
           cd "${deploy_dir}"
+          export MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/"
           docker compose -f docker-compose-micro.yml ps
 
           if [ "${BUILD_SERVICE}" = "all" ]; then
@@ -250,12 +306,16 @@ jobs:
             COMMUNITY_HEALTH_URL="http://127.0.0.1:48097/actuator/health" \
             GATEWAY_BASE_URL="http://127.0.0.1:48080" \
             COMPOSE_FILE_PATH="docker-compose-micro.yml" \
+            MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" \
+            FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" \
               bash "${GITHUB_WORKSPACE}/script/docker/verify-release-evidence.sh" verify-http
           fi
 
           if [ "${BUILD_SERVICE}" = "aigc-model" ] || [ "${BUILD_SERVICE}" = "all" ]; then
             SERVICE_HEALTH_URL="http://127.0.0.1:48090/actuator/health" \
             COMPOSE_FILE_PATH="docker-compose-micro.yml" \
+            MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" \
+            FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" \
               bash "${GITHUB_WORKSPACE}/script/docker/verify-release-evidence.sh" verify-service-health
           fi
 
@@ -271,10 +331,11 @@ jobs:
             echo "- verified at: $(date -Is)"
             echo "- deploy env: prod"
             echo "- deploy host: $(hostname)"
+            echo "- registry deploy prefix: ${REGISTRY_DEPLOY_PREFIX:-not-set}"
             echo "- docker compose version:"
             docker compose version || true
             echo "- compose ps summary:"
-            cd "${deploy_dir}" && docker compose -f docker-compose-micro.yml ps || true
+            cd "${deploy_dir}" && MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" docker compose -f docker-compose-micro.yml ps || true
             if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
               echo "- strict gate:"
               echo "  script/docker/verify-release-evidence.sh verify-http must pass before this workflow can succeed"

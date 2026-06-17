@@ -228,8 +228,17 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("test image version file: ${TEST_IMAGE_VERSION_FILE}", workflow)
         self.assertIn("immutable image tag: ${MICRO_IMAGE_TAG}", workflow)
         self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
+        self.assertIn("REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root", workflow)
+        self.assertIn("REGISTRY_DEPLOY_PREFIX=127.0.0.1:3000/root", workflow)
+        self.assertIn("Login to Gitea container registry", workflow)
+        self.assertIn("Push image to Gitea registry", workflow)
+        self.assertIn("docker push \"${image}\"", workflow)
+        self.assertIn("docker pull \"${registry_image}\"", workflow)
+        self.assertIn("docker compose -f script/docker/docker-compose-micro.yml pull", workflow)
+        self.assertIn("--no-build --no-deps --force-recreate", workflow)
         self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-test-version>", workflow)
-        self.assertIn("docker compose -f script/docker/docker-compose-micro.yml up -d --no-deps \"${BUILD_SERVICE}\"", workflow)
+        self.assertIn("MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
+        self.assertIn("FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
         self.assertIn("Append release verification evidence", workflow)
         self.assertIn("deployment verification", workflow)
         self.assertIn("docker compose -f script/docker/docker-compose-micro.yml ps", workflow)
@@ -253,7 +262,12 @@ class CommunityReleaseGateTest(unittest.TestCase):
             "Prepare local prod network",
             "docker network inspect yudao-network-prod",
             "Required infra container is missing",
-            "docker compose -f docker-compose-micro.yml up -d --no-deps",
+            "REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root",
+            "REGISTRY_DEPLOY_PREFIX=111.228.39.103:3000/root",
+            "Login to Gitea container registry",
+            "Push image to Gitea registry",
+            "docker compose -f docker-compose-micro.yml pull",
+            "docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate",
             "docker compose -f docker-compose-micro.yml ps --status running --services",
             "docker compose -f docker-compose-micro.yml logs --tail=100",
             "COMMUNITY_HEALTH_URL=\"http://127.0.0.1:48097/actuator/health\"",
@@ -281,6 +295,8 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}", workflow)
         self.assertIn("DEPLOY_ENV=prod", workflow)
         self.assertIn('export MICRO_IMAGE_TAG="${MICRO_IMAGE_TAG}" FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"', workflow)
+        self.assertIn("MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
+        self.assertIn("FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
         self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-stable-sha>", workflow)
         self.assertIn("Append release verification evidence", workflow)
         self.assertIn("deployment verification", workflow)
@@ -314,6 +330,23 @@ class CommunityReleaseGateTest(unittest.TestCase):
 
         self.assertNotIn("|| true", script)
 
+    def test_issue_301_release_gate_script_propagates_http_and_health_failures(self):
+        script = read("script/docker/verify-release-evidence.sh")
+
+        verify_http_body = script.split("verify_http() {", 1)[1].split("\n}\n\nverify_service_health()", 1)[0]
+        verify_health_body = script.split("verify_service_health() {", 1)[1].split("\n}\n\ncase", 1)[0]
+
+        for required in [
+            'run_curl "$service_health_url"',
+            'run_curl "$admin_url"',
+            'run_curl "$app_url"',
+        ]:
+            self.assertIn(required, verify_http_body)
+
+        self.assertIn('run_curl "$service_health_url"', verify_health_body)
+        self.assertNotIn("run_curl \"$service_health_url\" || true", verify_http_body)
+        self.assertNotIn("run_curl \"$service_health_url\" || true", verify_health_body)
+
     def test_test_image_version_starts_at_v001_and_feeds_test_compose(self):
         version = read("script/docker/test-image-version").strip()
         workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
@@ -339,7 +372,7 @@ class CommunityReleaseGateTest(unittest.TestCase):
             "aigc-workflow",
             "aigc-community",
         ]:
-            self.assertIn(f"image: {service}:${{MICRO_IMAGE_TAG:-latest}}", compose)
+            self.assertIn(f"image: ${{MICRO_IMAGE_REGISTRY_PREFIX:-}}{service}:${{MICRO_IMAGE_TAG:-latest}}", compose)
 
         self.assertIn('grep -Eq "^v[0-9]+\\.[0-9]+\\.[0-9]+', checks)
 
