@@ -386,6 +386,63 @@ curl.exe -k -sS "https://beta.copse.top/app-api/member/auth/email-login"
 curl.exe -k -sS "https://admin.copse.top/admin-api/system/auth/login"
 ```
 
+## GenerationRun SSE 发布门禁
+
+WebSocket 继续只负责画布协作编辑、成员在线状态和 `canvas-op-applied` 协作消息；GenerationRun SSE 只负责生成任务状态、终态补偿和 `resync-required` 项目级补偿信号。两条链路不能重复应用终态 operation：前端收到 SSE operation 后仍按 operation version 幂等进入 `applyOperationRecord`，旧 WebSocket 协作消息继续按版本补缺。
+
+网关必须关闭 `text/event-stream` 缓冲，并把读超时拉长到大于后端心跳周期。Nginx 模板：
+
+```nginx
+location /app-api/canvas/ {
+  proxy_http_version 1.1;
+  proxy_set_header Connection "";
+  proxy_buffering off;
+  proxy_cache off;
+  proxy_read_timeout 3600s;
+  add_header X-Accel-Buffering no;
+  proxy_pass http://127.0.0.1:48080;
+}
+```
+
+Caddy 模板：
+
+```caddyfile
+reverse_proxy /app-api/canvas/* 10.66.0.9:48080 {
+  flush_interval -1
+  transport http {
+    read_timeout 1h
+  }
+  header_down Cache-Control "no-cache"
+}
+```
+
+测试环境验证命令：
+
+```powershell
+curl.exe -N -H "Accept: text/event-stream" "http://111.228.39.103:48080/app-api/canvas/projects/<projectId>/generation-runs/events"
+curl.exe -I "http://111.228.39.103:48080/app-api/canvas/projects/<projectId>/generation-runs/events"
+```
+
+证据需要记录 `Content-Type: text/event-stream`、`Cache-Control: no-cache`、`X-Accel-Buffering: no` 或等价网关配置位置，以及 15 秒内可见 `generation-run-heartbeat` 或 `resync-required`。缺少非缓冲配置、心跳被代理延迟、连接超时小于 60 秒时发布门禁失败。
+
+回归清单必须覆盖：单节点 `/run/sync`、项目级 `/nodes/run/sync` 批量同步、SSE `generation-runs/events`、前端无 EventSource/连接失败时的项目级批量同步降级。降级只使用项目级批量同步，不恢复节点级独立长轮询主路径。
+
+回滚步骤：
+
+1. 关闭前端 SSE 开关或让网关拒绝 `/generation-runs/events`，前端会收到连接失败并走项目级批量同步。
+2. 如需恢复单节点同步主路径，回滚到上一稳定前端镜像 tag，并保留后端 `/run/sync` 接口。
+3. 如果批量同步异常，临时保留 30 秒 `syncFromVersion` 协作补偿轮询，禁止重复提交终态 operation。
+
+排障指标和日志关键字：
+
+| 现象 | 指标 / 日志 | 定位方向 |
+| --- | --- | --- |
+| 连接泄漏 | `generationRunSseService.getProjectConnectionCount(projectId)` 不下降 | 浏览器关闭后 emitter cleanup 未触发 |
+| 心跳失败 | `generationRunSseService.getHeartbeatFailureCount()` 增长，日志 `heartbeat failed` | 网关断开、客户端断开或代理超时 |
+| 事件缺口 | `resync-required` / `getResyncRequiredCount()` 增长 | Last-Event-ID 不连续或重连后需要批量补偿 |
+| 批量同步失败 | `/nodes/run/sync` 响应 `failedCount > 0` | 单任务不存在、任务不属于节点或生成服务异常 |
+| 终态应用失败 | 前端 `applyOperationRecord` 无 version 前进 | operationJson 解析失败或版本缺口需要 `syncFromVersion` |
+
 ## 回滚
 
 后端 prod 回滚短期做法：

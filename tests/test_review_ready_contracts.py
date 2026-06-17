@@ -424,6 +424,116 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn("previous stable image tag", evidence)
         self.assertIn("latest` is not acceptable rollback evidence", evidence)
 
+    def test_issue_293_generation_run_sse_gateway_non_buffering_gate_is_documented(self):
+        runbook = read("script/deployment-runbook.md")
+
+        for required in [
+            "## GenerationRun SSE 发布门禁",
+            "proxy_buffering off;",
+            "proxy_read_timeout 3600s;",
+            "X-Accel-Buffering no",
+            "flush_interval -1",
+            "read_timeout 1h",
+            "Content-Type: text/event-stream",
+            "generation-run-heartbeat",
+            "resync-required",
+        ]:
+            self.assertIn(required, runbook)
+
+    def test_issue_294_generation_run_sse_limits_heartbeat_cleanup_and_resync_metrics(self):
+        sse = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/websocket/canvas/AigcCanvasGenerationRunSseService.java"
+        )
+        hook = read("yudao-ui/draw2video-client/src/features/canvas/use-canvas-generation-run-events.ts")
+
+        for required in [
+            "MAX_PROJECT_CONNECTIONS = 6",
+            "generation-run-connection-limit",
+            "HEARTBEAT_INTERVAL_SECONDS = 15L",
+            "heartbeatFailureCount.incrementAndGet()",
+            "log.warn(\"[sendHeartbeat]",
+            "getProjectConnectionCount(Long projectId)",
+            "getHeartbeatFailureCount()",
+            "getResyncRequiredCount()",
+            "sendResyncRequired(projectId, emitter, \"stream-connected\")",
+        ]:
+            self.assertIn(required, sse)
+
+        self.assertIn('event.type === "resync-required"', hook)
+        self.assertIn('event.type === "generation-run-connection-limit"', hook)
+        self.assertIn("void syncProjectGenerationRuns();", hook)
+
+    def test_issue_295_generation_run_batch_sync_degrades_with_truncation_and_partial_failures(self):
+        req = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/controller/app/vo/canvas/AigcCanvasNodeRunBatchSyncReqVO.java"
+        )
+        resp = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/controller/app/vo/canvas/AigcCanvasNodeRunBatchSyncRespVO.java"
+        )
+        service = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/service/canvas/AigcCanvasNodeRunServiceImpl.java"
+        )
+        api = read("yudao-ui/draw2video-client/src/features/canvas/canvas-node-run-api.ts")
+        hook = read("yudao-ui/draw2video-client/src/features/canvas/use-canvas-generation-run-events.ts")
+
+        self.assertNotIn("@Size(max = 20", req)
+        for field in ["requestedCount", "processedCount", "limit", "failedCount"]:
+            self.assertIn(f"private Integer {field};", resp)
+        self.assertIn("private Boolean truncated;", resp)
+        self.assertIn("BATCH_SYNC_LIMIT = 20", service)
+        self.assertIn(".limit(BATCH_SYNC_LIMIT)", service)
+        self.assertIn(".setTruncated(requestedCount > BATCH_SYNC_LIMIT)", service)
+        self.assertIn(".setFailedCount(Math.toIntExact(failedCount))", service)
+        self.assertIn("buildFailedNodeRunResp(reqVO, ex.getCode(), ex.getMessage())", service)
+        self.assertIn("syncProjectNodeRuns", api)
+        self.assertIn("slice(0, 20)", hook)
+        self.assertIn("result.success === false", hook)
+
+    def test_issue_296_generation_run_keeps_old_canvas_nodes_compatible(self):
+        service = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/service/canvas/AigcCanvasNodeRunServiceImpl.java"
+        )
+        page = read("yudao-ui/draw2video-client/src/features/canvas/CanvasFlowPage.tsx")
+
+        self.assertIn("generationRunMapper.selectByProjectNodeAndTask", service)
+        self.assertIn("if (generationRun == null) {", service)
+        self.assertIn(".setRunId(extractRunIdFromClientRequestId(reqVO, result.getClientRequestId()))", service)
+        self.assertIn("validateResultBelongsToCanvasNode(reqVO, result)", service)
+        self.assertIn("CANVAS_NODE_RUN_TASK_NOT_EXISTS", service)
+        self.assertIn("return data.status === \"pending\" || (typeof data.taskId === \"string\" && data.taskId.length > 0);", page)
+        self.assertIn("taskId: typeof d.taskId === \"string\" ? d.taskId : null", page)
+
+    def test_issue_297_generation_run_release_gate_separates_ws_sse_rollback_and_metrics(self):
+        runbook = read("script/deployment-runbook.md")
+        page = read("yudao-ui/draw2video-client/src/features/canvas/CanvasFlowPage.tsx")
+        hook = read("yudao-ui/draw2video-client/src/features/canvas/use-canvas-generation-run-events.ts")
+
+        for required in [
+            "WebSocket 继续只负责画布协作编辑",
+            "GenerationRun SSE 只负责生成任务状态",
+            "不能重复应用终态 operation",
+            "单节点 `/run/sync`",
+            "项目级 `/nodes/run/sync` 批量同步",
+            "前端无 EventSource/连接失败时的项目级批量同步降级",
+            "关闭前端 SSE 开关",
+            "恢复单节点同步主路径",
+            "连接泄漏",
+            "心跳失败",
+            "批量同步失败",
+            "终态应用失败",
+        ]:
+            self.assertIn(required, runbook)
+
+        self.assertIn("useCanvasGenerationRunEvents(", page)
+        self.assertIn("applyGenerationRunOperation", page)
+        self.assertIn("onOperationRef.current(event.operation)", hook)
+        self.assertIn("await readEventStream(response", hook)
+
     def test_issue_280_aigc_model_release_gate_uses_immutable_tags_and_health_evidence(self):
         test_compose = read("script/docker/docker-compose-micro.yml")
         prod_compose = read("script/docker/docker-compose-micro-prod.yml")
