@@ -424,6 +424,96 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn("previous stable image tag", evidence)
         self.assertIn("latest` is not acceptable rollback evidence", evidence)
 
+    def test_issue_280_aigc_model_release_gate_uses_immutable_tags_and_health_evidence(self):
+        test_compose = read("script/docker/docker-compose-micro.yml")
+        prod_compose = read("script/docker/docker-compose-micro-prod.yml")
+        test_workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
+        prod_workflow = read(".gitea/workflows/yudao-micro-cicd-prod.yml")
+        gate_script = read("script/docker/verify-release-evidence.sh")
+        runbook = read("script/deployment-runbook.md")
+
+        for path, compose in [
+            ("script/docker/docker-compose-micro.yml", test_compose),
+            ("script/docker/docker-compose-micro-prod.yml", prod_compose),
+        ]:
+            with self.subTest(path=path):
+                block = self._yaml_service_block(compose, "aigc-model")
+                self.assertIn("image: aigc-model:${MICRO_IMAGE_TAG:-latest}", block)
+                self.assertNotIn("image: aigc-model:latest", block)
+                self.assertIn("healthcheck:", block)
+                self.assertIn("http://127.0.0.1:48090/actuator/health", block)
+
+        self.assertIn('service="${INPUT_SERVICE:-aigc-gen}"', test_workflow)
+        self.assertIn('aigc-model) module="yudao-module-aigc-model/yudao-module-aigc-model-server" ;;', test_workflow)
+        self.assertIn('image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', test_workflow)
+        self.assertIn("MICRO_IMAGE_TAG=${image_tag}", test_workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh preflight", test_workflow)
+        self.assertIn("SERVICE_HEALTH_URL=\"http://127.0.0.1:48090/actuator/health\"", test_workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh verify-service-health", test_workflow)
+        self.assertIn("docker compose -f script/docker/docker-compose-micro.yml logs --tail=200 aigc-model", test_workflow)
+
+        self.assertIn('image_tag="$(git rev-parse --short=12 HEAD)"', prod_workflow)
+        self.assertIn("MICRO_IMAGE_TAG=${image_tag}", prod_workflow)
+        self.assertIn("previous_stable_image_tag", prod_workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh preflight", prod_workflow)
+        self.assertIn("SERVICE_HEALTH_URL=\"http://127.0.0.1:48090/actuator/health\"", prod_workflow)
+        self.assertIn("verify-release-evidence.sh\" verify-service-health", prod_workflow)
+        self.assertIn("MICRO_IMAGE_TAG=<previous-stable-sha>", prod_workflow)
+
+        for required in [
+            "reject_latest_tag \"$MICRO_IMAGE_TAG\" \"MICRO_IMAGE_TAG\"",
+            "MICRO_IMAGE_TAG must be a semantic test image tag such as v0.0.1",
+            "MICRO_IMAGE_TAG must be an immutable Git SHA tag",
+            "previous_stable_image_tag is required for rollback evidence",
+            "previous_stable_image_tag must be a Git SHA tag",
+            "verify_service_health()",
+            "docker image inspect \"${service}:${MICRO_IMAGE_TAG}\"",
+            "rollback command: MICRO_IMAGE_TAG=${previous_tag}",
+        ]:
+            self.assertIn(required, gate_script)
+
+        for required in [
+            "`aigc-model` 发布证据必须包含",
+            "docker image inspect aigc-model:<tag>",
+            "SERVICE_HEALTH_URL=http://127.0.0.1:48090/actuator/health",
+            "MICRO_IMAGE_TAG=<previous-stable-tag>",
+            "不要把 `latest` 当作生产回滚版本",
+        ]:
+            self.assertIn(required, runbook)
+
+    def test_issue_279_aigc_model_channel_test_gate_rebuilds_api_and_checks_error_codes(self):
+        gate = read("script/aigc-model-channel-test-gate.ps1")
+        constants = read(
+            "yudao-module-aigc-model/yudao-module-aigc-model-api/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/model/enums/ErrorCodeConstants.java"
+        )
+        channel_test = read(
+            "yudao-module-aigc-model/yudao-module-aigc-model-server/src/test/java/"
+            "cn/iocoder/yudao/module/aigc/model/service/channel/AigcModelChannelServiceImplTest.java"
+        )
+
+        self.assertIn('$ErrorActionPreference = "Stop"', gate)
+        self.assertIn(".m2\\repository\\cn\\iocoder\\cloud\\yudao-module-aigc-model-api", gate)
+        self.assertIn("Remove-Item -LiteralPath $apiArtifact -Recurse -Force", gate)
+        self.assertIn("mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-api -am install -DskipTests", gate)
+        self.assertIn(
+            'mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-server -am '
+            '"-Dtest=AigcModelPriceServiceImplTest,AigcModelChannelServiceImplTest" '
+            '"-Dsurefire.failIfNoSpecifiedTests=false" test',
+            gate,
+        )
+
+        for constant, code in [
+            ("MODEL_CHANNEL_DUPLICATE", "1_041_001_102"),
+            ("MODEL_CHANNEL_REFERENCED_BY_ROUTE", "1_041_001_104"),
+        ]:
+            with self.subTest(constant=constant):
+                self.assertIn(f"ErrorCode {constant} = new ErrorCode({code}", constants)
+                self.assertIn(f"import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.{constant};", channel_test)
+                self.assertIn(f"assertEquals({constant}.getCode(), exception.getCode());", channel_test)
+
+        self.assertNotIn("NoSuchFieldError", gate)
+
     def test_issue_214_admin_asset_pages_use_i18n_keys_without_chinese_literals(self):
         target_paths = [
             "yudao-ui/draw2video-admin/src/views/aigc/asset/index.vue",
