@@ -90,6 +90,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_SERVICE: ${{ github.event.inputs.service }}
           INPUT_IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+          INPUT_PREVIOUS_STABLE_IMAGE_TAG: ${{ github.event.inputs.previous_stable_image_tag }}
         run: |
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             service="${INPUT_SERVICE:-aigc-gen}"
@@ -98,7 +99,8 @@ jobs:
           fi
 
           test_image_version_file="script/docker/test-image-version"
-          image_tag="$(tr -d '[:space:]' < "${test_image_version_file}")"
+          stable_test_image_tag="$(tr -d '[:space:]' < "${test_image_version_file}")"
+          image_tag="${stable_test_image_tag}"
           image_tag_source="${test_image_version_file}"
           if [ -n "${INPUT_IMAGE_TAG:-}" ]; then
             image_tag="${INPUT_IMAGE_TAG}"
@@ -107,6 +109,12 @@ jobs:
           if ! printf '%s' "${image_tag}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
             echo "Invalid test image tag from ${image_tag_source}: ${image_tag}"
             exit 1
+          fi
+          previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}"
+          previous_stable_image_tag_source="workflow_dispatch.previous_stable_image_tag"
+          if [ -z "${previous_stable_image_tag}" ] && [ "${image_tag}" != "v0.0.1" ]; then
+            previous_stable_image_tag="${stable_test_image_tag}"
+            previous_stable_image_tag_source="${test_image_version_file}"
           fi
 
           case "${service}" in
@@ -139,13 +147,14 @@ jobs:
           echo "DEPLOY_ENV=test" >> "${GITHUB_ENV}"
           echo "TEST_IMAGE_VERSION_FILE=${test_image_version_file}" >> "${GITHUB_ENV}"
           echo "TEST_IMAGE_TAG_SOURCE=${image_tag_source}" >> "${GITHUB_ENV}"
+          echo "PREVIOUS_STABLE_IMAGE_TAG_SOURCE=${previous_stable_image_tag_source}" >> "${GITHUB_ENV}"
           echo "MICRO_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "FRONTEND_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "REGISTRY_HOST=127.0.0.1:3000" >> "${GITHUB_ENV}"
           echo "REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root/manman" >> "${GITHUB_ENV}"
           echo "REGISTRY_DEPLOY_PREFIX=127.0.0.1:3000/root/manman" >> "${GITHUB_ENV}"
           echo "DRAW2VIDEO_CLIENT_PORT=13000" >> "${GITHUB_ENV}"
-          echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
+          echo "PREVIOUS_STABLE_IMAGE_TAG=${previous_stable_image_tag}" >> "${GITHUB_ENV}"
           echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/${service}-${image_tag}.md" >> "${GITHUB_ENV}"
 
       - name: Login to Gitea container registry
@@ -183,6 +192,7 @@ jobs:
             echo "- commit sha: $(git rev-parse HEAD)"
             echo "- immutable image tag: ${MICRO_IMAGE_TAG}"
             echo "- frontend image tag: ${FRONTEND_IMAGE_TAG}"
+            echo "- previous stable image tag source: ${PREVIOUS_STABLE_IMAGE_TAG_SOURCE}"
             echo "- previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}"
             echo "- registry push prefix: ${REGISTRY_PUSH_PREFIX}"
             echo "- registry deploy prefix: ${REGISTRY_DEPLOY_PREFIX}"

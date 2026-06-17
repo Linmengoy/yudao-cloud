@@ -39,6 +39,18 @@ class ReleaseWorkflowManualDispatchContractsTest(unittest.TestCase):
         self.assertIn("TEST_IMAGE_TAG_SOURCE=${image_tag_source}", workflow)
         self.assertIn("test image tag source: ${TEST_IMAGE_TAG_SOURCE}", workflow)
 
+    def test_test_workflow_defaults_previous_stable_tag_from_version_file(self):
+        workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
+
+        self.assertIn("INPUT_PREVIOUS_STABLE_IMAGE_TAG: ${{ github.event.inputs.previous_stable_image_tag }}", workflow)
+        self.assertIn('stable_test_image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', workflow)
+        self.assertIn('previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}"', workflow)
+        self.assertIn('previous_stable_image_tag_source="workflow_dispatch.previous_stable_image_tag"', workflow)
+        self.assertIn('if [ -z "${previous_stable_image_tag}" ] && [ "${image_tag}" != "v0.0.1" ]; then', workflow)
+        self.assertIn('previous_stable_image_tag="${stable_test_image_tag}"', workflow)
+        self.assertIn('previous stable image tag source: ${PREVIOUS_STABLE_IMAGE_TAG_SOURCE}', workflow)
+        self.assertIn("PREVIOUS_STABLE_IMAGE_TAG=${previous_stable_image_tag}", workflow)
+
     def test_runbook_step_six_documents_tag_and_project_registry_scope(self):
         runbook = read("script/deployment-runbook.md")
 
