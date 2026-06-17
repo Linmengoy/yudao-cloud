@@ -1,4 +1,7 @@
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -60,6 +63,91 @@ class ReleaseScopeAndEvidenceContractTest(unittest.TestCase):
         self.assertIn("退出码 `126`", runbook)
         self.assertIn("退出码 `124`", runbook)
         self.assertIn("证据不满足", runbook)
+
+    def test_issue_312_scope_audit_rejects_client_target_and_processing_manifest(self):
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if powershell is None:
+            self.skipTest("PowerShell is required for release scope audit execution")
+
+        script = ROOT / "script/release-scope-audit.ps1"
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "candidate-manifest.txt"
+            notes = Path(tmp) / "release-notes.md"
+            manifest.write_text(
+                "\n".join(
+                    [
+                        "script/deploy-frontend-images.ps1|#173|review:done",
+                        "script/docker/verify-release-evidence.ps1|#310|review:processing",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            notes.write_text("included issues:\n- #173\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    powershell,
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script),
+                    "-AllowedIssues",
+                    "#173,#174",
+                    "-IncludedIssues",
+                    "#173,#310",
+                    "-ProcessingIssues",
+                    "#310",
+                    "-FrontendTarget",
+                    "client",
+                    "-BackendServices",
+                    "aigc-model,aigc-gen",
+                    "-ManifestPath",
+                    str(manifest),
+                    "-ReleaseNotesPath",
+                    str(notes),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("processing issue entered release candidate: #310", output)
+        self.assertNotIn("release scope audit passed", output)
+
+    def test_issue_313_windows_wrapper_failure_contract_is_not_masked(self):
+        wrapper = read("script/docker/verify-release-evidence.ps1")
+
+        self.assertRegex(
+            wrapper,
+            re.compile(
+                r"if \(\[string\]::IsNullOrWhiteSpace\(\$bashPath\)\).*?"
+                r"execution environment failure: bash executable was not found.*?"
+                r"exit 126",
+                re.DOTALL,
+            ),
+        )
+        self.assertRegex(
+            wrapper,
+            re.compile(
+                r"if \(!\$process\.WaitForExit\(\$TimeoutSeconds \* 1000\)\).*?"
+                r"execution environment failure: bash startup or script execution exceeded.*?"
+                r"exit 124",
+                re.DOTALL,
+            ),
+        )
+        self.assertRegex(
+            wrapper,
+            re.compile(
+                r"if \(\$exitCode -ne 0\).*?"
+                r"release evidence gate failed: verify-release-evidence\.sh returned \$exitCode.*?"
+                r"Write-Log \"END \$\(Get-Date -Format o\) exit=\$exitCode\".*?"
+                r"exit \$exitCode",
+                re.DOTALL,
+            ),
+        )
 
     def test_issue_314_frontend_admin_test_env_and_preflight_are_auditable(self):
         deploy = read("script/deploy-frontend-images.ps1")
