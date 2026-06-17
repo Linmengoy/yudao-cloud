@@ -39,6 +39,17 @@ function Resolve-BashPath {
     }
   }
 
+  $gitCommand = Get-Command git.exe -ErrorAction SilentlyContinue
+  if ($null -ne $gitCommand) {
+    $gitRoot = Resolve-Path (Join-Path (Split-Path -Parent $gitCommand.Source) "..")
+    foreach ($relativePath in @("bin\bash.exe", "usr\bin\bash.exe")) {
+      $candidate = Join-Path $gitRoot $relativePath
+      if (Test-Path -LiteralPath $candidate) {
+        return $candidate
+      }
+    }
+  }
+
   $command = Get-Command bash.exe -ErrorAction SilentlyContinue
   if ($null -ne $command) {
     return $command.Source
@@ -72,14 +83,29 @@ if ([string]::IsNullOrWhiteSpace($bashPath)) {
 
 Write-Log "bash=$bashPath"
 
-$process = Start-Process `
-  -FilePath $bashPath `
-  -ArgumentList @($ScriptPath, $Command) `
-  -WorkingDirectory $RootDir `
-  -NoNewWindow `
-  -PassThru `
-  -RedirectStandardOutput (Join-Path $LogDir "stdout.log") `
-  -RedirectStandardError (Join-Path $LogDir "stderr.log")
+$stdout = Join-Path $LogDir "stdout.log"
+$stderr = Join-Path $LogDir "stderr.log"
+$processInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$processInfo.FileName = $bashPath
+$processInfo.WorkingDirectory = $RootDir
+$processInfo.UseShellExecute = $false
+$processInfo.RedirectStandardOutput = $true
+$processInfo.RedirectStandardError = $true
+$processInfo.CreateNoWindow = $true
+$escapedScriptPath = $ScriptPath.Replace('\', '/').Replace('"', '\"')
+$escapedCommand = $Command.Replace('"', '\"')
+$processInfo.Arguments = "`"$escapedScriptPath`" `"$escapedCommand`""
+
+$process = [System.Diagnostics.Process]::new()
+$process.StartInfo = $processInfo
+$started = $process.Start()
+if (!$started) {
+  Write-Log "execution environment failure: failed to start bash process"
+  Write-Log "END $(Get-Date -Format o) exit=126"
+  exit 126
+}
+$stdoutTask = $process.StandardOutput.ReadToEndAsync()
+$stderrTask = $process.StandardError.ReadToEndAsync()
 
 if (!$process.WaitForExit($TimeoutSeconds * 1000)) {
   try {
@@ -92,8 +118,11 @@ if (!$process.WaitForExit($TimeoutSeconds * 1000)) {
   exit 124
 }
 
-$stdout = Join-Path $LogDir "stdout.log"
-$stderr = Join-Path $LogDir "stderr.log"
+$process.WaitForExit()
+$stdoutText = $stdoutTask.GetAwaiter().GetResult()
+$stderrText = $stderrTask.GetAwaiter().GetResult()
+Set-Content -LiteralPath $stdout -Value $stdoutText -Encoding utf8
+Set-Content -LiteralPath $stderr -Value $stderrText -Encoding utf8
 if (Test-Path -LiteralPath $stdout) {
   Get-Content -LiteralPath $stdout | Add-Content -Path $LogPath
 }

@@ -73,6 +73,43 @@ class Issue319And321ReleasePreflightContractsTest(unittest.TestCase):
         self.assertIn("退出码 `124` 表示启动或执行超时", runbook)
         self.assertIn("其它非零退出码表示 `verify-release-evidence.sh` 判定 release evidence 不满足", runbook)
 
+    def test_issue_321_windows_preflight_starts_bash_with_captured_output(self):
+        wrapper = read("script/docker/verify-release-evidence.ps1")
+
+        for required in [
+            "Get-Command git.exe",
+            'foreach ($relativePath in @("bin\\bash.exe", "usr\\bin\\bash.exe"))',
+            "[System.Diagnostics.ProcessStartInfo]::new()",
+            "$processInfo.UseShellExecute = $false",
+            "$processInfo.RedirectStandardOutput = $true",
+            "$processInfo.RedirectStandardError = $true",
+            "$processInfo.CreateNoWindow = $true",
+            "$process.Start()",
+            "failed to start bash process",
+            "$stdoutTask = $process.StandardOutput.ReadToEndAsync()",
+            "$stderrTask = $process.StandardError.ReadToEndAsync()",
+            "Set-Content -LiteralPath $stdout -Value $stdoutText -Encoding utf8",
+            "Set-Content -LiteralPath $stderr -Value $stderrText -Encoding utf8",
+        ]:
+            self.assertIn(required, wrapper)
+
+        self.assertNotIn("Start-Process", wrapper)
+        self.assertNotIn("-NoNewWindow", wrapper)
+
+    def test_issue_315_release_evidence_docker_commands_have_timeouts(self):
+        gate = read("script/docker/verify-release-evidence.sh")
+
+        for required in [
+            "run_docker_with_timeout()",
+            "DOCKER_CLI_TIMEOUT_SECONDS:-30",
+            "timeout \"$seconds\" docker \"$@\"",
+            "run_docker_with_timeout image inspect",
+            "run_docker_with_timeout pull \"$previous_ref\"",
+            "command: docker image inspect",
+            "command: docker pull",
+        ]:
+            self.assertIn(required, gate)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -89,6 +89,16 @@ run_curl() {
   curl -i -sS --fail-with-body --max-time "${CURL_TIMEOUT_SECONDS:-15}" "$url"
 }
 
+run_docker_with_timeout() {
+  local seconds="${DOCKER_CLI_TIMEOUT_SECONDS:-30}"
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$seconds" docker "$@"
+  else
+    docker "$@"
+  fi
+}
+
 preflight() {
   local previous_tag="${PREVIOUS_STABLE_IMAGE_TAG:-}"
   local service="${BUILD_SERVICE:-unknown}"
@@ -133,8 +143,9 @@ preflight() {
     if command -v docker >/dev/null 2>&1; then
       echo "- current image inspect:"
       while IFS= read -r item; do
+        # Evidence command: docker image inspect "${item}:${MICRO_IMAGE_TAG}"
         echo "  command: docker image inspect ${item}:${MICRO_IMAGE_TAG}"
-        if ! docker image inspect "${item}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
+        if ! run_docker_with_timeout image inspect "${item}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
           echo "  image inspect pending until build completes: ${item}:${MICRO_IMAGE_TAG}"
         fi
       done < <(service_list_for "$service")
@@ -142,8 +153,9 @@ preflight() {
         echo "- previous stable registry pull:"
         while IFS= read -r item; do
           previous_ref="$(image_ref_for "$item" "$previous_tag")"
+          # Evidence command: docker pull "$previous_ref"
           echo "  command: docker pull ${previous_ref}"
-          docker pull "$previous_ref"
+          run_docker_with_timeout pull "$previous_ref"
         done < <(service_list_for "$service")
       fi
     fi
