@@ -29,8 +29,8 @@ export interface AigcTaskRespVO {
   externalTaskId?: string
   outputAssetId?: number
   outputAssetType?: string
+  outputSummary?: string
   outputText?: string
-  outputData?: string
   failCode?: string
   failReason?: string
   createTime?: string
