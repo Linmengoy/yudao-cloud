@@ -224,6 +224,19 @@ curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=p
 ./script/deploy-frontend-images.ps1 -Server manman2 -DeployEnv prod -Target admin -UseRegistry
 ```
 
+#310 / #312 / #314 的本轮发布目标是 `draw2video-admin`，不要把 `draw2video-client` 放入同一候选发布。发布前先跑范围审计：
+
+```powershell
+./script/release-scope-audit.ps1 `
+  -AllowedIssues '#146','#173','#174' `
+  -IncludedIssues '#173','#174' `
+  -ProcessingIssues '#310' `
+  -FrontendTarget admin `
+  -BackendServices aigc-model,aigc-gen
+```
+
+如果自动化或 runbook 仍给出 `-Target client`，审计必须失败，并在发布说明中记录未发布 `draw2video-client` 的原因。
+
 只发布用户端：
 
 ```powershell
@@ -247,6 +260,30 @@ curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=p
 3. 推送到 Gitea Registry `111.228.39.103:3000/root`。
 4. 同步 `/opt/code/.frontend-test.env` 或 `/opt/code/.frontend-prod.env`。
 5. 目标服务器执行 `docker compose pull` 和 `docker compose up -d --no-build --force-recreate`。
+
+`/opt/code/.frontend-test.env` 必须至少包含这些字段，缺少任意字段都不能作为 admin test 发布证据：
+
+```text
+FRONTEND_IMAGE_TAG=<v0.0.1-style-test-tag>
+FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/
+DRAW2VIDEO_ADMIN_PORT=8081
+DRAW2VIDEO_CLIENT_PORT=13000
+DRAW2VIDEO_GUIDE_PORT=8082
+ADMIN_GATEWAY_HOST=host.docker.internal
+ADMIN_GATEWAY_PORT=48080
+CLIENT_GATEWAY_HOST=host.docker.internal
+CLIENT_GATEWAY_PORT=48080
+```
+
+admin test 预检命令必须使用 `-Target admin`：
+
+```powershell
+./script/deploy-frontend-images.ps1 -Server manman -DeployEnv test -Target admin -UseRegistry -SkipBuild -SkipSave -SkipUpload
+ssh manman "cd /opt/code && docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml ps draw2video-admin"
+ssh manman "curl -fsS -I http://127.0.0.1:8081/"
+```
+
+记录证据时写明命令、开始时间、结束时间、退出码、HTTP 状态、响应摘要和失败日志路径。
 
 前端 prod 验证：
 
@@ -283,6 +320,58 @@ ssh manman "docker inspect draw2video-client --format '{{.Config.Image}}'"
 ssh manman "docker inspect draw2video-admin --format '{{.Config.Image}}'"
 ssh manman2 "docker inspect draw2video-client --format '{{.Config.Image}}'"
 ssh manman2 "docker inspect draw2video-admin --format '{{.Config.Image}}'"
+```
+
+## Windows release evidence 门禁
+
+Windows 本机不要直接依赖 shell 关联启动。使用 PowerShell 包装脚本调用 Git Bash，并把 shell 启动失败和证据不满足分开记录：
+
+```powershell
+$env:DEPLOY_ENV='prod'
+$env:BUILD_SERVICE='aigc-model'
+$env:MICRO_IMAGE_TAG='123456789abc'
+$env:PREVIOUS_STABLE_IMAGE_TAG='abcdef123456'
+$env:RELEASE_EVIDENCE_FILE='tmp/release-evidence/prod-aigc-model-123456789abc.md'
+$env:MICRO_IMAGE_REGISTRY_PREFIX='111.228.39.103:3000/root/'
+./script/docker/verify-release-evidence.ps1 -Command preflight -TimeoutSeconds 120
+```
+
+退出码 `126` 表示 bash/Git Bash/WSL 执行环境不可用，退出码 `124` 表示启动或执行超时，其它非零退出码表示 `verify-release-evidence.sh` 判定 release evidence 不满足。日志会写入 `tmp/release-gates/windows-verify-*`，必须随工单写回开始时间、结束时间、退出码和日志路径。
+
+## #173/#174 后端发布范围
+
+本轮后端范围只包含：
+
+- `aigc-model`
+- `aigc-gen`
+
+发布说明必须写入 Maven 与 Compose 验证命令：
+
+```powershell
+mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-server,yudao-module-aigc-gen/yudao-module-aigc-gen-server -am -DskipTests compile
+ssh manman2 "cd /opt/deploy/yudao-micro && docker compose -f docker-compose-micro.yml ps aigc-model aigc-gen"
+ssh manman2 "docker inspect aigc-model-prod --format '{{.Config.Image}}'"
+ssh manman2 "docker inspect aigc-gen-prod --format '{{.Config.Image}}'"
+```
+
+prod 回滚证据必须分别列出 `aigc-model` 与 `aigc-gen` 的 current tag、previous stable tag、`docker pull`/`docker image inspect` 结果和回滚命令。current 或 previous stable 任一值为 `latest` 时，prod 发布保持阻塞，不能降级为人工口头确认。
+
+## 发布范围说明模板
+
+发布说明的 scope section 必须包含：
+
+```text
+included issues:
+- #146
+- #173
+- #174
+
+excluded processing issues:
+- #310: parent release audit remains processing; no unreviewed files included
+
+exclusion rationale:
+- candidate commits and files map only to #146/#173/#174 or completed dependencies
+- review:processing changes are excluded until their review labels advance
 ```
 
 找不到上一稳定 tag 时，前端发布门禁失败，不能用 `latest` 代替回滚版本。

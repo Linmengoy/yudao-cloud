@@ -206,8 +206,16 @@ function ConvertTo-EnvValue {
 
 function New-FrontendEnvFile {
   $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "frontend-${DeployEnv}-${PID}.env"
+  $AdminPort = if ($DeployEnv -eq "prod") { "8081" } else { "8081" }
+  $ClientPort = if ($DeployEnv -eq "prod") { "13000" } else { "13000" }
+  $GuidePort = if ($DeployEnv -eq "prod") { "8082" } else { "8082" }
   $lines = @(
     "FRONTEND_DEPLOY_ENV=$(ConvertTo-EnvValue $DeployEnv)",
+    "FRONTEND_IMAGE_TAG=$(ConvertTo-EnvValue $ImageTag)",
+    "FRONTEND_IMAGE_REGISTRY_PREFIX=$(ConvertTo-EnvValue "${RemoteRegistry}/")",
+    "DRAW2VIDEO_ADMIN_PORT=$(ConvertTo-EnvValue $AdminPort)",
+    "DRAW2VIDEO_CLIENT_PORT=$(ConvertTo-EnvValue $ClientPort)",
+    "DRAW2VIDEO_GUIDE_PORT=$(ConvertTo-EnvValue $GuidePort)",
     "ADMIN_GATEWAY_HOST=$(ConvertTo-EnvValue $AdminGatewayHost)",
     "ADMIN_GATEWAY_PORT=$(ConvertTo-EnvValue $AdminGatewayPort)",
     "CLIENT_GATEWAY_HOST=$(ConvertTo-EnvValue $ClientGatewayHost)",

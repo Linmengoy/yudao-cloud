@@ -9,7 +9,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8081:80"
+      - "${DRAW2VIDEO_ADMIN_PORT:-8081}:80"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
       interval: 10s
@@ -37,7 +37,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "13000:3000"
+      - "${DRAW2VIDEO_CLIENT_PORT:-13000}:3000"
     healthcheck:
       test:
         [
@@ -56,7 +56,7 @@ services:
     container_name: draw2video-guide
     restart: always
     ports:
-      - "8082:80"
+      - "${DRAW2VIDEO_GUIDE_PORT:-8082}:80"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/health"]
       interval: 10s
