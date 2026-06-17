@@ -80,10 +80,14 @@ preflight() {
     echo "- previous stable image tag: ${previous_tag:-not-provided}"
     if command -v docker >/dev/null 2>&1; then
       echo "- current image inspect command: docker image inspect ${service}:${MICRO_IMAGE_TAG}"
-      docker image inspect "${service}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null || echo "  image inspect pending until build completes"
+      if ! docker image inspect "${service}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
+        echo "  image inspect pending until build completes"
+      fi
       if [ -n "$previous_tag" ]; then
         echo "- previous stable inspect command: docker image inspect ${service}:${previous_tag}"
-        docker image inspect "${service}:${previous_tag}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null || echo "  previous image not present locally; registry/manifest check required"
+        if ! docker image inspect "${service}:${previous_tag}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
+          echo "  previous image not present locally; registry/manifest check required"
+        fi
       fi
     fi
     if [ -n "$previous_tag" ]; then
@@ -197,9 +201,13 @@ verify_service_health() {
     echo "- previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}"
     if command -v docker >/dev/null 2>&1 && [ -f "$compose_file" ]; then
       echo "- compose ps summary:"
-      docker compose -f "$compose_file" ps "$service" || true
+      if ! docker compose -f "$compose_file" ps "$service"; then
+        echo "  compose ps unavailable for ${service}; continuing to collect image/health evidence"
+      fi
       echo "- image inspect:"
-      docker image inspect "${service}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null || true
+      if ! docker image inspect "${service}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
+        echo "  image inspect unavailable for ${service}:${MICRO_IMAGE_TAG:-not-set}; continuing to health gate"
+      fi
     fi
     if [ -n "$service_health_url" ]; then
       echo "- service health command: curl -i -sS --fail-with-body ${service_health_url}"
@@ -213,12 +221,16 @@ verify_service_health() {
 
   if command -v docker >/dev/null 2>&1 && [ -f "$compose_file" ]; then
     local health_state
-    health_state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$service" 2>/dev/null || true)"
+    if ! health_state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$service" 2>/dev/null)"; then
+      health_state=""
+    fi
     {
       echo "- container health state: ${health_state:-unknown}"
       if [ "$health_state" != "healthy" ] && [ "$health_state" != "running" ]; then
         echo "- failure logs path: docker compose -f ${compose_file} logs --tail=200 ${service}"
-        docker compose -f "$compose_file" logs --tail=200 "$service" || true
+        if ! docker compose -f "$compose_file" logs --tail=200 "$service"; then
+          echo "  logs unavailable for ${service}; health gate remains failed"
+        fi
       fi
       echo "- rollback decision: fail this gate before promotion when health is not healthy/running"
     } >> "$evidence"
