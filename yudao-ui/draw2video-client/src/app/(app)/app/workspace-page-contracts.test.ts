@@ -5,7 +5,9 @@ import type { AigcModel } from "@/features/generation/model-api";
 import {
   QUICK_GENERATION_MODE_LABELS,
   communityPostCoverUrl,
+  getCompatibleModels,
   getQuickGenerationMode,
+  getModelMaxReferenceImages,
   getSelectedTabModels,
   pickDefaultModelId,
   workspaceCommunityCacheKey,
@@ -48,6 +50,31 @@ describe("workspace quick generation contracts", () => {
     expect(QUICK_GENERATION_MODE_LABELS[getQuickGenerationMode("image", true)]).toBe("图生图");
     expect(QUICK_GENERATION_MODE_LABELS[getQuickGenerationMode("video", false)]).toBe("文生视频");
     expect(QUICK_GENERATION_MODE_LABELS[getQuickGenerationMode("video", true)]).toBe("图生视频");
+  });
+
+  it("switches default video model away from first-frame-only models for multi-reference input", () => {
+    const firstFrameOnly = {
+      ...model(11, 3, true),
+      name: "首图视频模型",
+      capabilities: ["IMAGE_TO_VIDEO"],
+      remark: "最多 1 张参考图",
+    };
+    const multiReference = {
+      ...model(12, 3),
+      name: "多参考视频模型",
+      capabilities: ["IMAGE_TO_VIDEO"],
+      remark: "最多 3 张参考图",
+    };
+    const textOnlyVideo = {
+      ...model(13, 3),
+      capabilities: ["TEXT_TO_VIDEO"],
+    };
+    const models = [firstFrameOnly, multiReference, textOnlyVideo];
+
+    expect(getModelMaxReferenceImages(firstFrameOnly)).toBe(1);
+    expect(getModelMaxReferenceImages(multiReference)).toBe(3);
+    expect(getCompatibleModels(models, "video", "IMAGE_TO_VIDEO", 3).map((item) => item.id)).toEqual([12]);
+    expect(pickDefaultModelId(models, "video", "IMAGE_TO_VIDEO", 3)).toBe(12);
   });
 });
 

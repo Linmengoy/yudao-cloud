@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -66,6 +67,41 @@ public class AigcMediaArchiveServiceTest extends BaseMockitoUnitTest {
         verify(fileApi, times(1)).createFile(contentCaptor.capture(), anyString(), eq("aigc/output"),
                 eq("image/jpeg"));
         assertArrayEquals("result-bytes".getBytes(StandardCharsets.UTF_8), contentCaptor.getValue());
+    }
+
+    @Test
+    public void testArchiveOutputData_uploadsInlineMediaArrayValues() {
+        when(fileApi.createFile(any(byte[].class), any(), eq("aigc/output"), eq("image/png")))
+                .thenReturn("https://oss.example.com/aigc/output/result.png");
+
+        String archived = mediaArchiveService.archiveOutputData("""
+                {"images":["data:image/png;base64,cmVzdWx0LWJ5dGVz"]}
+                """);
+
+        JSONObject json = JSONUtil.parseObj(archived);
+        assertEquals("https://oss.example.com/aigc/output/result.png", json.getJSONArray("images").getStr(0));
+        mediaArchiveService.assertNoPersistentInlineMedia(archived, "aigc_gen_record.output_data");
+    }
+
+    @Test
+    public void testAssertNoPersistentInlineMedia_rejectsBase64Media() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> mediaArchiveService.assertNoPersistentInlineMedia(
+                        "{\"imageUrl\":\"data:image/png;base64,aW1hZ2U=\"}",
+                        "aigc_gen_record.output_data"));
+
+        assertEquals("aigc_gen_record.output_data must not contain inline base64 media", ex.getMessage());
+    }
+
+    @Test
+    public void testArchiveOutputUrls_uploadsDataUrlBeforePersistence() {
+        when(fileApi.createFile(any(byte[].class), any(), eq("aigc/output"), eq("image/png")))
+                .thenReturn("https://oss.example.com/aigc/output/url.png");
+
+        String archived = mediaArchiveService.archiveOutputUrls("[\"data:image/png;base64,dXJsLWJ5dGVz\"]");
+
+        assertEquals("[\"https://oss.example.com/aigc/output/url.png\"]", archived);
+        mediaArchiveService.assertNoPersistentInlineMedia(archived, "aigc_gen_record.output_urls");
     }
 
 }

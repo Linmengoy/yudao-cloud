@@ -55,6 +55,31 @@ public class AigcMediaArchiveService {
         return JSONUtil.toJsonStr(json);
     }
 
+    public String archiveOutputUrls(String outputUrls) {
+        if (StrUtil.isBlank(outputUrls)) {
+            return outputUrls;
+        }
+        Map<String, String> cache = new HashMap<>();
+        if (!JSONUtil.isTypeJSONArray(outputUrls)) {
+            String archivedUrl = archiveMediaSource(outputUrls, OUTPUT_DIRECTORY, cache);
+            return StrUtil.blankToDefault(archivedUrl, outputUrls);
+        }
+        JSONArray urls = JSONUtil.parseArray(outputUrls);
+        JSONArray archivedUrls = new JSONArray();
+        for (Object item : urls) {
+            String source = String.valueOf(item);
+            String archivedUrl = archiveMediaSource(source, OUTPUT_DIRECTORY, cache);
+            archivedUrls.add(StrUtil.blankToDefault(archivedUrl, source));
+        }
+        return archivedUrls.toString();
+    }
+
+    public void assertNoPersistentInlineMedia(String value, String fieldName) {
+        if (containsInlineMedia(value)) {
+            throw new IllegalArgumentException(fieldName + " must not contain inline base64 media");
+        }
+    }
+
     private void archiveInputImageObjects(JSONObject params, Map<String, String> cache) {
         JSONArray inputImages = params.getJSONArray("inputImages");
         if (inputImages == null || inputImages.isEmpty()) {
@@ -117,7 +142,7 @@ public class AigcMediaArchiveService {
         if (value instanceof JSONArray array) {
             for (int i = 0; i < array.size(); i++) {
                 Object child = array.get(i);
-                if (child instanceof String source && isLikelyMediaOutputKey(key)) {
+                if (child instanceof String source && (isLikelyMediaOutputKey(key) || isInlineMediaSource(source))) {
                     String archivedUrl = archiveMediaSource(source, OUTPUT_DIRECTORY, cache);
                     if (StrUtil.isNotBlank(archivedUrl)) {
                         array.set(i, archivedUrl);
@@ -133,6 +158,16 @@ public class AigcMediaArchiveService {
         String normalized = StrUtil.nullToEmpty(key).toLowerCase();
         return normalized.contains("url") || normalized.contains("image") || normalized.contains("video")
                 || normalized.contains("audio");
+    }
+
+    private boolean containsInlineMedia(String value) {
+        return StrUtil.containsIgnoreCase(value, "data:image/")
+                || StrUtil.containsIgnoreCase(value, "data:video/")
+                || StrUtil.containsIgnoreCase(value, "data:audio/");
+    }
+
+    private boolean isInlineMediaSource(String source) {
+        return StrUtil.startWithAnyIgnoreCase(StrUtil.trim(source), "data:image/", "data:video/", "data:audio/");
     }
 
     private String archiveMediaSource(String source, String directory, Map<String, String> cache) {

@@ -249,6 +249,44 @@ class CommunitySocialModerationContractsTest(unittest.TestCase):
         self.assertIn("Array.from(pageCache.keys()).forEach", cache)
         self.assertIn("if (key.startsWith(prefix)) pageCache.delete(key)", cache)
 
+    def test_issue_261_frontend_community_entry_list_detail_and_recoverable_states(self):
+        workspace = read("yudao-ui/draw2video-client/src/app/(app)/app/page.tsx")
+        community_page = read("yudao-ui/draw2video-client/src/app/(app)/community/page.tsx")
+        detail_page = read("yudao-ui/draw2video-client/src/app/(app)/community/[id]/page.tsx")
+
+        self.assertIn('href="/community"', workspace)
+        self.assertIn("getCommunityPosts({ pageNo: 1, pageSize: 30, sort, keyword })", community_page)
+        self.assertIn("setError(err instanceof Error ? err.message : \"社区列表加载失败\")", community_page)
+        self.assertIn("新发布作品可能还在审核中", community_page)
+        self.assertIn("RotateCw", community_page)
+        self.assertIn("getCommunityPost(postKey)", detail_page)
+        self.assertIn("getCommunityComments({ postId: postData.id, pageNo: 1, pageSize: 50 })", detail_page)
+        self.assertIn("post.likeCount", detail_page)
+        self.assertIn("post.commentCount", detail_page)
+        self.assertIn("post.shareCount", detail_page)
+
+    def test_issue_262_community_menu_sql_has_paths_permissions_runbook_and_rollback(self):
+        migration = read("sql/mysql/system/aigc_community_menu.sql")
+        rollback = read("sql/mysql/system/aigc_community_menu_rollback.sql")
+        runbook = read("sql/mysql/system/aigc_community_menu_runbook.md")
+
+        self.assertIn("AIGC 社区管理", migration)
+        self.assertIn("path = '/aigc-community'", migration)
+        self.assertIn("'aigc/community/post/index', 'AigcCommunityPost'", migration)
+        self.assertIn("'aigc/community/comment/index', 'AigcCommunityComment'", migration)
+        for permission in [
+            "aigc:community-post:query",
+            "aigc:community-post:audit",
+            "aigc:community-comment:query",
+            "aigc:community-comment:audit",
+        ]:
+            self.assertIn(permission, migration)
+            self.assertIn(permission, rollback)
+        self.assertIn("DELETE role_menu", rollback)
+        self.assertIn("DELETE FROM system_menu", rollback)
+        self.assertIn("Run `sql/mysql/system/aigc_community_menu.sql`", runbook)
+        self.assertIn("Run `sql/mysql/system/aigc_community_menu_rollback.sql`", runbook)
+
 
 if __name__ == "__main__":
     unittest.main()

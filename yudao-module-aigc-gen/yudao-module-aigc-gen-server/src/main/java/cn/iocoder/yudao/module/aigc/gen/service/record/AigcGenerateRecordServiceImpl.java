@@ -857,15 +857,17 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setRawBody(reqDTO.getRawBody()).setSignature(reqDTO.getSignature())).getCheckedData();
         if (AigcGenerateStatusEnum.SUCCESS.getCode().equals(reqDTO.getResultStatus())) {
             String archivedOutputData = mediaArchiveService.archiveOutputData(reqDTO.getOutputData());
+            String archivedOutputUrls = mediaArchiveService.archiveOutputUrls(reqDTO.getOutputUrls());
+            assertNoInlinePersistentMedia(archivedOutputData, archivedOutputUrls);
             AigcProviderSubmitRespDTO resp = new AigcProviderSubmitRespDTO()
                     .setProviderTaskId(reqDTO.getProviderTaskId()).setProviderStatus(reqDTO.getResultStatus())
                     .setOutputText(reqDTO.getOutputText()).setOutputData(archivedOutputData)
-                    .setOutputUrls(reqDTO.getOutputUrls()).setSuccess(true).setFinished(true);
+                    .setOutputUrls(archivedOutputUrls).setSuccess(true).setFinished(true);
             if (attempt == null) {
                 generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId())
                         .setStatus(AigcGenerateStatusEnum.ASSET_CREATING.getCode())
                         .setOutputText(reqDTO.getOutputText())
-                        .setOutputData(archivedOutputData).setOutputUrls(reqDTO.getOutputUrls())
+                        .setOutputData(archivedOutputData).setOutputUrls(archivedOutputUrls)
                         .setCallbackTime(LocalDateTime.now()));
                 finishSuccess(generateRecordMapper.selectById(record.getId()), resp);
                 generateRecordMapper.updateById(new AigcGenerateRecordDO().setId(record.getId())
@@ -1141,7 +1143,10 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             return;
         }
         String archivedOutputData = mediaArchiveService.archiveOutputData(resp.getOutputData());
+        String archivedOutputUrls = mediaArchiveService.archiveOutputUrls(resp.getOutputUrls());
         resp.setOutputData(archivedOutputData);
+        resp.setOutputUrls(archivedOutputUrls);
+        assertNoInlinePersistentMedia(archivedOutputData, archivedOutputUrls);
         int updated = generateRecordMapper.updateByIdAndStatuses(new AigcGenerateRecordDO().setId(record.getId())
                 .setStatus(AigcGenerateStatusEnum.ASSET_CREATING.getCode())
                 .setModelId(attempt.getModelId())
@@ -1606,5 +1611,10 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             }
         }
         return urls;
+    }
+
+    private void assertNoInlinePersistentMedia(String outputData, String outputUrls) {
+        mediaArchiveService.assertNoPersistentInlineMedia(outputData, "aigc_gen_record.output_data");
+        mediaArchiveService.assertNoPersistentInlineMedia(outputUrls, "aigc_gen_record.output_urls");
     }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { RotateCw, Search } from "lucide-react";
 import { getCommunityPosts } from "@/features/community/community-api";
 import type { CommunityPost } from "@/features/community/community-types";
 import { CommunityPostCard } from "@/features/community/CommunityPostCard";
@@ -12,14 +12,21 @@ export default function CommunityPage() {
   const [sort, setSort] = useState<"latest" | "hot">("latest");
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
+    setLoading(true);
+    setError(null);
     getCommunityPosts({ pageNo: 1, pageSize: 30, sort, keyword })
       .then((data) => {
         if (ignore) return;
         setPosts(data.list);
         setTotal(data.total);
+      })
+      .catch((err) => {
+        if (ignore) return;
+        setError(err instanceof Error ? err.message : "社区列表加载失败");
       })
       .finally(() => {
         if (!ignore) setLoading(false);
@@ -63,8 +70,33 @@ export default function CommunityPage() {
 
         {loading ? (
           <div className="py-20 text-center text-sm text-muted-gray">Loading...</div>
+        ) : error ? (
+          <div className="rounded-lg border border-dashed border-border-warm py-20 text-center text-sm text-muted-gray">
+            <p>{error}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                setError(null);
+                getCommunityPosts({ pageNo: 1, pageSize: 30, sort, keyword })
+                  .then((data) => {
+                    setPosts(data.list);
+                    setTotal(data.total);
+                  })
+                  .catch((err) => setError(err instanceof Error ? err.message : "社区列表加载失败"))
+                  .finally(() => setLoading(false));
+              }}
+              className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-border-warm px-3 text-sm text-charcoal hover:bg-muted"
+            >
+              <RotateCw className="size-4" />
+              重试
+            </button>
+          </div>
         ) : posts.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border-warm py-20 text-center text-sm text-muted-gray">No public works yet.</div>
+          <div className="rounded-lg border border-dashed border-border-warm py-20 text-center text-sm text-muted-gray">
+            <p>No public works yet.</p>
+            <p className="mt-2 text-xs">新发布作品可能还在审核中。</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {posts.map((post) => <CommunityPostCard key={post.id} post={post} />)}

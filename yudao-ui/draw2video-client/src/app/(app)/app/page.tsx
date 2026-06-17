@@ -26,8 +26,8 @@ import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache
 import {
   QUICK_GENERATION_MODE_LABELS,
   communityPostCoverUrl,
+  getCompatibleModels,
   getQuickGenerationMode,
-  getSelectedTabModels,
   pickDefaultModelId,
   workspaceCommunityCacheKey,
   workspaceModelsCacheKey,
@@ -415,7 +415,12 @@ export default function WorkspacePage() {
   const [selectedTab, setSelectedTab] = useState<GenerationTab>("image");
   const selectedTabRef = useRef<GenerationTab>("image");
   const [models, setModels] = useState<AigcModel[]>(() => initialModelsCache?.models ?? []);
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(() => pickDefaultModelId(initialModelsCache?.models ?? [], "image"));
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(() => pickDefaultModelId(
+    initialModelsCache?.models ?? [],
+    "image",
+    initialImageGenerationCapability,
+    initialReferenceImages.length
+  ));
   const [modelsLoading, setModelsLoading] = useState(() => !initialModelsCache);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [paramTemplates, setParamTemplates] = useState<AigcModelParamTemplate[]>([]);
@@ -444,20 +449,21 @@ export default function WorkspacePage() {
   const paramsButtonRef = useRef<HTMLButtonElement | null>(null);
   const recentProjects = useMemo(() => projects.slice(0, 7), [projects]);
   const quickModels = useMemo(() => models.filter((model) => model.type === 2 || model.type === 3), [models]);
+  const referenceImage = referenceImages[0] ?? null;
+  const hasReferenceImages = referenceImages.length > 0;
+  const imageGenerationCapability: QuickGenerationMode = getQuickGenerationMode("image", hasReferenceImages);
+  const videoGenerationCapability: QuickGenerationMode = getQuickGenerationMode("video", hasReferenceImages);
+  const quickGenerationMode = getQuickGenerationMode(selectedTab, hasReferenceImages);
+  const referenceImageCount = referenceImages.length;
   const selectedTabModels = useMemo(
-    () => getSelectedTabModels(quickModels, selectedTab),
-    [quickModels, selectedTab]
+    () => getCompatibleModels(quickModels, selectedTab, quickGenerationMode, referenceImageCount),
+    [quickGenerationMode, quickModels, referenceImageCount, selectedTab]
   );
   const selectedModel = useMemo(
     () => selectedTabModels.find((model) => model.id === selectedModelId) ?? null,
     [selectedModelId, selectedTabModels]
   );
   const selectedModelParamId = selectedModel?.id ?? null;
-  const referenceImage = referenceImages[0] ?? null;
-  const hasReferenceImages = referenceImages.length > 0;
-  const imageGenerationCapability: QuickGenerationMode = getQuickGenerationMode("image", hasReferenceImages);
-  const videoGenerationCapability: QuickGenerationMode = getQuickGenerationMode("video", hasReferenceImages);
-  const quickGenerationMode = getQuickGenerationMode(selectedTab, hasReferenceImages);
   const isQuickGenerationModel = Boolean(selectedModel && quickGenerationMode);
   const effectiveModelParams = useMemo(
     () => selectedModel
@@ -484,6 +490,13 @@ export default function WorkspacePage() {
     && isQuickGenerationModel
     && !submitBlockReason;
   const submitStatusMessage = submitError ?? submitBlockReason;
+
+  useEffect(() => {
+    setSelectedModelId((current) => {
+      if (selectedTabModels.some((model) => model.id === current)) return current;
+      return pickDefaultModelId(quickModels, selectedTab, quickGenerationMode, referenceImageCount);
+    });
+  }, [quickGenerationMode, quickModels, referenceImageCount, selectedTab, selectedTabModels]);
 
   useEffect(() => {
     writeCachedReferenceImages(referenceImages, user?.id);
@@ -561,8 +574,10 @@ export default function WorkspacePage() {
       if (cached) {
         setModels((items) => mergeStableList(items, cached.models, getModelKey));
         setSelectedModelId((current) => {
-          if (cached.models.some((item) => item.id === current)) return current;
-          return pickDefaultModelId(cached.models, selectedTabRef.current);
+          const tab = selectedTabRef.current;
+          const capability = getQuickGenerationMode(tab, hasReferenceImages);
+          if (getCompatibleModels(cached.models, tab, capability, referenceImages.length).some((item) => item.id === current)) return current;
+          return pickDefaultModelId(cached.models, tab, capability, referenceImages.length);
         });
         setModelsLoading(false);
       } else {
@@ -585,8 +600,10 @@ export default function WorkspacePage() {
             return;
           }
           setSelectedModelId((current) => {
-            if (data.some((item) => item.id === current)) return current;
-            return pickDefaultModelId(data, selectedTabRef.current);
+            const tab = selectedTabRef.current;
+            const capability = getQuickGenerationMode(tab, hasReferenceImages);
+            if (getCompatibleModels(data, tab, capability, referenceImages.length).some((item) => item.id === current)) return current;
+            return pickDefaultModelId(data, tab, capability, referenceImages.length);
           });
         })
         .finally(() => {
@@ -597,7 +614,7 @@ export default function WorkspacePage() {
       ignore = true;
       window.clearTimeout(timer);
     };
-  }, [imageGenerationCapability, videoGenerationCapability]);
+  }, [hasReferenceImages, imageGenerationCapability, referenceImages.length, videoGenerationCapability]);
 
   useEffect(() => {
     let ignore = false;
@@ -693,10 +710,11 @@ export default function WorkspacePage() {
   const handleTabChange = useCallback((tab: GenerationTab) => {
     selectedTabRef.current = tab;
     setSelectedTab(tab);
-    setSelectedModelId(pickDefaultModelId(quickModels, tab));
+    const capability = getQuickGenerationMode(tab, hasReferenceImages);
+    setSelectedModelId(pickDefaultModelId(quickModels, tab, capability, referenceImageCount));
     setParamsOpen(false);
     setSubmitError(null);
-  }, [quickModels]);
+  }, [hasReferenceImages, quickModels, referenceImageCount]);
 
   const handleCreateProject = useCallback(async () => {
     if (projectCreating) return;
