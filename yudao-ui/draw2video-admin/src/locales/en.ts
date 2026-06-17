@@ -588,6 +588,8 @@ export default {
         providerCode: 'Provider Code',
         providerName: 'Provider Name',
         apiBaseUrl: 'API URL',
+        apiKey: 'API Key',
+        secretKey: 'Secret Key',
         authType: 'Auth Type',
         healthStatus: 'Health Status',
         proxy: 'Proxy',
@@ -695,6 +697,7 @@ export default {
         options: 'Enter JSON array or comma-separated options',
         values: 'Enter one value or comma-separated values',
         regexPattern: 'Enter regular expression',
+        json: 'Enter JSON',
         copyAllCapabilities: 'Leave empty to copy all capabilities'
       },
       actions: {
@@ -718,8 +721,10 @@ export default {
       },
       fallbacks: {
         model: 'Model {id}',
+        provider: 'Provider {id}',
         channel: 'Channel {id}',
-        channelImplementation: 'Channel Implementation {id}'
+        channelImplementation: 'Channel Implementation {id}',
+        cloneName: '{name}-clone'
       },
       validation: {
         modelRequired: 'Model is required',

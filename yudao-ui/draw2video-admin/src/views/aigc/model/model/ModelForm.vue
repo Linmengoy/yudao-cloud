@@ -114,10 +114,10 @@ const formData = ref<AigcModelSaveReqVO>({
   remark: undefined
 })
 const formRules = reactive({
-  code: [{ required: true, message: '模型编码不能为空', trigger: 'blur' }],
-  name: [{ required: true, message: '模型名称不能为空', trigger: 'blur' }],
-  type: [{ required: true, message: '模型类型不能为空', trigger: 'change' }],
-  status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
+  code: [{ required: true, message: t('aigc.model.validation.modelCodeRequired'), trigger: 'blur' }],
+  name: [{ required: true, message: t('aigc.model.validation.modelNameRequired'), trigger: 'blur' }],
+  type: [{ required: true, message: t('aigc.model.validation.modelTypeRequired'), trigger: 'change' }],
+  status: [{ required: true, message: t('aigc.model.validation.statusRequired'), trigger: 'change' }]
 })
 
 const open = async (type: string, id?: number) => {

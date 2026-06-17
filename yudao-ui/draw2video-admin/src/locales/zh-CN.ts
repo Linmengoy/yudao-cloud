@@ -583,6 +583,8 @@ export default {
         providerCode: '渠道编码',
         providerName: '渠道名称',
         apiBaseUrl: 'API 地址',
+        apiKey: 'API Key',
+        secretKey: 'Secret Key',
         authType: '鉴权方式',
         healthStatus: '健康状态',
         proxy: '代理',
@@ -690,6 +692,7 @@ export default {
         options: '请输入 JSON 数组或逗号分隔选项',
         values: '请输入单个取值或逗号分隔取值',
         regexPattern: '请输入正则表达式',
+        json: '请输入 JSON',
         copyAllCapabilities: '不选则复制全部能力'
       },
       actions: {
@@ -713,8 +716,10 @@ export default {
       },
       fallbacks: {
         model: '模型 {id}',
+        provider: '渠道商 {id}',
         channel: '渠道 {id}',
-        channelImplementation: '渠道实现 {id}'
+        channelImplementation: '渠道实现 {id}',
+        cloneName: '{name}-克隆'
       },
       validation: {
         modelRequired: '模型不能为空',

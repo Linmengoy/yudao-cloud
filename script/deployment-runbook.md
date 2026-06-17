@@ -237,6 +237,15 @@ curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=p
 
 如果自动化或 runbook 仍给出 `-Target client`，审计必须失败，并在发布说明中记录未发布 `draw2video-client` 的原因。
 
+#311 发布候选 evidence 必须在候选提交后生成，避免手写 SHA 与实际构建输入不一致：
+
+```powershell
+./script/release-candidate-evidence.ps1 `
+  -CandidateIssues '#146','#173','#174'
+```
+
+证据文件必须记录完整 commit SHA、短 SHA、构建输入文件清单和 clean 证明。若构建输入文件存在未提交、未暂存或未跟踪变更，脚本必须失败，不能继续构建镜像。
+
 只发布用户端：
 
 ```powershell

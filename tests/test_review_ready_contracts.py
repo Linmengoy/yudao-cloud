@@ -123,7 +123,7 @@ class ReviewReadyContractTest(unittest.TestCase):
 
         self.assertIn("draw2video-guide:", compose)
         self.assertIn("image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}", compose)
-        self.assertIn('"8082:80"', compose)
+        self.assertIn('"${DRAW2VIDEO_GUIDE_PORT:-8082}:80"', compose)
         self.assertIn("healthcheck:", compose)
         self.assertIn("http://127.0.0.1/health", compose)
 
@@ -393,6 +393,45 @@ class ReviewReadyContractTest(unittest.TestCase):
             self.assertIn("curl -fsS -I http://127.0.0.1:8081/", doc)
             self.assertIn("healthy", doc)
             self.assertRegex(doc, r"(失败|failure|timeout|connection error|连接失败)")
+
+    def test_issue_258_prod_ssh_and_frontend_health_recovery_evidence_is_recorded(self):
+        evidence = read("script/docker/release-gate-evidence-20260617.md")
+        runbook = read("script/deployment-runbook.md")
+        frontend_compose = read("script/docker/docker-compose.frontend.yml")
+
+        for required in [
+            "#258 prod SSH and frontend health",
+            "tmp/manman2-prod-ssh-health-20260617-094428.log",
+            "tmp/manman2-prod-compose-default-fix-20260617-094545.log",
+            'ssh manman2 "docker version" -> exit 0',
+            "Docker Engine 29.1.3",
+            'ssh manman2 "docker compose version" -> exit 0',
+            "Docker Compose 2.40.3",
+            'ssh manman2 "curl -fsS -I http://127.0.0.1:8081/" -> HTTP/1.1 200 OK',
+            'ssh manman2 "curl -fsS -I http://127.0.0.1:13000/" -> HTTP/1.1 200 OK',
+            "Initial `docker compose ps draw2video-admin draw2video-client` failed",
+            "/opt/code/compose.yml",
+            "the same command then returned both frontend containers",
+        ]:
+            self.assertIn(required, evidence)
+
+        for required in [
+            "ssh manman2 \"cd /opt/code && docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml ps draw2video-client draw2video-admin\"",
+            "ssh manman2 \"curl -fsS -I http://127.0.0.1:13000/\"",
+            "ssh manman2 \"curl -fsS -I http://127.0.0.1:8081/\"",
+            "draw2video-client",
+            "draw2video-admin",
+            "发布证据必须包含 `docker compose ps` 的 `healthy` 状态",
+        ]:
+            self.assertIn(required, runbook)
+
+        for service in ["draw2video-admin", "draw2video-client"]:
+            with self.subTest(service=service):
+                service_block = self._yaml_service_block(frontend_compose, service)
+                self.assertIn("healthcheck:", service_block)
+                self.assertIn("interval: 10s", service_block)
+                self.assertIn("timeout: 5s", service_block)
+                self.assertIn("retries: 10", service_block)
 
     def test_issue_236_frontend_release_evidence_assigns_uncommitted_changes(self):
         evidence = read("script/docker/frontend-release-evidence-20260616.md")
@@ -785,7 +824,7 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn("<el-row v-else :gutter=\"20\">", channel_form)
         self.assertIn("sourceChannelId: id", channel_form)
         self.assertIn("status: CommonStatusEnum.DISABLE", channel_form)
-        self.assertIn("name: formData.value.name ? `${formData.value.name}-克隆` : undefined", channel_form)
+        self.assertIn("name: formData.value.name ? t('aigc.model.fallbacks.cloneName'", channel_form)
         self.assertIn("AigcModelChannelApi.cloneChannel({", channel_form)
         for field in [
             "sourceChannelId: Number(formData.value.sourceChannelId)",
