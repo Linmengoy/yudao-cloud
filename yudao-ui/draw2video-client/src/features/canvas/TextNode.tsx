@@ -9,6 +9,7 @@ import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, NodeEdi
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
+import { canvasNodeRunApi, isServerCanvasProjectId } from "@/features/canvas/canvas-node-run-api";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
@@ -228,6 +229,37 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
     setCandidateMode("preview");
     updateData({ status: "pending", taskId: null, errorMessage: null, generationStartedAt: startedAt, generationCompletedAt: null, elapsedMs: null });
 
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get("projectId");
+    const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    if (isServerCanvasProjectId(projectId)) {
+      try {
+        const run = await canvasNodeRunApi.runNode(projectId, id, {
+          clientId,
+          baseVersion: 0,
+          runId: clientId,
+          nodeType: "text",
+          generateType: "TEXT",
+          generateMode: "TEXT_GENERATE",
+          modelId: activeAigcModelId,
+          prompt,
+          inputParams: JSON.stringify({ previousContent: data.content }),
+          sync: false,
+        });
+        updateData({ taskId: String(run.taskId), taskStatus: run.status }, { flush: true });
+        return;
+      } catch (error) {
+        updateData({
+          status: "failed",
+          taskId: null,
+          errorMessage: error instanceof Error ? error.message : "文本任务提交失败",
+          generationCompletedAt: new Date().toISOString(),
+          elapsedMs: Date.now() - new Date(startedAt).getTime(),
+        });
+        return;
+      }
+    }
+
     try {
       const submit = await generationApi.generateText({
         modelId: activeAigcModelId,
@@ -269,7 +301,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [activeAigcModelId, aigcModels.loading, aigcModels.templateLoading, data.content, data.prompt, isGenerating, mentionOptions, updateData]);
+  }, [activeAigcModelId, aigcModels.loading, aigcModels.templateLoading, data.content, data.prompt, id, isGenerating, mentionOptions, updateData]);
 
   useEffect(() => {
     if (!resizing) return;

@@ -40,8 +40,11 @@ public class AigcTaskController {
     @Parameter(name = "id", description = "ID", required = true)
     @PreAuthorize("@ss.hasPermission('aigc:task:query')")
     public CommonResult<AigcTaskRespDTO> getTask(@RequestParam("id") Long id) {
-        AigcTaskDO task = taskService.validateTaskExists(id);
-        return success(BeanUtils.toBean(task, AigcTaskRespDTO.class));
+        taskService.validateTaskExists(id);
+        AigcTaskDO task = taskService.getTaskWithResult(id);
+        AigcTaskRespDTO respDTO = BeanUtils.toBean(task, AigcTaskRespDTO.class)
+                .setOutputData(null);
+        return success(respDTO);
     }
 
     @GetMapping("/page")

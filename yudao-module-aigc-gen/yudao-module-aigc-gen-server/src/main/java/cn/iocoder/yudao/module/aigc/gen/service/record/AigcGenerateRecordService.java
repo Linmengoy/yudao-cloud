@@ -10,6 +10,8 @@ import cn.iocoder.yudao.module.aigc.gen.dal.dataobject.AigcGenerateRecordDO;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateCallbackReqDTO;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateSubmitReqDTO;
 
+import java.util.List;
+
 public interface AigcGenerateRecordService {
 
     AigcGenerateRecordDO createGenerateRecord(AigcGenerateSubmitReqDTO reqDTO);
@@ -19,6 +21,8 @@ public interface AigcGenerateRecordService {
     AigcGenerateRecordDO getGenerateRecord(Long id);
 
     AigcGenerateRecordDO getGenerateRecordByTaskId(Long taskId);
+
+    List<AigcGenerateRecordDO> getGenerateRecordListByTaskIds(List<Long> taskIds);
 
     AigcGenerateRecordDO validateGenerateRecordExists(Long id);
 

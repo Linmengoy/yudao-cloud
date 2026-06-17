@@ -9,6 +9,8 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasMemberUpdateRoleReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunBatchSyncReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunBatchSyncRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunSyncReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationRespVO;
@@ -49,6 +51,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -257,6 +260,20 @@ public class AigcCanvasAppController {
         reqVO.setProjectId(id);
         reqVO.setNodeId(nodeId);
         return success(nodeRunService.syncNodeRun(reqVO, getLoginUserId()));
+    }
+
+    @PostMapping("/projects/{id}/nodes/run/sync")
+    @Operation(summary = "批量同步画布节点运行结果")
+    public CommonResult<AigcCanvasNodeRunBatchSyncRespVO> syncNodeRuns(@PathVariable("id") Long id,
+                                                                      @Valid @RequestBody AigcCanvasNodeRunBatchSyncReqVO reqVO) {
+        reqVO.setProjectId(id);
+        return success(nodeRunService.syncNodeRuns(reqVO, getLoginUserId()));
+    }
+
+    @GetMapping("/projects/{id}/generation-runs/events")
+    @Operation(summary = "订阅画布项目生成任务事件")
+    public SseEmitter subscribeGenerationRunEvents(@PathVariable("id") Long id) {
+        return nodeRunService.subscribeGenerationRunEvents(id, getLoginUserId());
     }
 
     private void fillProjectPermissions(AigcCanvasProjectRespVO project, AigcCanvasMemberDO member) {

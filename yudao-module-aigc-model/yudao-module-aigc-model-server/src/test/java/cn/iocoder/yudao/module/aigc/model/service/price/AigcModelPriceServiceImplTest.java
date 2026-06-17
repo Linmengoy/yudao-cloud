@@ -21,6 +21,7 @@ import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServiceException;
@@ -95,6 +96,38 @@ public class AigcModelPriceServiceImplTest extends BaseDbUnitTest {
         assertEquals(0, new BigDecimal("5.0000000").compareTo(respDTO.getCostPrice()));
         assertEquals(new BigDecimal("1.8"), respDTO.getPriceDetail().get("finalSaleMultiplier"));
         assertEquals(new BigDecimal("2.5"), respDTO.getPriceDetail().get("finalCostMultiplier"));
+    }
+
+    @Test
+    public void testCalculatePrice_parameterCombinationsProduceDifferentSaleAndCostForSameModel() {
+        AigcModelDO model = createModel();
+        priceMapper.insert(createPrice(model.getId(), AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode(),
+                AigcModelBillingUnitEnum.PER_TASK.getCode(), "2.000000", "4.000000",
+                "{\"version\":2,\"paramMultipliers\":["
+                        + "{\"param\":\"quality\",\"operator\":\"eq\",\"value\":\"hd\",\"saleMultiplier\":1.5,\"costMultiplier\":2.0},"
+                        + "{\"param\":\"resolution\",\"operator\":\"in\",\"values\":[\"1080p\",\"4k\"],\"saleMultiplier\":1.25,\"costMultiplier\":1.75}"
+                        + "]}"));
+
+        AigcModelPriceCalculateRespDTO standard = priceService.calculatePrice(new AigcModelPriceCalculateReqDTO()
+                .setModelId(model.getId()).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())
+                .setParams(Map.of("quality", "standard", "resolution", "720p")));
+        AigcModelPriceCalculateRespDTO hd1080p = priceService.calculatePrice(new AigcModelPriceCalculateReqDTO()
+                .setModelId(model.getId()).setCapability(AigcModelCapabilityEnum.TEXT_TO_IMAGE.getCode())
+                .setParams(Map.of("quality", "hd", "resolution", "1080p")));
+
+        assertEquals(standard.getPriceRuleId(), hd1080p.getPriceRuleId());
+        assertEquals(0, new BigDecimal("4.000000").compareTo(standard.getSalePrice()));
+        assertEquals(0, new BigDecimal("2.000000").compareTo(standard.getCostPrice()));
+        assertEquals(0, new BigDecimal("7.5000000000").compareTo(hd1080p.getSalePrice()));
+        assertEquals(0, new BigDecimal("7.0000000000").compareTo(hd1080p.getCostPrice()));
+        assertEquals(new BigDecimal("1.875"), hd1080p.getPriceDetail().get("finalSaleMultiplier"));
+        assertEquals(new BigDecimal("3.500"), hd1080p.getPriceDetail().get("finalCostMultiplier"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> matchedRules = (List<Map<String, Object>>) hd1080p.getPriceDetail().get("matchedRules");
+        assertEquals(2, matchedRules.size());
+        assertEquals("quality", matchedRules.get(0).get("param"));
+        assertEquals("resolution", matchedRules.get(1).get("param"));
     }
 
     @Test

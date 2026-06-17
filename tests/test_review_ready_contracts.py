@@ -108,22 +108,29 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn('[ValidateSet("all", "admin", "client", "guide")]', ps1)
         self.assertIn('"draw2video-guide:$ImageTag"', ps1)
         self.assertIn('$GuideDir = Join-Path $RootDir "yudao-ui\\draw2video-guide"', ps1)
+        self.assertIn('$TestImageVersionFile = Join-Path $RootDir "script\\docker\\test-image-version"', ps1)
+        self.assertIn("function Get-TestImageVersion", ps1)
+        self.assertIn('$ImageTag = Get-TestImageVersion', ps1)
         self.assertIn("git -C $RootDir rev-parse --short=12 HEAD", ps1)
 
         self.assertIn("--target all|admin|client|guide", sh)
         self.assertIn('all|admin|client|guide)', sh)
         self.assertIn('"draw2video-guide:$IMAGE_TAG"', sh)
+        self.assertIn('TEST_IMAGE_VERSION_FILE="$ROOT_DIR/script/docker/test-image-version"', sh)
+        self.assertIn("read_test_image_version", sh)
+        self.assertIn('IMAGE_TAG="$(read_test_image_version)"', sh)
         self.assertIn('git -C "$ROOT_DIR" rev-parse --short=12 HEAD', sh)
 
         self.assertIn("draw2video-guide:", compose)
         self.assertIn("image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}", compose)
-        self.assertIn('"8082:80"', compose)
+        self.assertIn('"${DRAW2VIDEO_GUIDE_PORT:-8082}:80"', compose)
         self.assertIn("healthcheck:", compose)
         self.assertIn("http://127.0.0.1/health", compose)
 
         self.assertIn("--target guide", runbook)
-        self.assertIn("git rev-parse --short=12 HEAD", runbook)
-        self.assertIn("FRONTEND_IMAGE_TAG=<previous-stable-sha>", runbook)
+        self.assertIn("script/docker/test-image-version", runbook)
+        self.assertIn("v0.0.1", runbook)
+        self.assertIn("FRONTEND_IMAGE_TAG=<previous-test-version>", runbook)
         self.assertIn("curl -fsS http://127.0.0.1:8082/guide/", runbook)
 
     def test_issue_72_asset_direct_upload_thumbnail_contract_is_end_to_end(self):
@@ -326,8 +333,10 @@ class ReviewReadyContractTest(unittest.TestCase):
         for required in [
             "## 发布前门禁",
             "回滚版本明确",
-            "记录当前 commit SHA 和上一个稳定 commit SHA",
+            "test 记录当前/上一稳定测试镜像版本",
             "### 回滚版本从哪里取",
+            "script/docker/test-image-version",
+            "v0.0.1",
             "git rev-parse --short=12 HEAD",
             "workflow 页面显示的 commit 短 SHA",
             "git fetch gitea --tags",
@@ -385,6 +394,45 @@ class ReviewReadyContractTest(unittest.TestCase):
             self.assertIn("healthy", doc)
             self.assertRegex(doc, r"(失败|failure|timeout|connection error|连接失败)")
 
+    def test_issue_258_prod_ssh_and_frontend_health_recovery_evidence_is_recorded(self):
+        evidence = read("script/docker/release-gate-evidence-20260617.md")
+        runbook = read("script/deployment-runbook.md")
+        frontend_compose = read("script/docker/docker-compose.frontend.yml")
+
+        for required in [
+            "#258 prod SSH and frontend health",
+            "tmp/manman2-prod-ssh-health-20260617-094428.log",
+            "tmp/manman2-prod-compose-default-fix-20260617-094545.log",
+            'ssh manman2 "docker version" -> exit 0',
+            "Docker Engine 29.1.3",
+            'ssh manman2 "docker compose version" -> exit 0',
+            "Docker Compose 2.40.3",
+            'ssh manman2 "curl -fsS -I http://127.0.0.1:8081/" -> HTTP/1.1 200 OK',
+            'ssh manman2 "curl -fsS -I http://127.0.0.1:13000/" -> HTTP/1.1 200 OK',
+            "Initial `docker compose ps draw2video-admin draw2video-client` failed",
+            "/opt/code/compose.yml",
+            "the same command then returned both frontend containers",
+        ]:
+            self.assertIn(required, evidence)
+
+        for required in [
+            "ssh manman2 \"cd /opt/code && docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml ps draw2video-client draw2video-admin\"",
+            "ssh manman2 \"curl -fsS -I http://127.0.0.1:13000/\"",
+            "ssh manman2 \"curl -fsS -I http://127.0.0.1:8081/\"",
+            "draw2video-client",
+            "draw2video-admin",
+            "发布证据必须包含 `docker compose ps` 的 `healthy` 状态",
+        ]:
+            self.assertIn(required, runbook)
+
+        for service in ["draw2video-admin", "draw2video-client"]:
+            with self.subTest(service=service):
+                service_block = self._yaml_service_block(frontend_compose, service)
+                self.assertIn("healthcheck:", service_block)
+                self.assertIn("interval: 10s", service_block)
+                self.assertIn("timeout: 5s", service_block)
+                self.assertIn("retries: 10", service_block)
+
     def test_issue_236_frontend_release_evidence_assigns_uncommitted_changes(self):
         evidence = read("script/docker/frontend-release-evidence-20260616.md")
 
@@ -414,6 +462,215 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn("record the exclusion reason", evidence)
         self.assertIn("previous stable image tag", evidence)
         self.assertIn("latest` is not acceptable rollback evidence", evidence)
+
+    def test_issue_293_generation_run_sse_gateway_non_buffering_gate_is_documented(self):
+        runbook = read("script/deployment-runbook.md")
+
+        for required in [
+            "## GenerationRun SSE 发布门禁",
+            "proxy_buffering off;",
+            "proxy_read_timeout 3600s;",
+            "X-Accel-Buffering no",
+            "flush_interval -1",
+            "read_timeout 1h",
+            "Content-Type: text/event-stream",
+            "generation-run-heartbeat",
+            "resync-required",
+        ]:
+            self.assertIn(required, runbook)
+
+    def test_issue_294_generation_run_sse_limits_heartbeat_cleanup_and_resync_metrics(self):
+        sse = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/websocket/canvas/AigcCanvasGenerationRunSseService.java"
+        )
+        hook = read("yudao-ui/draw2video-client/src/features/canvas/use-canvas-generation-run-events.ts")
+
+        for required in [
+            "MAX_PROJECT_CONNECTIONS = 6",
+            "generation-run-connection-limit",
+            "HEARTBEAT_INTERVAL_SECONDS = 15L",
+            "heartbeatFailureCount.incrementAndGet()",
+            "log.warn(\"[sendHeartbeat]",
+            "getProjectConnectionCount(Long projectId)",
+            "getHeartbeatFailureCount()",
+            "getResyncRequiredCount()",
+            "sendResyncRequired(projectId, emitter, \"stream-connected\")",
+        ]:
+            self.assertIn(required, sse)
+
+        self.assertIn('event.type === "resync-required"', hook)
+        self.assertIn('event.type === "generation-run-connection-limit"', hook)
+        self.assertIn("void syncProjectGenerationRuns();", hook)
+
+    def test_issue_295_generation_run_batch_sync_degrades_with_truncation_and_partial_failures(self):
+        req = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/controller/app/vo/canvas/AigcCanvasNodeRunBatchSyncReqVO.java"
+        )
+        resp = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/controller/app/vo/canvas/AigcCanvasNodeRunBatchSyncRespVO.java"
+        )
+        service = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/service/canvas/AigcCanvasNodeRunServiceImpl.java"
+        )
+        api = read("yudao-ui/draw2video-client/src/features/canvas/canvas-node-run-api.ts")
+        hook = read("yudao-ui/draw2video-client/src/features/canvas/use-canvas-generation-run-events.ts")
+
+        self.assertNotIn("@Size(max = 20", req)
+        for field in ["requestedCount", "processedCount", "limit", "failedCount"]:
+            self.assertIn(f"private Integer {field};", resp)
+        self.assertIn("private Boolean truncated;", resp)
+        self.assertIn("BATCH_SYNC_LIMIT = 20", service)
+        self.assertIn(".limit(BATCH_SYNC_LIMIT)", service)
+        self.assertIn(".setTruncated(requestedCount > BATCH_SYNC_LIMIT)", service)
+        self.assertIn(".setFailedCount(Math.toIntExact(failedCount))", service)
+        self.assertIn("buildFailedNodeRunResp(reqVO, ex.getCode(), ex.getMessage())", service)
+        self.assertIn("syncProjectNodeRuns", api)
+        self.assertIn("slice(0, 20)", hook)
+        self.assertIn("result.success === false", hook)
+
+    def test_issue_296_generation_run_keeps_old_canvas_nodes_compatible(self):
+        service = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/service/canvas/AigcCanvasNodeRunServiceImpl.java"
+        )
+        page = read("yudao-ui/draw2video-client/src/features/canvas/CanvasFlowPage.tsx")
+
+        self.assertIn("generationRunMapper.selectByProjectNodeAndTask", service)
+        self.assertIn("if (generationRun == null) {", service)
+        self.assertIn(".setRunId(extractRunIdFromClientRequestId(reqVO, result.getClientRequestId()))", service)
+        self.assertIn("validateResultBelongsToCanvasNode(reqVO, result)", service)
+        self.assertIn("CANVAS_NODE_RUN_TASK_NOT_EXISTS", service)
+        self.assertIn("return data.status === \"pending\" || (typeof data.taskId === \"string\" && data.taskId.length > 0);", page)
+        self.assertIn("taskId: typeof d.taskId === \"string\" ? d.taskId : null", page)
+
+    def test_issue_297_generation_run_release_gate_separates_ws_sse_rollback_and_metrics(self):
+        runbook = read("script/deployment-runbook.md")
+        page = read("yudao-ui/draw2video-client/src/features/canvas/CanvasFlowPage.tsx")
+        hook = read("yudao-ui/draw2video-client/src/features/canvas/use-canvas-generation-run-events.ts")
+
+        for required in [
+            "WebSocket 继续只负责画布协作编辑",
+            "GenerationRun SSE 只负责生成任务状态",
+            "不能重复应用终态 operation",
+            "单节点 `/run/sync`",
+            "项目级 `/nodes/run/sync` 批量同步",
+            "前端无 EventSource/连接失败时的项目级批量同步降级",
+            "关闭前端 SSE 开关",
+            "恢复单节点同步主路径",
+            "连接泄漏",
+            "心跳失败",
+            "批量同步失败",
+            "终态应用失败",
+        ]:
+            self.assertIn(required, runbook)
+
+        self.assertIn("useCanvasGenerationRunEvents(", page)
+        self.assertIn("applyGenerationRunOperation", page)
+        self.assertIn("onOperationRef.current(event.operation)", hook)
+        self.assertIn("await readEventStream(response", hook)
+
+    def test_issue_280_aigc_model_release_gate_uses_immutable_tags_and_health_evidence(self):
+        test_compose = read("script/docker/docker-compose-micro.yml")
+        prod_compose = read("script/docker/docker-compose-micro-prod.yml")
+        test_workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
+        prod_workflow = read(".gitea/workflows/yudao-micro-cicd-prod.yml")
+        gate_script = read("script/docker/verify-release-evidence.sh")
+        runbook = read("script/deployment-runbook.md")
+
+        for path, compose in [
+            ("script/docker/docker-compose-micro.yml", test_compose),
+            ("script/docker/docker-compose-micro-prod.yml", prod_compose),
+        ]:
+            with self.subTest(path=path):
+                block = self._yaml_service_block(compose, "aigc-model")
+                self.assertIn("image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-model:${MICRO_IMAGE_TAG:-latest}", block)
+                self.assertNotIn("image: aigc-model:latest", block)
+                self.assertIn("healthcheck:", block)
+                self.assertIn("http://127.0.0.1:48090/actuator/health", block)
+
+        self.assertIn('service="${INPUT_SERVICE:-aigc-gen}"', test_workflow)
+        self.assertIn('aigc-model) module="yudao-module-aigc-model/yudao-module-aigc-model-server" ;;', test_workflow)
+        self.assertIn('image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', test_workflow)
+        self.assertIn("MICRO_IMAGE_TAG=${image_tag}", test_workflow)
+        self.assertIn("REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root", test_workflow)
+        self.assertIn("Push image to Gitea registry", test_workflow)
+        self.assertIn("docker compose -f script/docker/docker-compose-micro.yml pull", test_workflow)
+        self.assertIn("--no-build --no-deps --force-recreate", test_workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh preflight", test_workflow)
+        self.assertIn("SERVICE_HEALTH_URL=\"http://127.0.0.1:48090/actuator/health\"", test_workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh verify-service-health", test_workflow)
+        self.assertIn("docker compose -f script/docker/docker-compose-micro.yml logs --tail=200 aigc-model", test_workflow)
+
+        self.assertIn('image_tag="$(git rev-parse --short=12 HEAD)"', prod_workflow)
+        self.assertIn("MICRO_IMAGE_TAG=${image_tag}", prod_workflow)
+        self.assertIn("REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root", prod_workflow)
+        self.assertIn("Push image to Gitea registry", prod_workflow)
+        self.assertIn("docker compose -f docker-compose-micro.yml pull", prod_workflow)
+        self.assertIn("--no-build --no-deps --force-recreate", prod_workflow)
+        self.assertIn("previous_stable_image_tag", prod_workflow)
+        self.assertIn("bash script/docker/verify-release-evidence.sh preflight", prod_workflow)
+        self.assertIn("SERVICE_HEALTH_URL=\"http://127.0.0.1:48090/actuator/health\"", prod_workflow)
+        self.assertIn("verify-release-evidence.sh\" verify-service-health", prod_workflow)
+        self.assertIn("MICRO_IMAGE_TAG=<previous-stable-sha>", prod_workflow)
+
+        for required in [
+            "reject_latest_tag \"$MICRO_IMAGE_TAG\" \"MICRO_IMAGE_TAG\"",
+            "MICRO_IMAGE_TAG must be a semantic test image tag such as v0.0.1",
+            "MICRO_IMAGE_TAG must be an immutable Git SHA tag",
+            "previous_stable_image_tag is required for rollback evidence",
+            "previous_stable_image_tag must be a Git SHA tag",
+            "verify_service_health()",
+            "docker image inspect \"${item}:${MICRO_IMAGE_TAG}\"",
+            "docker pull \"$previous_ref\"",
+            "rollback command: MICRO_IMAGE_TAG=${previous_tag}",
+        ]:
+            self.assertIn(required, gate_script)
+
+        for required in [
+            "`aigc-model` 发布证据必须包含",
+            "docker image inspect aigc-model:<tag>",
+            "SERVICE_HEALTH_URL=http://127.0.0.1:48090/actuator/health",
+            "MICRO_IMAGE_TAG=<previous-stable-tag>",
+            "不要把 `latest` 当作生产回滚版本",
+        ]:
+            self.assertIn(required, runbook)
+
+    def test_issue_279_aigc_model_channel_test_gate_rebuilds_api_and_checks_error_codes(self):
+        gate = read("script/aigc-model-channel-test-gate.ps1")
+        constants = read(
+            "yudao-module-aigc-model/yudao-module-aigc-model-api/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/model/enums/ErrorCodeConstants.java"
+        )
+        channel_test = read(
+            "yudao-module-aigc-model/yudao-module-aigc-model-server/src/test/java/"
+            "cn/iocoder/yudao/module/aigc/model/service/channel/AigcModelChannelServiceImplTest.java"
+        )
+
+        self.assertIn('$ErrorActionPreference = "Stop"', gate)
+        self.assertIn(".m2\\repository\\cn\\iocoder\\cloud\\yudao-module-aigc-model-api", gate)
+        self.assertIn("Remove-Item -LiteralPath $apiArtifact -Recurse -Force", gate)
+        self.assertIn("mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-api -am install -DskipTests", gate)
+        self.assertIn(
+            'mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-server -am '
+            '"-Dtest=AigcModelPriceServiceImplTest,AigcModelChannelServiceImplTest" '
+            '"-Dsurefire.failIfNoSpecifiedTests=false" test',
+            gate,
+        )
+
+        for constant, code in [
+            ("MODEL_CHANNEL_DUPLICATE", "1_041_001_102"),
+            ("MODEL_CHANNEL_REFERENCED_BY_ROUTE", "1_041_001_104"),
+        ]:
+            with self.subTest(constant=constant):
+                self.assertIn(f"ErrorCode {constant} = new ErrorCode({code}", constants)
+                self.assertIn(f"import static cn.iocoder.yudao.module.aigc.model.enums.ErrorCodeConstants.{constant};", channel_test)
+                self.assertIn(f"assertEquals({constant}.getCode(), exception.getCode());", channel_test)
+
+        self.assertNotIn("NoSuchFieldError", gate)
 
     def test_issue_214_admin_asset_pages_use_i18n_keys_without_chinese_literals(self):
         target_paths = [
@@ -567,7 +824,7 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn("<el-row v-else :gutter=\"20\">", channel_form)
         self.assertIn("sourceChannelId: id", channel_form)
         self.assertIn("status: CommonStatusEnum.DISABLE", channel_form)
-        self.assertIn("name: formData.value.name ? `${formData.value.name}-克隆` : undefined", channel_form)
+        self.assertIn("name: formData.value.name ? t('aigc.model.fallbacks.cloneName'", channel_form)
         self.assertIn("AigcModelChannelApi.cloneChannel({", channel_form)
         for field in [
             "sourceChannelId: Number(formData.value.sourceChannelId)",

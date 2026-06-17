@@ -12,6 +12,8 @@ import jakarta.annotation.Resource;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 
 @RestController
@@ -31,6 +33,12 @@ public class AigcGenerateApiImpl implements AigcGenerateApi {
     public CommonResult<AigcGenerateResultRespDTO> getResult(Long taskId) {
         AigcGenerateRecordDO record = generateRecordService.getGenerateRecordByTaskId(taskId);
         return success(BeanUtils.toBean(record, AigcGenerateResultRespDTO.class));
+    }
+
+    @Override
+    public CommonResult<List<AigcGenerateResultRespDTO>> getResults(List<Long> taskIds) {
+        return success(BeanUtils.toBean(generateRecordService.getGenerateRecordListByTaskIds(taskIds),
+                AigcGenerateResultRespDTO.class));
     }
 
     @Override

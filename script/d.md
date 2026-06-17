@@ -170,7 +170,7 @@ java -jar .\yudao-module-aigc-workflow\yudao-module-aigc-workflow-server\target\
 
 - manman 是测试环境，manman2 是生产环境。
 - 前端必须在本机 Docker Desktop 构建，服务器不做前端打包。
-- Registry 模式：本机执行 `docker buildx build --load`，按 `test-<commit>` 或 `prod-<commit>` 生成镜像标签，推送到 Gitea Container Registry `111.228.39.103:3000/root/draw2video-*:<env>-<commit>`，服务器执行 `docker compose --env-file .frontend-<env>.env pull` 和 `docker compose --env-file .frontend-<env>.env up -d --no-build --force-recreate`。
+- Registry 模式：本机执行 `docker buildx build --load`，test 按 `script/docker/test-image-version` 生成镜像标签，当前从 `v0.0.1` 开始；prod 按 `prod-<commit>` 生成镜像标签。镜像推送到 Gitea Container Registry `111.228.39.103:3000/root/draw2video-*:<tag>`，服务器执行 `docker compose --env-file .frontend-<env>.env pull` 和 `docker compose --env-file .frontend-<env>.env up -d --no-build --force-recreate`。
 - 脚本会同步 `/opt/code/.frontend-test.env` 或 `/opt/code/.frontend-prod.env`，用于注入当前环境的网关、API、WebSocket、租户和终端变量。
 - manman 与 Gitea Registry 在同一台机器上，脚本默认本机推送到 `111.228.39.103:3000/root`，manman 远端拉取使用 `127.0.0.1:3000/root`。
 - manman2 远端拉取使用 `111.228.39.103:3000/root`。

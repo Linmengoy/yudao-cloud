@@ -72,7 +72,12 @@ const formRef = ref()
 const modelList = ref<AigcModelRespVO[]>([])
 const providerList = ref<AigcModelProviderRespVO[]>([])
 const formData = ref<AigcModelChannelSaveReqVO & { sourceChannelId?: number }>({ id: undefined, sourceChannelId: undefined, modelId: undefined, providerId: undefined, providerModel: undefined, name: undefined, costPrice: 0, currencyType: 'POINT', weight: 100, priority: 100, maxConcurrent: undefined, timeoutSeconds: undefined, status: CommonStatusEnum.ENABLE, remark: undefined })
-const formRules = reactive({ modelId: [{ required: true, message: '业务模型不能为空', trigger: 'change' }], providerId: [{ required: true, message: '渠道商不能为空', trigger: 'change' }], providerModel: [{ required: true, message: '上游模型不能为空', trigger: 'blur' }], status: [{ required: true, message: '状态不能为空', trigger: 'change' }] })
+const formRules = reactive({
+  modelId: [{ required: true, message: t('aigc.model.validation.businessModelRequired'), trigger: 'change' }],
+  providerId: [{ required: true, message: t('aigc.model.validation.providerRequired'), trigger: 'change' }],
+  providerModel: [{ required: true, message: t('aigc.model.validation.upstreamModelRequired'), trigger: 'blur' }],
+  status: [{ required: true, message: t('aigc.model.validation.statusRequired'), trigger: 'change' }]
+})
 
 const open = async (type: string, id?: number, modelId?: number) => {
   dialogVisible.value = true
@@ -96,7 +101,7 @@ const open = async (type: string, id?: number, modelId?: number) => {
           id: undefined,
           sourceChannelId: id,
           status: CommonStatusEnum.DISABLE,
-          name: formData.value.name ? `${formData.value.name}-克隆` : undefined
+          name: formData.value.name ? t('aigc.model.fallbacks.cloneName', { name: formData.value.name }) : undefined
         }
       }
     } finally {

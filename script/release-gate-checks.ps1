@@ -67,7 +67,7 @@ if (Test-Selected "stable-versions") {
         git -C $repoRoot tag --sort=-creatordate | Select-String '^prod-stable-' | Select-Object -First 10
     }
     $results += Invoke-Logged "frontend-running-images-test" {
-        $remoteCommand = 'client=$(docker inspect draw2video-client --format ''{{.Config.Image}}''); admin=$(docker inspect draw2video-admin --format ''{{.Config.Image}}''); echo client=$client; echo admin=$admin; docker images --format ''{{.Repository}}:{{.Tag}}'' | grep -E ''draw2video-(client|admin)'' | head -20; case "$client" in *:test-[0-9a-f]*) ;; *) echo invalid-test-client-tag=$client; exit 2;; esac; case "$admin" in *:test-[0-9a-f]*) ;; *) echo invalid-test-admin-tag=$admin; exit 2;; esac'
+        $remoteCommand = 'client=$(docker inspect draw2video-client --format ''{{.Config.Image}}''); admin=$(docker inspect draw2video-admin --format ''{{.Config.Image}}''); echo client=$client; echo admin=$admin; docker images --format ''{{.Repository}}:{{.Tag}}'' | grep -E ''draw2video-(client|admin)'' | head -20; client_tag=${client##*:}; admin_tag=${admin##*:}; echo "$client_tag" | grep -Eq "^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$" || { echo invalid-test-client-tag=$client; exit 2; }; echo "$admin_tag" | grep -Eq "^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$" || { echo invalid-test-admin-tag=$admin; exit 2; }'
         ssh -o BatchMode=yes -o ConnectTimeout=$TimeoutSeconds $TestHost $remoteCommand
     }
     $results += Invoke-Logged "frontend-running-images-prod" {

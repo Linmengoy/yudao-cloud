@@ -43,8 +43,9 @@ import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
 import { filterAigcModelParams } from "@/features/generation/aigc-model-param-utils";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
-import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, isServerCanvasProjectId } from "@/features/canvas/canvas-node-run-api";
 import { getMyAsset } from "@/features/assets/asset-api";
+import { attachImageAsset } from "@/features/canvas/canvas-asset-upload";
 import { getAssetOriginalExpireTime, getAssetOriginalUrl } from "@/features/assets/asset-dictionaries";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
@@ -366,7 +367,7 @@ function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {
 function buildServerInputParams(params: Record<string, unknown>, ids: string[], snapshots: ResultNodeData["inputImages"]) {
   return JSON.stringify({
     ...params,
-    inputImageIds: ids,
+    localInputImageIds: ids,
     inputImageUrls: snapshots
       .map((image) => image.dataUrl)
       .filter((url) => /^https?:\/\//.test(url)),
@@ -379,6 +380,61 @@ function buildServerInputParams(params: Record<string, unknown>, ids: string[], 
       mimeType,
     })),
   });
+}
+
+async function dataUrlToFile(dataUrl: string, fileName: string, fallbackMimeType: string) {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: blob.type || fallbackMimeType });
+}
+
+async function ensureReferenceAssets(
+  promptNodeId: string,
+  ctx: { nodes: AppNode[]; edges: AppEdge[] },
+  options: {
+    projectId: string | number | null;
+    mediaStoreScope: Parameters<typeof saveImage>[1];
+    setNodes: (payload: AppNode[] | ((nodes: AppNode[]) => AppNode[])) => void;
+  }
+) {
+  const incoming = ctx.edges.filter((edge) => edge.target === promptNodeId);
+  const uploadTargets = incoming
+    .map((edge) => ctx.nodes.find((node) => node.id === edge.source))
+    .filter((node): node is AppNode => node?.type === "image")
+    .filter((node) => {
+      const data = node.data as ImageNodeData;
+      return !data.assetId && Boolean(data.dataUrl);
+    });
+
+  if (uploadTargets.length === 0) return ctx;
+
+  const uploadedByNodeId = new Map<string, ImageNodeData>();
+  for (const node of uploadTargets) {
+    const data = node.data as ImageNodeData;
+    const file = await dataUrlToFile(data.dataUrl, data.fileName || `${data.imageId}.png`, data.mimeType || "image/png");
+    const uploaded = await attachImageAsset(file, data);
+    uploadedByNodeId.set(node.id, uploaded);
+    await saveImage(uploaded, options.mediaStoreScope);
+    if (options.projectId && uploaded.assetId) {
+      await canvasApi.bindNodeAsset(options.projectId, node.id, {
+        assetId: uploaded.assetId,
+        assetVersionId: uploaded.assetVersionId ?? null,
+        usageType: "reference",
+      });
+    }
+  }
+
+  const nextNodes: AppNode[] = ctx.nodes.map((node) => {
+    const uploaded = uploadedByNodeId.get(node.id);
+    return uploaded && node.type === "image" ? { ...node, data: { ...(node.data as ImageNodeData), ...uploaded } } : node;
+  });
+  options.setNodes((nodes) =>
+    nodes.map((node) => {
+      const uploaded = uploadedByNodeId.get(node.id);
+      return uploaded && node.type === "image" ? { ...node, data: { ...(node.data as ImageNodeData), ...uploaded } } : node;
+    })
+  );
+  return { nodes: nextNodes, edges: ctx.edges };
 }
 
 function isDuplicateOrInvalidNodeCreate(error: unknown) {
@@ -509,6 +565,16 @@ function ParamSegmented<T extends string>({
 export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodeProps) {
   const { user } = useAuth();
   const { setNodes, setEdges, getNode, getNodes, getEdges, getViewport, setViewport } = useReactFlow();
+  const setAppNodes = useCallback(
+    (payload: AppNode[] | ((nodes: AppNode[]) => AppNode[])) => {
+      if (typeof payload === "function") {
+        setNodes((nodes) => payload(nodes as AppNode[]));
+        return;
+      }
+      setNodes(payload);
+    },
+    [setNodes]
+  );
   const composerWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
   const toolbarWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -531,7 +597,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
   const paramsPopoverRef = useRef<HTMLDivElement>(null);
   const countPopoverRef = useRef<HTMLDivElement>(null);
   const nodeMenuRef = useRef<HTMLDivElement>(null);
-  const activeRunPollRef = useRef<string | null>(null);
   const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number } | null>(null);
   const [visibleImageInset, setVisibleImageInset] = useState<{ left: number } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -708,74 +773,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     };
   }, [data.assetUrlExpireTime, data.fileName, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.primaryOutputId, data.width, getNode, id, outputs, params, updateRuntimeData]);
 
-  const waitAndApplyServerRun = useCallback(async (projectId: string | number, taskId: number, startedAt: string) => {
-    const pollKey = `${projectId}:${id}:${taskId}`;
-    if (activeRunPollRef.current === pollKey) return;
-    activeRunPollRef.current = pollKey;
-    try {
-      const result = await waitCanvasNodeRunResult(projectId, id, {
-        taskId,
-        baseVersion: 0,
-        nodeType: "image",
-      });
-      const patch = getCanvasNodeRunPatch(result, id);
-      if (patch) {
-        const nextPatch = patch as Partial<ImageNodeData>;
-        if (nextPatch.outputs?.length) {
-          const hydrated = await hydrateImageOutputs(nextPatch.outputs, {
-            previewUrl: data.previewUrl ?? data.outputPreviewUrl ?? null,
-            width: nextPatch.width ?? data.width,
-            height: nextPatch.height ?? data.height,
-            mimeType: nextPatch.mimeType ?? data.mimeType,
-            fileName: nextPatch.fileName ?? data.fileName,
-          });
-          nextPatch.outputs = hydrated.outputs;
-          nextPatch.assetUrlExpireTime = hydrated.assetUrlExpireTime;
-          const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
-          const mergedOutputs = mergeImageOutputs(nextPatch.outputs, previousOutputs);
-          const primary = getPrimaryOutput(mergedOutputs, nextPatch.primaryOutputId);
-          if (primary) {
-            Object.assign(nextPatch, buildPrimaryPatch(primary, nextPatch.params ?? params));
-            nextPatch.outputs = mergedOutputs;
-            nextPatch.primaryOutputId = primary.id;
-            nextPatch.generationCount = normalizeGenerationCount(nextPatch.params?.n ?? data.generationCount);
-            nextPatch.outputsExpanded = nextPatch.outputs.length > 1 && hydrated.outputs.length > 1;
-          }
-        } else if (nextPatch.previewUrl || nextPatch.outputPreviewUrl) {
-          const previewUrl = String(nextPatch.previewUrl ?? nextPatch.outputPreviewUrl);
-          const output: ImageNodeOutput = {
-            id: getOutputId(nextPatch.outputAssetId ?? nextPatch.assetId ?? null, previewUrl, 0),
-            previewUrl,
-            assetId: nextPatch.outputAssetId ?? nextPatch.assetId ?? null,
-            width: nextPatch.width,
-            height: nextPatch.height,
-            fileName: nextPatch.fileName,
-            mimeType: nextPatch.mimeType,
-          };
-          const previousOutputs = (getNode(id)?.data as ImageNodeData | undefined)?.outputs ?? outputs;
-          nextPatch.outputs = mergeImageOutputs([output], previousOutputs);
-          nextPatch.primaryOutputId = output.id;
-          nextPatch.generationCount = normalizeGenerationCount(nextPatch.params?.n ?? data.generationCount);
-          nextPatch.outputsExpanded = false;
-        }
-        updateData(nextPatch, { flush: true });
-      }
-    } catch (error) {
-      updateData({
-        status: "failed",
-        taskId: String(taskId),
-        errorMessage: error instanceof Error ? error.message : "图片任务同步失败",
-        safetyStatus: null,
-        safetyReason: null,
-        generationCompletedAt: new Date().toISOString(),
-        elapsedMs: Date.now() - new Date(startedAt).getTime(),
-      }, { flush: true });
-    } finally {
-      if (activeRunPollRef.current === pollKey) {
-        activeRunPollRef.current = null;
-      }
-    }
-  }, [data.fileName, data.generationCount, data.height, data.mimeType, data.outputPreviewUrl, data.previewUrl, data.width, getNode, id, outputs, params, updateData]);
 
   const ensureServerCanvasNodeCreated = useCallback(async (projectId: string | number) => {
     const node = getNode(id) as AppNode | undefined;
@@ -792,14 +789,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     }
   }, [getNode, id]);
 
-  useEffect(() => {
-    if (status !== "pending" || !data.taskId) return;
-    const projectId = new URLSearchParams(window.location.search).get("projectId");
-    if (!isServerCanvasProjectId(projectId)) return;
-    const taskId = Number(data.taskId);
-    if (!Number.isFinite(taskId)) return;
-    void waitAndApplyServerRun(projectId, taskId, data.generationStartedAt ?? data.createdAt);
-  }, [data.createdAt, data.generationStartedAt, data.taskId, status, waitAndApplyServerRun]);
 
   const deleteNode = useCallback(() => {
     setNodeMenu((prev) => ({ ...prev, visible: false }));
@@ -1038,7 +1027,26 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     const runStartedAtMs = Date.now();
     setStartedAtMs(runStartedAtMs);
     setNow(runStartedAtMs);
-    const ctx = { nodes: getNodes() as AppNode[], edges: getEdges() as AppEdge[] };
+    const projectId = new URLSearchParams(window.location.search).get("projectId");
+    let ctx = { nodes: getNodes() as AppNode[], edges: getEdges() as AppEdge[] };
+    try {
+      ctx = await ensureReferenceAssets(id, ctx, {
+        projectId: isServerCanvasProjectId(projectId) ? projectId : null,
+        mediaStoreScope,
+        setNodes: setAppNodes,
+      });
+    } catch (error) {
+      updateData({
+        status: "failed",
+        taskId: null,
+        errorMessage: error instanceof Error ? error.message : "参考图上传失败，请稍后重试。",
+        safetyStatus: null,
+        safetyReason: null,
+        generationCompletedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - new Date(startedAt).getTime(),
+      });
+      return;
+    }
     const { snapshots, ids, mode } = resolveInputImages(id, ctx);
     const runModel = activeAigcModel && aigcModels.models.some((model) => model.id === activeAigcModel.id)
       ? activeAigcModel
@@ -1096,7 +1104,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       modelName: runModelName,
     }, { flush: true, includeSnapshotOnly: true, reliable: true });
 
-    const projectId = new URLSearchParams(window.location.search).get("projectId");
     if (isServerCanvasProjectId(projectId) && runAigcModelId) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
@@ -1118,7 +1125,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
           taskStatus: run.status,
           upstreamStatus: run.status,
         }, { flush: true, reliable: true });
-        await waitAndApplyServerRun(projectId, run.taskId, startedAt);
         return;
       } catch (error) {
         updateData({
@@ -1202,7 +1208,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, ensureServerCanvasNodeCreated, generationCount, getEdges, getNode, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, outputs, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, ensureServerCanvasNodeCreated, generationCount, getEdges, getNode, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, outputs, prompt, setAppNodes, setNodes, updateData]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen && !countPopoverOpen) return;

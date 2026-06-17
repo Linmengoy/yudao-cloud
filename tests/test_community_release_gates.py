@@ -220,11 +220,27 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("Enforce community DB evidence gate", workflow)
         self.assertIn("bash script/docker/verify-release-evidence.sh db-evidence", workflow)
         self.assertIn("Write release evidence summary", workflow)
+        self.assertIn('test_image_version_file="script/docker/test-image-version"', workflow)
+        self.assertIn("DEPLOY_ENV=test", workflow)
+        self.assertIn("TEST_IMAGE_VERSION_FILE=${test_image_version_file}", workflow)
         self.assertIn("RELEASE_EVIDENCE_FILE=tmp/release-evidence/${service}-${image_tag}.md", workflow)
         self.assertIn("workflow run url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", workflow)
+        self.assertIn("test image version file: ${TEST_IMAGE_VERSION_FILE}", workflow)
         self.assertIn("immutable image tag: ${MICRO_IMAGE_TAG}", workflow)
         self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
-        self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-stable-sha>", workflow)
+        self.assertIn("REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root", workflow)
+        self.assertIn("REGISTRY_DEPLOY_PREFIX=127.0.0.1:3000/root", workflow)
+        self.assertIn("DRAW2VIDEO_CLIENT_PORT=13000", workflow)
+        self.assertIn("Login to Gitea container registry", workflow)
+        self.assertIn("Push image to Gitea registry", workflow)
+        self.assertIn("docker push \"${image}\"", workflow)
+        self.assertIn("docker pull \"${registry_image}\"", workflow)
+        self.assertIn("docker compose -f script/docker/docker-compose-micro.yml pull", workflow)
+        self.assertIn("--no-build --no-deps --force-recreate", workflow)
+        self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-test-version>", workflow)
+        self.assertIn("MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
+        self.assertIn("FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
+        self.assertIn('DRAW2VIDEO_CLIENT_PORT="${DRAW2VIDEO_CLIENT_PORT:-13000}"', workflow)
         self.assertIn("Append release verification evidence", workflow)
         self.assertIn("deployment verification", workflow)
         self.assertIn("docker compose -f script/docker/docker-compose-micro.yml ps", workflow)
@@ -248,7 +264,12 @@ class CommunityReleaseGateTest(unittest.TestCase):
             "Prepare local prod network",
             "docker network inspect yudao-network-prod",
             "Required infra container is missing",
-            "docker compose -f docker-compose-micro.yml up -d --no-deps",
+            "REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root",
+            "REGISTRY_DEPLOY_PREFIX=111.228.39.103:3000/root",
+            "Login to Gitea container registry",
+            "Push image to Gitea registry",
+            "docker compose -f docker-compose-micro.yml pull",
+            "docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate",
             "docker compose -f docker-compose-micro.yml ps --status running --services",
             "docker compose -f docker-compose-micro.yml logs --tail=100",
             "COMMUNITY_HEALTH_URL=\"http://127.0.0.1:48097/actuator/health\"",
@@ -274,7 +295,10 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
         self.assertIn("MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG}", workflow)
         self.assertIn("FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}", workflow)
+        self.assertIn("DEPLOY_ENV=prod", workflow)
         self.assertIn('export MICRO_IMAGE_TAG="${MICRO_IMAGE_TAG}" FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"', workflow)
+        self.assertIn("MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
+        self.assertIn("FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
         self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-stable-sha>", workflow)
         self.assertIn("Append release verification evidence", workflow)
         self.assertIn("deployment verification", workflow)
@@ -288,6 +312,8 @@ class CommunityReleaseGateTest(unittest.TestCase):
 
         for required in [
             "set -euo pipefail",
+            "is_semver_tag",
+            "MICRO_IMAGE_TAG must be a semantic test image tag such as v0.0.1",
             "previous_stable_image_tag is required for rollback evidence",
             "previous_stable_image_tag must be a Git SHA tag",
             "COMMUNITY_DB_RELEASE_RECORD must point to the completed community_db migration record",
@@ -305,6 +331,53 @@ class CommunityReleaseGateTest(unittest.TestCase):
             self.assertIn(required, script)
 
         self.assertNotIn("|| true", script)
+
+    def test_issue_301_release_gate_script_propagates_http_and_health_failures(self):
+        script = read("script/docker/verify-release-evidence.sh")
+
+        verify_http_body = script.split("verify_http() {", 1)[1].split("\n}\n\nverify_service_health()", 1)[0]
+        verify_health_body = script.split("verify_service_health() {", 1)[1].split("\n}\n\ncase", 1)[0]
+
+        for required in [
+            'run_curl "$service_health_url"',
+            'run_curl "$admin_url"',
+            'run_curl "$app_url"',
+        ]:
+            self.assertIn(required, verify_http_body)
+
+        self.assertIn('run_curl "$service_health_url"', verify_health_body)
+        self.assertNotIn("run_curl \"$service_health_url\" || true", verify_http_body)
+        self.assertNotIn("run_curl \"$service_health_url\" || true", verify_health_body)
+
+    def test_test_image_version_starts_at_v001_and_feeds_test_compose(self):
+        version = read("script/docker/test-image-version").strip()
+        workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
+        compose = read("script/docker/docker-compose-micro.yml")
+        checks = read("script/release-gate-checks.ps1")
+
+        self.assertEqual("v0.0.1", version)
+        self.assertIn('image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', workflow)
+        self.assertIn("DEPLOY_ENV=test", workflow)
+        self.assertIn("^v[0-9]+\\.[0-9]+\\.[0-9]+", workflow)
+        for service in [
+            "yudao-system",
+            "yudao-infra",
+            "yudao-member",
+            "yudao-pay",
+            "yudao-gateway",
+            "aigc-model",
+            "aigc-billing",
+            "aigc-task",
+            "aigc-asset",
+            "aigc-safety",
+            "aigc-gen",
+            "aigc-workflow",
+            "aigc-community",
+        ]:
+            self.assertIn(f"image: ${{MICRO_IMAGE_REGISTRY_PREFIX:-}}{service}:${{MICRO_IMAGE_TAG:-latest}}", compose)
+
+        self.assertIn('"${DRAW2VIDEO_CLIENT_PORT:-3000}:3000"', compose)
+        self.assertIn('grep -Eq "^v[0-9]+\\.[0-9]+\\.[0-9]+', checks)
 
     def test_release_evidence_index_covers_all_release_gate_templates(self):
         index = read("script/docker/community-release-evidence-index.md")

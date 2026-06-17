@@ -40,6 +40,14 @@ public interface AigcGenerateRecordMapper extends BaseMapperX<AigcGenerateRecord
         return selectOne(AigcGenerateRecordDO::getTaskId, taskId);
     }
 
+    default List<AigcGenerateRecordDO> selectListByTaskIds(Collection<Long> taskIds) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            return List.of();
+        }
+        return selectList(new LambdaQueryWrapperX<AigcGenerateRecordDO>()
+                .in(AigcGenerateRecordDO::getTaskId, taskIds));
+    }
+
     default AigcGenerateRecordDO selectByGenerateNo(String generateNo) {
         return selectOne(AigcGenerateRecordDO::getGenerateNo, generateNo);
     }

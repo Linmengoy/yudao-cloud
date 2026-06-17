@@ -102,7 +102,7 @@ services:
     build:
       context: ../../yudao-module-system/yudao-module-system-server
       dockerfile: Dockerfile
-    image: yudao-system:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}yudao-system:${MICRO_IMAGE_TAG:-latest}
     container_name: yudao-system-prod
     restart: always
     environment:
@@ -133,7 +133,7 @@ services:
     build:
       context: ../../yudao-module-infra/yudao-module-infra-server
       dockerfile: Dockerfile
-    image: yudao-infra:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}yudao-infra:${MICRO_IMAGE_TAG:-latest}
     container_name: yudao-infra-prod
     restart: always
     environment:
@@ -166,7 +166,7 @@ services:
     build:
       context: ../../yudao-module-pay/yudao-module-pay-server
       dockerfile: Dockerfile
-    image: yudao-pay:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}yudao-pay:${MICRO_IMAGE_TAG:-latest}
     container_name: yudao-pay-prod
     restart: always
     environment:
@@ -195,7 +195,7 @@ services:
     build:
       context: ../../yudao-module-aigc-model/yudao-module-aigc-model-server
       dockerfile: Dockerfile
-    image: aigc-model:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-model:${MICRO_IMAGE_TAG:-latest}
     container_name: aigc-model-prod
     restart: always
     environment:
@@ -208,6 +208,12 @@ services:
       - "48090:48090"
     volumes:
       - /opt/data/yudao-logs-prod:/root/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:48090/actuator/health >/dev/null || wget -q -O - http://127.0.0.1:48090/actuator/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     depends_on:
       mysql:
         condition: service_healthy
@@ -224,7 +230,7 @@ services:
     build:
       context: ../../yudao-module-aigc-billing/yudao-module-aigc-billing-server
       dockerfile: Dockerfile
-    image: aigc-billing:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-billing:${MICRO_IMAGE_TAG:-latest}
     container_name: aigc-billing-prod
     restart: always
     environment:
@@ -251,7 +257,7 @@ services:
     build:
       context: ../../yudao-module-aigc-task/yudao-module-aigc-task-server
       dockerfile: Dockerfile
-    image: aigc-task:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-task:${MICRO_IMAGE_TAG:-latest}
     container_name: aigc-task-prod
     restart: always
     environment:
@@ -278,7 +284,7 @@ services:
     build:
       context: ../../yudao-module-aigc-asset/yudao-module-aigc-asset-server
       dockerfile: Dockerfile
-    image: aigc-asset:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-asset:${MICRO_IMAGE_TAG:-latest}
     container_name: aigc-asset-prod
     restart: always
     environment:
@@ -307,7 +313,7 @@ services:
     build:
       context: ../../yudao-module-aigc-safety/yudao-module-aigc-safety-server
       dockerfile: Dockerfile
-    image: aigc-safety:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-safety:${MICRO_IMAGE_TAG:-latest}
     container_name: aigc-safety-prod
     restart: always
     environment:
@@ -334,7 +340,7 @@ services:
     build:
       context: ../../yudao-module-aigc-gen/yudao-module-aigc-gen-server
       dockerfile: Dockerfile
-    image: aigc-gen:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-gen:${MICRO_IMAGE_TAG:-latest}
     container_name: aigc-gen-prod
     restart: always
     environment:
@@ -363,7 +369,7 @@ services:
     build:
       context: ../../yudao-module-aigc-workflow/yudao-module-aigc-workflow-server
       dockerfile: Dockerfile
-    image: aigc-workflow:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-workflow:${MICRO_IMAGE_TAG:-latest}
     container_name: aigc-workflow-prod
     restart: always
     environment:
@@ -392,7 +398,7 @@ services:
     build:
       context: ../../yudao-module-aigc-community/yudao-module-aigc-community-server
       dockerfile: Dockerfile
-    image: aigc-community:${MICRO_IMAGE_TAG:-latest}
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-community:${MICRO_IMAGE_TAG:-latest}
     container_name: aigc-community-prod
     restart: always
     environment:
@@ -439,7 +445,7 @@ services:
     build:
       context: ../../yudao-module-member/yudao-module-member-server
       dockerfile: Dockerfile
-    image: yudao-member:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}yudao-member:${MICRO_IMAGE_TAG:-latest}
     container_name: yudao-member-prod
     restart: always
     environment:
@@ -468,7 +474,7 @@ services:
     build:
       context: ../../yudao-gateway
       dockerfile: Dockerfile
-    image: yudao-gateway:latest
+    image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}yudao-gateway:${MICRO_IMAGE_TAG:-latest}
     container_name: yudao-gateway-prod
     restart: always
     environment:
@@ -495,7 +501,7 @@ services:
     build:
       context: ../../yudao-ui/draw2video-admin
       dockerfile: Dockerfile
-    image: draw2video-admin:${FRONTEND_IMAGE_TAG:-latest}
+    image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-admin:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-admin-prod
     restart: always
     environment:
@@ -521,7 +527,7 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: ""
         NEXT_PUBLIC_APP_API_PREFIX: /app-api
-    image: draw2video-client:${FRONTEND_IMAGE_TAG:-latest}
+    image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-client:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-client-prod
     restart: always
     environment:
@@ -552,7 +558,7 @@ services:
     build:
       context: ../../yudao-ui/draw2video-guide
       dockerfile: Dockerfile
-    image: draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}
+    image: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-}draw2video-guide:${FRONTEND_IMAGE_TAG:-latest}
     container_name: draw2video-guide-prod
     restart: always
     environment:

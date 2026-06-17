@@ -51,8 +51,8 @@ manman 是测试环境，manman2 是生产环境。`-DeployEnv auto` 会根据 `
 服务器资源不足，前端镜像必须在本地构建。推荐 Registry 模式：
 
 1. 本地 Docker Desktop 执行 `docker buildx build --load`。
-2. 本地按环境生成镜像标签：`test-<commit>` 或 `prod-<commit>`，避免 test/prod 共用 `latest` 串环境。
-3. 本地把镜像推送到 Gitea Container Registry：`111.228.39.103:3000/root/draw2video-*:<env>-<commit>`。
+2. 本地按环境生成镜像标签：test 使用 `script/docker/test-image-version`，当前从 `v0.0.1` 开始；prod 使用 `prod-<commit>`，避免 test/prod 共用 `latest` 串环境。
+3. 本地把镜像推送到 Gitea Container Registry：test 为 `111.228.39.103:3000/root/draw2video-*:v0.0.1` 这类 tag，prod 为 `111.228.39.103:3000/root/draw2video-*:prod-<commit>`。
 4. 脚本同步 `script/docker/docker-compose.frontend.yml` 和目标环境文件到服务器：`/opt/code/.frontend-test.env` 或 `/opt/code/.frontend-prod.env`。
 5. 服务器执行 `docker compose --env-file ... pull`。
 6. 服务器执行 `docker compose --env-file ... up -d --no-build --force-recreate`。
@@ -85,8 +85,8 @@ manman 和 manman2 都已配置 Docker 信任 `111.228.39.103:3000` 和 `10.66.0
 target environment: test 或 prod
 target services: draw2video-client / draw2video-admin / draw2video-guide
 current commit: <git rev-parse --short=12 HEAD>
-current image tag: test-<current-commit> 或 prod-<current-commit>
-previous stable image tag: test-<old-commit> 或 prod-<old-commit>
+current image tag: v0.0.1 或 prod-<current-commit>
+previous stable image tag: v0.0.1 或 prod-<old-commit>
 release evidence file: tmp/frontend-release-<env>-<yyyymmdd-hhmmss>.log
 rollback owner:
 ```
@@ -149,7 +149,7 @@ curl.exe -k -sS -I "https://beta.copse.top/"
 test 回滚：
 
 ```powershell
-ssh manman "cd /opt/code && FRONTEND_IMAGE_TAG=test-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/ docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml pull draw2video-client draw2video-admin && FRONTEND_IMAGE_TAG=test-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/ docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client draw2video-admin"
+ssh manman "cd /opt/code && FRONTEND_IMAGE_TAG=<old-test-version> FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/ docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml pull draw2video-client draw2video-admin && FRONTEND_IMAGE_TAG=<old-test-version> FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/ docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client draw2video-admin"
 ```
 
 prod 回滚：

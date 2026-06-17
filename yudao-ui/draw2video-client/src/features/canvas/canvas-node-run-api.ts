@@ -23,6 +23,9 @@ export type CanvasNodeRunResponse = {
   generateRecordId: number;
   generateNo: string;
   status: GenerateStatus;
+  success?: boolean;
+  errorCode?: string;
+  errorMessage?: string;
   operation?: CanvasOperationRecord;
 };
 
@@ -32,6 +35,17 @@ export type CanvasNodeRunSyncRequest = {
   taskId: number;
   baseVersion: number;
   nodeType: string;
+};
+
+export type CanvasNodeRunBatchSyncRequest = {
+  projectId?: string | number;
+  baseVersion: number;
+  nodes: CanvasNodeRunSyncRequest[];
+};
+
+export type CanvasNodeRunBatchSyncResponse = {
+  projectId: number;
+  results: CanvasNodeRunResponse[];
 };
 
 export const canvasNodeRunApi = {
@@ -47,6 +61,12 @@ export const canvasNodeRunApi = {
       ...input,
       projectId,
       nodeId,
+    }),
+
+  syncProjectNodeRuns: (projectId: string | number, input: CanvasNodeRunBatchSyncRequest) =>
+    api.post<CanvasNodeRunBatchSyncResponse>(`/canvas/projects/${projectId}/nodes/run/sync`, {
+      ...input,
+      projectId,
     }),
 };
 
@@ -88,7 +108,15 @@ function assertSuccessfulNodeRun(result: CanvasNodeRunResponse) {
   if (result.status === "SUCCESS") return;
   throw new Error(getNodeRunFailureMessage(result));
 }
-
+/**
+ * todo
+ * 这里可能会成为性能瓶颈，考虑优化为批量查询多个节点的运行结果？
+ * - 通过待完成队列实现？
+ * @param projectId 
+ * @param nodeId 
+ * @param input 
+ * @returns 
+ */
 export async function waitCanvasNodeRunResult(projectId: string | number, nodeId: string, input: CanvasNodeRunSyncRequest) {
   const pollKey = getNodeRunPollKey(projectId, nodeId, input);
   const existingPoll = nodeRunPolls.get(pollKey);

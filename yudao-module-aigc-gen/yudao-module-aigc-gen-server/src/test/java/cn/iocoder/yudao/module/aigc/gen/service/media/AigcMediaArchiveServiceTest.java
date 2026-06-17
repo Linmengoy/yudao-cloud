@@ -104,4 +104,15 @@ public class AigcMediaArchiveServiceTest extends BaseMockitoUnitTest {
         mediaArchiveService.assertNoPersistentInlineMedia(archived, "aigc_gen_record.output_urls");
     }
 
+    @Test
+    public void testArchiveOutputUrls_uploadsVideoDataUrlBeforePersistence() {
+        when(fileApi.createFile(any(byte[].class), any(), eq("aigc/output"), eq("video/mp4")))
+                .thenReturn("https://oss.example.com/aigc/output/video.mp4");
+
+        String archived = mediaArchiveService.archiveOutputUrls("[\"data:video/mp4;base64,dmlkZW8tYnl0ZXM=\"]");
+
+        assertEquals("[\"https://oss.example.com/aigc/output/video.mp4\"]", archived);
+        mediaArchiveService.assertNoPersistentInlineMedia(archived, "aigc_gen_record.output_urls");
+    }
+
 }

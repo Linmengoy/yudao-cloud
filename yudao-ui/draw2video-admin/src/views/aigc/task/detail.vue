@@ -25,8 +25,9 @@
 
   <ContentWrap>
     <el-tabs>
-      <el-tab-pane label="输出文本"><pre class="whitespace-pre-wrap">{{ task.outputText || '-' }}</pre></el-tab-pane>
-      <el-tab-pane label="结构化输出"><pre>{{ formatJson(task.outputData) }}</pre></el-tab-pane>
+      <el-tab-pane label="详细信息">
+        <pre class="whitespace-pre-wrap">{{ displayOutput }}</pre>
+      </el-tab-pane>
       <el-tab-pane label="状态日志"><TaskLogList :task-id="task.id" /></el-tab-pane>
       <el-tab-pane label="回调记录"><TaskCallbackList :task-id="task.id" /></el-tab-pane>
       <el-tab-pane label="重试记录"><TaskRetryList :task-id="task.id" /></el-tab-pane>
@@ -37,7 +38,7 @@
 <script setup lang="ts">
 import { AigcTaskApi } from '@/api/aigc/task'
 import type { AigcTaskRespVO } from '@/api/aigc/task/types'
-import { formatJson, statusLabel, typeLabel } from './utils'
+import { statusLabel, typeLabel } from './utils'
 import TaskLogList from './log/TaskLogList.vue'
 import TaskCallbackList from './callback/TaskCallbackList.vue'
 import TaskRetryList from './retry/TaskRetryList.vue'
@@ -48,6 +49,7 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
 const task = ref<AigcTaskRespVO>({ id: Number(route.params.id), status: '' })
+const displayOutput = computed(() => task.value.outputText || task.value.outputSummary || '-')
 
 const getDetail = async () => {
   loading.value = true

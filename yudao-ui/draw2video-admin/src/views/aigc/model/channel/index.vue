@@ -69,8 +69,8 @@ const handleDelete = async (id?: number) => {
   message.success(t('common.delSuccess'))
   await getList()
 }
-const getModelName = (id?: number) => modelList.value.find((item) => item.id === id)?.name || `Model ${id}`
-const getProviderName = (id?: number) => providerList.value.find((item) => item.id === id)?.name || `Provider ${id}`
+const getModelName = (id?: number) => modelList.value.find((item) => item.id === id)?.name || t('aigc.model.fallbacks.model', { id })
+const getProviderName = (id?: number) => providerList.value.find((item) => item.id === id)?.name || t('aigc.model.fallbacks.provider', { id })
 
 onMounted(async () => {
   const [modelPage, providerPage] = await Promise.all([

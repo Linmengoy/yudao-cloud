@@ -71,8 +71,8 @@ prod 发布前必须确认下面每一项。缺任何关键项就不要发布，
 | build 已通过 | test 环境 workflow 或本地构建成功 |
 | 必要环境变量齐全 | Nacos prod 配置、Compose env、前端 `.frontend-prod.env` 都存在 |
 | 数据库变更可回滚 | 有备份文件、备份 SHA、SQL 版本、回滚说明 |
-| 健康检查地址存在 | 至少能查容器运行、Nacos 实例或 `/actuator/health` |
-| 回滚版本明确 | 记录当前 commit SHA 和上一个稳定 commit SHA |
+| 健康检查地址存在 | 至少能查容器运行、Nacos 实例或 `/actuator/health`；`aigc-model` 使用容器级 healthcheck 或 `SERVICE_HEALTH_URL=http://127.0.0.1:48090/actuator/health bash script/docker/verify-release-evidence.sh verify-service-health` |
+| 回滚版本明确 | test 记录当前/上一稳定测试镜像版本；prod 记录当前 commit SHA 和上一个稳定 commit SHA |
 
 ### 回滚版本从哪里取
 
@@ -83,6 +83,12 @@ git rev-parse --short=12 HEAD
 ```
 
 如果是从 Gitea Actions 发布，也可以直接使用本次 workflow 页面显示的 commit 短 SHA；两者必须一致。
+
+测试环境镜像版本由 `script/docker/test-image-version` 统一管理，当前从 `v0.0.1` 开始：
+
+```powershell
+Get-Content script/docker/test-image-version
+```
 
 上一个稳定 commit SHA 优先从上一次成功发布记录或 `prod-stable-*` tag 获取：
 
@@ -112,7 +118,7 @@ Gitea Web 操作：
 3. 点击手动运行。
 4. `ref` 选 `master-jdk17`。
 5. `service` 选择要发布的服务，例如 `yudao-system`。
-6. `previous_stable_image_tag` 填上一个稳定 commit 的短 SHA，例如 `5fbe85a739e2`。test 也要求填，是为了保留回滚证据。
+6. `previous_stable_image_tag` 填上一个稳定测试镜像版本，例如 `v0.0.1`。首次测试版本就是 `v0.0.1` 时可以留空。
 7. 等 workflow 成功后看 `docker compose ps` 和日志。
 
 不要在这个 workflow 里选择 `draw2video-admin`、`draw2video-client`、`draw2video-guide`。前端必须用本机脚本发布，避免服务器上触发前端打包。
@@ -123,7 +129,7 @@ API 触发示例：
 curl.exe -sS -u root:root -X POST `
   "http://111.228.39.103:3000/api/v1/repos/root/manman/actions/workflows/yudao-micro-cicd.yml/dispatches" `
   -H "Content-Type: application/json" `
-  -d "{\"ref\":\"master-jdk17\",\"inputs\":{\"service\":\"yudao-system\",\"previous_stable_image_tag\":\"5fbe85a739e2\"}}"
+  -d "{\"ref\":\"master-jdk17\",\"inputs\":{\"service\":\"yudao-system\",\"previous_stable_image_tag\":\"v0.0.1\"}}"
 ```
 
 test 验证命令：
@@ -186,7 +192,14 @@ Nacos 实例验证：
 curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=prod&groupName=DEFAULT_GROUP&serviceName=system-server"
 ```
 
-当前限制：`aigc-community` 已使用 `aigc-community:${MICRO_IMAGE_TAG}`，前端已使用 `prod-<commit>` / `test-<commit>`。但多数后端服务的 Compose image 仍是 `latest`，所以这些服务的 `previous_stable_image_tag` 目前主要是发布证据；真正快速回滚建议用稳定 Git tag 重新触发 workflow，或后续把所有后端 image 改成 `${MICRO_IMAGE_TAG:-latest}`。
+当前限制：test Compose 的业务后端镜像已使用 `${MICRO_IMAGE_TAG:-latest}`，并从 `script/docker/test-image-version` 的 `v0.0.1` 起步；prod Compose 的业务后端镜像也统一使用 `${MICRO_IMAGE_TAG:-latest}`。发布 workflow 会拒绝空 tag 和 `latest`，prod tag 使用 12 位 Git SHA，`previous_stable_image_tag` 必须来自上一条成功发布证据、当前运行容器镜像或镜像仓库可验证 tag。
+
+`aigc-model` 发布证据必须包含：
+
+- current image tag 和 previous stable image tag，且都不是 `latest`。
+- `docker image inspect aigc-model:<tag>` 或等价 registry/manifest inspect 结果。
+- 健康检查命令、响应、采集时间和 `docker compose ... logs --tail=200 aigc-model` 失败日志路径。
+- 回滚命令：`MICRO_IMAGE_TAG=<previous-stable-tag> docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate aigc-model`。
 
 ## 前端发布
 
@@ -211,6 +224,44 @@ curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=p
 ./script/deploy-frontend-images.ps1 -Server manman2 -DeployEnv prod -Target admin -UseRegistry
 ```
 
+#310 / #312 / #314 的本轮发布目标是 `draw2video-admin`，不要把 `draw2video-client` 放入同一候选发布。发布前先跑范围审计：
+
+```powershell
+./script/release-scope-audit.ps1 `
+  -AllowedIssues '#146','#173','#174' `
+  -IncludedIssues '#173','#174' `
+  -ProcessingIssues '#310' `
+  -FrontendTarget admin `
+  -BackendServices aigc-model,aigc-gen
+```
+
+如果自动化或 runbook 仍给出 `-Target client`，审计必须失败，并在发布说明中记录未发布 `draw2video-client` 的原因。
+
+#311 发布候选 evidence 必须在候选提交后生成，避免手写 SHA 与实际构建输入不一致：
+
+```powershell
+./script/release-candidate-evidence.ps1 `
+  -CandidateIssues '#146','#173','#174'
+```
+
+证据文件必须记录完整 commit SHA、短 SHA、构建输入文件清单和 clean 证明。若构建输入文件存在未提交、未暂存或未跟踪变更，脚本必须失败，不能继续构建镜像。
+
+#308 发布候选只允许纳入图生图候选本身；仍处于处理或等待复核的 #306/#176/#170/#150 必须作为 excluded processing issues 写入发布说明：
+
+```powershell
+./script/release-scope-audit.ps1 `
+  -AllowedIssues '#308' `
+  -IncludedIssues '#308' `
+  -ProcessingIssues '#306','#176','#170','#150' `
+  -FrontendTarget admin `
+  -BackendServices aigc-workflow,aigc-gen
+
+./script/release-candidate-evidence.ps1 `
+  -CandidateIssues '#308'
+```
+
+#308 证据回写必须包含 `full_commit_sha`、`short_commit_sha`、构建输入文件清单、`clean_result`、`included issues: #308`、`excluded processing issues: #306, #176, #170, #150`，并明确 `tests/__pycache__` 这类本地缓存产物不能作为构建输入变更。
+
 只发布用户端：
 
 ```powershell
@@ -230,10 +281,34 @@ curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=p
 脚本会做这些事：
 
 1. 本机 Docker Desktop 构建镜像。
-2. 镜像 tag 使用 `test-<commit>` 或 `prod-<commit>`。
+2. test 镜像 tag 使用 `script/docker/test-image-version` 中的版本，当前为 `v0.0.1`；prod 镜像 tag 使用 `prod-<commit>`。
 3. 推送到 Gitea Registry `111.228.39.103:3000/root`。
 4. 同步 `/opt/code/.frontend-test.env` 或 `/opt/code/.frontend-prod.env`。
 5. 目标服务器执行 `docker compose pull` 和 `docker compose up -d --no-build --force-recreate`。
+
+`/opt/code/.frontend-test.env` 必须至少包含这些字段，缺少任意字段都不能作为 admin test 发布证据：
+
+```text
+FRONTEND_IMAGE_TAG=<v0.0.1-style-test-tag>
+FRONTEND_IMAGE_REGISTRY_PREFIX=127.0.0.1:3000/root/
+DRAW2VIDEO_ADMIN_PORT=8081
+DRAW2VIDEO_CLIENT_PORT=13000
+DRAW2VIDEO_GUIDE_PORT=8082
+ADMIN_GATEWAY_HOST=host.docker.internal
+ADMIN_GATEWAY_PORT=48080
+CLIENT_GATEWAY_HOST=host.docker.internal
+CLIENT_GATEWAY_PORT=48080
+```
+
+admin test 预检命令必须使用 `-Target admin`：
+
+```powershell
+./script/deploy-frontend-images.ps1 -Server manman -DeployEnv test -Target admin -UseRegistry -SkipBuild -SkipSave -SkipUpload
+ssh manman "cd /opt/code && docker compose --env-file .frontend-test.env -f docker-compose.frontend.yml ps draw2video-admin"
+ssh manman "curl -fsS -I http://127.0.0.1:8081/"
+```
+
+记录证据时写明命令、开始时间、结束时间、退出码、HTTP 状态、响应摘要和失败日志路径。
 
 前端 prod 验证：
 
@@ -263,13 +338,65 @@ ssh manman2 "curl -fsS -I http://127.0.0.1:8081/"
 ssh manman2 "cd /opt/code && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml pull draw2video-client && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client"
 ```
 
-前端发布单必须同时记录 `current image tag` 和 `previous stable image tag`，格式为 `test-<commit>` 或 `prod-<commit>`。上一稳定 tag 优先从上一条成功发布 issue 写回、Gitea Registry 可拉取 tag、或目标服务器当前运行镜像获取：
+前端发布单必须同时记录 `current image tag` 和 `previous stable image tag`。test 格式为 `v0.0.1` 这类语义化版本，prod 格式为 `prod-<commit>`。上一稳定 tag 优先从上一条成功发布 issue 写回、Gitea Registry 可拉取 tag、或目标服务器当前运行镜像获取：
 
 ```powershell
 ssh manman "docker inspect draw2video-client --format '{{.Config.Image}}'"
 ssh manman "docker inspect draw2video-admin --format '{{.Config.Image}}'"
 ssh manman2 "docker inspect draw2video-client --format '{{.Config.Image}}'"
 ssh manman2 "docker inspect draw2video-admin --format '{{.Config.Image}}'"
+```
+
+## Windows release evidence 门禁
+
+Windows 本机不要直接依赖 shell 关联启动。使用 PowerShell 包装脚本调用 Git Bash，并把 shell 启动失败和证据不满足分开记录：
+
+```powershell
+$env:DEPLOY_ENV='prod'
+$env:BUILD_SERVICE='aigc-model'
+$env:MICRO_IMAGE_TAG='123456789abc'
+$env:PREVIOUS_STABLE_IMAGE_TAG='abcdef123456'
+$env:RELEASE_EVIDENCE_FILE='tmp/release-evidence/prod-aigc-model-123456789abc.md'
+$env:MICRO_IMAGE_REGISTRY_PREFIX='111.228.39.103:3000/root/'
+./script/docker/verify-release-evidence.ps1 -Command preflight -TimeoutSeconds 120
+```
+
+退出码 `126` 表示 bash/Git Bash/WSL 执行环境不可用，退出码 `124` 表示启动或执行超时，其它非零退出码表示 `verify-release-evidence.sh` 判定 release evidence 不满足。日志会写入 `tmp/release-gates/windows-verify-*`，必须随工单写回开始时间、结束时间、退出码和日志路径。
+
+## #173/#174 后端发布范围
+
+本轮后端范围只包含：
+
+- `aigc-model`
+- `aigc-gen`
+
+发布说明必须写入 Maven 与 Compose 验证命令：
+
+```powershell
+mvn -pl yudao-module-aigc-model/yudao-module-aigc-model-server,yudao-module-aigc-gen/yudao-module-aigc-gen-server -am -DskipTests compile
+ssh manman2 "cd /opt/deploy/yudao-micro && docker compose -f docker-compose-micro.yml ps aigc-model aigc-gen"
+ssh manman2 "docker inspect aigc-model-prod --format '{{.Config.Image}}'"
+ssh manman2 "docker inspect aigc-gen-prod --format '{{.Config.Image}}'"
+```
+
+prod 回滚证据必须分别列出 `aigc-model` 与 `aigc-gen` 的 current tag、previous stable tag、`docker pull`/`docker image inspect` 结果和回滚命令。current 或 previous stable 任一值为 `latest` 时，prod 发布保持阻塞，不能降级为人工口头确认。
+
+## 发布范围说明模板
+
+发布说明的 scope section 必须包含：
+
+```text
+included issues:
+- #146
+- #173
+- #174
+
+excluded processing issues:
+- #310: parent release audit remains processing; no unreviewed files included
+
+exclusion rationale:
+- candidate commits and files map only to #146/#173/#174 or completed dependencies
+- review:processing changes are excluded until their review labels advance
 ```
 
 找不到上一稳定 tag 时，前端发布门禁失败，不能用 `latest` 代替回滚版本。
@@ -372,6 +499,63 @@ curl.exe -k -sS -I "https://admin.copse.top/"
 curl.exe -k -sS "https://beta.copse.top/app-api/member/auth/email-login"
 curl.exe -k -sS "https://admin.copse.top/admin-api/system/auth/login"
 ```
+
+## GenerationRun SSE 发布门禁
+
+WebSocket 继续只负责画布协作编辑、成员在线状态和 `canvas-op-applied` 协作消息；GenerationRun SSE 只负责生成任务状态、终态补偿和 `resync-required` 项目级补偿信号。两条链路不能重复应用终态 operation：前端收到 SSE operation 后仍按 operation version 幂等进入 `applyOperationRecord`，旧 WebSocket 协作消息继续按版本补缺。
+
+网关必须关闭 `text/event-stream` 缓冲，并把读超时拉长到大于后端心跳周期。Nginx 模板：
+
+```nginx
+location /app-api/canvas/ {
+  proxy_http_version 1.1;
+  proxy_set_header Connection "";
+  proxy_buffering off;
+  proxy_cache off;
+  proxy_read_timeout 3600s;
+  add_header X-Accel-Buffering no;
+  proxy_pass http://127.0.0.1:48080;
+}
+```
+
+Caddy 模板：
+
+```caddyfile
+reverse_proxy /app-api/canvas/* 10.66.0.9:48080 {
+  flush_interval -1
+  transport http {
+    read_timeout 1h
+  }
+  header_down Cache-Control "no-cache"
+}
+```
+
+测试环境验证命令：
+
+```powershell
+curl.exe -N -H "Accept: text/event-stream" "http://111.228.39.103:48080/app-api/canvas/projects/<projectId>/generation-runs/events"
+curl.exe -I "http://111.228.39.103:48080/app-api/canvas/projects/<projectId>/generation-runs/events"
+```
+
+证据需要记录 `Content-Type: text/event-stream`、`Cache-Control: no-cache`、`X-Accel-Buffering: no` 或等价网关配置位置，以及 15 秒内可见 `generation-run-heartbeat` 或 `resync-required`。缺少非缓冲配置、心跳被代理延迟、连接超时小于 60 秒时发布门禁失败。
+
+回归清单必须覆盖：单节点 `/run/sync`、项目级 `/nodes/run/sync` 批量同步、SSE `generation-runs/events`、前端无 EventSource/连接失败时的项目级批量同步降级。降级只使用项目级批量同步，不恢复节点级独立长轮询主路径。
+
+回滚步骤：
+
+1. 关闭前端 SSE 开关或让网关拒绝 `/generation-runs/events`，前端会收到连接失败并走项目级批量同步。
+2. 如需恢复单节点同步主路径，回滚到上一稳定前端镜像 tag，并保留后端 `/run/sync` 接口。
+3. 如果批量同步异常，临时保留 30 秒 `syncFromVersion` 协作补偿轮询，禁止重复提交终态 operation。
+
+排障指标和日志关键字：
+
+| 现象 | 指标 / 日志 | 定位方向 |
+| --- | --- | --- |
+| 连接泄漏 | `generationRunSseService.getProjectConnectionCount(projectId)` 不下降 | 浏览器关闭后 emitter cleanup 未触发 |
+| 心跳失败 | `generationRunSseService.getHeartbeatFailureCount()` 增长，日志 `heartbeat failed` | 网关断开、客户端断开或代理超时 |
+| 事件缺口 | `resync-required` / `getResyncRequiredCount()` 增长 | Last-Event-ID 不连续或重连后需要批量补偿 |
+| 批量同步失败 | `/nodes/run/sync` 响应 `failedCount > 0` | 单任务不存在、任务不属于节点或生成服务异常 |
+| 终态应用失败 | 前端 `applyOperationRecord` 无 version 前进 | operationJson 解析失败或版本缺口需要 `syncFromVersion` |
 
 ## 回滚
 

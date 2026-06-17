@@ -39,5 +39,10 @@ public interface ErrorCodeConstants {
     ErrorCode CANVAS_INVITE_USER_DISABLED = new ErrorCode(1_046_000_113, "被邀请用户已禁用");
     ErrorCode CANVAS_INVITE_SELF_NOT_ALLOWED = new ErrorCode(1_046_000_114, "不能邀请自己加入画布项目");
     ErrorCode CANVAS_MEMBER_SEARCH_KEYWORD_REQUIRED = new ErrorCode(1_046_000_115, "请输入要搜索的用户信息");
+    ErrorCode CANVAS_NODE_RUN_TASK_NOT_EXISTS = new ErrorCode(1_046_000_116, "生成任务不存在");
+    ErrorCode CANVAS_NODE_RUN_TASK_NOT_BELONG = new ErrorCode(1_046_000_117, "生成任务不属于当前画布节点");
+    ErrorCode CANVAS_NODE_RUN_INPUT_PARAMS_INVALID = new ErrorCode(1_046_000_118, "输入参数必须是 JSON 对象");
+    ErrorCode CANVAS_NODE_RUN_REFERENCE_IMAGE_REQUIRED = new ErrorCode(1_046_000_119, "图生图缺少可用参考图，请重新选择或上传参考图后重试");
+    ErrorCode CANVAS_NODE_RUN_REFERENCE_IMAGE_INVALID = new ErrorCode(1_046_000_120, "参考图不可访问或格式不支持");
 
 }

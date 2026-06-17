@@ -45,12 +45,7 @@ import type { AigcModelParamTemplate } from "@/features/generation/model-api";
 import { filterAigcModelParams } from "@/features/generation/aigc-model-param-utils";
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { DynamicParamForm } from "@/features/generation/DynamicParamForm";
-import {
-  canvasNodeRunApi,
-  getCanvasNodeRunPatch,
-  isServerCanvasProjectId,
-  waitCanvasNodeRunResult,
-} from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, isServerCanvasProjectId } from "@/features/canvas/canvas-node-run-api";
 import {
   captureVideoFrameAsset,
   getMyAsset,
@@ -242,12 +237,6 @@ function getVideoAssetId(data: VideoNodeData) {
   if (typeof data.assetId === "number") return data.assetId;
   if (typeof data.outputAssetId === "number") return data.outputAssetId;
   return null;
-}
-
-function getPatchVideoAssetId(patch: Record<string, unknown>) {
-  const value = patch.outputAssetId ?? patch.assetId;
-  const assetId = Number(value);
-  return Number.isFinite(assetId) && assetId > 0 ? assetId : null;
 }
 
 function getVideoOutputId(
@@ -737,7 +726,6 @@ export function VideoNodeComponent({
   const paramsBtnRef = useRef<HTMLButtonElement>(null);
   const modelRef = useRef<HTMLDivElement>(null);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
-  const activeRunPollRef = useRef<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureMenuRef = useRef<HTMLDivElement>(null);
   // 视频是否正在播放
@@ -1011,121 +999,6 @@ export function VideoNodeComponent({
     [data.params, id, setNodes],
   );
 
-  const waitAndApplyServerRun = useCallback(
-    async (projectId: string | number, taskId: number, startedAt: string) => {
-      const pollKey = `${projectId}:${id}:${taskId}`;
-      if (activeRunPollRef.current === pollKey) return;
-      activeRunPollRef.current = pollKey;
-      try {
-        const result = await waitCanvasNodeRunResult(projectId, id, {
-          taskId,
-          baseVersion: 0,
-          nodeType: "video",
-        });
-        const patch = getCanvasNodeRunPatch(result, id);
-        if (patch) {
-          const nextPatch = { ...patch } as Partial<VideoNodeData>;
-          if (nextPatch.outputs?.length) {
-            const hydrated = await hydrateVideoOutputs(nextPatch.outputs, {
-              videoUrl: nextPatch.videoUrl ?? data.videoUrl ?? null,
-              previewUrl: nextPatch.previewUrl ?? data.previewUrl ?? nextPatch.outputPreviewUrl ?? null,
-              width: nextPatch.width ?? data.width,
-              height: nextPatch.height ?? data.height,
-              durationSec: nextPatch.durationSec ?? data.durationSec,
-              mimeType: nextPatch.mimeType ?? data.mimeType,
-              fileName: nextPatch.fileName ?? data.fileName,
-            });
-            const previousOutputs = (getNode(id)?.data as VideoNodeData | undefined)?.outputs ?? outputs;
-            const mergedOutputs = mergeVideoOutputs(hydrated.outputs, previousOutputs);
-            const primary = getPrimaryVideoOutput(mergedOutputs, nextPatch.primaryOutputId);
-            if (primary) {
-              Object.assign(nextPatch, buildPrimaryVideoPatch(primary));
-              nextPatch.outputs = mergedOutputs;
-              nextPatch.primaryOutputId = primary.id;
-              nextPatch.outputsExpanded = hydrated.outputs.length > 1 && mergedOutputs.length > 1;
-              nextPatch.assetUrlExpireTime = hydrated.assetUrlExpireTime;
-            }
-          } else {
-            const assetId = getPatchVideoAssetId(patch);
-            if (assetId && !nextPatch.videoUrl && !nextPatch.previewUrl) {
-              try {
-                const asset = await getMyAsset(assetId);
-                const videoUrl = getAssetPreviewUrl(asset) || asset.fileUrl;
-                if (videoUrl) {
-                  nextPatch.videoUrl = videoUrl;
-                  nextPatch.previewUrl = videoUrl;
-                  nextPatch.assetUrlExpireTime =
-                    getAssetPreviewExpireTime(asset) ?? null;
-                }
-              } catch {
-                // Keep the stable asset id from the server; project hydration can recover the preview URL later.
-              }
-            }
-            if (nextPatch.videoUrl || nextPatch.previewUrl) {
-              const videoUrl = String(nextPatch.videoUrl ?? nextPatch.previewUrl);
-              const output: VideoNodeOutput = {
-                id: getVideoOutputId(nextPatch.outputAssetId ?? nextPatch.assetId ?? null, videoUrl, 0),
-                videoUrl,
-                previewUrl: nextPatch.previewUrl ?? videoUrl,
-                assetId: nextPatch.outputAssetId ?? nextPatch.assetId ?? null,
-                width: nextPatch.width,
-                height: nextPatch.height,
-                durationSec: nextPatch.durationSec,
-                fileName: nextPatch.fileName,
-                mimeType: nextPatch.mimeType,
-              };
-              const previousOutputs = (getNode(id)?.data as VideoNodeData | undefined)?.outputs ?? outputs;
-              nextPatch.outputs = mergeVideoOutputs([output], previousOutputs);
-              nextPatch.primaryOutputId = output.id;
-              nextPatch.outputsExpanded = false;
-            }
-          }
-          updateData(nextPatch, { flush: true });
-        }
-      } catch (error) {
-        updateData(
-          {
-            status: "failed",
-            taskId: String(taskId),
-            errorMessage: formatVideoGenerationError(
-              error instanceof Error ? error.message : "视频任务同步失败",
-            ),
-            upstreamStatus: "FAILED",
-            generationCompletedAt: new Date().toISOString(),
-            elapsedMs: Date.now() - new Date(startedAt).getTime(),
-          },
-          { flush: true },
-        );
-      } finally {
-        if (activeRunPollRef.current === pollKey) {
-          activeRunPollRef.current = null;
-        }
-      }
-    },
-    [data.durationSec, data.fileName, data.height, data.mimeType, data.previewUrl, data.videoUrl, data.width, getNode, id, outputs, updateData],
-  );
-
-  useEffect(() => {
-    if (data.status !== "pending" || !data.taskId) return;
-    const projectId = new URLSearchParams(window.location.search).get(
-      "projectId",
-    );
-    if (!isServerCanvasProjectId(projectId)) return;
-    const taskId = Number(data.taskId);
-    if (!Number.isFinite(taskId)) return;
-    void waitAndApplyServerRun(
-      projectId,
-      taskId,
-      data.generationRunStartedAt ?? data.generationStartedAt ?? data.createdAt,
-    );
-  }, [
-    data.createdAt,
-    data.generationRunStartedAt,
-    data.generationStartedAt,
-    data.status,
-    data.taskId,
-    waitAndApplyServerRun,
-  ]);
 
   useEffect(() => {
     if (outputs.length === 0 || data.assetUrlExpireTime) return;
@@ -1704,7 +1577,6 @@ export function VideoNodeComponent({
           },
           { flush: true },
         );
-        await waitAndApplyServerRun(projectId, run.taskId, startedAt);
         return;
       } catch (error) {
         updateData({
@@ -1821,7 +1693,6 @@ export function VideoNodeComponent({
     orderedReferenceImages,
     outputs,
     updateData,
-    waitAndApplyServerRun,
   ]);
 
   return (

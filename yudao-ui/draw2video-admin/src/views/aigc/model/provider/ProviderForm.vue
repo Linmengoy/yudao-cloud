@@ -34,12 +34,12 @@
       </el-row>
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-form-item label="API Key" prop="apiKey">
+          <el-form-item :label="t('aigc.model.fields.apiKey')" prop="apiKey">
             <el-input v-model="formData.apiKey" show-password :placeholder="t('aigc.model.placeholders.passwordKeepEmpty')" />
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="Secret Key" prop="secretKey">
+          <el-form-item :label="t('aigc.model.fields.secretKey')" prop="secretKey">
             <el-input v-model="formData.secretKey" show-password :placeholder="t('aigc.model.placeholders.passwordKeepEmpty')" />
           </el-form-item>
         </el-col>
@@ -84,10 +84,10 @@
         </el-form-item>
       </template>
       <el-form-item :label="t('aigc.model.fields.extraConfig')" prop="extraConfig">
-        <el-input v-model="formData.extraConfig" type="textarea" :rows="3" placeholder="JSON" />
+        <el-input v-model="formData.extraConfig" type="textarea" :rows="3" :placeholder="t('aigc.model.placeholders.json')" />
       </el-form-item>
       <el-form-item :label="t('aigc.model.fields.rateLimitConfig')" prop="rateLimitConfig">
-        <el-input v-model="formData.rateLimitConfig" type="textarea" :rows="3" placeholder="JSON" />
+        <el-input v-model="formData.rateLimitConfig" type="textarea" :rows="3" :placeholder="t('aigc.model.placeholders.json')" />
       </el-form-item>
       <el-form-item :label="t('aigc.model.fields.remark')" prop="remark">
         <el-input v-model="formData.remark" type="textarea" :placeholder="t('aigc.model.placeholders.remark')" />
@@ -136,12 +136,12 @@ const formData = ref<AigcModelProviderSaveReqVO>({
   remark: undefined
 })
 const formRules = reactive({
-  code: [{ required: true, message: '渠道编码不能为空', trigger: 'blur' }],
-  name: [{ required: true, message: '渠道名称不能为空', trigger: 'blur' }],
-  apiBaseUrl: [{ required: true, message: 'API 地址不能为空', trigger: 'blur' }],
-  authType: [{ required: true, message: '鉴权方式不能为空', trigger: 'change' }],
-  proxyId: [{ required: true, message: '代理不能为空', trigger: 'change' }],
-  status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
+  code: [{ required: true, message: t('aigc.model.validation.providerCodeRequired'), trigger: 'blur' }],
+  name: [{ required: true, message: t('aigc.model.validation.providerNameRequired'), trigger: 'blur' }],
+  apiBaseUrl: [{ required: true, message: t('aigc.model.validation.apiBaseUrlRequired'), trigger: 'blur' }],
+  authType: [{ required: true, message: t('aigc.model.validation.authTypeRequired'), trigger: 'change' }],
+  proxyId: [{ required: true, message: t('aigc.model.validation.proxyRequired'), trigger: 'change' }],
+  status: [{ required: true, message: t('aigc.model.validation.statusRequired'), trigger: 'change' }]
 })
 
 const loadProxyList = async () => {

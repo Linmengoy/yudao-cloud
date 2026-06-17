@@ -1,13 +1,65 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ImageIcon, Layers, Sparkles } from "lucide-react";
+import { ArrowRight, Clapperboard, ImageIcon, Layers3, Play, Sparkles, Wand2 } from "lucide-react";
 import { useAuth } from "@/features/auth/auth-store";
+import { getCommunityPosts } from "@/features/community/community-api";
+import { CommunityPostCard } from "@/features/community/CommunityPostCard";
+import type { CommunityPost } from "@/features/community/community-types";
 
-export default function HomePage() {
+const inspirationWorks = [
+  {
+    title: "棚拍人像重塑",
+    label: "风格",
+    image: "/www-home/assets/images/inspiration-portrait.webp",
+    className: "md:col-span-2",
+  },
+  {
+    title: "竹林动作短片",
+    label: "运镜",
+    image: "/www-home/assets/images/inspiration-bamboo.webp",
+    className: "",
+  },
+  {
+    title: "能量轨迹模拟",
+    label: "特效",
+    image: "/www-home/assets/images/inspiration-robots.webp",
+    className: "",
+  },
+  {
+    title: "音频响应光流",
+    label: "视觉",
+    image: "/www-home/assets/images/inspiration-wave.webp",
+    className: "md:col-span-2",
+  },
+];
+
+const modelCards = [
+  ["Image", "高质图像生成", "适合海报、人像、产品视觉和风格探索。"],
+  ["Video", "图生视频", "把关键画面扩展为有运动、有节奏的短片。"],
+  ["Effect", "创意特效", "快速生成转场、光流、粒子和视觉包装。"],
+];
+
+function HomePage() {
   const router = useRouter();
   const { loggedIn, openModal } = useAuth();
+  const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
+
+  useEffect(() => {
+    let ignore = false;
+    getCommunityPosts({ pageNo: 1, pageSize: 6, sort: "hot" })
+      .then((data) => {
+        if (!ignore) setCommunityPosts(data.list ?? []);
+      })
+      .catch(() => {
+        if (!ignore) setCommunityPosts([]);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   function handleStartCreate() {
     if (loggedIn) {
@@ -18,152 +70,189 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col overflow-hidden">
-      <section className="relative px-4 pb-20 pt-20 sm:pt-24">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[linear-gradient(135deg,rgba(255,208,164,0.36),rgba(247,244,237,0.2)_44%,rgba(155,190,222,0.26))] dark:bg-[linear-gradient(135deg,rgba(124,83,47,0.3),rgba(23,21,18,0.18)_44%,rgba(58,77,96,0.34))]" />
-        <div className="relative mx-auto grid max-w-[1200px] items-center gap-12 lg:grid-cols-[minmax(0,0.94fr)_minmax(430px,1.06fr)]">
-          <div className="max-w-2xl">
-            <p className="mb-5 inline-flex rounded-full border border-border-warm bg-background/70 px-3 py-1 text-sm text-muted-gray">
-              Copse AI Creative Workspace
-            </p>
-            <h1 className="max-w-[680px] text-[clamp(40px,7vw,60px)] font-semibold leading-[1.02] tracking-[-1.5px] text-charcoal">
-              把灵感整理成可以继续生长的作品
-            </h1>
-            <p className="mt-5 max-w-xl text-lg leading-[1.38] text-muted-gray">
-              在同一个画布里生成图片、连接参考、追踪任务和沉淀资产。创作过程保留上下文，结果也能回到项目。
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={handleStartCreate}
-                className="primary-button inline-flex items-center gap-2 px-5"
-              >
-                开始创作
-                <ArrowRight className="size-4" />
-              </button>
-              <Link href="/pricing" className="secondary-button inline-flex items-center px-5">
-                查看价格
-              </Link>
-            </div>
-          </div>
+    <main className="overflow-hidden bg-[#070809] text-[#f6f3ed]">
+      <section className="relative min-h-[680px] px-5 pb-20 pt-24 sm:px-8 lg:min-h-[760px] lg:pt-32">
+        <div className="absolute inset-0 -z-0">
+          <img
+            src="/www-home/assets/images/hero-cinema.webp"
+            alt=""
+            className="h-full w-full object-cover object-center opacity-95"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,8,9,0.96),rgba(7,8,9,0.65)_34%,rgba(7,8,9,0.16)_62%,rgba(7,8,9,0.86)),linear-gradient(180deg,rgba(7,8,9,0.72),rgba(7,8,9,0.1)_45%,#070809_100%)]" />
+        </div>
 
-          <div className="relative min-h-[420px]">
-            <div className="absolute left-0 top-8 w-[64%] rounded-xl border border-border-warm bg-background p-3">
-              <div className="aspect-[4/3] rounded-lg border border-border-warm bg-[linear-gradient(145deg,rgba(28,28,28,0.04),rgba(252,251,248,0.9)),linear-gradient(45deg,rgba(239,176,122,0.38),rgba(139,172,207,0.28))] dark:bg-[linear-gradient(145deg,rgba(244,239,230,0.05),rgba(23,21,18,0.9)),linear-gradient(45deg,rgba(124,83,47,0.34),rgba(58,77,96,0.32))]" />
-              <div className="mt-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-charcoal">Image node</p>
-                  <p className="text-xs text-muted-gray">text-to-image / edit</p>
-                </div>
-                <Sparkles className="size-4 text-charcoal" />
-              </div>
-            </div>
-            <div className="absolute right-0 top-0 w-[52%] rounded-xl border border-border-warm bg-background p-4">
-              <div className="mb-4 flex items-center gap-2">
-                <div className="flex size-8 items-center justify-center rounded-full bg-charcoal text-off-white">
-                  <Layers className="size-4" />
-                </div>
-                <div>
-                  <p className="text-sm text-charcoal">Project canvas</p>
-                  <p className="text-xs text-muted-gray">3 nodes connected</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {["选择参考图", "写入提示词", "生成并归档"].map((item) => (
-                  <div key={item} className="rounded-lg border border-border-warm px-3 py-2 text-sm text-muted-gray">
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="absolute bottom-0 right-12 w-[58%] rounded-xl border border-border-warm bg-background p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-lg border border-border-warm">
-                  <ImageIcon className="size-5 text-charcoal" />
-                </div>
-                <div>
-                  <p className="text-sm text-charcoal">Asset library</p>
-                  <p className="text-xs text-muted-gray">生成结果自动回流到资产库</p>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="aspect-square rounded-md border border-border-warm bg-[rgba(28,28,28,0.04)]" />
-                <div className="aspect-square rounded-md border border-border-warm bg-[rgba(28,28,28,0.03)]" />
-                <div className="aspect-square rounded-md border border-border-warm bg-[rgba(28,28,28,0.04)]" />
-              </div>
-            </div>
+        <div className="relative z-10 mx-auto flex min-h-[520px] max-w-[1420px] flex-col justify-center">
+          <p className="mb-5 text-xs font-bold uppercase tracking-[0.12em] text-[#e7b65d]">AI Image & Video Studio</p>
+          <h1 className="max-w-[720px] text-[clamp(44px,8vw,96px)] font-semibold leading-[0.98] text-[#f6f3ed]">
+            把灵感，变成会发光的影像。
+          </h1>
+          <p className="mt-6 max-w-[620px] text-[17px] leading-8 text-[#d7d2c8]/80 sm:text-xl">
+            Copse AI 为创作者、品牌与短片团队提供图像生成、视频成片、风格迁移和画布协作，一站完成从概念到发布的关键步骤。
+          </p>
+          <div className="mt-9 flex flex-wrap gap-4">
+            <button
+              type="button"
+              onClick={handleStartCreate}
+              className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#61d7d5,#f5da89_48%,#ff6d77)] px-7 text-base font-bold text-[#071011] shadow-[0_18px_54px_rgba(97,215,213,0.2)] transition-transform hover:-translate-y-0.5"
+            >
+              开始创作
+              <ArrowRight className="size-4" />
+            </button>
+            <Link
+              href="#community"
+              className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full border border-white/30 bg-white/[0.06] px-7 text-base font-bold text-[#f6f3ed] transition-transform hover:-translate-y-0.5"
+            >
+              浏览公开作品
+            </Link>
           </div>
         </div>
-      </section>
 
-      <section className="mx-auto grid w-full max-w-[1200px] gap-6 px-4 pb-20 sm:grid-cols-3">
-        {[
-          ["项目画布", "每个项目都有独立草稿、节点、边和视口状态，重新打开时继续上次创作。"],
-          ["多模态节点", "图片、文字、视频节点共存，参考关系直接通过连线表达。"],
-          ["资产沉淀", "生成图片和视频汇总到资产库，并保留回到来源项目的路径。"],
-        ].map(([title, desc]) => (
-          <article key={title} className="rounded-xl border border-border-warm bg-background p-6">
-            <h2 className="text-xl font-normal leading-tight text-charcoal">{title}</h2>
-            <p className="mt-3 text-sm leading-relaxed text-muted-gray">{desc}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="border-y border-border-warm px-4 py-16">
-        <div className="mx-auto grid max-w-[1200px] gap-8 md:grid-cols-3">
+        <div className="relative z-10 mx-auto mt-10 grid max-w-[680px] overflow-hidden rounded-lg border border-white/15 bg-white/10 shadow-[0_28px_90px_rgba(0,0,0,0.44)] backdrop-blur md:ml-auto md:mr-0 md:grid-cols-[1.2fr_1fr_1fr]">
           {[
-            ["∞", "本地项目草稿"],
-            ["3", "创作节点类型"],
-            ["1", "统一资产入口"],
+            ["Seedance 2.0", "电影级运镜"],
+            ["4K", "高质资产输出"],
+            ["Canvas", "项目化创作"],
           ].map(([value, label]) => (
-            <div key={label}>
-              <p className="text-5xl font-semibold leading-none tracking-[-1.2px] text-charcoal">{value}</p>
-              <p className="mt-2 text-base text-muted-gray">{label}</p>
+            <div key={value} className="border-b border-white/10 bg-[#0c0e10]/80 p-5 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
+              <strong className="block text-2xl">{value}</strong>
+              <span className="mt-1 block text-sm text-[#a6a8ad]">{label}</span>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-[1200px] gap-10 px-4 py-20 lg:grid-cols-[0.86fr_1.14fr]">
-        <div>
-          <h2 className="text-[clamp(32px,4.6vw,48px)] font-semibold leading-none tracking-[-1.2px] text-charcoal">
-            一个入口覆盖创作、任务和资产
-          </h2>
-          <p className="mt-4 max-w-md text-base leading-relaxed text-muted-gray">
-            入口页只负责开始；登录后，侧边栏会把你带到项目、资产和任务三个核心位置。
-          </p>
+      <section className="relative z-10 mx-auto -mt-10 grid w-[min(900px,calc(100%-40px))] gap-4 pb-20 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={handleStartCreate}
+          className="flex min-h-[76px] items-center justify-center gap-3 rounded-lg border border-white/20 bg-[#141619]/85 px-6 text-xl font-bold shadow-[0_28px_90px_rgba(0,0,0,0.44)] backdrop-blur transition-transform hover:-translate-y-0.5"
+        >
+          <Wand2 className="size-6 text-[#61d7d5]" />
+          开始创作
+        </button>
+        <button
+          type="button"
+          onClick={handleStartCreate}
+          className="flex min-h-[76px] items-center justify-center gap-3 rounded-lg border border-[#61d7d5]/40 bg-[#141619]/85 px-6 text-xl font-bold shadow-[0_28px_90px_rgba(0,0,0,0.44)] backdrop-blur transition-transform hover:-translate-y-0.5"
+        >
+          <Play className="size-6 text-[#61d7d5]" />
+          快速体验 Seedance 2.0
+        </button>
+      </section>
+
+      <section className="mx-auto w-[min(1420px,calc(100%-40px))] pb-24" id="gallery">
+        <div className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+          <div>
+            <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#e7b65d]">Inspiration</p>
+            <h2 className="text-[clamp(32px,4vw,54px)] font-semibold leading-tight">灵感创作</h2>
+          </div>
+          <div className="inline-flex rounded-full border border-white/15 bg-white/[0.06] p-1 text-sm font-bold">
+            <span className="rounded-full bg-[#61d7d5] px-4 py-2 text-[#071011]">全部</span>
+            <span className="px-4 py-2 text-[#f6f3ed]/70">特效</span>
+            <span className="px-4 py-2 text-[#f6f3ed]/70">风格</span>
+          </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {[
-            ["项目", "从项目库进入画布，保留创作上下文。"],
-            ["任务", "查看生成状态、排队和完成结果。"],
-            ["资产", "管理生成图片、视频和下载记录。"],
-            ["钱包", "按量计费，余额与用量随时可见。"],
-          ].map(([title, desc]) => (
-            <article key={title} className="rounded-xl border border-border-warm bg-background p-5">
-              <h3 className="text-xl font-normal leading-tight text-charcoal">{title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-gray">{desc}</p>
+
+        <div className="grid gap-5 md:grid-cols-4">
+          {inspirationWorks.map((work) => (
+            <article
+              key={work.title}
+              className={`group relative min-h-[280px] overflow-hidden rounded-lg border border-white/15 bg-[#111315] shadow-[0_22px_60px_rgba(0,0,0,0.25)] ${work.className}`}
+            >
+              <img src={work.image} alt={work.title} className="h-full min-h-[280px] w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]" />
+              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.86))] px-5 pb-5 pt-28">
+                <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold backdrop-blur">{work.label}</span>
+                <strong className="text-right text-xl">{work.title}</strong>
+              </div>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="px-4 pb-24">
-        <div className="mx-auto flex max-w-[1200px] flex-col items-center rounded-2xl border border-border-warm bg-[linear-gradient(180deg,rgba(252,251,248,0.72),rgba(247,244,237,1))] px-6 py-14 text-center dark:bg-[linear-gradient(180deg,rgba(244,239,230,0.06),rgba(23,21,18,1))]">
-          <h2 className="max-w-2xl text-[clamp(32px,5vw,48px)] font-semibold leading-none tracking-[-1.2px] text-charcoal">
-            从一个空白画布开始
-          </h2>
-          <p className="mt-4 max-w-xl text-base leading-relaxed text-muted-gray">
-            上传参考，写下想法，生成第一张图，然后把它继续连接成新的文本或视频。
+      <section className="mx-auto mb-24 grid w-[min(1420px,calc(100%-40px))] gap-8 rounded-lg border border-white/15 bg-[#111315]/90 p-7 md:p-12 lg:grid-cols-[0.85fr_1.15fr]">
+        <div>
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#e7b65d]">Workflow</p>
+          <h2 className="text-[clamp(32px,4vw,54px)] font-semibold leading-tight">从提示词到分镜，从素材到成片。</h2>
+          <p className="mt-5 text-[17px] leading-8 text-[#a6a8ad]">
+            用统一工作台管理参考图、模型参数、镜头版本和资产输出。团队可以围绕同一个创作任务快速迭代。
           </p>
-          <div className="mt-7 flex flex-wrap justify-center gap-3">
-            <button type="button" onClick={handleStartCreate} className="primary-button inline-flex items-center gap-2 px-5">
-              进入创作
-              <ArrowRight className="size-4" />
-            </button>
-          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {[
+            [Sparkles, "01", "灵感输入", "提示词 / 参考图 / 风格"],
+            [Clapperboard, "02", "模型生成", "图像 / 视频 / 特效"],
+            [Layers3, "03", "资产沉淀", "版本 / 审核 / 发布"],
+          ].map(([Icon, step, title, desc]) => (
+            <div key={String(step)} className="rounded-lg border border-white/15 bg-white/[0.06] p-5">
+              <Icon className="mb-5 size-6 text-[#61d7d5]" />
+              <span className="text-xs font-black text-[#e7b65d]">{String(step)}</span>
+              <strong className="mt-4 block text-2xl">{String(title)}</strong>
+              <small className="mt-2 block text-sm text-[#a6a8ad]">{String(desc)}</small>
+            </div>
+          ))}
         </div>
       </section>
-    </div>
+
+      <section className="mx-auto w-[min(1420px,calc(100%-40px))] pb-24">
+        <div className="mb-7">
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#e7b65d]">Models</p>
+          <h2 className="text-[clamp(32px,4vw,54px)] font-semibold leading-tight">为真实创作场景准备的模型矩阵</h2>
+        </div>
+        <div className="grid gap-5 md:grid-cols-3">
+          {modelCards.map(([label, title, desc]) => (
+            <article key={title} className="min-h-[210px] rounded-lg border border-white/15 bg-white/[0.06] p-7">
+              <span className="text-xs font-black text-[#e7b65d]">{label}</span>
+              <h3 className="mt-5 text-2xl font-semibold">{title}</h3>
+              <p className="mt-3 leading-7 text-[#a6a8ad]">{desc}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="community" className="mx-auto w-[min(1420px,calc(100%-40px))] pb-24">
+        <div className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+          <div>
+            <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#e7b65d]">Community</p>
+            <h2 className="text-[clamp(32px,4vw,54px)] font-semibold leading-tight">公开作品</h2>
+          </div>
+          <Link href="/community" className="inline-flex items-center gap-2 text-sm font-bold text-[#61d7d5]">
+            查看更多
+            <ArrowRight className="size-4" />
+          </Link>
+        </div>
+
+        {communityPosts.length > 0 ? (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {communityPosts.map((post) => (
+              <CommunityPostCard key={post.id} post={post} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid min-h-[220px] place-items-center rounded-lg border border-dashed border-white/20 bg-white/[0.04] text-sm text-[#a6a8ad]">
+            公开作品加载中
+          </div>
+        )}
+      </section>
+
+      <section className="mx-auto mb-24 flex w-[min(1420px,calc(100%-40px))] flex-col justify-between gap-8 rounded-lg border border-[#61d7d5]/30 bg-[linear-gradient(90deg,rgba(97,215,213,0.12),rgba(255,109,119,0.1)),#17191c] p-8 md:flex-row md:items-center md:p-12">
+        <div>
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#e7b65d]">Creator Plan</p>
+          <h2 className="max-w-[780px] text-[clamp(30px,4vw,50px)] font-semibold leading-tight">
+            让 Copse AI 成为你的日常创作入口。
+          </h2>
+          <p className="mt-4 max-w-[720px] leading-7 text-[#a6a8ad]">会员权益、创作者挑战赛、作品广场和模型体验都可以继续接入到现有应用。</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleStartCreate}
+          className="inline-flex min-h-14 shrink-0 items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#61d7d5,#f5da89_48%,#ff6d77)] px-7 text-base font-bold text-[#071011]"
+        >
+          进入 Copse AI
+          <ImageIcon className="size-4" />
+        </button>
+      </section>
+    </main>
   );
 }
+
+export default HomePage;
