@@ -70,6 +70,7 @@ import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
 import {
   createPromptMentionToken,
+  getComposerUiScale,
   PromptMentionInput,
   promptValueToSubmitPrompt,
   useComposerWheelPan,
@@ -836,7 +837,7 @@ export function VideoNodeComponent({
   // 后期previewUrl 可以考虑gif
   const videoSrc = primaryOutput?.videoUrl || data.videoUrl || data.previewUrl;
   const videoAssetId = primaryOutput?.assetId ?? getVideoAssetId(data);
-  const fixedUiScale = 1 / zoom;
+  const fixedUiScale = getComposerUiScale(zoom);
   // 后续除了引用图片，视频也可以参与引用
 
   // 参考图（边及参考图）

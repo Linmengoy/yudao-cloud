@@ -41,6 +41,10 @@ export function promptValueToSubmitPrompt(value: string, mentions: PromptMention
   );
 }
 
+export function getComposerUiScale(zoom: number) {
+  return Math.min(1 / zoom, 1.35);
+}
+
 export function handleComposerWheelPan(
   event: WheelEvent,
   getViewport: () => { x: number; y: number; zoom: number },

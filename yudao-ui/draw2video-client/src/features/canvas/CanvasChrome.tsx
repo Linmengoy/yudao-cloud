@@ -13,7 +13,7 @@ import { ThemeToggle } from "@/features/theme/ThemeToggle";
 import { formatCompactPoints } from "@/features/wallet/wallet-api";
 import { cn } from "@/lib/utils";
 
-export type CreateNodeKind = "text" | "image" | "sketch" | "video" | "prompt";
+export type CreateNodeKind = "text" | "image" | "sketch" | "video";
 
 export type SelectionRectSnapshot = {
   x: number;
@@ -436,7 +436,6 @@ export function CanvasToolDock({ readOnly, onAddNode, onOpenTemplateLibrary }: C
                 <CreateNodeMenuButton icon={<PenLine className="size-5" />} title={t("nodes.sketch")} description="Sketch and frame planning" onClick={() => createNode("sketch")} />
                 <CreateNodeMenuButton icon={<ImagePlus className="size-5" />} title={t("nodes.image")} description="Image generation and references" onClick={() => createNode("image")} />
                 <CreateNodeMenuButton icon={<Video className="size-5" />} title={t("nodes.video")} description="Video generation node" onClick={() => createNode("video")} />
-                <CreateNodeMenuButton icon={<Sparkles className="size-5" />} title={t("nodes.prompt")} description="Standalone prompt node" onClick={() => createNode("prompt")} />
               </div>
             </motion.div>
           </>

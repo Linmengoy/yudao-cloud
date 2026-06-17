@@ -59,7 +59,7 @@ import { clampToViewport } from "./floating-position";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
 import { copyImageSourceToClipboard } from "./clipboard-copy";
-import { createPromptMentionToken, PromptMentionInput, promptValueToSubmitPrompt, useComposerWheelPan, type PromptMentionOption } from "./PromptMentionInput";
+import { createPromptMentionToken, getComposerUiScale, PromptMentionInput, promptValueToSubmitPrompt, useComposerWheelPan, type PromptMentionOption } from "./PromptMentionInput";
 
 type ImageNodeProps = NodeProps<Node<ImageNodeData, "image">>;
 type ConnectedImage = { edgeId: string; nodeId: string; data: Pick<ImageNodeData | SketchNodeData, "previewUrl" | "dataUrl" | "fileName"> };
@@ -629,7 +629,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
 
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
   const showNodeActions = selectedNodeCount <= 1 && !outputsExpanded;
-  const fixedUiScale = 1 / zoom;
+  const fixedUiScale = getComposerUiScale(zoom);
 
   useEffect(() => {
     function handleReferencePicker(e: Event) {

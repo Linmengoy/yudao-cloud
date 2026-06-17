@@ -68,7 +68,7 @@ import { CanvasTemplateLibraryDialog } from "@/features/templates/CanvasTemplate
 import type { PromptTemplate } from "@/features/templates/template-types";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
-import { ImagePlus, MousePointerClick, PenLine, Sparkles, Type, Video } from "lucide-react";
+import { ImagePlus, MousePointerClick, PenLine, Type, Video } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -120,7 +120,7 @@ type PointerSnapshot = {
   y: number;
 };
 
-const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video", "prompt"];
+const CREATE_NODE_KINDS: CreateNodeKind[] = ["text", "image", "sketch", "video"];
 const DEFAULT_CANVAS_VIEWPORT = { x: 110, y: 90, zoom: 0.78 };
 const NODE_DATA_PATCH_DEBOUNCE_MS = 200;
 const CANVAS_SAVE_DEBOUNCE_MS = 1500;
@@ -3216,16 +3216,12 @@ function CanvasFlow() {
   const createNodeAtMenu = useCallback(
     (kind: CreateNodeKind) => {
       const position = { x: createMenu.flowX, y: createMenu.flowY };
-      const newNode =
-        kind === "text"
-          ? addTextNode(position)
-          : kind === "image"
-            ? addImageDraftNode(position)
-            : kind === "sketch"
-              ? addSketchNode(position)
-              : kind === "video"
-                ? addVideoNode(position)
-                : addPromptNode(position);
+      const newNode = {
+        text: addTextNode,
+        image: addImageDraftNode,
+        sketch: addSketchNode,
+        video: addVideoNode,
+      }[kind](position);
 
       if (!newNode) return;
 
@@ -3258,7 +3254,7 @@ function CanvasFlow() {
 
       closeCreateMenu();
     },
-    [addImageDraftNode, addPromptNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
+    [addImageDraftNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
   );
 
   const handleConnectEnd = useCallback(
@@ -3375,14 +3371,13 @@ function CanvasFlow() {
 
   const addNodeFromDock = (kind: CreateNodeKind) => {
     const position = screenToFlowPosition({
-      x: Math.min(window.innerWidth - 240, 360),
+      x: window.innerWidth / 2,
       y: window.innerHeight / 2,
     });
     if (kind === "text") addTextNode(position);
     if (kind === "image") addImageDraftNode(position);
     if (kind === "sketch") addSketchNode(position);
     if (kind === "video") addVideoNode(position);
-    if (kind === "prompt") addPromptNode(position);
   };
 
   return (
@@ -3469,9 +3464,9 @@ function CanvasFlow() {
         {isCanvasEmpty && !isReadOnly && !referencePickerPromptId && (
           <motion.div
             key="canvas-empty-hint"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
             className="pointer-events-none absolute inset-0 z-[50] flex flex-col items-center justify-center gap-4 px-6"
           >
@@ -3480,7 +3475,6 @@ function CanvasFlow() {
               <EmptyCanvasButton icon={<ImagePlus />} label={canvasT("nodes.image")} description={canvasT("empty.image")} onClick={() => addNodeFromDock("image")} />
               <EmptyCanvasButton icon={<Type />} label={canvasT("nodes.text")} description={canvasT("empty.text")} onClick={() => addNodeFromDock("text")} />
               <EmptyCanvasButton icon={<PenLine />} label={canvasT("nodes.sketch")} description={canvasT("empty.sketch")} onClick={() => addNodeFromDock("sketch")} />
-              <EmptyCanvasButton icon={<Sparkles />} label={canvasT("nodes.prompt")} description={canvasT("empty.prompt")} onClick={() => addNodeFromDock("prompt")} />
             </div>
             <p className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-gray">
               <MousePointerClick className="size-3.5" />
@@ -3517,7 +3511,6 @@ function CanvasFlow() {
         multiSelectionKeyCode={keyboardEditingNodeId ? null : undefined}
         panActivationKeyCode={keyboardEditingNodeId ? null : "Space"}
         disableKeyboardA11y={Boolean(keyboardEditingNodeId)}
-        fitView
         onlyRenderVisibleElements
         defaultEdgeOptions={{
           type: "signal",
@@ -3539,9 +3532,6 @@ function CanvasFlow() {
           if (ignoreNextPaneClickRef.current) {
             ignoreNextPaneClickRef.current = false;
             return;
-          }
-          if (isCanvasEmpty && !isReadOnly) {
-            addPromptNode();
           }
           closeContextMenu();
           closeCreateMenu();
