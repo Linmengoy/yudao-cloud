@@ -147,6 +147,8 @@ curl.exe -sS "http://111.228.39.103:48080/admin-api/system/auth/login"
 ssh manman "docker pull 127.0.0.1:3000/root/yudao-system:v0.0.1 && docker tag 127.0.0.1:3000/root/yudao-system:v0.0.1 127.0.0.1:3000/root/manman/yudao-system:v0.0.1 && docker push 127.0.0.1:3000/root/manman/yudao-system:v0.0.1"
 ```
 
+如果 preflight 在回滚镜像校验阶段失败，不要把 `127.0.0.1:3000/root/<service>:<tag>` 当作有效回滚证据。`script/docker/verify-release-evidence.sh preflight` 会拒绝非项目级 `root/manman` registry 前缀；若 `docker pull` 在 `DOCKER_CLI_TIMEOUT_SECONDS` 内无响应，证据必须记录 Docker daemon 健康、registry 可达性、项目级镜像路径和日志路径，修复后重跑 preflight。
+
 ## 后端 prod 发布
 
 适用场景：人工确认后的生产发布，目标主机是 `manman2`。
@@ -369,6 +371,8 @@ $env:MICRO_IMAGE_REGISTRY_PREFIX='111.228.39.103:3000/root/manman/'
 ```
 
 退出码 `126` 表示 bash/Git Bash/WSL 执行环境不可用，退出码 `124` 表示启动或执行超时，其它非零退出码表示 `verify-release-evidence.sh` 判定 release evidence 不满足。日志会写入 `tmp/release-gates/windows-verify-*`，必须随工单写回开始时间、结束时间、退出码和日志路径。
+
+当日志出现 `docker CLI timed out after ... while pulling rollback image` 时，先确认 Docker Desktop/docker engine 可响应，再确认 `MICRO_IMAGE_REGISTRY_PREFIX` 指向项目级 `root/manman/`，并手动验证 `docker pull <registry>/root/manman/<service>:<previous_stable_image_tag>`。不要用历史 `root/<service>` 路径或 `latest` 作为替代回滚证据。
 
 ## #173/#174 后端发布范围
 

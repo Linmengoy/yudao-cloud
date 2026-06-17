@@ -84,6 +84,20 @@ image_ref_for() {
   printf '%s%s:%s' "$prefix" "$service" "$tag"
 }
 
+require_project_registry_prefix() {
+  local service="$1"
+  local prefix
+
+  prefix="$(registry_prefix_for "$service")"
+  [ -n "$prefix" ] || fail "registry prefix is required before pulling rollback image for ${service}"
+  case "$prefix" in
+    */root/manman/ | */root/manman) ;;
+    *)
+      fail "registry prefix must use project-scoped Gitea path root/manman before rollback pull for ${service}: ${prefix}"
+      ;;
+  esac
+}
+
 run_curl() {
   local url="$1"
   curl -i -sS --fail-with-body --max-time "${CURL_TIMEOUT_SECONDS:-15}" "$url"
@@ -97,6 +111,22 @@ run_docker_with_timeout() {
   else
     docker "$@"
   fi
+}
+
+pull_previous_image() {
+  local previous_ref="$1"
+  local timeout_seconds="${DOCKER_CLI_TIMEOUT_SECONDS:-30}"
+  local docker_exit
+
+  set +e
+  run_docker_with_timeout pull "$previous_ref"
+  docker_exit=$?
+  set -e
+
+  if [ "$docker_exit" -eq 124 ]; then
+    fail "docker CLI timed out after ${timeout_seconds}s while pulling rollback image: ${previous_ref}. Check Docker daemon health, registry reachability, and project-scoped root/manman image path."
+  fi
+  [ "$docker_exit" -eq 0 ] || fail "docker pull failed for rollback image ${previous_ref} with exit code ${docker_exit}"
 }
 
 preflight() {
@@ -152,10 +182,11 @@ preflight() {
       if [ -n "$previous_tag" ]; then
         echo "- previous stable registry pull:"
         while IFS= read -r item; do
+          require_project_registry_prefix "$item"
           previous_ref="$(image_ref_for "$item" "$previous_tag")"
           # Evidence command: docker pull "$previous_ref"
           echo "  command: docker pull ${previous_ref}"
-          run_docker_with_timeout pull "$previous_ref"
+          pull_previous_image "$previous_ref"
         done < <(service_list_for "$service")
       fi
     fi
