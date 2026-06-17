@@ -60,6 +60,43 @@ class Issue308ImageToImageContractsTest(unittest.TestCase):
         self.assertIn('params.set("inputImageUrls", normalizedReferences)', normalizer)
         self.assertIn("normalizeInputImageSnapshots", normalizer)
 
+    def test_canvas_image_to_image_rejects_local_or_draft_ids_until_stable_asset_is_available(self):
+        service = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/service/canvas/AigcCanvasNodeRunServiceImpl.java"
+        )
+
+        stable_reference_guard = require_section(
+            service,
+            r"private boolean isStableImageReference\(String source\) \{(?P<body>.*?)\n    \}",
+        )
+        self.assertIn('StrUtil.startWithAnyIgnoreCase(value, "http://", "https://", "data:image/")', stable_reference_guard)
+        self.assertNotRegex(stable_reference_guard, r"draft_|node_|localInputImageIds")
+
+        asset_resolution = require_section(
+            service,
+            r"private List<String> resolveAssetReferenceUrls\(JSONObject params\) \{(?P<body>.*?)\n    \}",
+        )
+        for field in ["referenceAssetIds", "inputAssetIds", "inputImageIds"]:
+            self.assertIn(f'collectAssetIds(assetIds, params.getJSONArray("{field}"))', asset_resolution)
+        self.assertIn("assetApi.getAssets(new ArrayList<>(assetIds)).getCheckedData()", asset_resolution)
+        self.assertIn("throw serviceException(CANVAS_NODE_RUN_REFERENCE_IMAGE_INVALID)", asset_resolution)
+
+        collect_asset_ids = require_section(
+            service,
+            r"private void collectAssetIds\(Set<Long> assetIds, JSONArray values\) \{(?P<body>.*?)\n    \}",
+        )
+        self.assertIn("Long assetId = parseLongQuietly(item)", collect_asset_ids)
+        self.assertIn("assetId != null", collect_asset_ids)
+
+        parse_long = require_section(
+            service,
+            r"private Long parseLongQuietly\(Object value\) \{(?P<body>.*?)\n    \}",
+        )
+        self.assertIn("Long.valueOf(text)", parse_long)
+        self.assertIn("catch (NumberFormatException ex)", parse_long)
+        self.assertIn("return null", parse_long)
+
     def test_gpt_image_provider_ignores_draft_ids_instead_of_decoding_as_base64(self):
         provider = read(
             "yudao-module-aigc-gen/yudao-module-aigc-gen-server/src/main/java/"
@@ -71,6 +108,23 @@ class Issue308ImageToImageContractsTest(unittest.TestCase):
         self.assertIn('StrUtil.startWithAnyIgnoreCase(value, "http://", "https://", "data:image/")', provider)
         self.assertIn("looksLikeBase64Image(value)", provider)
         self.assertIn('throw new IllegalArgumentException("图生图参考图片格式不支持")', provider)
+
+    def test_gpt_image_provider_only_forwards_supported_reference_sources(self):
+        provider = read(
+            "yudao-module-aigc-gen/yudao-module-aigc-gen-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/gen/framework/client/GptImageProviderClient.java"
+        )
+
+        parser = require_section(
+            provider,
+            r"private List<ImageInput> parseInputImages\(String inputParams\) \{(?P<body>.*?)\n    private boolean isSupportedImageSource",
+        )
+        self.assertIn("JSONArray referenceImages = params.getJSONArray(\"referenceImages\")", parser)
+        self.assertIn("JSONArray inputImages = params.getJSONArray(\"inputImages\")", parser)
+        self.assertIn("JSONArray inputImageUrls = params.getJSONArray(\"inputImageUrls\")", parser)
+        self.assertGreaterEqual(parser.count("isSupportedImageSource("), 3)
+        self.assertIn("images.stream().noneMatch(image -> image.source().equals(url))", parser)
+        self.assertNotIn("Base64.getDecoder().decode", parser)
 
     def test_frontend_does_not_submit_local_image_ids_as_server_reference_ids(self):
         image_node = read("yudao-ui/draw2video-client/src/features/canvas/ImageNode.tsx")
