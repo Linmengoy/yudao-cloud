@@ -174,6 +174,21 @@ class ReleaseScopeAndEvidenceContractTest(unittest.TestCase):
         self.assertIn("curl -fsS -I http://127.0.0.1:8081/", runbook)
         self.assertIn("HTTP 状态、响应摘要和失败日志路径", runbook)
 
+    def test_issue_314_skip_upload_registry_preflight_has_no_remote_side_effects(self):
+        deploy_ps1 = read("script/deploy-frontend-images.ps1")
+        deploy_sh = read("script/deploy-frontend-images.sh")
+
+        for deploy in [deploy_ps1, deploy_sh]:
+            with self.subTest(script=deploy[:20]):
+                self.assertIn("Registry preflight only", deploy)
+                self.assertIn("SkipUpload is set; registry push, remote pull, and container restart are skipped.", deploy)
+                self.assertIn("generated env preview:", deploy)
+                self.assertIn("remote env path:", deploy)
+                self.assertIn("remote compose path:", deploy)
+
+        self.assertIn("if ($UseRegistry -and !$SkipUpload)", deploy_ps1)
+        self.assertIn('if [[ "$USE_REGISTRY" -eq 1 && "$SKIP_UPLOAD" -eq 0 ]]', deploy_sh)
+
     def test_issue_315_prod_backend_rollback_evidence_mentions_model_and_gen(self):
         gate = read("script/docker/verify-release-evidence.sh")
         runbook = read("script/deployment-runbook.md")

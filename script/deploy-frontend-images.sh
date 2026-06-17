@@ -472,7 +472,7 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
   fi
 fi
 
-if [[ "$USE_REGISTRY" -eq 1 ]]; then
+if [[ "$USE_REGISTRY" -eq 1 && "$SKIP_UPLOAD" -eq 0 ]]; then
   step "Push frontend images to registry"
   for i in "${!IMAGES[@]}"; do
     run docker tag "${IMAGES[$i]}" "${REGISTRY_IMAGES[$i]}"
@@ -481,6 +481,19 @@ if [[ "$USE_REGISTRY" -eq 1 ]]; then
 elif [[ "$SKIP_SAVE" -eq 0 ]]; then
   step "Save frontend images"
   save_docker_images "$ARCHIVE_PATH" "${IMAGES[@]}"
+elif [[ "$USE_REGISTRY" -eq 1 && "$SKIP_UPLOAD" -eq 1 ]]; then
+  step "Registry preflight only"
+  local_env_file="$(mktemp)"
+  write_frontend_env_file "$local_env_file"
+  echo "SkipUpload is set; registry push, remote pull, and container restart are skipped."
+  echo "target services: ${SERVICES[*]}"
+  echo "image tag: $IMAGE_TAG"
+  echo "registry images: ${REGISTRY_IMAGES[*]}"
+  echo "remote env path: ${REMOTE_DIR}/.frontend-${DEPLOY_ENV}.env"
+  echo "remote compose path: ${REMOTE_DIR}/${COMPOSE_FILE}"
+  echo "generated env preview:"
+  cat "$local_env_file"
+  rm -f "$local_env_file"
 fi
 
 if [[ "$SKIP_UPLOAD" -eq 0 ]]; then

@@ -274,7 +274,7 @@ if (!$SkipBuild) {
   }
 }
 
-if ($UseRegistry) {
+if ($UseRegistry -and !$SkipUpload) {
   Invoke-Step "Push frontend images to registry" {
     for ($i = 0; $i -lt $Images.Count; $i++) {
       Run-Command "docker" @("tag", $Images[$i], $RegistryImages[$i])
@@ -284,6 +284,22 @@ if ($UseRegistry) {
 } elseif (!$SkipSave) {
   Invoke-Step "Save frontend images" {
     Save-DockerImages $ArchivePath $Images
+  }
+} elseif ($UseRegistry -and $SkipUpload) {
+  Invoke-Step "Registry preflight only" {
+    $LocalEnvFile = New-FrontendEnvFile
+    try {
+      Write-Host "SkipUpload is set; registry push, remote pull, and container restart are skipped."
+      Write-Host "target services: $($Services -join ', ')"
+      Write-Host "image tag: $ImageTag"
+      Write-Host "registry images: $($RegistryImages -join ', ')"
+      Write-Host "remote env path: ${RemoteDir}/.frontend-${DeployEnv}.env"
+      Write-Host "remote compose path: ${RemoteDir}/${ComposeFile}"
+      Write-Host "generated env preview:"
+      Get-Content -LiteralPath $LocalEnvFile
+    } finally {
+      Remove-PathWithRetry $LocalEnvFile
+    }
   }
 }
 

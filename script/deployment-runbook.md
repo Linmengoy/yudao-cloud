@@ -632,6 +632,12 @@ workflow 一直排队：
 - prod 检查 runner `manman2-prod` 是否在线。
 - runner 所在机器必须能执行 `docker version`、`docker compose version`、`mvn -version`。
 
+workflow 手动选分支后直接失败：
+
+- 先看 `Checkout` 步骤日志，当前 workflow 会打印 `Checkout ref` 和 `Checkout sha`。
+- 旧流程在 checkout 前会先执行一次未带 token 的 `git fetch --prune origin`，私有仓库或手动分支触发时会在这里失败；现在所有 fetch 都走 `GITEA_TOKEN`。
+- 如果仍失败，优先确认所选分支已经包含同一路径的 `.gitea/workflows/*.yml`，并且 `secrets.GITHUB_TOKEN` 对 `root/manman` 有读权限。
+
 ## 发布结果写回模板
 
 每次发布完成后，把下面内容写回对应 Gitea issue：
