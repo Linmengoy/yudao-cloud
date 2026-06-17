@@ -367,7 +367,7 @@ function getSizeCapabilityBadge(templates: AigcModelParamTemplate[]) {
 function buildServerInputParams(params: Record<string, unknown>, ids: string[], snapshots: ResultNodeData["inputImages"]) {
   return JSON.stringify({
     ...params,
-    inputImageIds: ids,
+    localInputImageIds: ids,
     inputImageUrls: snapshots
       .map((image) => image.dataUrl)
       .filter((url) => /^https?:\/\//.test(url)),

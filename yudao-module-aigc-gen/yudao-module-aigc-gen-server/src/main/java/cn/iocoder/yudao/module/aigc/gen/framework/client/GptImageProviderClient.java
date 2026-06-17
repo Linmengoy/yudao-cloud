@@ -159,7 +159,7 @@ public class GptImageProviderClient implements AigcProviderClient {
         if (referenceImages != null) {
             for (Object item : referenceImages) {
                 String url = String.valueOf(item);
-                if (StrUtil.isNotBlank(url)) {
+                if (isSupportedImageSource(url)) {
                     images.add(new ImageInput(url, "input.png", "image/png"));
                 }
             }
@@ -172,7 +172,7 @@ public class GptImageProviderClient implements AigcProviderClient {
                 if (StrUtil.isBlank(source)) {
                     source = image.getStr("url");
                 }
-                if (StrUtil.isNotBlank(source)) {
+                if (isSupportedImageSource(source)) {
                     images.add(new ImageInput(source, image.getStr("fileName", "input.png"), image.getStr("mimeType", "image/png")));
                 }
             }
@@ -181,12 +181,30 @@ public class GptImageProviderClient implements AigcProviderClient {
         if (inputImageUrls != null) {
             for (Object item : inputImageUrls) {
                 String url = String.valueOf(item);
-                if (StrUtil.isNotBlank(url) && images.stream().noneMatch(image -> image.source().equals(url))) {
+                if (isSupportedImageSource(url) && images.stream().noneMatch(image -> image.source().equals(url))) {
                     images.add(new ImageInput(url, "input.png", "image/png"));
                 }
             }
         }
         return images;
+    }
+
+    private boolean isSupportedImageSource(String source) {
+        String value = StrUtil.trim(source);
+        if (StrUtil.isBlank(value)) {
+            return false;
+        }
+        if (StrUtil.startWithAnyIgnoreCase(value, "http://", "https://", "data:image/")) {
+            return true;
+        }
+        return looksLikeBase64Image(value);
+    }
+
+    private boolean looksLikeBase64Image(String source) {
+        if (source.length() < 32 || source.length() % 4 != 0) {
+            return false;
+        }
+        return source.matches("^[A-Za-z0-9+/]+={0,2}$");
     }
 
     private File createTempImageFile(ImageInput image, AigcProviderSubmitReqDTO reqDTO) throws Exception {
@@ -210,6 +228,9 @@ public class GptImageProviderClient implements AigcProviderClient {
                 return Base64.getDecoder().decode(payload);
             }
             return URLDecoder.decode(payload, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8);
+        }
+        if (!looksLikeBase64Image(source)) {
+            throw new IllegalArgumentException("图生图参考图片格式不支持");
         }
         return Base64.getDecoder().decode(source);
     }

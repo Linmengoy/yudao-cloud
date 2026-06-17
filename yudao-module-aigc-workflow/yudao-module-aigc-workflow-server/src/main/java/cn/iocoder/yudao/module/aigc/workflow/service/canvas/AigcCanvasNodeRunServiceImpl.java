@@ -1,12 +1,16 @@
 package cn.iocoder.yudao.module.aigc.workflow.service.canvas;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import cn.iocoder.yudao.framework.common.exception.ErrorCode;
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.aigc.asset.api.AigcAssetApi;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetFileRespDTO;
+import cn.iocoder.yudao.module.aigc.asset.dto.AigcAssetRespDTO;
 import cn.iocoder.yudao.module.aigc.gen.api.AigcGenerateApi;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateResultRespDTO;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateSubmitReqDTO;
@@ -43,6 +47,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -52,6 +57,9 @@ import java.util.stream.Collectors;
 
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_NODE_RUN_TASK_NOT_BELONG;
 import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_NODE_RUN_TASK_NOT_EXISTS;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_NODE_RUN_INPUT_PARAMS_INVALID;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_NODE_RUN_REFERENCE_IMAGE_INVALID;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_NODE_RUN_REFERENCE_IMAGE_REQUIRED;
 
 @Service
 @Validated
@@ -86,6 +94,8 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     private TransactionTemplate transactionTemplate;
     @Resource
     private AigcCanvasGenerationRunSseService generationRunSseService;
+    @Resource
+    private AigcAssetApi assetApi;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -97,6 +107,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         // 生成runId
         String runId = StrUtil.blankToDefault(reqVO.getRunId(),
                 "run_" + userFlag + "_" + System.currentTimeMillis());
+        reqVO.setInputParams(normalizeNodeRunInputParams(reqVO));
 
         // 提交请求返回
         CommonResult<AigcGenerateSubmitRespDTO> submitResult = generateApi.submit(new AigcGenerateSubmitReqDTO()
@@ -291,6 +302,153 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             }
         }
         return result.setStatus("ASSET_CREATING");
+    }
+
+    private String normalizeNodeRunInputParams(AigcCanvasNodeRunReqVO reqVO) {
+        if (StrUtil.isBlank(reqVO.getInputParams())) {
+            if ("IMAGE_TO_IMAGE".equals(reqVO.getGenerateMode())) {
+                throw serviceException(CANVAS_NODE_RUN_REFERENCE_IMAGE_REQUIRED);
+            }
+            return reqVO.getInputParams();
+        }
+        if (!JSONUtil.isTypeJSONObject(reqVO.getInputParams())) {
+            throw serviceException(CANVAS_NODE_RUN_INPUT_PARAMS_INVALID);
+        }
+        JSONObject params = JSONUtil.parseObj(reqVO.getInputParams());
+        if (!"IMAGE_TO_IMAGE".equals(reqVO.getGenerateMode())) {
+            return params.toString();
+        }
+        LinkedHashSet<String> references = collectStableReferenceImages(params);
+        references.addAll(resolveAssetReferenceUrls(params));
+        if (references.isEmpty()) {
+            throw serviceException(CANVAS_NODE_RUN_REFERENCE_IMAGE_REQUIRED);
+        }
+        JSONArray normalizedReferences = new JSONArray();
+        references.forEach(normalizedReferences::add);
+        params.set("referenceImages", normalizedReferences);
+        params.set("inputImageUrls", normalizedReferences);
+        params.set("inputImages", normalizeInputImageSnapshots(params.getJSONArray("inputImages"), references));
+        return params.toString();
+    }
+
+    private LinkedHashSet<String> collectStableReferenceImages(JSONObject params) {
+        LinkedHashSet<String> references = new LinkedHashSet<>();
+        addStableReferences(references, params.getJSONArray("referenceImages"));
+        addStableReferences(references, params.getJSONArray("inputImageUrls"));
+        JSONArray inputImages = params.getJSONArray("inputImages");
+        if (inputImages != null) {
+            for (Object item : inputImages) {
+                JSONObject image = JSONUtil.parseObj(item);
+                addStableReference(references, StrUtil.blankToDefault(image.getStr("url"), image.getStr("dataUrl")));
+            }
+        }
+        return references;
+    }
+
+    private void addStableReferences(Set<String> references, JSONArray values) {
+        if (values == null) {
+            return;
+        }
+        for (Object item : values) {
+            addStableReference(references, Objects.toString(item, null));
+        }
+    }
+
+    private void addStableReference(Set<String> references, String source) {
+        if (isStableImageReference(source)) {
+            references.add(source.trim());
+        }
+    }
+
+    private boolean isStableImageReference(String source) {
+        String value = StrUtil.trim(source);
+        return StrUtil.startWithAnyIgnoreCase(value, "http://", "https://", "data:image/");
+    }
+
+    private List<String> resolveAssetReferenceUrls(JSONObject params) {
+        LinkedHashSet<Long> assetIds = new LinkedHashSet<>();
+        collectAssetIds(assetIds, params.getJSONArray("referenceAssetIds"));
+        collectAssetIds(assetIds, params.getJSONArray("inputAssetIds"));
+        collectAssetIds(assetIds, params.getJSONArray("inputImageIds"));
+        if (assetIds.isEmpty()) {
+            return List.of();
+        }
+        List<AigcAssetRespDTO> assets = assetApi.getAssets(new ArrayList<>(assetIds)).getCheckedData();
+        if (assets == null || assets.isEmpty()) {
+            throw serviceException(CANVAS_NODE_RUN_REFERENCE_IMAGE_INVALID);
+        }
+        List<String> urls = assets.stream()
+                .map(this::resolveAssetAccessUrl)
+                .filter(this::isStableImageReference)
+                .distinct()
+                .toList();
+        if (urls.isEmpty()) {
+            throw serviceException(CANVAS_NODE_RUN_REFERENCE_IMAGE_INVALID);
+        }
+        return urls;
+    }
+
+    private void collectAssetIds(Set<Long> assetIds, JSONArray values) {
+        if (values == null) {
+            return;
+        }
+        for (Object item : values) {
+            Long assetId = parseLongQuietly(item);
+            if (assetId != null) {
+                assetIds.add(assetId);
+            }
+        }
+    }
+
+    private Long parseLongQuietly(Object value) {
+        try {
+            String text = Objects.toString(value, "").trim();
+            return text.isEmpty() ? null : Long.valueOf(text);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private String resolveAssetAccessUrl(AigcAssetRespDTO asset) {
+        if (asset == null) {
+            return null;
+        }
+        if (StrUtil.isNotBlank(asset.getFileUrl())) {
+            return asset.getFileUrl();
+        }
+        if (asset.getFiles() == null) {
+            return null;
+        }
+        return asset.getFiles().stream()
+                .map(AigcAssetFileRespDTO::getAccessUrl)
+                .filter(StrUtil::isNotBlank)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private JSONArray normalizeInputImageSnapshots(JSONArray inputImages, Set<String> references) {
+        JSONArray normalized = new JSONArray();
+        if (inputImages != null) {
+            for (Object item : inputImages) {
+                JSONObject image = JSONUtil.parseObj(item);
+                String source = StrUtil.blankToDefault(image.getStr("url"), image.getStr("dataUrl"));
+                if (!isStableImageReference(source)) {
+                    continue;
+                }
+                image.set("url", source.trim());
+                image.remove("dataUrl");
+                normalized.add(image);
+            }
+        }
+        for (String reference : references) {
+            boolean exists = normalized.stream()
+                    .map(JSONUtil::parseObj)
+                    .anyMatch(image -> reference.equals(image.getStr("url")));
+            if (!exists) {
+                normalized.add(new JSONObject().set("url", reference));
+            }
+        }
+        return normalized;
     }
 
     private void validateResultBelongsToCanvasNode(AigcCanvasNodeRunSyncReqVO reqVO, AigcGenerateResultRespDTO result) {
