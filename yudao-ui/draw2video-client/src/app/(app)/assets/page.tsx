@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import Link from "next/link";
 import { Loader2, RefreshCw, Search } from "lucide-react";
-import { deleteMyAsset, downloadMyAsset, getMyAssetCategoryCounts, getMyAssetPage, updateMyAsset, updateMyAssetVisibility } from "@/features/assets/asset-api";
+import { deleteMyAsset, downloadMyAsset, getMyAssetPage, updateMyAsset, updateMyAssetVisibility } from "@/features/assets/asset-api";
 import { getAccessToken } from "@/lib/api-client";
 import {
   canDownloadAsset,
@@ -21,53 +21,16 @@ import { useAuth } from "@/features/auth/auth-store";
 import { MediaPreviewDialog } from "@/features/media-preview/MediaPreviewDialog";
 import { PreviewVideoPlayer } from "@/features/media-preview/PreviewVideoPlayer";
 import type { MediaPreviewItem } from "@/features/media-preview/types";
-import { mergeStableList, readPageCache, writePageCache } from "@/lib/page-cache";
+import { mergeStableList } from "@/lib/page-cache";
 import type Muuri from "muuri";
 import type { Item, LayoutFunctionCallback } from "muuri";
 
 type AssetTab = "ALL" | "GENERATED_IMAGE" | "UPLOADED_IMAGE" | "VIDEO" | "OTHER";
-type AssetTabCounts = Record<AssetTab, number>;
 
 const MIN_ASSET_COLUMN_WIDTH = 220;
 const PAGE_SIZE = 30;
-const EMPTY_COUNTS: AssetTabCounts = {
-  ALL: 0,
-  GENERATED_IMAGE: 0,
-  UPLOADED_IMAGE: 0,
-  VIDEO: 0,
-  OTHER: 0,
-};
-
-type AssetsPageCache = {
-  assets: AigcAsset[];
-  total: number;
-  counts: AssetTabCounts;
-  hasMore: boolean;
-  nextPageNo: number;
-};
-
-function assetsPageCacheKey(ownerKey: string | number | null | undefined, tab: AssetTab, query: string) {
-  return `assets:${ownerKey ?? "current"}:${tab}:${query.trim()}`;
-}
-
-function writeAssetsPageCache(
-  ownerKey: string | number | null | undefined,
-  tab: AssetTab,
-  query: string,
-  assets: AigcAsset[],
-  total: number,
-  counts: AssetTabCounts,
-  hasMore: boolean,
-  nextPageNo: number
-) {
-  writePageCache<AssetsPageCache>(assetsPageCacheKey(ownerKey, tab, query), {
-    assets,
-    total,
-    counts,
-    hasMore,
-    nextPageNo,
-  });
-}
+const ASSET_IMAGE_PRELOAD_TIMEOUT_MS = 8000;
+const ASSET_SKELETON_HEIGHTS = [260, 320, 220, 360, 280, 300, 240, 340, 270, 310, 230, 350];
 
 function localToAsset(asset: GeneratedAsset): AigcAsset {
   return {
@@ -111,31 +74,6 @@ function matchesTab(asset: AigcAsset, tab: AssetTab) {
   return asset.assetType === tab;
 }
 
-function buildLocalAssetCounts(assets: AigcAsset[], query: string): AssetTabCounts {
-  const matchedAssets = assets.filter((asset) => matchesQuery(asset, query));
-  return {
-    ALL: matchedAssets.length,
-    GENERATED_IMAGE: matchedAssets.filter(isGeneratedImage).length,
-    UPLOADED_IMAGE: matchedAssets.filter(isUploadedImage).length,
-    VIDEO: matchedAssets.filter((asset) => asset.assetType === "VIDEO").length,
-    OTHER: matchedAssets.filter((asset) => asset.assetType !== "IMAGE" && asset.assetType !== "VIDEO").length,
-  };
-}
-
-function decrementAssetCounts(counts: AssetTabCounts, asset: AigcAsset): AssetTabCounts {
-  const nextCounts = { ...counts, ALL: Math.max(0, counts.ALL - 1) };
-  if (isGeneratedImage(asset)) {
-    nextCounts.GENERATED_IMAGE = Math.max(0, nextCounts.GENERATED_IMAGE - 1);
-  } else if (isUploadedImage(asset)) {
-    nextCounts.UPLOADED_IMAGE = Math.max(0, nextCounts.UPLOADED_IMAGE - 1);
-  } else if (asset.assetType === "VIDEO") {
-    nextCounts.VIDEO = Math.max(0, nextCounts.VIDEO - 1);
-  } else {
-    nextCounts.OTHER = Math.max(0, nextCounts.OTHER - 1);
-  }
-  return nextCounts;
-}
-
 function getAssetTabQuery(tab: AssetTab) {
   if (tab === "GENERATED_IMAGE") return { assetType: "IMAGE", sourceType: "GENERATE" };
   if (tab === "UPLOADED_IMAGE") return { assetType: "IMAGE", sourceType: "UPLOAD" };
@@ -170,6 +108,30 @@ function getAssetKey(asset: AigcAsset) {
 
 function isMediaAsset(asset: AigcAsset) {
   return Boolean(getFullAssetPreviewUrl(asset) && (asset.assetType === "IMAGE" || asset.assetType === "VIDEO"));
+}
+
+function getAssetImagePreviewUrl(asset: AigcAsset) {
+  const url = getFullAssetPreviewUrl(asset);
+  return asset.assetType === "IMAGE" && url ? url : null;
+}
+
+function preloadAssetImage(src: string) {
+  return new Promise<void>((resolve) => {
+    const image = new Image();
+    const timer = window.setTimeout(resolve, ASSET_IMAGE_PRELOAD_TIMEOUT_MS);
+    const finish = () => {
+      window.clearTimeout(timer);
+      resolve();
+    };
+    image.onload = finish;
+    image.onerror = finish;
+    image.src = src;
+  });
+}
+
+function preloadAssetImages(assets: AigcAsset[]) {
+  const urls = assets.map(getAssetImagePreviewUrl).filter(Boolean) as string[];
+  return Promise.all(urls.map(preloadAssetImage));
 }
 
 type AssetDraft = {
@@ -283,7 +245,7 @@ function assetWallLayout(_grid: Muuri, id: number, items: Item[], width: number,
 function AssetWallPreview({ asset, onLoad }: { asset: AigcAsset; onLoad: (ratio?: number) => void }) {
   const previewUrl = getFullAssetPreviewUrl(asset);
   if (asset.assetType === "IMAGE" && previewUrl) {
-    return <img src={previewUrl} alt={asset.title || "图片资产预览"} className="block h-auto w-full" loading="lazy" onLoad={(event) => onLoad(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)} />;
+    return <img src={previewUrl} alt={asset.title || "图片资产预览"} className="block h-auto w-full" loading="lazy" decoding="async" onLoad={(event) => onLoad(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)} />;
   }
   if (asset.assetType === "VIDEO" && asset.fileUrl) {
     return (
@@ -318,114 +280,93 @@ function EmptyState({ tab }: { tab: AssetTab }) {
   );
 }
 
+function AssetGridSkeleton() {
+  return (
+    <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {ASSET_SKELETON_HEIGHTS.map((height, index) => (
+        <div key={index} className="overflow-hidden rounded-xl border border-border-warm bg-background">
+          <div className="animate-pulse bg-muted" style={{ height }} />
+          <div className="space-y-2 p-3.5">
+            <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-full animate-pulse rounded bg-muted" />
+            <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+            <div className="flex gap-1.5 pt-1">
+              <div className="h-5 w-16 animate-pulse rounded-full bg-muted" />
+              <div className="h-5 w-20 animate-pulse rounded-full bg-muted" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AssetsPage() {
   const { user } = useAuth();
-  const initialPageCache = useMemo(
-    () => readPageCache<AssetsPageCache>(assetsPageCacheKey(user?.id, "ALL", "")),
-    [user?.id]
-  );
   const [tab, setTab] = useState<AssetTab>("ALL");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [assets, setAssets] = useState<AigcAsset[]>(() => initialPageCache?.assets ?? []);
-  const [loading, setLoading] = useState(() => !initialPageCache);
+  const [assets, setAssets] = useState<AigcAsset[]>([]);
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [measuredRatios, setMeasuredRatios] = useState<Record<string, number>>({});
   const [pullDistance, setPullDistance] = useState(0);
-  const [total, setTotal] = useState(() => initialPageCache?.total ?? 0);
-  const [counts, setCounts] = useState<AssetTabCounts>(() => initialPageCache?.counts ?? EMPTY_COUNTS);
+  const [total, setTotal] = useState(0);
   const [previewAssetKey, setPreviewAssetKey] = useState<string | null>(null);
   const [assetDraft, setAssetDraft] = useState<AssetDraft | null>(null);
-  const [hasMore, setHasMore] = useState(() => initialPageCache?.hasMore ?? true);
-  const [pageCursor, setPageCursor] = useState(() => initialPageCache?.nextPageNo ?? 1);
+  const [hasMore, setHasMore] = useState(true);
+  const [pageCursor, setPageCursor] = useState(1);
   const gridElementRef = useRef<HTMLDivElement | null>(null);
   const loadMoreElementRef = useRef<HTMLDivElement | null>(null);
   const muuriRef = useRef<Muuri | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const loadingPageRef = useRef(false);
-  const pageNoRef = useRef(initialPageCache?.nextPageNo ?? 1);
-  const hasMoreRef = useRef(initialPageCache?.hasMore ?? true);
-  const assetsLengthRef = useRef(initialPageCache?.assets.length ?? 0);
-  const countsRef = useRef<AssetTabCounts>(initialPageCache?.counts ?? EMPTY_COUNTS);
+  const pageNoRef = useRef(1);
+  const hasMoreRef = useRef(true);
+  const assetsLengthRef = useRef(0);
+  const resetRequestRef = useRef(0);
 
   const loadAssets = useCallback(async (reset = false) => {
-    if (loadingPageRef.current) return;
+    if (loadingPageRef.current && !reset) return;
     if (!reset && !hasMoreRef.current) return;
+    const resetRequest = reset ? resetRequestRef.current + 1 : resetRequestRef.current;
+    if (reset) resetRequestRef.current = resetRequest;
     loadingPageRef.current = true;
     const nextPageNo = reset ? 1 : pageNoRef.current;
-    const cacheKey = assetsPageCacheKey(user?.id, tab, debouncedQuery);
-    const cached = reset ? readPageCache<AssetsPageCache>(cacheKey) : null;
-    const requestedPageCount = reset && cached ? Math.max(1, cached.nextPageNo - 1) : 1;
-    const requestPageSize = reset ? PAGE_SIZE * requestedPageCount : PAGE_SIZE;
-    if (cached) {
-      setAssets((items) => mergeStableList(items, cached.assets, getAssetKey));
-      setTotal(cached.total);
-      setCounts(cached.counts);
-      countsRef.current = cached.counts;
-      setHasMore(cached.hasMore);
-      setPageCursor(cached.nextPageNo);
-      pageNoRef.current = cached.nextPageNo;
-      hasMoreRef.current = cached.hasMore;
-      assetsLengthRef.current = cached.assets.length;
-      setLoading(false);
-    } else {
-      setLoading(reset);
-    }
+    setLoading(reset);
     setLoadingMore(!reset);
     setError("");
     if (reset) {
-      if (!cached) {
-        pageNoRef.current = 1;
-        hasMoreRef.current = true;
-        assetsLengthRef.current = 0;
-        setAssets([]);
-        setMeasuredRatios({});
-        setTotal(0);
-        setCounts(EMPTY_COUNTS);
-        countsRef.current = EMPTY_COUNTS;
-        setHasMore(true);
-        setPageCursor(1);
-      }
+      pageNoRef.current = 1;
+      hasMoreRef.current = true;
+      assetsLengthRef.current = 0;
+      setAssets([]);
+      setMeasuredRatios({});
+      setTotal(0);
+      setHasMore(true);
+      setPageCursor(1);
     }
     try {
       const tabQuery = getAssetTabQuery(tab);
-      const [data, categoryCounts] = await Promise.all([
-        getMyAssetPage({
-          pageNo: nextPageNo,
-          pageSize: requestPageSize,
-          assetType: tabQuery.assetType,
-          category: tabQuery.category,
-          sourceType: tabQuery.sourceType,
-          title: debouncedQuery.trim() || undefined,
-        }),
-        reset
-          ? getMyAssetCategoryCounts({ title: debouncedQuery.trim() || undefined })
-          : Promise.resolve(null),
-      ]);
+      const data = await getMyAssetPage({
+        pageNo: nextPageNo,
+        pageSize: PAGE_SIZE,
+        assetType: tabQuery.assetType,
+        category: tabQuery.category,
+        sourceType: tabQuery.sourceType,
+        title: debouncedQuery.trim() || undefined,
+      });
       const nextList = data.list ?? [];
       const nextTotal = data.total ?? 0;
       const currentLength = reset ? 0 : assetsLengthRef.current;
       const mergedLength = currentLength + nextList.length;
-      const nextPageCursor = reset ? requestedPageCount + 1 : nextPageNo + 1;
-      let nextCounts = countsRef.current;
-      if (categoryCounts) {
-        nextCounts = {
-          ALL: categoryCounts.allCount ?? 0,
-          GENERATED_IMAGE: categoryCounts.generatedImageCount ?? 0,
-          UPLOADED_IMAGE: categoryCounts.uploadedImageCount ?? 0,
-          VIDEO: categoryCounts.videoCount ?? 0,
-          OTHER: categoryCounts.otherCount ?? 0,
-        };
-        countsRef.current = nextCounts;
-        setCounts(nextCounts);
-      }
+      const nextPageCursor = nextPageNo + 1;
       const nextHasMore = nextList.length > 0 && mergedLength < nextTotal;
+      if (reset) await preloadAssetImages(nextList);
+      if (reset && resetRequest !== resetRequestRef.current) return;
       setAssets((items) => {
-        const mergedAssets = reset
-          ? mergeStableList(items, nextList, getAssetKey)
-          : mergeStableList(items, [...items, ...nextList], getAssetKey);
-        writeAssetsPageCache(user?.id, tab, debouncedQuery, mergedAssets, nextTotal, nextCounts, nextHasMore, nextPageCursor);
+        const mergedAssets = reset ? nextList : mergeStableList(items, [...items, ...nextList], getAssetKey);
         return mergedAssets;
       });
       setTotal(nextTotal);
@@ -435,10 +376,10 @@ export default function AssetsPage() {
       hasMoreRef.current = nextHasMore;
       setHasMore(hasMoreRef.current);
     } catch (err) {
+      if (reset && resetRequest !== resetRequestRef.current) return;
       if (!getAccessToken()) {
         setAssets([]);
         setTotal(0);
-        setCounts(EMPTY_COUNTS);
         setHasMore(false);
         setPageCursor(1);
         hasMoreRef.current = false;
@@ -447,12 +388,10 @@ export default function AssetsPage() {
         return;
       }
       const localAssets = (await listGeneratedAssets(user?.id)).map(localToAsset);
-      const localCounts = buildLocalAssetCounts(localAssets, debouncedQuery);
-      writeAssetsPageCache(user?.id, tab, debouncedQuery, localAssets, localAssets.length, localCounts, false, 2);
+      if (reset) await preloadAssetImages(localAssets);
+      if (reset && resetRequest !== resetRequestRef.current) return;
       setAssets((items) => mergeStableList(items, localAssets, getAssetKey));
       setTotal(localAssets.length);
-      setCounts(localCounts);
-      countsRef.current = localCounts;
       setHasMore(false);
       hasMoreRef.current = false;
       pageNoRef.current = 2;
@@ -460,10 +399,12 @@ export default function AssetsPage() {
       assetsLengthRef.current = localAssets.length;
       setError(localAssets.length > 0 ? "真实资产接口暂不可用，当前展示本地项目生成记录。" : err instanceof Error ? err.message : "资产列表加载失败");
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setPullDistance(0);
-      loadingPageRef.current = false;
+      if (!reset || resetRequest === resetRequestRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+        setPullDistance(0);
+        loadingPageRef.current = false;
+      }
     }
   }, [debouncedQuery, tab, user?.id]);
 
@@ -517,7 +458,6 @@ export default function AssetsPage() {
   const refreshPreviewAsset = useCallback((nextAsset: AigcAsset) => {
     setAssets((items) => {
       const nextAssets = items.map((asset) => getAssetKey(asset) === getAssetKey(nextAsset) ? nextAsset : asset);
-      writeAssetsPageCache(user?.id, tab, debouncedQuery, nextAssets, total, counts, hasMore, pageCursor);
       return nextAssets;
     });
     setAssetDraft((draft) => draft?.assetKey === getAssetKey(nextAsset) ? {
@@ -528,7 +468,7 @@ export default function AssetsPage() {
       tags: nextAsset.tags || "",
       saving: false,
     } : draft);
-  }, [counts, debouncedQuery, hasMore, pageCursor, tab, total, user?.id]);
+  }, [debouncedQuery, hasMore, pageCursor, tab, total, user?.id]);
 
   const openAssetPreview = useCallback((asset: AigcAsset) => {
     const assetKey = getAssetKey(asset);
@@ -564,13 +504,12 @@ export default function AssetsPage() {
           description: assetDraft.description,
           tags: assetDraft.tags,
         } : asset);
-        writeAssetsPageCache(user?.id, tab, debouncedQuery, nextAssets, total, counts, hasMore, pageCursor);
         return nextAssets;
       });
     } finally {
       setAssetDraft((draft) => draft ? { ...draft, saving: false } : draft);
     }
-  }, [assetDraft, counts, debouncedQuery, hasMore, pageCursor, tab, total, user?.id]);
+  }, [assetDraft, debouncedQuery, hasMore, pageCursor, tab, total, user?.id]);
 
   const handleAssetVisibilityChange = useCallback(async (visibility: string) => {
     if (!previewAsset || !Number.isFinite(previewAsset.id)) return;
@@ -597,19 +536,14 @@ export default function AssetsPage() {
     if (!previewAsset || !Number.isFinite(previewAsset.id)) return;
     if (!window.confirm("确认删除这个资产吗？")) return;
     await deleteMyAsset(previewAsset.id);
-    const nextCounts = decrementAssetCounts(counts, previewAsset);
-    countsRef.current = nextCounts;
-    setCounts(nextCounts);
     setAssets((items) => {
       const nextAssets = items.filter((asset) => getAssetKey(asset) !== getAssetKey(previewAsset));
-      const nextTotal = Math.max(0, total - 1);
-      writeAssetsPageCache(user?.id, tab, debouncedQuery, nextAssets, nextTotal, nextCounts, hasMore, pageCursor);
       return nextAssets;
     });
     setTotal((value) => Math.max(0, value - 1));
     setPreviewAssetKey(null);
     setAssetDraft(null);
-  }, [counts, debouncedQuery, hasMore, pageCursor, previewAsset, tab, total, user?.id]);
+  }, [debouncedQuery, hasMore, pageCursor, previewAsset, tab, total, user?.id]);
 
   const previewItem = useMemo(() => {
     if (!previewAsset) return null;
@@ -682,7 +616,6 @@ export default function AssetsPage() {
           {(["ALL", "GENERATED_IMAGE", "UPLOADED_IMAGE", "VIDEO", "OTHER"] as AssetTab[]).map((item) => (
             <button key={item} type="button" onClick={() => setTab(item)} className={`rounded-full px-4 py-2 text-sm ${tab === item ? "bg-background text-charcoal shadow-sm" : "text-muted-gray hover:text-charcoal"}`}>
               {getAssetTabLabel(item)}
-              <span className="ml-2 text-xs text-muted-gray">{counts[item]}</span>
             </button>
           ))}
         </div>
@@ -696,10 +629,7 @@ export default function AssetsPage() {
       {error && <div className="mt-4 rounded-lg border border-border-warm bg-background px-4 py-3 text-sm text-muted-gray">{error}</div>}
 
       {loading && !assets.length ? (
-        <div className="mt-16 flex items-center justify-center text-sm text-muted-gray">
-          <Loader2 className="mr-2 size-4" />
-          加载资产列表...
-        </div>
+        <AssetGridSkeleton />
       ) : filteredAssets.length === 0 ? (
         <EmptyState tab={tab} />
       ) : (

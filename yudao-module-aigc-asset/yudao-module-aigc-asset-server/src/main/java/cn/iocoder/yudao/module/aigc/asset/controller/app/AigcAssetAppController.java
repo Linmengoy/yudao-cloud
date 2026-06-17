@@ -44,6 +44,8 @@ import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUti
 @Validated
 public class AigcAssetAppController {
 
+    private static final int MAX_APP_PAGE_SIZE = 60;
+
     @Resource
     private AigcAssetService assetService;
 
@@ -59,6 +61,7 @@ public class AigcAssetAppController {
     @GetMapping("/my-page")
     @Operation(summary = "获取我的资产分页")
     public CommonResult<PageResult<AigcAssetRespDTO>> getMyAssetPage(@Valid AigcAssetPageReqVO reqVO) {
+        limitPageSize(reqVO);
         PageResult<AigcAssetDO> pageResult = assetService.getUserAssetPage(reqVO, getLoginUserId());
         PageResult<AigcAssetRespDTO> respPage = new PageResult<>();
         respPage.setTotal(pageResult.getTotal());
@@ -70,8 +73,9 @@ public class AigcAssetAppController {
     @GetMapping("/my-list")
     @Operation(summary = "获取我的资产列表")
     public CommonResult<List<AigcAssetRespDTO>> getMyAssetList(@Valid AigcAssetPageReqVO reqVO) {
-        List<AigcAssetDO> list = assetService.getUserAssetList(reqVO, getLoginUserId());
-        return success(assetService.buildAssetRespList(list, getLoginUserId()));
+        limitPageSize(reqVO);
+        PageResult<AigcAssetDO> pageResult = assetService.getUserAssetPage(reqVO, getLoginUserId());
+        return success(assetService.buildAssetRespList(pageResult.getList(), getLoginUserId()));
     }
 
     //
@@ -154,6 +158,12 @@ public class AigcAssetAppController {
     public CommonResult<Boolean> useMyAsset(@RequestParam("id") Long id) {
         assetService.increaseUseCount(id, getLoginUserId());
         return success(true);
+    }
+
+    private void limitPageSize(AigcAssetPageReqVO reqVO) {
+        if (reqVO.getPageSize() == null || reqVO.getPageSize() > MAX_APP_PAGE_SIZE) {
+            reqVO.setPageSize(MAX_APP_PAGE_SIZE);
+        }
     }
 
 }

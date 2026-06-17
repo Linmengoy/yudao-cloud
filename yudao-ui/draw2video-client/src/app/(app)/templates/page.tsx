@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 30;
 const MIN_TEMPLATE_COLUMN_WIDTH = 230;
+const IMAGE_PRELOAD_TIMEOUT_MS = 8000;
+const TEMPLATE_SKELETON_HEIGHTS = [300, 240, 360, 280, 330, 260, 380, 250, 320, 290, 350, 270];
 
 function createRandomSeed() {
   return Math.floor(Math.random() * 1_000_000_000);
@@ -41,6 +43,25 @@ function getTemplateKey(template: PromptTemplate) {
 function getTemplateSpan(template: PromptTemplate, measuredRatio?: number) {
   const ratio = measuredRatio || (template.width && template.height ? template.width / template.height : 1);
   return ratio >= 1.45 ? 2 : 1;
+}
+
+function preloadImage(src: string) {
+  return new Promise<void>((resolve) => {
+    const image = new Image();
+    const timer = window.setTimeout(resolve, IMAGE_PRELOAD_TIMEOUT_MS);
+    const finish = () => {
+      window.clearTimeout(timer);
+      resolve();
+    };
+    image.onload = finish;
+    image.onerror = finish;
+    image.src = src;
+  });
+}
+
+function preloadTemplateImages(templates: PromptTemplate[]) {
+  const urls = templates.map((template) => template.imageUrl).filter(Boolean) as string[];
+  return Promise.all(urls.map(preloadImage));
 }
 
 function templateToPreviewItem(template: PromptTemplate): MediaPreviewItem | null {
@@ -101,6 +122,7 @@ function TemplateCard({
               alt={template.title}
               className="block h-auto w-full"
               loading="lazy"
+              decoding="async"
               onLoad={(event) => onImageLoad(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)}
             />
           ) : (
@@ -165,6 +187,27 @@ function EmptyState() {
   );
 }
 
+function TemplateGridSkeleton() {
+  return (
+    <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {TEMPLATE_SKELETON_HEIGHTS.map((height, index) => (
+        <div key={index} className="overflow-hidden rounded-xl border border-border-warm bg-background">
+          <div className="animate-pulse bg-muted" style={{ height }} />
+          <div className="space-y-2 p-3.5">
+            <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-full animate-pulse rounded bg-muted" />
+            <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+            <div className="flex gap-1.5 pt-1">
+              <div className="h-5 w-16 animate-pulse rounded-full bg-muted" />
+              <div className="h-5 w-20 animate-pulse rounded-full bg-muted" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function TemplatesPage() {
   const t = useTranslations("templates");
   const commonT = useTranslations("common");
@@ -189,10 +232,13 @@ export default function TemplatesPage() {
   const templatesLengthRef = useRef(0);
   const categoryKeywordFallbackRef = useRef(false);
   const randomSeedRef = useRef(createRandomSeed());
+  const resetRequestRef = useRef(0);
 
   const loadTemplates = useCallback(async (reset = false) => {
-    if (loadingPageRef.current) return;
+    if (loadingPageRef.current && !reset) return;
     if (!reset && !hasMoreRef.current) return;
+    const resetRequest = reset ? resetRequestRef.current + 1 : resetRequestRef.current;
+    if (reset) resetRequestRef.current = resetRequest;
     loadingPageRef.current = true;
     const nextPageNo = reset ? 1 : pageNoRef.current;
     setLoading(reset);
@@ -235,6 +281,8 @@ export default function TemplatesPage() {
       const nextPageCursor = nextPageNo + 1;
       const mergedLength = (reset ? 0 : templatesLengthRef.current) + nextList.length;
       const nextHasMore = nextList.length > 0 && mergedLength < nextTotal;
+      if (reset) await preloadTemplateImages(nextList);
+      if (reset && resetRequest !== resetRequestRef.current) return;
       setTemplates((items) => reset ? nextList : [...items, ...nextList]);
       setTotal(nextTotal);
       pageNoRef.current = nextPageCursor;
@@ -243,13 +291,16 @@ export default function TemplatesPage() {
       setPageCursor(nextPageCursor);
       setHasMore(nextHasMore);
     } catch (err) {
+      if (reset && resetRequest !== resetRequestRef.current) return;
       setError(err instanceof Error ? err.message : t("loading"));
       hasMoreRef.current = false;
       setHasMore(false);
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      loadingPageRef.current = false;
+      if (!reset || resetRequest === resetRequestRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+        loadingPageRef.current = false;
+      }
     }
   }, [category, debouncedQuery, t]);
 
@@ -364,10 +415,7 @@ export default function TemplatesPage() {
       {error && <div className="mt-4 rounded-lg border border-border-warm bg-background px-4 py-3 text-sm text-muted-gray">{error}</div>}
 
       {loading && !templates.length ? (
-        <div className="mt-16 flex items-center justify-center text-sm text-muted-gray">
-          <Loader2 className="mr-2 size-4 animate-spin" />
-          {t("loading")}
-        </div>
+        <TemplateGridSkeleton />
       ) : templates.length === 0 ? (
         <EmptyState />
       ) : (
