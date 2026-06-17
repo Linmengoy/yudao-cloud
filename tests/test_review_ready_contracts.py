@@ -548,7 +548,7 @@ class ReviewReadyContractTest(unittest.TestCase):
         ]:
             with self.subTest(path=path):
                 block = self._yaml_service_block(compose, "aigc-model")
-                self.assertIn("image: aigc-model:${MICRO_IMAGE_TAG:-latest}", block)
+                self.assertIn("image: ${MICRO_IMAGE_REGISTRY_PREFIX:-}aigc-model:${MICRO_IMAGE_TAG:-latest}", block)
                 self.assertNotIn("image: aigc-model:latest", block)
                 self.assertIn("healthcheck:", block)
                 self.assertIn("http://127.0.0.1:48090/actuator/health", block)
@@ -557,6 +557,10 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn('aigc-model) module="yudao-module-aigc-model/yudao-module-aigc-model-server" ;;', test_workflow)
         self.assertIn('image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', test_workflow)
         self.assertIn("MICRO_IMAGE_TAG=${image_tag}", test_workflow)
+        self.assertIn("REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root", test_workflow)
+        self.assertIn("Push image to Gitea registry", test_workflow)
+        self.assertIn("docker compose -f script/docker/docker-compose-micro.yml pull", test_workflow)
+        self.assertIn("--no-build --no-deps --force-recreate", test_workflow)
         self.assertIn("bash script/docker/verify-release-evidence.sh preflight", test_workflow)
         self.assertIn("SERVICE_HEALTH_URL=\"http://127.0.0.1:48090/actuator/health\"", test_workflow)
         self.assertIn("bash script/docker/verify-release-evidence.sh verify-service-health", test_workflow)
@@ -564,6 +568,10 @@ class ReviewReadyContractTest(unittest.TestCase):
 
         self.assertIn('image_tag="$(git rev-parse --short=12 HEAD)"', prod_workflow)
         self.assertIn("MICRO_IMAGE_TAG=${image_tag}", prod_workflow)
+        self.assertIn("REGISTRY_PUSH_PREFIX=111.228.39.103:3000/root", prod_workflow)
+        self.assertIn("Push image to Gitea registry", prod_workflow)
+        self.assertIn("docker compose -f docker-compose-micro.yml pull", prod_workflow)
+        self.assertIn("--no-build --no-deps --force-recreate", prod_workflow)
         self.assertIn("previous_stable_image_tag", prod_workflow)
         self.assertIn("bash script/docker/verify-release-evidence.sh preflight", prod_workflow)
         self.assertIn("SERVICE_HEALTH_URL=\"http://127.0.0.1:48090/actuator/health\"", prod_workflow)
@@ -577,7 +585,8 @@ class ReviewReadyContractTest(unittest.TestCase):
             "previous_stable_image_tag is required for rollback evidence",
             "previous_stable_image_tag must be a Git SHA tag",
             "verify_service_health()",
-            "docker image inspect \"${service}:${MICRO_IMAGE_TAG}\"",
+            "docker image inspect \"${item}:${MICRO_IMAGE_TAG}\"",
+            "docker pull \"$previous_ref\"",
             "rollback command: MICRO_IMAGE_TAG=${previous_tag}",
         ]:
             self.assertIn(required, gate_script)
