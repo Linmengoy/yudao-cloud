@@ -230,6 +230,7 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
         self.assertIn("REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root", workflow)
         self.assertIn("REGISTRY_DEPLOY_PREFIX=127.0.0.1:3000/root", workflow)
+        self.assertIn("DRAW2VIDEO_CLIENT_PORT=13000", workflow)
         self.assertIn("Login to Gitea container registry", workflow)
         self.assertIn("Push image to Gitea registry", workflow)
         self.assertIn("docker push \"${image}\"", workflow)
@@ -239,6 +240,7 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-test-version>", workflow)
         self.assertIn("MICRO_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
         self.assertIn("FRONTEND_IMAGE_REGISTRY_PREFIX=${REGISTRY_DEPLOY_PREFIX}/", workflow)
+        self.assertIn('DRAW2VIDEO_CLIENT_PORT="${DRAW2VIDEO_CLIENT_PORT:-13000}"', workflow)
         self.assertIn("Append release verification evidence", workflow)
         self.assertIn("deployment verification", workflow)
         self.assertIn("docker compose -f script/docker/docker-compose-micro.yml ps", workflow)
@@ -374,6 +376,7 @@ class CommunityReleaseGateTest(unittest.TestCase):
         ]:
             self.assertIn(f"image: ${{MICRO_IMAGE_REGISTRY_PREFIX:-}}{service}:${{MICRO_IMAGE_TAG:-latest}}", compose)
 
+        self.assertIn('"${DRAW2VIDEO_CLIENT_PORT:-3000}:3000"', compose)
         self.assertIn('grep -Eq "^v[0-9]+\\.[0-9]+\\.[0-9]+', checks)
 
     def test_release_evidence_index_covers_all_release_gate_templates(self):

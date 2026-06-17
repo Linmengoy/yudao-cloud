@@ -537,7 +537,7 @@ services:
     networks:
       - yudao-network
     ports:
-      - "3000:3000"
+      - "${DRAW2VIDEO_CLIENT_PORT:-3000}:3000"
     healthcheck:
       test:
         [

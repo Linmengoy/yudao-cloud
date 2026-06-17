@@ -117,6 +117,7 @@ jobs:
           echo "REGISTRY_HOST=127.0.0.1:3000" >> "${GITHUB_ENV}"
           echo "REGISTRY_PUSH_PREFIX=127.0.0.1:3000/root" >> "${GITHUB_ENV}"
           echo "REGISTRY_DEPLOY_PREFIX=127.0.0.1:3000/root" >> "${GITHUB_ENV}"
+          echo "DRAW2VIDEO_CLIENT_PORT=13000" >> "${GITHUB_ENV}"
           echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"
           echo "RELEASE_EVIDENCE_FILE=tmp/release-evidence/${service}-${image_tag}.md" >> "${GITHUB_ENV}"
 
@@ -151,6 +152,7 @@ jobs:
             echo "- previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}"
             echo "- registry push prefix: ${REGISTRY_PUSH_PREFIX}"
             echo "- registry deploy prefix: ${REGISTRY_DEPLOY_PREFIX}"
+            echo "- draw2video client port: ${DRAW2VIDEO_CLIENT_PORT:-3000}"
             echo "- maven command: mvn clean package -pl ${BUILD_MODULE} -am -DskipTests"
             echo "- image build command: docker compose -f script/docker/docker-compose-micro.yml build ${BUILD_SERVICE}"
             echo "- image push command: docker push ${REGISTRY_PUSH_PREFIX}/${BUILD_SERVICE}:${MICRO_IMAGE_TAG}"
@@ -227,6 +229,7 @@ jobs:
           echo "Deploy env: ${deploy_env}"
           export MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/"
           export FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/"
+          export DRAW2VIDEO_CLIENT_PORT="${DRAW2VIDEO_CLIENT_PORT:-13000}"
 
           if [ "${BUILD_SERVICE}" = "all" ]; then
             docker compose -f script/docker/docker-compose-micro.yml up -d mysql nacos redis xxl-job-admin
@@ -245,6 +248,7 @@ jobs:
           echo "Build service: ${BUILD_SERVICE}"
           export MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/"
           export FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/"
+          export DRAW2VIDEO_CLIENT_PORT="${DRAW2VIDEO_CLIENT_PORT:-13000}"
 
           docker compose -f script/docker/docker-compose-micro.yml ps
 
@@ -303,8 +307,9 @@ jobs:
             echo "- deploy env: master-jdk17"
             echo "- docker compose version: $(docker compose version 2>/dev/null || true)"
             echo "- registry deploy prefix: ${REGISTRY_DEPLOY_PREFIX:-not-set}"
+            echo "- draw2video client port: ${DRAW2VIDEO_CLIENT_PORT:-not-set}"
             echo "- compose ps summary:"
-            MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" docker compose -f script/docker/docker-compose-micro.yml ps || true
+            MICRO_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" FRONTEND_IMAGE_REGISTRY_PREFIX="${REGISTRY_DEPLOY_PREFIX}/" DRAW2VIDEO_CLIENT_PORT="${DRAW2VIDEO_CLIENT_PORT:-13000}" docker compose -f script/docker/docker-compose-micro.yml ps || true
             if [ "${BUILD_SERVICE}" = "aigc-community" ] || [ "${BUILD_SERVICE}" = "all" ]; then
               echo "- strict gate:"
               echo "  script/docker/verify-release-evidence.sh verify-http must pass before this workflow can succeed"
