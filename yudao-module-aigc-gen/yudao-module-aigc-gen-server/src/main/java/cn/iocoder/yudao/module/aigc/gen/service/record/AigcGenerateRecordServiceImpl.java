@@ -697,6 +697,11 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     }
 
     @Override
+    public List<AigcGenerateRecordDO> getGenerateRecordListByTaskIds(List<Long> taskIds) {
+        return generateRecordMapper.selectListByTaskIds(taskIds);
+    }
+
+    @Override
     public AigcGenerateRecordDO validateGenerateRecordExists(Long id) {
         AigcGenerateRecordDO record = generateRecordMapper.selectById(id);
         if (record == null) {

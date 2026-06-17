@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.List;
+
 @FeignClient(name = ApiConstants.NAME)
 @Tag(name = "RPC 服务 - AIGC 生成")
 public interface AigcGenerateApi {
@@ -28,6 +30,10 @@ public interface AigcGenerateApi {
     @GetMapping(PREFIX + "/result")
     @Operation(summary = "获取生成结果")
     CommonResult<AigcGenerateResultRespDTO> getResult(@RequestParam("taskId") Long taskId);
+
+    @GetMapping(PREFIX + "/results")
+    @Operation(summary = "批量获取生成结果")
+    CommonResult<List<AigcGenerateResultRespDTO>> getResults(@RequestParam("taskIds") List<Long> taskIds);
 
     @PostMapping(PREFIX + "/callback")
     @Operation(summary = "处理第三方回调")

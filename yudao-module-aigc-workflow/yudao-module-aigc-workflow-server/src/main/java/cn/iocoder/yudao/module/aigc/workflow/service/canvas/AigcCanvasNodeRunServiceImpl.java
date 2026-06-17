@@ -3,6 +3,8 @@ package cn.iocoder.yudao.module.aigc.workflow.service.canvas;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import cn.iocoder.yudao.framework.common.exception.ErrorCode;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.aigc.gen.api.AigcGenerateApi;
@@ -11,6 +13,8 @@ import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateSubmitReqDTO;
 import cn.iocoder.yudao.module.aigc.gen.dto.AigcGenerateSubmitRespDTO;
 import cn.iocoder.yudao.module.aigc.gen.enums.AigcGenerateStatusEnum;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunBatchSyncReqVO;
+import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunBatchSyncRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunSyncReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationRespVO;
@@ -19,18 +23,30 @@ import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasAss
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasOperationLogDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasAssetRefMapper;
+import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasOperationLogMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasProjectMapper;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.AigcCanvasRoomService;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasOperationAppliedMessage;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_NODE_RUN_TASK_NOT_BELONG;
+import static cn.iocoder.yudao.module.aigc.workflow.enums.ErrorCodeConstants.CANVAS_NODE_RUN_TASK_NOT_EXISTS;
 
 @Service
 @Validated
@@ -56,6 +72,10 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     private AigcCanvasAssetRefMapper assetRefMapper;
     @Resource
     private AigcCanvasProjectMapper projectMapper;
+    @Resource
+    private AigcCanvasOperationLogMapper operationLogMapper;
+    @Resource
+    private TransactionTemplate transactionTemplate;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -85,14 +105,15 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(),
                 reqVO.getBaseVersion(), userId,
                 "task_status_" + reqVO.getNodeId() + "_" + runId, buildSubmitPatch(submit, reqVO));
-        // 广播操作日志
-        roomService.broadcast(operation.getProjectId(), "canvas-op-applied", buildAppliedMessage(operation), null);
+        broadcastAfterCommit(operation);
         // 返回结果
         return new AigcCanvasNodeRunRespVO()
                 .setTaskId(submit.getTaskId())
+                .setNodeId(reqVO.getNodeId())
                 .setGenerateRecordId(submit.getId())
                 .setGenerateNo(submit.getGenerateNo())
                 .setStatus(submit.getStatus())
+                .setSuccess(true)
                 .setOperation(BeanUtils.toBean(operation, AigcCanvasOperationRespVO.class));
     }
 
@@ -101,25 +122,102 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     public AigcCanvasNodeRunRespVO syncNodeRun(AigcCanvasNodeRunSyncReqVO reqVO, Long userId) {
         projectService.validateEditableProject(reqVO.getProjectId(), userId);
         AigcGenerateResultRespDTO result = getResultReadyForCanvas(reqVO.getTaskId());
-        applySuccessfulAssetSideEffects(reqVO, result);
-        AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(),
-                reqVO.getBaseVersion(), userId,
-                "task_result_" + reqVO.getNodeId() + "_" + reqVO.getTaskId() + "_" + result.getStatus(),
-                buildResultPatch(reqVO.getNodeType(), result));
-        roomService.broadcast(operation.getProjectId(), "canvas-op-applied", buildAppliedMessage(operation), null);
+        AigcCanvasNodeRunRespVO respVO = syncOneNodeRun(reqVO, result, userId, true);
+        broadcastAfterCommit(respVO.getOperation());
+        return respVO;
+    }
+
+    @Override
+    public AigcCanvasNodeRunBatchSyncRespVO syncNodeRuns(AigcCanvasNodeRunBatchSyncReqVO reqVO, Long userId) {
+        projectService.validateEditableProject(reqVO.getProjectId(), userId);
+        List<AigcCanvasNodeRunSyncReqVO> nodes = reqVO.getNodes();
+        List<Long> taskIds = nodes.stream().map(AigcCanvasNodeRunSyncReqVO::getTaskId)
+                .filter(Objects::nonNull).distinct().toList();
+        List<AigcGenerateResultRespDTO> generateResults = generateApi.getResults(taskIds).getCheckedData();
+        Map<Long, AigcGenerateResultRespDTO> resultMap = (generateResults == null ? List.<AigcGenerateResultRespDTO>of() : generateResults).stream()
+                .collect(Collectors.toMap(AigcGenerateResultRespDTO::getTaskId, Function.identity(), (left, right) -> left));
+
+        List<AigcCanvasNodeRunRespVO> results = new ArrayList<>(nodes.size());
+        for (AigcCanvasNodeRunSyncReqVO node : nodes) {
+            node.setProjectId(reqVO.getProjectId());
+            node.setBaseVersion(reqVO.getBaseVersion());
+            results.add(syncOneNodeRunTransactionally(node, resultMap.get(node.getTaskId()), userId));
+        }
+        return new AigcCanvasNodeRunBatchSyncRespVO()
+                .setProjectId(reqVO.getProjectId())
+                .setResults(results);
+    }
+
+    private AigcCanvasNodeRunRespVO syncOneNodeRunTransactionally(AigcCanvasNodeRunSyncReqVO reqVO,
+            AigcGenerateResultRespDTO result, Long userId) {
+        try {
+            return transactionTemplate.execute(status -> {
+                AigcCanvasNodeRunRespVO respVO = syncOneNodeRun(reqVO, refreshResultReadyForCanvas(result), userId, true);
+                broadcastAfterCommit(respVO.getOperation());
+                return respVO;
+            });
+        } catch (ServiceException ex) {
+            return buildFailedNodeRunResp(reqVO, ex.getCode(), ex.getMessage());
+        } catch (Exception ex) {
+            log.warn("[syncOneNodeRunTransactionally][projectId({}) nodeId({}) taskId({}) 同步失败]",
+                    reqVO.getProjectId(), reqVO.getNodeId(), reqVO.getTaskId(), ex);
+            return buildFailedNodeRunResp(reqVO, 500, StrUtil.blankToDefault(ex.getMessage(), "节点同步失败"));
+        }
+    }
+
+    private AigcCanvasNodeRunRespVO syncOneNodeRun(AigcCanvasNodeRunSyncReqVO reqVO, AigcGenerateResultRespDTO result,
+            Long userId, boolean applySideEffects) {
+        validateResultBelongsToCanvasNode(reqVO, result);
+        String opId = "task_result_" + reqVO.getProjectId() + "_" + reqVO.getNodeId() + "_" + reqVO.getTaskId()
+                + "_" + result.getStatus();
+        AigcCanvasOperationLogDO existedOperation = findTaskStatusPatch(reqVO.getProjectId(), opId);
+        AigcCanvasOperationLogDO operation = existedOperation;
+        boolean created = false;
+        if (operation == null) {
+            operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(), reqVO.getBaseVersion(), userId,
+                    opId, buildResultPatch(reqVO.getNodeType(), result));
+            created = Objects.equals(operation.getActorUserId(), userId);
+        }
+        if (applySideEffects && created) {
+            applySuccessfulAssetSideEffects(reqVO, result);
+        }
         return new AigcCanvasNodeRunRespVO()
                 .setTaskId(result.getTaskId())
+                .setNodeId(reqVO.getNodeId())
                 .setGenerateRecordId(result.getId())
                 .setGenerateNo(result.getGenerateNo())
                 .setStatus(result.getStatus())
+                .setSuccess(true)
                 .setOperation(BeanUtils.toBean(operation, AigcCanvasOperationRespVO.class));
+    }
+
+    private void broadcastAfterCommit(AigcCanvasOperationRespVO operation) {
+        if (operation == null) {
+            return;
+        }
+        AigcCanvasOperationLogDO logDO = BeanUtils.toBean(operation, AigcCanvasOperationLogDO.class);
+        broadcastAfterCommit(logDO);
     }
 
     private AigcGenerateResultRespDTO getResultReadyForCanvas(Long taskId) {
         AigcGenerateResultRespDTO result = generateApi.getResult(taskId).getCheckedData();
+        if (result == null) {
+            throw serviceException(CANVAS_NODE_RUN_TASK_NOT_EXISTS);
+        }
+        return refreshResultReadyForCanvas(result);
+    }
+
+    private AigcGenerateResultRespDTO refreshResultReadyForCanvas(AigcGenerateResultRespDTO result) {
+        if (result == null) {
+            throw serviceException(CANVAS_NODE_RUN_TASK_NOT_EXISTS);
+        }
+        Long taskId = result.getTaskId();
         if (isProviderSyncStatus(result)) {
             syncProviderTaskQuietly(taskId);
             result = generateApi.getResult(taskId).getCheckedData();
+            if (result == null) {
+                throw serviceException(CANVAS_NODE_RUN_TASK_NOT_EXISTS);
+            }
         }
         if (!isSuccessWithPendingDataUrlAsset(result)) {
             return result;
@@ -132,6 +230,34 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             }
         }
         return result.setStatus("ASSET_CREATING");
+    }
+
+    private void validateResultBelongsToCanvasNode(AigcCanvasNodeRunSyncReqVO reqVO, AigcGenerateResultRespDTO result) {
+        if (result == null || result.getTaskId() == null) {
+            throw serviceException(CANVAS_NODE_RUN_TASK_NOT_EXISTS);
+        }
+        String expectedPrefix = "canvas_" + reqVO.getProjectId() + "_" + reqVO.getNodeId() + "_";
+        if (!StrUtil.startWith(result.getClientRequestId(), expectedPrefix)) {
+            throw serviceException(CANVAS_NODE_RUN_TASK_NOT_BELONG);
+        }
+    }
+
+    private ServiceException serviceException(ErrorCode errorCode) {
+        return new ServiceException(errorCode);
+    }
+
+    private AigcCanvasOperationLogDO findTaskStatusPatch(Long projectId, String opId) {
+        return operationLogMapper.selectByClientOperation(projectId, "server_node_run", opId);
+    }
+
+    private AigcCanvasNodeRunRespVO buildFailedNodeRunResp(AigcCanvasNodeRunSyncReqVO reqVO, Integer errorCode,
+            String errorMessage) {
+        return new AigcCanvasNodeRunRespVO()
+                .setTaskId(reqVO.getTaskId())
+                .setNodeId(reqVO.getNodeId())
+                .setSuccess(false)
+                .setErrorCode(String.valueOf(errorCode))
+                .setErrorMessage(errorMessage);
     }
 
     private boolean isProviderSyncStatus(AigcGenerateResultRespDTO result) {
@@ -264,8 +390,11 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         if (assetIds.isEmpty()) {
             return;
         }
+        boolean assetBound = bindOutputAssets(reqVO, assetIds, result.getTaskId());
+        if (!assetBound) {
+            return;
+        }
         Long assetId = assetIds.get(0);
-        bindOutputAssets(reqVO, assetIds, result.getTaskId());
         projectService.refreshProjectStatistics(reqVO.getProjectId());
         if ("image".equals(reqVO.getNodeType())) {
             AigcCanvasProjectDO update = new AigcCanvasProjectDO();
@@ -292,15 +421,17 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
                 .set("outputsExpanded", outputs.size() > 1);
     }
 
-    private void bindOutputAssets(AigcCanvasNodeRunSyncReqVO reqVO, List<Long> assetIds, Long taskId) {
+    private boolean bindOutputAssets(AigcCanvasNodeRunSyncReqVO reqVO, List<Long> assetIds, Long taskId) {
+        boolean inserted = false;
         for (Long assetId : assetIds) {
-            bindOutputAsset(reqVO, assetId, taskId);
+            inserted = bindOutputAsset(reqVO, assetId, taskId) || inserted;
         }
+        return inserted;
     }
 
-    private void bindOutputAsset(AigcCanvasNodeRunSyncReqVO reqVO, Long assetId, Long taskId) {
+    private boolean bindOutputAsset(AigcCanvasNodeRunSyncReqVO reqVO, Long assetId, Long taskId) {
         if (assetRefMapper.selectByNodeAndAsset(reqVO.getProjectId(), reqVO.getNodeId(), assetId, "output") != null) {
-            return;
+            return false;
         }
         AigcCanvasAssetRefDO assetRef = new AigcCanvasAssetRefDO();
         assetRef.setProjectId(reqVO.getProjectId());
@@ -309,6 +440,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         assetRef.setUsageType("output");
         assetRef.setSourceTaskId(taskId);
         assetRefMapper.insert(assetRef);
+        return true;
     }
 
     private List<String> parseStringList(String value) {
@@ -339,6 +471,24 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         operationReq
                 .setOperationJson(new JSONObject().set("type", "TASK_STATUS_PATCH").set("payload", payload).toString());
         return operationService.submitOperation(operationReq, userId);
+    }
+
+    private void broadcastAfterCommit(AigcCanvasOperationLogDO operation) {
+        if (operation == null) {
+            return;
+        }
+        Runnable broadcast = () -> roomService.broadcast(operation.getProjectId(), "canvas-op-applied",
+                buildAppliedMessage(operation), null);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            broadcast.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                broadcast.run();
+            }
+        });
     }
 
     private AigcCanvasOperationAppliedMessage buildAppliedMessage(AigcCanvasOperationLogDO operation) {

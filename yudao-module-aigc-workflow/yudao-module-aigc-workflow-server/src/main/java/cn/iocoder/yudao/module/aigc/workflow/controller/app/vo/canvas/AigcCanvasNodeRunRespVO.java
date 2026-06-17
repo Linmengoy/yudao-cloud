@@ -10,6 +10,9 @@ public class AigcCanvasNodeRunRespVO {
     @Schema(description = "任务编号")
     private Long taskId;
 
+    @Schema(description = "节点编号")
+    private String nodeId;
+
     @Schema(description = "生成记录编号")
     private Long generateRecordId;
 
@@ -18,6 +21,15 @@ public class AigcCanvasNodeRunRespVO {
 
     @Schema(description = "任务状态")
     private String status;
+
+    @Schema(description = "是否同步成功")
+    private Boolean success;
+
+    @Schema(description = "错误码")
+    private String errorCode;
+
+    @Schema(description = "错误信息")
+    private String errorMessage;
 
     @Schema(description = "状态补丁操作")
     private AigcCanvasOperationRespVO operation;

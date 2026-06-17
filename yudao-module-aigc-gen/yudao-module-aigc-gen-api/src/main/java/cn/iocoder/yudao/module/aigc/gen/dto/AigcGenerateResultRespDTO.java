@@ -20,6 +20,9 @@ public class AigcGenerateResultRespDTO {
     @Schema(description = "生成流水号")
     private String generateNo;
 
+    @Schema(description = "客户端请求编号")
+    private String clientRequestId;
+
     @Schema(description = "生成类型")
     private String generateType;
 
