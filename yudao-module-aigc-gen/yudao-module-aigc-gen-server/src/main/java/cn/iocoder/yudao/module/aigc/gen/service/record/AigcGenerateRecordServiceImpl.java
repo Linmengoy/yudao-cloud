@@ -57,6 +57,7 @@ import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskCreateReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsReqDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskDurationStatisticsRespDTO;
 import cn.iocoder.yudao.module.aigc.task.dto.AigcTaskStatusUpdateReqDTO;
+import cn.iocoder.yudao.module.infra.api.config.ConfigApi;
 import cn.iocoder.yudao.module.infra.api.file.FileApi;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -105,6 +106,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     private static final String STRATEGY_CHANNEL_RETRY = "CHANNEL_RETRY";
     private static final String STRATEGY_PROVIDER_FALLBACK = "PROVIDER_FALLBACK";
     private static final String STRATEGY_HEDGING = "HEDGING";
+    private static final String TEXT_GENERATE_MODE = "TEXT_GENERATE";
+    private static final String TEXT_SYSTEM_PROMPT_CONFIG_KEY = "aigc.text.system-prompt";
     private static final Set<String> WAITING_STATUSES = Set.of(AigcGenerateStatusEnum.SUBMITTING.getCode(),
             AigcGenerateStatusEnum.SUBMITTED.getCode(),
             AigcGenerateStatusEnum.CALLBACK_WAITING.getCode(), AigcGenerateStatusEnum.RETRYING.getCode(),
@@ -139,6 +142,8 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
     private FileApi fileApi;
     @Resource
     private AigcSafetyApi safetyApi;
+    @Resource
+    private ConfigApi configApi;
     @Resource
     private AigcProviderClientFactory providerClientFactory;
     @Resource
@@ -1022,7 +1027,7 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
                 .setProxyUsername(provider == null ? null : provider.getProxyUsername())
                 .setProxyPassword(provider == null ? null : provider.getProxyPassword())
                 .setGenerateType(record.getGenerateType()).setGenerateMode(record.getGenerateMode())
-                .setPrompt(record.getPrompt()).setInputParams(reqDTO.getInputParams()).setSync(reqDTO.getSync());
+                .setPrompt(buildProviderPrompt(record)).setInputParams(reqDTO.getInputParams()).setSync(reqDTO.getSync());
         long start = System.currentTimeMillis();
         AigcProviderSubmitRespDTO resp;
         MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
@@ -1046,6 +1051,27 @@ public class AigcGenerateRecordServiceImpl implements AigcGenerateRecordService 
             log.warn("[submitProvider][recordId({}) attemptId({}) provider log failed]", record.getId(), attempt.getId(), ex);
         }
         return resp;
+    }
+
+    private String buildProviderPrompt(AigcGenerateRecordDO record) {
+        String prompt = StrUtil.blankToDefault(record.getPrompt(), "");
+        if (!TEXT_GENERATE_MODE.equals(record.getGenerateMode())) {
+            return prompt;
+        }
+        String systemPrompt = getTextSystemPrompt();
+        if (StrUtil.isBlank(systemPrompt)) {
+            return prompt;
+        }
+        return systemPrompt.trim() + "\n\n" + prompt.trim();
+    }
+
+    private String getTextSystemPrompt() {
+        try {
+            return configApi.getConfigValueByKey(TEXT_SYSTEM_PROMPT_CONFIG_KEY).getCheckedData();
+        } catch (Exception ex) {
+            log.warn("[getTextSystemPrompt][key({}) failed]", TEXT_SYSTEM_PROMPT_CONFIG_KEY, ex);
+            return null;
+        }
     }
 
     private AigcProviderSubmitReqDTO buildProviderQueryReq(AigcGenerateRecordDO record) {
