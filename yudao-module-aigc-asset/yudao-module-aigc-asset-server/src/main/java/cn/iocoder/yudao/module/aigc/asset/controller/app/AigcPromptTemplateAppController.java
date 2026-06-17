@@ -31,6 +31,8 @@ import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 @Validated
 public class AigcPromptTemplateAppController {
 
+    private static final int MAX_TEMPLATE_PAGE_SIZE = 60;
+
     @Resource
     private AigcPromptTemplateService promptTemplateService;
 
@@ -38,6 +40,7 @@ public class AigcPromptTemplateAppController {
     @Operation(summary = "获取提示词模板分页")
     public CommonResult<PageResult<AigcPromptTemplateRespVO>> getTemplatePage(
             @Valid AigcPromptTemplatePageReqVO reqVO) {
+        limitPageSize(reqVO);
         return success(promptTemplateService.getTemplatePage(reqVO));
     }
 
@@ -81,6 +84,12 @@ public class AigcPromptTemplateAppController {
     public CommonResult<Boolean> useTemplate(@RequestParam("id") Long id) {
         promptTemplateService.increaseUseCount(id);
         return success(true);
+    }
+
+    private void limitPageSize(AigcPromptTemplatePageReqVO reqVO) {
+        if (reqVO.getPageSize() == null || reqVO.getPageSize() > MAX_TEMPLATE_PAGE_SIZE) {
+            reqVO.setPageSize(MAX_TEMPLATE_PAGE_SIZE);
+        }
     }
 
 }

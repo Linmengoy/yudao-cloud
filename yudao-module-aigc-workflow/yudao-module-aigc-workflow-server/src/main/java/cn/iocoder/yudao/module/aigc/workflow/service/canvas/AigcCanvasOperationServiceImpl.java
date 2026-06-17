@@ -49,7 +49,8 @@ public class AigcCanvasOperationServiceImpl implements AigcCanvasOperationServic
             "assetIds", "assetIdList", "outputs", "primaryOutputId", "outputsExpanded", "generationCount",
             "safetyStatus", "safetyReason", "generationStartedAt", "generationCompletedAt",
             "generationRunStartedAt", "elapsedMs", "upstreamStatus", "ratio", "resolution", "duration",
-            "size", "generateAudio", "watermark", "createdAt", "updatedAt"));
+            "size", "generateAudio", "watermark", "firstFrameEdgeId", "lastFrameEdgeId", "referenceImageOrder",
+            "createdAt", "updatedAt"));
     private static final Set<String> BLOCKED_NODE_DATA_KEYS = new HashSet<>(Arrays.asList(
             "dataUrl", "blobUrl", "objectUrl", "localUrl", "inputImages", "imageUrls"));
     private static final Set<String> RUNTIME_ASSET_URL_NODE_DATA_KEYS = new HashSet<>(Arrays.asList(

@@ -9,6 +9,8 @@ import type { PromptTemplate, PromptTemplateModel } from "./template-types";
 
 const PAGE_SIZE = 24;
 const LOAD_MORE_THRESHOLD = 320;
+const IMAGE_PRELOAD_TIMEOUT_MS = 8000;
+const TEMPLATE_LIBRARY_SKELETON_ITEMS = Array.from({ length: 12 });
 
 function createRandomSeed() {
   return Math.floor(Math.random() * 1_000_000_000);
@@ -58,6 +60,42 @@ function resolveTemplateAigcModel(template: PromptTemplate, aigcModels: AigcMode
   }) ?? null;
 }
 
+function preloadImage(src: string) {
+  return new Promise<void>((resolve) => {
+    const image = new Image();
+    const timer = window.setTimeout(resolve, IMAGE_PRELOAD_TIMEOUT_MS);
+    const finish = () => {
+      window.clearTimeout(timer);
+      resolve();
+    };
+    image.onload = finish;
+    image.onerror = finish;
+    image.src = src;
+  });
+}
+
+function preloadTemplateImages(templates: PromptTemplate[]) {
+  const urls = templates.map((template) => template.imageUrl).filter(Boolean) as string[];
+  return Promise.all(urls.map(preloadImage));
+}
+
+function TemplateLibrarySkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+      {TEMPLATE_LIBRARY_SKELETON_ITEMS.map((_, index) => (
+        <div key={index} className="overflow-hidden rounded-2xl border border-border-warm bg-background">
+          <div className="aspect-[4/3] animate-pulse bg-muted" />
+          <div className="space-y-2 p-3">
+            <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-full animate-pulse rounded bg-muted" />
+            <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasTemplateLibraryDialogProps) {
   const [keyword, setKeyword] = useState("");
   const [modelCode, setModelCode] = useState("");
@@ -71,6 +109,7 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const randomSeedRef = useRef(createRandomSeed());
+  const resetRequestRef = useRef(0);
 
   const hasMore = items.length < total;
   const selectedModel = useMemo(
@@ -81,9 +120,12 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
 
   const loadPage = useCallback(async (nextPageNo: number, replace: boolean) => {
     if (!open) return;
+    const resetRequest = replace ? resetRequestRef.current + 1 : resetRequestRef.current;
+    if (replace) resetRequestRef.current = resetRequest;
     if (replace) {
       randomSeedRef.current = createRandomSeed();
       setLoading(true);
+      setItems([]);
     } else {
       setLoadingMore(true);
     }
@@ -96,14 +138,19 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
         modelCode: modelCode || undefined,
         randomSeed: randomSeedRef.current,
       });
+      if (replace) await preloadTemplateImages(page.list);
+      if (replace && resetRequest !== resetRequestRef.current) return;
       setItems((current) => replace ? page.list : [...current, ...page.list]);
       setTotal(page.total);
       setPageNo(nextPageNo);
     } catch (err) {
+      if (replace && resetRequest !== resetRequestRef.current) return;
       setError(err instanceof Error ? err.message : "素材库加载失败");
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (!replace || resetRequest === resetRequestRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [keyword, modelCode, open]);
 
@@ -297,10 +344,7 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
               {error ? (
                 <div className="flex h-full items-center justify-center text-sm text-red-600">{error}</div>
               ) : loading ? (
-                <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-gray">
-                  <Loader2 className="size-4 animate-spin" />
-                  加载素材中
-                </div>
+                <TemplateLibrarySkeleton />
               ) : items.length === 0 ? (
                 <div className="flex h-full items-center justify-center text-sm text-muted-gray">
                   未找到匹配的素材
@@ -322,6 +366,8 @@ export function CanvasTemplateLibraryDialog({ open, onClose, onSelect }: CanvasT
                             src={template.imageUrl}
                             alt={template.title}
                             className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                            loading="lazy"
+                            decoding="async"
                             draggable={false}
                           />
                         ) : (

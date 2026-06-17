@@ -45,6 +45,7 @@ import { GroupNodeComponent } from "@/features/canvas/GroupNode";
 import { CanvasSignalEdge } from "@/features/canvas/CanvasSignalEdge";
 import { collectNodeAssetIds, getNodeAssetAccessRequest, withFreshAssetUrl } from "@/features/canvas/canvas-asset-runtime";
 import { filterSyncableNodeDataPatch, isCanvasNodeSyncable, sanitizeCanvasStateForPersistence, sanitizeNodeForCanvasOperation, stripRuntimeAssetUrlsFromPatch } from "@/features/canvas/canvas-syncable-data";
+import { getTextPromptTransferPatch } from "@/features/canvas/text-prompt-transfer";
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
@@ -68,7 +69,7 @@ import { CanvasTemplateLibraryDialog } from "@/features/templates/CanvasTemplate
 import type { PromptTemplate } from "@/features/templates/template-types";
 import { findOpenNodePosition } from "@/features/canvas/positioning";
 import { cn } from "@/lib/utils";
-import { ImagePlus, MousePointerClick, PenLine, Type, Video } from "lucide-react";
+import { ImagePlus, Loader2, MousePointerClick, PenLine, Type, Video } from "lucide-react";
 
 // Static outside component to avoid React Flow "new nodeTypes object" warning
 const CANVAS_NODE_TYPES = {
@@ -144,6 +145,7 @@ function isValidNodeKindConnection(sourceType: AppNode["type"] | CreateNodeKind,
     (sourceType === "sketch" && targetType === "video") ||
     (sourceType === "text" && targetType === "image") ||
     (sourceType === "text" && targetType === "sketch") ||
+    (sourceType === "text" && targetType === "video") ||
     (sourceType === "text" && targetType === "text") ||
     (sourceType === "prompt" && targetType === "image") ||
     (sourceType === "prompt" && targetType === "video") ||
@@ -911,11 +913,15 @@ const VIDEO_MODE_MAX_REFS: Record<VideoGenerationMode, number> = {
   MULTI_REF_VIDEO: 9,
 };
 
-function getVideoNodeAllowedRefCount(targetNode: AppNode | undefined, edges: AppEdge[]): number {
+function isVideoReferenceSource(node: AppNode | undefined) {
+  return node?.type === "image" || node?.type === "sketch";
+}
+
+function getVideoNodeAllowedRefCount(targetNode: AppNode | undefined, edges: AppEdge[], nodes: AppNode[]): number {
   if (targetNode?.type !== "video") return 9;
   const data = targetNode.data as VideoNodeData;
   const mode = data.explicitMode;
-  const currentCount = edges.filter((e) => e.target === targetNode.id).length;
+  const currentCount = edges.filter((e) => e.target === targetNode.id && isVideoReferenceSource(nodes.find((node) => node.id === e.source))).length;
   if (mode && mode in VIDEO_MODE_MAX_REFS) return Math.max(0, VIDEO_MODE_MAX_REFS[mode] - currentCount);
   if (currentCount >= 9) return 0;
   return 9 - currentCount;
@@ -926,7 +932,7 @@ function isValidCanvasConnection(connection: { source: string; target: string },
   const target = nodes.find((n) => n.id === connection.target);
   const isImageToVideo = (source?.type === "image" || source?.type === "sketch") && target?.type === "video";
   if (isImageToVideo && edges) {
-    const remaining = getVideoNodeAllowedRefCount(target, edges);
+    const remaining = getVideoNodeAllowedRefCount(target, edges, nodes);
     if (remaining <= 0) return false;
   }
   return (
@@ -938,6 +944,7 @@ function isValidCanvasConnection(connection: { source: string; target: string },
     (source?.type === "sketch" && target?.type === "video") ||
     (source?.type === "text" && target?.type === "image") ||
     (source?.type === "text" && target?.type === "sketch") ||
+    (source?.type === "text" && target?.type === "video") ||
     (source?.type === "text" && target?.type === "text" && connection.source !== connection.target) ||
     (source?.type === "image" && target?.type === "prompt") ||
     (source?.type === "prompt" && target?.type === "result")
@@ -1106,6 +1113,21 @@ function EmptyCanvasButton({
       <span className="font-medium">{label}</span>
       <span className="text-[10px] leading-3 text-muted-gray">{description}</span>
     </button>
+  );
+}
+
+function CanvasLoadingOverlay({ label }: { label: string }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed inset-0 z-[420] flex items-center justify-center bg-cream"
+    >
+      <div className="flex flex-col items-center gap-3 text-sm text-muted-gray">
+        <Loader2 className="size-5 animate-spin" />
+        <span>{label}</span>
+      </div>
+    </div>
   );
 }
 
@@ -1298,6 +1320,19 @@ function CanvasFlow() {
       });
     }
   }, [canvasOperations, getNodes, setNodes]);
+  const transferTextPromptForConnection = useCallback((connection: { source: string; target: string }, nodeList: AppNode[]) => {
+    const sourceNode = nodeList.find((node) => node.id === connection.source);
+    const targetNode = nodeList.find((node) => node.id === connection.target);
+    const patch = getTextPromptTransferPatch(sourceNode, targetNode);
+    if (!patch || !targetNode) return;
+
+    setNodes((nds) => nds.map((node) => (
+      node.id === targetNode.id ? { ...node, data: { ...node.data, ...patch } } as AppNode : node
+    )));
+    window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
+      detail: { nodeId: targetNode.id, patch, flush: true, includeSnapshotOnly: true },
+    }));
+  }, [setNodes]);
   const mediaStoreScope = useMemo(() => ({
     ownerKey: user?.id ?? null,
     projectId: activeProjectId,
@@ -1832,7 +1867,7 @@ function CanvasFlow() {
       clearTimeout(nodeDataPatchTimersRef.current[key]);
       const submitPatch = () => {
         const patch = Object.fromEntries(
-          Object.entries(filterSyncableNodeDataPatch(detail.patch)).filter(([patchKey]) => !SNAPSHOT_ONLY_NODE_DATA_KEYS.has(patchKey))
+          Object.entries(filterSyncableNodeDataPatch(detail.patch)).filter(([patchKey]) => detail.includeSnapshotOnly || !SNAPSHOT_ONLY_NODE_DATA_KEYS.has(patchKey))
         );
         if (Object.keys(patch).length > 0) {
           canvasOperations.submitOperation("NODE_UPDATE_DATA", {
@@ -2275,10 +2310,15 @@ function CanvasFlow() {
     if (currentEdges.some((item) => isSameCanvasEdge(item, edge))) return;
 
     let nextVideoPatch: Partial<VideoNodeData> | null = null;
-    const targetNode = getNodes().find((n) => n.id === connection.target);
+    const currentNodes = getNodes() as AppNode[];
+    const sourceNode = currentNodes.find((n) => n.id === connection.source);
+    const targetNode = currentNodes.find((n) => n.id === connection.target);
     if (targetNode?.type === "video") {
       const data = targetNode.data as VideoNodeData;
-      const nextIncomingEdges = [...currentEdges.filter((item) => item.target === connection.target), edge];
+      const nextIncomingEdges = currentEdges.filter((item) =>
+        item.target === connection.target && isVideoReferenceSource(currentNodes.find((node) => node.id === item.source))
+      );
+      if (isVideoReferenceSource(sourceNode)) nextIncomingEdges.push(edge);
       const patch: Partial<VideoNodeData> = {};
       if (data.explicitMode === "FIRST_LAST_FRAME_VIDEO") {
         if (nextIncomingEdges.length === 1 && !data.firstFrameEdgeId) {
@@ -2302,13 +2342,14 @@ function CanvasFlow() {
       return addEdge(edge, eds);
     });
     canvasOperations.submitOperation("EDGE_CREATE", { edge });
+    transferTextPromptForConnection(connection, currentNodes);
     if (nextVideoPatch && connection.target) {
       setNodes((nds) => nds.map((n) => n.id === connection.target ? { ...n, data: { ...(n.data as Record<string, unknown>), ...nextVideoPatch } } as AppNode : n));
       window.dispatchEvent(new CustomEvent<NodeDataPatchEventDetail>("copse:node-data-patch", {
         detail: { nodeId: connection.target, patch: nextVideoPatch, flush: true },
       }));
     }
-  }, [canvasOperations, getEdges, getNodes, isReadOnly, setEdges, setNodes]);
+  }, [canvasOperations, getEdges, getNodes, isReadOnly, setEdges, setNodes, transferTextPromptForConnection]);
 
   // Hydrate from server state when the project changes
   useEffect(() => {
@@ -3224,13 +3265,16 @@ function CanvasFlow() {
             shouldSubmit = true;
             return addEdge(edge, eds);
           });
-          if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge });
+          if (shouldSubmit) {
+            canvasOperations.submitOperation("EDGE_CREATE", { edge });
+            transferTextPromptForConnection(connection, connectionNodes);
+          }
         }
       }
 
       closeCreateMenu();
     },
-    [addImageDraftNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges]
+    [addImageDraftNode, addSketchNode, addTextNode, addVideoNode, canvasOperations, closeCreateMenu, createMenu, getNodes, setEdges, transferTextPromptForConnection]
   );
 
   const handleConnectEnd = useCallback(
@@ -3243,13 +3287,14 @@ function CanvasFlow() {
       if (!point) return;
 
       const direction = connectionState.fromHandle.type === "target" ? "incoming" : "outgoing";
-      const targetNode = findNodeAtFlowPoint(getNodes() as AppNode[], screenToFlowPosition(point), connectionState.fromNode.id);
+      const currentNodes = getNodes() as AppNode[];
+      const targetNode = findNodeAtFlowPoint(currentNodes, screenToFlowPosition(point), connectionState.fromNode.id);
       if (targetNode) {
         const connection =
           direction === "incoming"
             ? { source: targetNode.id, target: connectionState.fromNode.id }
             : { source: connectionState.fromNode.id, target: targetNode.id };
-        if (isValidCanvasConnection(connection, getNodes() as AppNode[])) {
+        if (isValidCanvasConnection(connection, currentNodes)) {
           const edge: AppEdge = {
             ...connection,
             id: `e-${connection.source}-${connection.target}-${Date.now()}`,
@@ -3261,7 +3306,10 @@ function CanvasFlow() {
             shouldSubmit = true;
             return addEdge(edge, eds);
           });
-          if (shouldSubmit) canvasOperations.submitOperation("EDGE_CREATE", { edge });
+          if (shouldSubmit) {
+            canvasOperations.submitOperation("EDGE_CREATE", { edge });
+            transferTextPromptForConnection(connection, currentNodes);
+          }
         }
         closeCreateMenu();
         return;
@@ -3278,7 +3326,7 @@ function CanvasFlow() {
         direction,
       });
     },
-    [canvasOperations, closeCreateMenu, flowToScreenPosition, getNodes, isReadOnly, openCreateMenuAt, screenToFlowPosition, setEdges]
+    [canvasOperations, closeCreateMenu, flowToScreenPosition, getNodes, isReadOnly, openCreateMenuAt, screenToFlowPosition, setEdges, transferTextPromptForConnection]
   );
 
   useEffect(() => {
@@ -3316,19 +3364,11 @@ function CanvasFlow() {
   }, [closeCreateMenu, createMenu.visible]);
 
   if (!activeProjectId) {
-    return (
-      <div className="flex h-full w-full items-center justify-center text-sm text-muted-gray">
-        正在准备项目...
-      </div>
-    );
+    return <CanvasLoadingOverlay label="正在准备项目..." />;
   }
 
   if (!isHydrated) {
-    return (
-      <div className="flex h-full w-full items-center justify-center text-sm text-muted-gray">
-        正在加载画布...
-      </div>
-    );
+    return <CanvasLoadingOverlay label="正在加载画布..." />;
   }
 
   const createMenuOrigin = createMenu.originNodeId ? nodes.find((node) => node.id === createMenu.originNodeId) : undefined;
@@ -3806,7 +3846,7 @@ function CanvasFlow() {
 export function CanvasFlowPage() {
   return (
     <div className="h-full w-full bg-cream">
-      <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-gray">正在加载画布...</div>}>
+      <Suspense fallback={<CanvasLoadingOverlay label="正在加载画布..." />}>
         <ReactFlowProvider>
           <CanvasFlow />
         </ReactFlowProvider>
