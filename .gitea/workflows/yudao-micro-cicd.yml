@@ -225,6 +225,12 @@ jobs:
               bash script/docker/verify-release-evidence.sh verify-http
           fi
 
+          if [ "${BUILD_SERVICE}" = "aigc-model" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+            SERVICE_HEALTH_URL="http://127.0.0.1:48090/actuator/health" \
+            COMPOSE_FILE_PATH="script/docker/docker-compose-micro.yml" \
+              bash script/docker/verify-release-evidence.sh verify-service-health
+          fi
+
       - name: Append release verification evidence
         if: always()
         run: |
@@ -245,5 +251,11 @@ jobs:
               echo "- gateway smoke commands:"
               echo "  curl -i -sS --fail-with-body http://127.0.0.1:48080/admin-api/aigc/community/admin/post/page?pageNo=1&pageSize=1"
               echo "  curl -i -sS --fail-with-body http://127.0.0.1:48080/app-api/aigc/community/post/page?pageNo=1&pageSize=1"
+            fi
+            if [ "${BUILD_SERVICE}" = "aigc-model" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+              echo "- aigc-model health command:"
+              echo "  SERVICE_HEALTH_URL=http://127.0.0.1:48090/actuator/health bash script/docker/verify-release-evidence.sh verify-service-health"
+              echo "- failure logs path:"
+              echo "  docker compose -f script/docker/docker-compose-micro.yml logs --tail=200 aigc-model"
             fi
           } | tee -a "${evidence}"

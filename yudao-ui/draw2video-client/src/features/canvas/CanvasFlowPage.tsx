@@ -51,7 +51,7 @@ import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
 import { loadCanvas, saveCanvas } from "@/features/canvas/use-canvas-storage";
 import { loadImage, loadVideo, saveImage, saveVideo } from "@/features/canvas/image-store";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
-import { attachImageAsset, attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
+import { attachVideoAsset } from "@/features/canvas/canvas-asset-upload";
 import { getAssetAccessUrls, getMyAsset } from "@/features/assets/asset-api";
 import { getAssetOriginalExpireTime, getAssetOriginalUrl } from "@/features/assets/asset-dictionaries";
 import { useAuth } from "@/features/auth/auth-store";
@@ -285,12 +285,6 @@ function filterNodesInExpandedCanvasViewport(
   const viewportRect = getExpandedCanvasViewportFlowRect(screenToFlowPosition);
   if (!viewportRect) return [];
   return nodes.filter((node) => rectsIntersect(viewportRect, getNodeFlowRect(node)));
-}
-
-async function dataUrlToFile(dataUrl: string, fileName: string, fallbackMimeType: string) {
-  const response = await fetch(dataUrl);
-  const blob = await response.blob();
-  return new File([blob], fileName, { type: blob.type || fallbackMimeType });
 }
 
 type ArrangeUnit = {
@@ -2872,7 +2866,6 @@ function CanvasFlow() {
 
       const newNodes: AppNode[] = [];
       const existingNodes = getNodes() as AppNode[];
-      let keptLocalFallback = false;
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         try {
@@ -2881,14 +2874,8 @@ function CanvasFlow() {
             y: center.y + i * 80 - ((files.length - 1) * 40),
           };
           if (isAcceptedImageType(file.type)) {
-            let imageData: ImageNodeData = await fileToImageNodeData(file);
-            try {
-              imageData = await attachImageAsset(file, imageData);
-            } catch {
-              keptLocalFallback = true;
-            }
-            imageData = {
-              ...imageData,
+            const imageData: ImageNodeData = {
+              ...(await fileToImageNodeData(file)),
               projectId: activeProjectId,
             };
             await saveImage(imageData, mediaStoreScope);
@@ -2932,9 +2919,10 @@ function CanvasFlow() {
       }
       if (newNodes.length > 0) {
         if (!activeProjectId) return;
-        if (serverProjectId) {
+        const boundNodes = newNodes.filter((node) => Boolean((node.data as ImageNodeData | VideoNodeData).assetId));
+        if (serverProjectId && boundNodes.length > 0) {
           try {
-            await Promise.all(newNodes.map((node) => bindUploadedNodeAsset(serverProjectId, node)));
+            await Promise.all(boundNodes.map((node) => bindUploadedNodeAsset(serverProjectId, node)));
           } catch (error) {
             setPasteToast(error instanceof Error ? error.message : "资产绑定失败");
             setTimeout(() => setPasteToast(""), 2500);
@@ -2945,10 +2933,6 @@ function CanvasFlow() {
         for (const node of newNodes) {
           if (!isCanvasNodeSyncable(node)) continue;
           canvasOperations.submitOperation("NODE_CREATE", { node: sanitizeNodeForCanvasOperation(node) });
-        }
-        if (keptLocalFallback) {
-          setPasteToast("图片已添加到当前画布，但云端上传失败；刷新或协作端可能无法看到这张图。");
-          setTimeout(() => setPasteToast(""), 3500);
         }
       }
     },
@@ -2978,7 +2962,7 @@ function CanvasFlow() {
       const sourceSize = getApproxNodeSize(sourceNode);
       const imageId = `frame_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const now = new Date().toISOString();
-      let imageData: ImageNodeData = {
+      const imageData: ImageNodeData = {
         imageId,
         projectId: activeProjectId,
         fileName: detail.fileName || "Video frame.png",
@@ -2999,14 +2983,6 @@ function CanvasFlow() {
         taskId: null,
         errorMessage: null,
       };
-
-      try {
-        if (!detail.dataUrl) throw new Error("server asset frame");
-        const file = await dataUrlToFile(detail.dataUrl, imageData.fileName, imageData.mimeType);
-        imageData = await attachImageAsset(file, imageData);
-      } catch {
-        // Keep the local frame usable even if the asset upload path is unavailable.
-      }
 
       await saveImage(imageData, mediaStoreScope);
 

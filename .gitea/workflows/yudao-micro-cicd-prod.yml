@@ -253,6 +253,12 @@ jobs:
               bash "${GITHUB_WORKSPACE}/script/docker/verify-release-evidence.sh" verify-http
           fi
 
+          if [ "${BUILD_SERVICE}" = "aigc-model" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+            SERVICE_HEALTH_URL="http://127.0.0.1:48090/actuator/health" \
+            COMPOSE_FILE_PATH="docker-compose-micro.yml" \
+              bash "${GITHUB_WORKSPACE}/script/docker/verify-release-evidence.sh" verify-service-health
+          fi
+
       - name: Append release verification evidence
         if: always()
         run: |
@@ -282,5 +288,11 @@ jobs:
               echo
               echo "- service logs tail:"
               docker compose -f docker-compose-micro.yml logs --tail=80 aigc-community || true
+            fi
+            if [ "${BUILD_SERVICE}" = "aigc-model" ] || [ "${BUILD_SERVICE}" = "all" ]; then
+              echo "- aigc-model health command:"
+              echo "  SERVICE_HEALTH_URL=http://127.0.0.1:48090/actuator/health bash script/docker/verify-release-evidence.sh verify-service-health"
+              echo "- failure logs path:"
+              cd "${deploy_dir}" && docker compose -f docker-compose-micro.yml logs --tail=200 aigc-model || true
             fi
           } | tee -a "${evidence}"

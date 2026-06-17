@@ -71,7 +71,7 @@ prod 发布前必须确认下面每一项。缺任何关键项就不要发布，
 | build 已通过 | test 环境 workflow 或本地构建成功 |
 | 必要环境变量齐全 | Nacos prod 配置、Compose env、前端 `.frontend-prod.env` 都存在 |
 | 数据库变更可回滚 | 有备份文件、备份 SHA、SQL 版本、回滚说明 |
-| 健康检查地址存在 | 至少能查容器运行、Nacos 实例或 `/actuator/health` |
+| 健康检查地址存在 | 至少能查容器运行、Nacos 实例或 `/actuator/health`；`aigc-model` 使用容器级 healthcheck 或 `SERVICE_HEALTH_URL=http://127.0.0.1:48090/actuator/health bash script/docker/verify-release-evidence.sh verify-service-health` |
 | 回滚版本明确 | test 记录当前/上一稳定测试镜像版本；prod 记录当前 commit SHA 和上一个稳定 commit SHA |
 
 ### 回滚版本从哪里取
@@ -192,7 +192,14 @@ Nacos 实例验证：
 curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=prod&groupName=DEFAULT_GROUP&serviceName=system-server"
 ```
 
-当前限制：test Compose 的业务后端镜像已使用 `${MICRO_IMAGE_TAG:-latest}`，并从 `script/docker/test-image-version` 的 `v0.0.1` 起步；prod 目前主要由 `aigc-community:${MICRO_IMAGE_TAG}` 使用不可变 tag，多数后端服务仍是 `latest`，所以这些 prod 服务的 `previous_stable_image_tag` 目前主要是发布证据；真正快速回滚建议用稳定 Git tag 重新触发 workflow，或后续把所有 prod 后端 image 改成 `${MICRO_IMAGE_TAG:-latest}`。
+当前限制：test Compose 的业务后端镜像已使用 `${MICRO_IMAGE_TAG:-latest}`，并从 `script/docker/test-image-version` 的 `v0.0.1` 起步；prod Compose 的业务后端镜像也统一使用 `${MICRO_IMAGE_TAG:-latest}`。发布 workflow 会拒绝空 tag 和 `latest`，prod tag 使用 12 位 Git SHA，`previous_stable_image_tag` 必须来自上一条成功发布证据、当前运行容器镜像或镜像仓库可验证 tag。
+
+`aigc-model` 发布证据必须包含：
+
+- current image tag 和 previous stable image tag，且都不是 `latest`。
+- `docker image inspect aigc-model:<tag>` 或等价 registry/manifest inspect 结果。
+- 健康检查命令、响应、采集时间和 `docker compose ... logs --tail=200 aigc-model` 失败日志路径。
+- 回滚命令：`MICRO_IMAGE_TAG=<previous-stable-tag> docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate aigc-model`。
 
 ## 前端发布
 

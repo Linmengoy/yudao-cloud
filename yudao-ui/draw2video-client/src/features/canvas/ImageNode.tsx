@@ -45,6 +45,7 @@ import { filterAigcModelParams } from "@/features/generation/aigc-model-param-ut
 import { useAigcModels } from "@/features/generation/use-aigc-models";
 import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
 import { getMyAsset } from "@/features/assets/asset-api";
+import { attachImageAsset } from "@/features/canvas/canvas-asset-upload";
 import { getAssetOriginalExpireTime, getAssetOriginalUrl } from "@/features/assets/asset-dictionaries";
 import { getSafetyCopy } from "@/features/safety/safety-copy";
 import { SafetyInlineNotice } from "@/features/safety/safety-ui";
@@ -381,6 +382,61 @@ function buildServerInputParams(params: Record<string, unknown>, ids: string[], 
   });
 }
 
+async function dataUrlToFile(dataUrl: string, fileName: string, fallbackMimeType: string) {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: blob.type || fallbackMimeType });
+}
+
+async function ensureReferenceAssets(
+  promptNodeId: string,
+  ctx: { nodes: AppNode[]; edges: AppEdge[] },
+  options: {
+    projectId: string | number | null;
+    mediaStoreScope: Parameters<typeof saveImage>[1];
+    setNodes: (payload: AppNode[] | ((nodes: AppNode[]) => AppNode[])) => void;
+  }
+) {
+  const incoming = ctx.edges.filter((edge) => edge.target === promptNodeId);
+  const uploadTargets = incoming
+    .map((edge) => ctx.nodes.find((node) => node.id === edge.source))
+    .filter((node): node is AppNode => node?.type === "image")
+    .filter((node) => {
+      const data = node.data as ImageNodeData;
+      return !data.assetId && Boolean(data.dataUrl);
+    });
+
+  if (uploadTargets.length === 0) return ctx;
+
+  const uploadedByNodeId = new Map<string, ImageNodeData>();
+  for (const node of uploadTargets) {
+    const data = node.data as ImageNodeData;
+    const file = await dataUrlToFile(data.dataUrl, data.fileName || `${data.imageId}.png`, data.mimeType || "image/png");
+    const uploaded = await attachImageAsset(file, data);
+    uploadedByNodeId.set(node.id, uploaded);
+    await saveImage(uploaded, options.mediaStoreScope);
+    if (options.projectId && uploaded.assetId) {
+      await canvasApi.bindNodeAsset(options.projectId, node.id, {
+        assetId: uploaded.assetId,
+        assetVersionId: uploaded.assetVersionId ?? null,
+        usageType: "reference",
+      });
+    }
+  }
+
+  const nextNodes: AppNode[] = ctx.nodes.map((node) => {
+    const uploaded = uploadedByNodeId.get(node.id);
+    return uploaded && node.type === "image" ? { ...node, data: { ...(node.data as ImageNodeData), ...uploaded } } : node;
+  });
+  options.setNodes((nodes) =>
+    nodes.map((node) => {
+      const uploaded = uploadedByNodeId.get(node.id);
+      return uploaded && node.type === "image" ? { ...node, data: { ...(node.data as ImageNodeData), ...uploaded } } : node;
+    })
+  );
+  return { nodes: nextNodes, edges: ctx.edges };
+}
+
 function isDuplicateOrInvalidNodeCreate(error: unknown) {
   return error instanceof Error && error.message.includes("画布操作内容不合法");
 }
@@ -509,6 +565,16 @@ function ParamSegmented<T extends string>({
 export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodeProps) {
   const { user } = useAuth();
   const { setNodes, setEdges, getNode, getNodes, getEdges, getViewport, setViewport } = useReactFlow();
+  const setAppNodes = useCallback(
+    (payload: AppNode[] | ((nodes: AppNode[]) => AppNode[])) => {
+      if (typeof payload === "function") {
+        setNodes((nodes) => payload(nodes as AppNode[]));
+        return;
+      }
+      setNodes(payload);
+    },
+    [setNodes]
+  );
   const composerWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
   const toolbarWheelRef = useComposerWheelPan<HTMLDivElement>(getViewport, setViewport);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -1038,7 +1104,26 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
     const runStartedAtMs = Date.now();
     setStartedAtMs(runStartedAtMs);
     setNow(runStartedAtMs);
-    const ctx = { nodes: getNodes() as AppNode[], edges: getEdges() as AppEdge[] };
+    const projectId = new URLSearchParams(window.location.search).get("projectId");
+    let ctx = { nodes: getNodes() as AppNode[], edges: getEdges() as AppEdge[] };
+    try {
+      ctx = await ensureReferenceAssets(id, ctx, {
+        projectId: isServerCanvasProjectId(projectId) ? projectId : null,
+        mediaStoreScope,
+        setNodes: setAppNodes,
+      });
+    } catch (error) {
+      updateData({
+        status: "failed",
+        taskId: null,
+        errorMessage: error instanceof Error ? error.message : "参考图上传失败，请稍后重试。",
+        safetyStatus: null,
+        safetyReason: null,
+        generationCompletedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - new Date(startedAt).getTime(),
+      });
+      return;
+    }
     const { snapshots, ids, mode } = resolveInputImages(id, ctx);
     const runModel = activeAigcModel && aigcModels.models.some((model) => model.id === activeAigcModel.id)
       ? activeAigcModel
@@ -1096,7 +1181,6 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
       modelName: runModelName,
     }, { flush: true, includeSnapshotOnly: true, reliable: true });
 
-    const projectId = new URLSearchParams(window.location.search).get("projectId");
     if (isServerCanvasProjectId(projectId) && runAigcModelId) {
       const clientId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       try {
@@ -1202,7 +1286,7 @@ export function ImageNodeComponent({ id, data, selected, dragging }: ImageNodePr
         return { ...n, data: merged };
       })
     );
-  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, ensureServerCanvasNodeCreated, generationCount, getEdges, getNode, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, outputs, prompt, setNodes, updateData, waitAndApplyServerRun]);
+  }, [activeAigcModel, activeModelName, activeProviderModel, aigcModels.loading, aigcModels.models, aigcModels.selectedModel, aigcModels.templateLoading, data.height, data.width, effectiveParams, ensureServerCanvasNodeCreated, generationCount, getEdges, getNode, getNodes, id, isGenerating, mediaStoreScope, mentionOptions, modelId, outputs, prompt, setAppNodes, setNodes, updateData, waitAndApplyServerRun]);
 
   useEffect(() => {
     if (!modelPopoverOpen && !paramsPopoverOpen && !countPopoverOpen) return;
