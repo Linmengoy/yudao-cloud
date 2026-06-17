@@ -108,11 +108,17 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn('[ValidateSet("all", "admin", "client", "guide")]', ps1)
         self.assertIn('"draw2video-guide:$ImageTag"', ps1)
         self.assertIn('$GuideDir = Join-Path $RootDir "yudao-ui\\draw2video-guide"', ps1)
+        self.assertIn('$TestImageVersionFile = Join-Path $RootDir "script\\docker\\test-image-version"', ps1)
+        self.assertIn("function Get-TestImageVersion", ps1)
+        self.assertIn('$ImageTag = Get-TestImageVersion', ps1)
         self.assertIn("git -C $RootDir rev-parse --short=12 HEAD", ps1)
 
         self.assertIn("--target all|admin|client|guide", sh)
         self.assertIn('all|admin|client|guide)', sh)
         self.assertIn('"draw2video-guide:$IMAGE_TAG"', sh)
+        self.assertIn('TEST_IMAGE_VERSION_FILE="$ROOT_DIR/script/docker/test-image-version"', sh)
+        self.assertIn("read_test_image_version", sh)
+        self.assertIn('IMAGE_TAG="$(read_test_image_version)"', sh)
         self.assertIn('git -C "$ROOT_DIR" rev-parse --short=12 HEAD', sh)
 
         self.assertIn("draw2video-guide:", compose)
@@ -122,8 +128,9 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn("http://127.0.0.1/health", compose)
 
         self.assertIn("--target guide", runbook)
-        self.assertIn("git rev-parse --short=12 HEAD", runbook)
-        self.assertIn("FRONTEND_IMAGE_TAG=<previous-stable-sha>", runbook)
+        self.assertIn("script/docker/test-image-version", runbook)
+        self.assertIn("v0.0.1", runbook)
+        self.assertIn("FRONTEND_IMAGE_TAG=<previous-test-version>", runbook)
         self.assertIn("curl -fsS http://127.0.0.1:8082/guide/", runbook)
 
     def test_issue_72_asset_direct_upload_thumbnail_contract_is_end_to_end(self):
@@ -326,8 +333,10 @@ class ReviewReadyContractTest(unittest.TestCase):
         for required in [
             "## 发布前门禁",
             "回滚版本明确",
-            "记录当前 commit SHA 和上一个稳定 commit SHA",
+            "test 记录当前/上一稳定测试镜像版本",
             "### 回滚版本从哪里取",
+            "script/docker/test-image-version",
+            "v0.0.1",
             "git rev-parse --short=12 HEAD",
             "workflow 页面显示的 commit 短 SHA",
             "git fetch gitea --tags",

@@ -108,6 +108,8 @@ npm run dev
 - `aigc-community` 发布必须通过服务健康检查和网关 smoke test。
 - 发布证据必须记录 run URL、commit SHA、镜像 tag、上一稳定 tag、回滚命令和验证输出。
 
+测试环境镜像版本由 `script/docker/test-image-version` 管理，当前从 `v0.0.1` 开始。
+
 ## 数据与文件原则
 
 - 数据库只保存对象存储地址、资产编号、元数据和访问控制信息。

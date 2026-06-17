@@ -99,6 +99,7 @@ jobs:
 
           echo "BUILD_SERVICE=${service}" >> "${GITHUB_ENV}"
           echo "BUILD_MODULE=${module}" >> "${GITHUB_ENV}"
+          echo "DEPLOY_ENV=prod" >> "${GITHUB_ENV}"
           echo "MICRO_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "FRONTEND_IMAGE_TAG=${image_tag}" >> "${GITHUB_ENV}"
           echo "PREVIOUS_STABLE_IMAGE_TAG=${{ github.event.inputs.previous_stable_image_tag }}" >> "${GITHUB_ENV}"

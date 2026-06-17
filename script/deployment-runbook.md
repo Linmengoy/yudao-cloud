@@ -72,7 +72,7 @@ prod 发布前必须确认下面每一项。缺任何关键项就不要发布，
 | 必要环境变量齐全 | Nacos prod 配置、Compose env、前端 `.frontend-prod.env` 都存在 |
 | 数据库变更可回滚 | 有备份文件、备份 SHA、SQL 版本、回滚说明 |
 | 健康检查地址存在 | 至少能查容器运行、Nacos 实例或 `/actuator/health` |
-| 回滚版本明确 | 记录当前 commit SHA 和上一个稳定 commit SHA |
+| 回滚版本明确 | test 记录当前/上一稳定测试镜像版本；prod 记录当前 commit SHA 和上一个稳定 commit SHA |
 
 ### 回滚版本从哪里取
 
@@ -83,6 +83,12 @@ git rev-parse --short=12 HEAD
 ```
 
 如果是从 Gitea Actions 发布，也可以直接使用本次 workflow 页面显示的 commit 短 SHA；两者必须一致。
+
+测试环境镜像版本由 `script/docker/test-image-version` 统一管理，当前从 `v0.0.1` 开始：
+
+```powershell
+Get-Content script/docker/test-image-version
+```
 
 上一个稳定 commit SHA 优先从上一次成功发布记录或 `prod-stable-*` tag 获取：
 
@@ -112,7 +118,7 @@ Gitea Web 操作：
 3. 点击手动运行。
 4. `ref` 选 `master-jdk17`。
 5. `service` 选择要发布的服务，例如 `yudao-system`。
-6. `previous_stable_image_tag` 填上一个稳定 commit 的短 SHA，例如 `5fbe85a739e2`。test 也要求填，是为了保留回滚证据。
+6. `previous_stable_image_tag` 填上一个稳定测试镜像版本，例如 `v0.0.1`。首次测试版本就是 `v0.0.1` 时可以留空。
 7. 等 workflow 成功后看 `docker compose ps` 和日志。
 
 不要在这个 workflow 里选择 `draw2video-admin`、`draw2video-client`、`draw2video-guide`。前端必须用本机脚本发布，避免服务器上触发前端打包。
@@ -123,7 +129,7 @@ API 触发示例：
 curl.exe -sS -u root:root -X POST `
   "http://111.228.39.103:3000/api/v1/repos/root/manman/actions/workflows/yudao-micro-cicd.yml/dispatches" `
   -H "Content-Type: application/json" `
-  -d "{\"ref\":\"master-jdk17\",\"inputs\":{\"service\":\"yudao-system\",\"previous_stable_image_tag\":\"5fbe85a739e2\"}}"
+  -d "{\"ref\":\"master-jdk17\",\"inputs\":{\"service\":\"yudao-system\",\"previous_stable_image_tag\":\"v0.0.1\"}}"
 ```
 
 test 验证命令：
@@ -186,7 +192,7 @@ Nacos 实例验证：
 curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=prod&groupName=DEFAULT_GROUP&serviceName=system-server"
 ```
 
-当前限制：`aigc-community` 已使用 `aigc-community:${MICRO_IMAGE_TAG}`，前端已使用 `prod-<commit>` / `test-<commit>`。但多数后端服务的 Compose image 仍是 `latest`，所以这些服务的 `previous_stable_image_tag` 目前主要是发布证据；真正快速回滚建议用稳定 Git tag 重新触发 workflow，或后续把所有后端 image 改成 `${MICRO_IMAGE_TAG:-latest}`。
+当前限制：test Compose 的业务后端镜像已使用 `${MICRO_IMAGE_TAG:-latest}`，并从 `script/docker/test-image-version` 的 `v0.0.1` 起步；prod 目前主要由 `aigc-community:${MICRO_IMAGE_TAG}` 使用不可变 tag，多数后端服务仍是 `latest`，所以这些 prod 服务的 `previous_stable_image_tag` 目前主要是发布证据；真正快速回滚建议用稳定 Git tag 重新触发 workflow，或后续把所有 prod 后端 image 改成 `${MICRO_IMAGE_TAG:-latest}`。
 
 ## 前端发布
 
@@ -230,7 +236,7 @@ curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=p
 脚本会做这些事：
 
 1. 本机 Docker Desktop 构建镜像。
-2. 镜像 tag 使用 `test-<commit>` 或 `prod-<commit>`。
+2. test 镜像 tag 使用 `script/docker/test-image-version` 中的版本，当前为 `v0.0.1`；prod 镜像 tag 使用 `prod-<commit>`。
 3. 推送到 Gitea Registry `111.228.39.103:3000/root`。
 4. 同步 `/opt/code/.frontend-test.env` 或 `/opt/code/.frontend-prod.env`。
 5. 目标服务器执行 `docker compose pull` 和 `docker compose up -d --no-build --force-recreate`。
@@ -263,7 +269,7 @@ ssh manman2 "curl -fsS -I http://127.0.0.1:8081/"
 ssh manman2 "cd /opt/code && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml pull draw2video-client && FRONTEND_IMAGE_TAG=prod-<old-commit> FRONTEND_IMAGE_REGISTRY_PREFIX=111.228.39.103:3000/root/ docker compose --env-file .frontend-prod.env -f docker-compose.frontend.yml up -d --no-build --force-recreate draw2video-client"
 ```
 
-前端发布单必须同时记录 `current image tag` 和 `previous stable image tag`，格式为 `test-<commit>` 或 `prod-<commit>`。上一稳定 tag 优先从上一条成功发布 issue 写回、Gitea Registry 可拉取 tag、或目标服务器当前运行镜像获取：
+前端发布单必须同时记录 `current image tag` 和 `previous stable image tag`。test 格式为 `v0.0.1` 这类语义化版本，prod 格式为 `prod-<commit>`。上一稳定 tag 优先从上一条成功发布 issue 写回、Gitea Registry 可拉取 tag、或目标服务器当前运行镜像获取：
 
 ```powershell
 ssh manman "docker inspect draw2video-client --format '{{.Config.Image}}'"

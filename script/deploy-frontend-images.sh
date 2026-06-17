@@ -50,7 +50,7 @@ Options:
   --admin-gateway-port PORT    Runtime gateway port for admin nginx proxy
   --target all|admin|client|guide
                                 Build/deploy target, default all
-  --image-tag TAG              Docker image tag, default current git SHA
+  --image-tag TAG              Docker image tag, default test-image-version for test and prod git SHA for prod
   --archive-name NAME          Image archive name
   --compose-file NAME          Compose file name, default docker-compose.frontend.yml
   --use-registry               Push images to Gitea registry and deploy by docker pull
@@ -263,11 +263,31 @@ ADMIN_DIR="$ROOT_DIR/yudao-ui/draw2video-admin"
 CLIENT_DIR="$ROOT_DIR/yudao-ui/draw2video-client"
 GUIDE_DIR="$ROOT_DIR/yudao-ui/draw2video-guide"
 COMPOSE_SOURCE_PATH="$ROOT_DIR/script/docker/$COMPOSE_FILE"
+TEST_IMAGE_VERSION_FILE="$ROOT_DIR/script/docker/test-image-version"
+
+read_test_image_version() {
+  if [[ ! -f "$TEST_IMAGE_VERSION_FILE" ]]; then
+    echo "Test image version file not found: $TEST_IMAGE_VERSION_FILE" >&2
+    exit 1
+  fi
+
+  local version
+  version="$(tr -d '[:space:]' < "$TEST_IMAGE_VERSION_FILE")"
+  if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+    echo "Invalid test image version in $TEST_IMAGE_VERSION_FILE: $version" >&2
+    exit 1
+  fi
+  printf '%s\n' "$version"
+}
 
 if [[ -z "$IMAGE_TAG" ]]; then
-  GIT_TAG="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || true)"
-  GIT_TAG="${GIT_TAG:-latest}"
-  IMAGE_TAG="${DEPLOY_ENV}-${GIT_TAG}"
+  if [[ "$DEPLOY_ENV" == "test" ]]; then
+    IMAGE_TAG="$(read_test_image_version)"
+  else
+    GIT_TAG="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || true)"
+    GIT_TAG="${GIT_TAG:-latest}"
+    IMAGE_TAG="${DEPLOY_ENV}-${GIT_TAG}"
+  fi
 fi
 
 if [[ -z "$ARCHIVE_NAME" ]]; then

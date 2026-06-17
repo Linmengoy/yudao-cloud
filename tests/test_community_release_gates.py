@@ -220,11 +220,16 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("Enforce community DB evidence gate", workflow)
         self.assertIn("bash script/docker/verify-release-evidence.sh db-evidence", workflow)
         self.assertIn("Write release evidence summary", workflow)
+        self.assertIn('test_image_version_file="script/docker/test-image-version"', workflow)
+        self.assertIn("DEPLOY_ENV=test", workflow)
+        self.assertIn("TEST_IMAGE_VERSION_FILE=${test_image_version_file}", workflow)
         self.assertIn("RELEASE_EVIDENCE_FILE=tmp/release-evidence/${service}-${image_tag}.md", workflow)
         self.assertIn("workflow run url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", workflow)
+        self.assertIn("test image version file: ${TEST_IMAGE_VERSION_FILE}", workflow)
         self.assertIn("immutable image tag: ${MICRO_IMAGE_TAG}", workflow)
         self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
-        self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-stable-sha>", workflow)
+        self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-test-version>", workflow)
+        self.assertIn("docker compose -f script/docker/docker-compose-micro.yml up -d --no-deps \"${BUILD_SERVICE}\"", workflow)
         self.assertIn("Append release verification evidence", workflow)
         self.assertIn("deployment verification", workflow)
         self.assertIn("docker compose -f script/docker/docker-compose-micro.yml ps", workflow)
@@ -274,6 +279,7 @@ class CommunityReleaseGateTest(unittest.TestCase):
         self.assertIn("previous stable image tag: ${PREVIOUS_STABLE_IMAGE_TAG:-not-provided}", workflow)
         self.assertIn("MICRO_IMAGE_TAG=${MICRO_IMAGE_TAG}", workflow)
         self.assertIn("FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}", workflow)
+        self.assertIn("DEPLOY_ENV=prod", workflow)
         self.assertIn('export MICRO_IMAGE_TAG="${MICRO_IMAGE_TAG}" FRONTEND_IMAGE_TAG="${FRONTEND_IMAGE_TAG}"', workflow)
         self.assertIn("rollback command: MICRO_IMAGE_TAG=<previous-stable-sha>", workflow)
         self.assertIn("Append release verification evidence", workflow)
@@ -288,6 +294,8 @@ class CommunityReleaseGateTest(unittest.TestCase):
 
         for required in [
             "set -euo pipefail",
+            "is_semver_tag",
+            "MICRO_IMAGE_TAG must be a semantic test image tag such as v0.0.1",
             "previous_stable_image_tag is required for rollback evidence",
             "previous_stable_image_tag must be a Git SHA tag",
             "COMMUNITY_DB_RELEASE_RECORD must point to the completed community_db migration record",
@@ -305,6 +313,35 @@ class CommunityReleaseGateTest(unittest.TestCase):
             self.assertIn(required, script)
 
         self.assertNotIn("|| true", script)
+
+    def test_test_image_version_starts_at_v001_and_feeds_test_compose(self):
+        version = read("script/docker/test-image-version").strip()
+        workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
+        compose = read("script/docker/docker-compose-micro.yml")
+        checks = read("script/release-gate-checks.ps1")
+
+        self.assertEqual("v0.0.1", version)
+        self.assertIn('image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', workflow)
+        self.assertIn("DEPLOY_ENV=test", workflow)
+        self.assertIn("^v[0-9]+\\.[0-9]+\\.[0-9]+", workflow)
+        for service in [
+            "yudao-system",
+            "yudao-infra",
+            "yudao-member",
+            "yudao-pay",
+            "yudao-gateway",
+            "aigc-model",
+            "aigc-billing",
+            "aigc-task",
+            "aigc-asset",
+            "aigc-safety",
+            "aigc-gen",
+            "aigc-workflow",
+            "aigc-community",
+        ]:
+            self.assertIn(f"image: {service}:${{MICRO_IMAGE_TAG:-latest}}", compose)
+
+        self.assertIn('grep -Eq "^v[0-9]+\\.[0-9]+\\.[0-9]+', checks)
 
     def test_release_evidence_index_covers_all_release_gate_templates(self):
         index = read("script/docker/community-release-evidence-index.md")

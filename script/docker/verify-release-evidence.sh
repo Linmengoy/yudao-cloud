@@ -25,6 +25,10 @@ is_sha_tag() {
   printf '%s' "$1" | grep -Eq '^[0-9a-fA-F]{7,40}$'
 }
 
+is_semver_tag() {
+  printf '%s' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+}
+
 run_curl() {
   local url="$1"
   curl -i -sS --fail-with-body --max-time "${CURL_TIMEOUT_SECONDS:-15}" "$url"
@@ -34,22 +38,43 @@ preflight() {
   local previous_tag="${PREVIOUS_STABLE_IMAGE_TAG:-}"
   local service="${BUILD_SERVICE:-unknown}"
   local evidence="${RELEASE_EVIDENCE_FILE:-}"
+  local deploy_env="${DEPLOY_ENV:-prod}"
 
   [ -n "$evidence" ] || fail "RELEASE_EVIDENCE_FILE is required"
   evidence="$(evidence_path "$evidence")"
   mkdir -p "$(dirname "$evidence")"
   [ -n "${MICRO_IMAGE_TAG:-}" ] || fail "MICRO_IMAGE_TAG is required"
-  is_sha_tag "$MICRO_IMAGE_TAG" || fail "MICRO_IMAGE_TAG must be an immutable Git SHA tag: ${MICRO_IMAGE_TAG}"
-  [ -n "$previous_tag" ] || fail "previous_stable_image_tag is required for rollback evidence"
-  is_sha_tag "$previous_tag" || fail "previous_stable_image_tag must be a Git SHA tag: ${previous_tag}"
+  case "$deploy_env" in
+    test)
+      is_semver_tag "$MICRO_IMAGE_TAG" || fail "MICRO_IMAGE_TAG must be a semantic test image tag such as v0.0.1: ${MICRO_IMAGE_TAG}"
+      if [ -n "$previous_tag" ]; then
+        is_semver_tag "$previous_tag" || fail "previous_stable_image_tag must be a semantic test image tag such as v0.0.1: ${previous_tag}"
+      elif [ "$MICRO_IMAGE_TAG" != "v0.0.1" ]; then
+        fail "previous_stable_image_tag is required for rollback evidence"
+      fi
+      ;;
+    prod)
+      is_sha_tag "$MICRO_IMAGE_TAG" || fail "MICRO_IMAGE_TAG must be an immutable Git SHA tag: ${MICRO_IMAGE_TAG}"
+      [ -n "$previous_tag" ] || fail "previous_stable_image_tag is required for rollback evidence"
+      is_sha_tag "$previous_tag" || fail "previous_stable_image_tag must be a Git SHA tag: ${previous_tag}"
+      ;;
+    *)
+      fail "DEPLOY_ENV must be test or prod: ${deploy_env}"
+      ;;
+  esac
 
   {
     echo
     echo "pre-release gate"
     echo "- service: ${service}"
+    echo "- deploy env: ${deploy_env}"
     echo "- current image tag: ${MICRO_IMAGE_TAG}"
-    echo "- previous stable image tag: ${previous_tag}"
-    echo "- rollback command: MICRO_IMAGE_TAG=${previous_tag} FRONTEND_IMAGE_TAG=${previous_tag} docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${service}"
+    echo "- previous stable image tag: ${previous_tag:-not-provided}"
+    if [ -n "$previous_tag" ]; then
+      echo "- rollback command: MICRO_IMAGE_TAG=${previous_tag} FRONTEND_IMAGE_TAG=${previous_tag} docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${service}"
+    else
+      echo "- rollback command: not available for initial test image version"
+    fi
   } >> "$evidence"
 }
 

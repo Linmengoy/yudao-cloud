@@ -37,6 +37,19 @@ $AdminDir = Join-Path $RootDir "yudao-ui\draw2video-admin"
 $ClientDir = Join-Path $RootDir "yudao-ui\draw2video-client"
 $GuideDir = Join-Path $RootDir "yudao-ui\draw2video-guide"
 $ComposeSourcePath = Join-Path $RootDir "script\docker\$ComposeFile"
+$TestImageVersionFile = Join-Path $RootDir "script\docker\test-image-version"
+
+function Get-TestImageVersion {
+  if (!(Test-Path -LiteralPath $TestImageVersionFile)) {
+    throw "Test image version file not found: $TestImageVersionFile"
+  }
+
+  $Version = (Get-Content -LiteralPath $TestImageVersionFile -Raw).Trim()
+  if ($Version -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
+    throw "Invalid test image version in ${TestImageVersionFile}: $Version"
+  }
+  return $Version
+}
 
 if ($DeployEnv -eq "auto") {
   if ($Server -eq "manman2" -or $Server -eq "root@117.72.215.47") {
@@ -55,11 +68,15 @@ if ([string]::IsNullOrWhiteSpace($ClientWsBaseUrl)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($ImageTag)) {
-  $GitTag = (git -C $RootDir rev-parse --short=12 HEAD 2>$null)
-  if ([string]::IsNullOrWhiteSpace($GitTag)) {
-    $GitTag = "latest"
+  if ($DeployEnv -eq "test") {
+    $ImageTag = Get-TestImageVersion
+  } else {
+    $GitTag = (git -C $RootDir rev-parse --short=12 HEAD 2>$null)
+    if ([string]::IsNullOrWhiteSpace($GitTag)) {
+      $GitTag = "latest"
+    }
+    $ImageTag = "${DeployEnv}-${GitTag}"
   }
-  $ImageTag = "${DeployEnv}-${GitTag}"
 }
 
 if ([string]::IsNullOrWhiteSpace($ArchiveName)) {
