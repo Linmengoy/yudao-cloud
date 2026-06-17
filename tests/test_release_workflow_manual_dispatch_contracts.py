@@ -39,15 +39,19 @@ class ReleaseWorkflowManualDispatchContractsTest(unittest.TestCase):
         self.assertIn("TEST_IMAGE_TAG_SOURCE=${image_tag_source}", workflow)
         self.assertIn("test image tag source: ${TEST_IMAGE_TAG_SOURCE}", workflow)
 
-    def test_test_workflow_defaults_previous_stable_tag_from_version_file(self):
+    def test_test_workflow_defaults_image_tag_to_next_patch_after_stable_tag(self):
         workflow = read(".gitea/workflows/yudao-micro-cicd.yml")
 
         self.assertIn("INPUT_PREVIOUS_STABLE_IMAGE_TAG: ${{ github.event.inputs.previous_stable_image_tag }}", workflow)
         self.assertIn('stable_test_image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', workflow)
-        self.assertIn('previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}"', workflow)
+        self.assertIn('previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-${stable_test_image_tag}}"', workflow)
         self.assertIn('previous_stable_image_tag_source="workflow_dispatch.previous_stable_image_tag"', workflow)
-        self.assertIn('if [ -z "${previous_stable_image_tag}" ] && [ "${image_tag}" != "v0.0.1" ]; then', workflow)
-        self.assertIn('previous_stable_image_tag="${stable_test_image_tag}"', workflow)
+        self.assertIn('previous_stable_image_tag_source="${test_image_version_file}"', workflow)
+        self.assertIn('previous_stable_image_tag must be a base semantic version', workflow)
+        self.assertIn('base_version="${previous_stable_image_tag#v}"', workflow)
+        self.assertIn('next_patch=$((patch + 1))', workflow)
+        self.assertIn('image_tag="v${major}.${minor}.${next_patch}"', workflow)
+        self.assertIn('image_tag_source="next patch after ${previous_stable_image_tag_source}"', workflow)
         self.assertIn('previous stable image tag source: ${PREVIOUS_STABLE_IMAGE_TAG_SOURCE}', workflow)
         self.assertIn("PREVIOUS_STABLE_IMAGE_TAG=${previous_stable_image_tag}", workflow)
 
@@ -55,6 +59,7 @@ class ReleaseWorkflowManualDispatchContractsTest(unittest.TestCase):
         runbook = read("script/deployment-runbook.md")
 
         self.assertIn("`image_tag` 填本次要发布的测试镜像版本", runbook)
+        self.assertIn("上一稳定为 `v0.0.1` 时自动发布 `v0.0.2`", runbook)
         self.assertIn("后端镜像版本没有更新", runbook)
         self.assertIn("导致每次都推送和拉取同一个 tag", runbook)
         self.assertIn("127.0.0.1:3000/root/manman/<service>:<image_tag>", runbook)

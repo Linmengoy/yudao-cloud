@@ -31,7 +31,7 @@ on:
         required: false
         default: ''
       image_tag:
-        description: '本次要发布的测试镜像 tag，例如 v0.0.2；留空则读取 script/docker/test-image-version'
+        description: '本次要发布的测试镜像 tag，例如 v0.0.2；留空则自动使用上一稳定版本的下一个 patch 版本'
         required: false
         default: ''
 
@@ -100,21 +100,32 @@ jobs:
 
           test_image_version_file="script/docker/test-image-version"
           stable_test_image_tag="$(tr -d '[:space:]' < "${test_image_version_file}")"
-          image_tag="${stable_test_image_tag}"
-          image_tag_source="${test_image_version_file}"
+          previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-${stable_test_image_tag}}"
+          previous_stable_image_tag_source="workflow_dispatch.previous_stable_image_tag"
+          if [ -z "${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}" ]; then
+            previous_stable_image_tag_source="${test_image_version_file}"
+          fi
           if [ -n "${INPUT_IMAGE_TAG:-}" ]; then
             image_tag="${INPUT_IMAGE_TAG}"
             image_tag_source="workflow_dispatch.image_tag"
+          else
+            if ! printf '%s' "${previous_stable_image_tag}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "previous_stable_image_tag must be a base semantic version such as v0.0.1 when image_tag is omitted: ${previous_stable_image_tag}"
+              exit 1
+            fi
+
+            base_version="${previous_stable_image_tag#v}"
+            major="${base_version%%.*}"
+            remainder="${base_version#*.}"
+            minor="${remainder%%.*}"
+            patch="${remainder#*.}"
+            next_patch=$((patch + 1))
+            image_tag="v${major}.${minor}.${next_patch}"
+            image_tag_source="next patch after ${previous_stable_image_tag_source}"
           fi
           if ! printf '%s' "${image_tag}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
             echo "Invalid test image tag from ${image_tag_source}: ${image_tag}"
             exit 1
-          fi
-          previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}"
-          previous_stable_image_tag_source="workflow_dispatch.previous_stable_image_tag"
-          if [ -z "${previous_stable_image_tag}" ] && [ "${image_tag}" != "v0.0.1" ]; then
-            previous_stable_image_tag="${stable_test_image_tag}"
-            previous_stable_image_tag_source="${test_image_version_file}"
           fi
 
           case "${service}" in

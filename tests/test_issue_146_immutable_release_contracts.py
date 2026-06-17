@@ -17,7 +17,8 @@ class Issue146ImmutableReleaseContractTest(unittest.TestCase):
 
         self.assertIn("previous_stable_image_tag", workflow)
         self.assertIn('test_image_version_file="script/docker/test-image-version"', workflow)
-        self.assertIn('image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', workflow)
+        self.assertIn('stable_test_image_tag="$(tr -d \'[:space:]\' < "${test_image_version_file}")"', workflow)
+        self.assertIn('image_tag="v${major}.${minor}.${next_patch}"', workflow)
         self.assertIn("^v[0-9]+\\.[0-9]+\\.[0-9]+", workflow)
         self.assertIn("MICRO_IMAGE_TAG=${image_tag}", workflow)
         self.assertIn("FRONTEND_IMAGE_TAG=${image_tag}", workflow)
