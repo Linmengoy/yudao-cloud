@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -22,7 +21,6 @@ public class AigcCanvasNodeRunBatchSyncReqVO {
 
     @Schema(description = "节点同步列表", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotEmpty(message = "节点同步列表不能为空")
-    @Size(max = 20, message = "单次最多同步 20 个节点")
     @Valid
     private List<AigcCanvasNodeRunSyncReqVO> nodes;
 

@@ -49,6 +49,7 @@ import { getTextPromptTransferPatch } from "@/features/canvas/text-prompt-transf
 import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-storage";
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
+import { useCanvasGenerationRunEvents } from "@/features/canvas/use-canvas-generation-run-events";
 import { loadCanvas, saveCanvas } from "@/features/canvas/use-canvas-storage";
 import { loadImage, loadVideo, saveImage, saveVideo } from "@/features/canvas/image-store";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
@@ -1672,6 +1673,10 @@ function CanvasFlow() {
     markAppliedVersion(operationRecord.nextVersion);
   }, [applyRemoteOperation, clientId, markAppliedVersion]);
 
+  const applyGenerationRunOperation = useCallback((operationRecord: { clientId: string; nextVersion: number; operationType: string; operationJson: string }) => {
+    applyOperationRecord(operationRecord);
+  }, [applyOperationRecord]);
+
   const syncFromVersion = useCallback((afterVersion: number) => {
     if (!serverProjectId) return;
     if (syncInFlightVersionsRef.current.has(afterVersion)) return;
@@ -1813,6 +1818,13 @@ function CanvasFlow() {
       });
     }
   }, [activeProjectId, applyOperationRecord, canvasOperations, canvasRealtime.messages, clientId, serverProjectId, syncFromVersion]);
+
+  useCanvasGenerationRunEvents(
+    serverProjectId,
+    lastAppliedVersion,
+    () => getNodes() as AppNode[],
+    applyGenerationRunOperation
+  );
 
   useEffect(() => {
     if (!serverProjectId || !isHydrated || !canvasRealtime.isConnected) return;

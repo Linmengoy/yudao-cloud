@@ -20,13 +20,17 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasOperationSubmitReqVO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasAssetRefDO;
+import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasGenerationRunDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasOperationLogDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.dataobject.canvas.AigcCanvasProjectDO;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasAssetRefMapper;
+import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasGenerationRunMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasOperationLogMapper;
 import cn.iocoder.yudao.module.aigc.workflow.dal.mysql.canvas.AigcCanvasProjectMapper;
+import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.AigcCanvasGenerationRunSseService;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.AigcCanvasRoomService;
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasOperationAppliedMessage;
+import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasGenerationRunEventMessage;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,6 +39,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -57,6 +62,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             AigcGenerateStatusEnum.SUBMITTED.getCode(),
             AigcGenerateStatusEnum.CALLBACK_WAITING.getCode(),
             AigcGenerateStatusEnum.SYNCING.getCode());
+    private static final int BATCH_SYNC_LIMIT = 20;
     private static final Set<String> NON_PARAM_NODE_DATA_KEYS = Set.of(
             "inputImages", "inputImageUrls", "referenceImages", "imageUrls");
 
@@ -75,7 +81,11 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     @Resource
     private AigcCanvasOperationLogMapper operationLogMapper;
     @Resource
+    private AigcCanvasGenerationRunMapper generationRunMapper;
+    @Resource
     private TransactionTemplate transactionTemplate;
+    @Resource
+    private AigcCanvasGenerationRunSseService generationRunSseService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -105,6 +115,9 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         AigcCanvasOperationLogDO operation = submitTaskStatusPatch(reqVO.getProjectId(), reqVO.getNodeId(),
                 reqVO.getBaseVersion(), userId,
                 "task_status_" + reqVO.getNodeId() + "_" + runId, buildSubmitPatch(submit, reqVO));
+        AigcCanvasGenerationRunDO generationRun = upsertGenerationRun(reqVO, runId, submit, userId, operation);
+        publishGenerationRunAfterCommit("generation-run-status", generationRun,
+                BeanUtils.toBean(operation, AigcCanvasOperationRespVO.class));
         broadcastAfterCommit(operation);
         // 返回结果
         return new AigcCanvasNodeRunRespVO()
@@ -123,14 +136,16 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         projectService.validateEditableProject(reqVO.getProjectId(), userId);
         AigcGenerateResultRespDTO result = getResultReadyForCanvas(reqVO.getTaskId());
         AigcCanvasNodeRunRespVO respVO = syncOneNodeRun(reqVO, result, userId, true);
-        broadcastAfterCommit(respVO.getOperation());
         return respVO;
     }
 
     @Override
     public AigcCanvasNodeRunBatchSyncRespVO syncNodeRuns(AigcCanvasNodeRunBatchSyncReqVO reqVO, Long userId) {
         projectService.validateEditableProject(reqVO.getProjectId(), userId);
-        List<AigcCanvasNodeRunSyncReqVO> nodes = reqVO.getNodes();
+        int requestedCount = reqVO.getNodes().size();
+        List<AigcCanvasNodeRunSyncReqVO> nodes = reqVO.getNodes().stream()
+                .limit(BATCH_SYNC_LIMIT)
+                .toList();
         List<Long> taskIds = nodes.stream().map(AigcCanvasNodeRunSyncReqVO::getTaskId)
                 .filter(Objects::nonNull).distinct().toList();
         List<AigcGenerateResultRespDTO> generateResults = generateApi.getResults(taskIds).getCheckedData();
@@ -143,9 +158,23 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             node.setBaseVersion(reqVO.getBaseVersion());
             results.add(syncOneNodeRunTransactionally(node, resultMap.get(node.getTaskId()), userId));
         }
+        long failedCount = results.stream()
+                .filter(result -> !Boolean.TRUE.equals(result.getSuccess()))
+                .count();
         return new AigcCanvasNodeRunBatchSyncRespVO()
                 .setProjectId(reqVO.getProjectId())
-                .setResults(results);
+                .setResults(results)
+                .setRequestedCount(requestedCount)
+                .setProcessedCount(results.size())
+                .setTruncated(requestedCount > BATCH_SYNC_LIMIT)
+                .setLimit(BATCH_SYNC_LIMIT)
+                .setFailedCount(Math.toIntExact(failedCount));
+    }
+
+    @Override
+    public SseEmitter subscribeGenerationRunEvents(Long projectId, Long userId) {
+        projectService.validateReadableProject(projectId, userId);
+        return generationRunSseService.subscribe(projectId);
     }
 
     private AigcCanvasNodeRunRespVO syncOneNodeRunTransactionally(AigcCanvasNodeRunSyncReqVO reqVO,
@@ -153,7 +182,6 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         try {
             return transactionTemplate.execute(status -> {
                 AigcCanvasNodeRunRespVO respVO = syncOneNodeRun(reqVO, refreshResultReadyForCanvas(result), userId, true);
-                broadcastAfterCommit(respVO.getOperation());
                 return respVO;
             });
         } catch (ServiceException ex) {
@@ -178,6 +206,9 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
                     opId, buildResultPatch(reqVO.getNodeType(), result));
             created = Objects.equals(operation.getActorUserId(), userId);
         }
+        AigcCanvasGenerationRunDO generationRun = updateGenerationRun(reqVO, result, operation);
+        publishGenerationRunAfterCommit(getGenerationRunEventName(result),
+                generationRun, BeanUtils.toBean(operation, AigcCanvasOperationRespVO.class));
         if (applySideEffects && created) {
             applySuccessfulAssetSideEffects(reqVO, result);
         }
@@ -197,6 +228,36 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         }
         AigcCanvasOperationLogDO logDO = BeanUtils.toBean(operation, AigcCanvasOperationLogDO.class);
         broadcastAfterCommit(logDO);
+    }
+
+    private void publishGenerationRunAfterCommit(String eventName, AigcCanvasGenerationRunDO generationRun,
+            AigcCanvasOperationRespVO operation) {
+        if (generationRun == null) {
+            return;
+        }
+        AigcCanvasGenerationRunEventMessage message = new AigcCanvasGenerationRunEventMessage()
+                .setEventId("generation-run-" + generationRun.getProjectId() + "-" + generationRun.getNodeId()
+                        + "-" + generationRun.getTaskId() + "-" + generationRun.getStatus())
+                .setProjectId(generationRun.getProjectId())
+                .setNodeId(generationRun.getNodeId())
+                .setRunId(generationRun.getRunId())
+                .setTaskId(generationRun.getTaskId())
+                .setStatus(generationRun.getStatus())
+                .setProgress(generationRun.getProgress())
+                .setOperation(operation)
+                .setVersion(operation == null ? null : operation.getNextVersion())
+                .setEmittedAt(System.currentTimeMillis());
+        Runnable publish = () -> generationRunSseService.publish(eventName, message);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publish.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publish.run();
+            }
+        });
     }
 
     private AigcGenerateResultRespDTO getResultReadyForCanvas(Long taskId) {
@@ -258,6 +319,98 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
                 .setSuccess(false)
                 .setErrorCode(String.valueOf(errorCode))
                 .setErrorMessage(errorMessage);
+    }
+
+    private AigcCanvasGenerationRunDO upsertGenerationRun(AigcCanvasNodeRunReqVO reqVO, String runId,
+            AigcGenerateSubmitRespDTO submit, Long userId, AigcCanvasOperationLogDO operation) {
+        AigcCanvasGenerationRunDO generationRun = generationRunMapper.selectByProjectNodeAndRun(
+                reqVO.getProjectId(), reqVO.getNodeId(), runId);
+        if (generationRun == null && submit.getTaskId() != null) {
+            generationRun = generationRunMapper.selectByTaskId(submit.getTaskId());
+        }
+        boolean insert = generationRun == null;
+        if (insert) {
+            generationRun = new AigcCanvasGenerationRunDO()
+                    .setStartedAt(LocalDateTime.now());
+        }
+        generationRun.setProjectId(reqVO.getProjectId());
+        generationRun.setNodeId(reqVO.getNodeId());
+        generationRun.setRunId(runId);
+        generationRun.setTaskId(submit.getTaskId());
+        generationRun.setGenerateRecordId(submit.getId());
+        generationRun.setGenerateNo(submit.getGenerateNo());
+        generationRun.setNodeType(reqVO.getNodeType());
+        generationRun.setGenerateType(reqVO.getGenerateType());
+        generationRun.setGenerateMode(reqVO.getGenerateMode());
+        generationRun.setCreatorUserId(userId);
+        generationRun.setStatus(submit.getStatus());
+        generationRun.setProgress(5);
+        generationRun.setOpId(operation == null ? null : operation.getOpId());
+        if (insert) {
+            generationRunMapper.insert(generationRun);
+        } else {
+            generationRunMapper.updateById(generationRun);
+        }
+        return generationRun;
+    }
+
+    private AigcCanvasGenerationRunDO updateGenerationRun(AigcCanvasNodeRunSyncReqVO reqVO,
+            AigcGenerateResultRespDTO result, AigcCanvasOperationLogDO operation) {
+        AigcCanvasGenerationRunDO generationRun = generationRunMapper.selectByProjectNodeAndTask(
+                reqVO.getProjectId(), reqVO.getNodeId(), result.getTaskId());
+        if (generationRun == null) {
+            generationRun = new AigcCanvasGenerationRunDO()
+                    .setProjectId(reqVO.getProjectId())
+                    .setNodeId(reqVO.getNodeId())
+                    .setRunId(extractRunIdFromClientRequestId(reqVO, result.getClientRequestId()))
+                    .setTaskId(result.getTaskId())
+                    .setNodeType(reqVO.getNodeType())
+                    .setGenerateType(StrUtil.blankToDefault(result.getGenerateType(), "UNKNOWN"))
+                    .setGenerateMode(StrUtil.blankToDefault(result.getGenerateMode(), "UNKNOWN"))
+                    .setCreatorUserId(operation == null ? 0L : operation.getActorUserId())
+                    .setStartedAt(result.getCreateTime() == null ? LocalDateTime.now() : result.getCreateTime());
+        }
+        generationRun.setGenerateRecordId(result.getId());
+        generationRun.setGenerateNo(result.getGenerateNo());
+        generationRun.setStatus(result.getStatus());
+        generationRun.setProgress(isTerminalStatus(result.getStatus()) ? 100 : 40);
+        generationRun.setOpId(operation == null ? null : operation.getOpId());
+        if (isTerminalStatus(result.getStatus())) {
+            generationRun.setFinishedAt(result.getFinishTime() == null ? LocalDateTime.now() : result.getFinishTime());
+        }
+        if (generationRun.getId() == null) {
+            generationRunMapper.insert(generationRun);
+        } else {
+            generationRunMapper.updateById(generationRun);
+        }
+        return generationRun;
+    }
+
+    private String extractRunIdFromClientRequestId(AigcCanvasNodeRunSyncReqVO reqVO, String clientRequestId) {
+        if (StrUtil.isBlank(clientRequestId)) {
+            return "run_" + System.currentTimeMillis();
+        }
+        String expectedPrefix = "canvas_" + reqVO.getProjectId() + "_" + reqVO.getNodeId() + "_";
+        if (StrUtil.startWith(clientRequestId, expectedPrefix) && clientRequestId.length() > expectedPrefix.length()) {
+            return clientRequestId.substring(expectedPrefix.length());
+        }
+        return clientRequestId;
+    }
+
+    private boolean isTerminalStatus(String status) {
+        return "SUCCESS".equals(status) || "FAILED".equals(status)
+                || "CANCELED".equals(status) || "CANCELLED".equals(status);
+    }
+
+    private String getGenerationRunEventName(AigcGenerateResultRespDTO result) {
+        if ("SUCCESS".equals(result.getStatus())) {
+            return "generation-run-applied";
+        }
+        if ("FAILED".equals(result.getStatus()) || "CANCELED".equals(result.getStatus())
+                || "CANCELLED".equals(result.getStatus())) {
+            return "generation-run-failed";
+        }
+        return "generation-run-status";
     }
 
     private boolean isProviderSyncStatus(AigcGenerateResultRespDTO result) {

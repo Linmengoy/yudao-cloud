@@ -51,6 +51,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -267,6 +268,12 @@ public class AigcCanvasAppController {
                                                                       @Valid @RequestBody AigcCanvasNodeRunBatchSyncReqVO reqVO) {
         reqVO.setProjectId(id);
         return success(nodeRunService.syncNodeRuns(reqVO, getLoginUserId()));
+    }
+
+    @GetMapping("/projects/{id}/generation-runs/events")
+    @Operation(summary = "订阅画布项目生成任务事件")
+    public SseEmitter subscribeGenerationRunEvents(@PathVariable("id") Long id) {
+        return nodeRunService.subscribeGenerationRunEvents(id, getLoginUserId());
     }
 
     private void fillProjectPermissions(AigcCanvasProjectRespVO project, AigcCanvasMemberDO member) {

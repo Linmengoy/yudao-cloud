@@ -23,6 +23,9 @@ export type CanvasNodeRunResponse = {
   generateRecordId: number;
   generateNo: string;
   status: GenerateStatus;
+  success?: boolean;
+  errorCode?: string;
+  errorMessage?: string;
   operation?: CanvasOperationRecord;
 };
 
@@ -32,6 +35,17 @@ export type CanvasNodeRunSyncRequest = {
   taskId: number;
   baseVersion: number;
   nodeType: string;
+};
+
+export type CanvasNodeRunBatchSyncRequest = {
+  projectId?: string | number;
+  baseVersion: number;
+  nodes: CanvasNodeRunSyncRequest[];
+};
+
+export type CanvasNodeRunBatchSyncResponse = {
+  projectId: number;
+  results: CanvasNodeRunResponse[];
 };
 
 export const canvasNodeRunApi = {
@@ -47,6 +61,12 @@ export const canvasNodeRunApi = {
       ...input,
       projectId,
       nodeId,
+    }),
+
+  syncProjectNodeRuns: (projectId: string | number, input: CanvasNodeRunBatchSyncRequest) =>
+    api.post<CanvasNodeRunBatchSyncResponse>(`/canvas/projects/${projectId}/nodes/run/sync`, {
+      ...input,
+      projectId,
     }),
 };
 

@@ -5,6 +5,7 @@ import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvas
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunBatchSyncRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunRespVO;
 import cn.iocoder.yudao.module.aigc.workflow.controller.app.vo.canvas.AigcCanvasNodeRunSyncReqVO;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 public interface AigcCanvasNodeRunService {
 
@@ -13,5 +14,7 @@ public interface AigcCanvasNodeRunService {
     AigcCanvasNodeRunRespVO syncNodeRun(AigcCanvasNodeRunSyncReqVO reqVO, Long userId);
 
     AigcCanvasNodeRunBatchSyncRespVO syncNodeRuns(AigcCanvasNodeRunBatchSyncReqVO reqVO, Long userId);
+
+    SseEmitter subscribeGenerationRunEvents(Long projectId, Long userId);
 
 }

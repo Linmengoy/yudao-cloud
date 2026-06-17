@@ -15,4 +15,19 @@ public class AigcCanvasNodeRunBatchSyncRespVO {
     @Schema(description = "节点同步结果")
     private List<AigcCanvasNodeRunRespVO> results;
 
+    @Schema(description = "客户端提交的节点数量")
+    private Integer requestedCount;
+
+    @Schema(description = "实际处理的节点数量")
+    private Integer processedCount;
+
+    @Schema(description = "是否因为服务端上限被截断")
+    private Boolean truncated;
+
+    @Schema(description = "服务端单次处理上限")
+    private Integer limit;
+
+    @Schema(description = "失败节点数量")
+    private Integer failedCount;
+
 }

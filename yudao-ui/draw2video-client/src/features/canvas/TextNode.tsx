@@ -9,7 +9,7 @@ import type { AppEdge, AppNode, ImageNodeData, NodeDataPatchEventDetail, NodeEdi
 import { NodeCreateHandle } from "./NodeCreateHandle";
 import { generationApi } from "@/features/generation/generation-api";
 import { waitGenerationResult } from "@/features/generation/generation-poll";
-import { canvasNodeRunApi, getCanvasNodeRunPatch, isServerCanvasProjectId, waitCanvasNodeRunResult } from "@/features/canvas/canvas-node-run-api";
+import { canvasNodeRunApi, isServerCanvasProjectId } from "@/features/canvas/canvas-node-run-api";
 import { cn } from "@/lib/utils";
 import { EditableNodeTitle } from "./EditableNodeTitle";
 import { CanvasNodeTitle } from "./CanvasNodeTitle";
@@ -46,7 +46,6 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
     width: number;
     height: number;
   } | null>(null);
-  const activeRunPollRef = useRef<string | null>(null);
 
   const isGenerating = data.status === "pending";
   const isOnlySelectedNode = selected && selectedNodeCount === 1;
@@ -92,42 +91,6 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
     [id, setNodes]
   );
 
-  const waitAndApplyServerRun = useCallback(async (projectId: string | number, taskId: number, startedAt: string) => {
-    const pollKey = `${projectId}:${id}:${taskId}`;
-    if (activeRunPollRef.current === pollKey) return;
-    activeRunPollRef.current = pollKey;
-    try {
-      const result = await waitCanvasNodeRunResult(projectId, id, {
-        taskId,
-        baseVersion: 0,
-        nodeType: "text",
-      });
-      const patch = getCanvasNodeRunPatch(result, id);
-      if (patch) updateData(patch as Partial<TextNodeData>, { flush: true });
-    } catch (error) {
-      updateData({
-        status: "failed",
-        taskId: String(taskId),
-        errorMessage: error instanceof Error ? error.message : "文本任务同步失败",
-        generationCompletedAt: new Date().toISOString(),
-        elapsedMs: Date.now() - new Date(startedAt).getTime(),
-      }, { flush: true });
-    } finally {
-      if (activeRunPollRef.current === pollKey) {
-        activeRunPollRef.current = null;
-      }
-    }
-  }, [id, updateData]);
-
-  useEffect(() => {
-    if (data.status !== "pending" || !data.taskId) return;
-    const projectId = new URLSearchParams(window.location.search).get("projectId");
-    if (!isServerCanvasProjectId(projectId)) return;
-    const taskId = Number(data.taskId);
-    if (!Number.isFinite(taskId)) return;
-    void waitAndApplyServerRun(projectId, taskId, data.generationStartedAt ?? data.createdAt);
-  }, [data.createdAt, data.generationStartedAt, data.status, data.taskId, waitAndApplyServerRun]);
-
   const commitContent = useCallback(() => {
     setEditing(false);
     sendEditingPresence(null);
@@ -164,7 +127,6 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
           sync: false,
         });
         updateData({ taskId: String(run.taskId), taskStatus: run.status }, { flush: true });
-        await waitAndApplyServerRun(projectId, run.taskId, startedAt);
         return;
       } catch (error) {
         updateData({
@@ -217,7 +179,7 @@ export function TextNodeComponent({ id, data, selected, dragging }: TextNodeProp
         elapsedMs: Date.now() - new Date(startedAt).getTime(),
       });
     }
-  }, [data.aigcModelId, data.content, data.prompt, id, isGenerating, mentionOptions, updateData, waitAndApplyServerRun]);
+  }, [data.aigcModelId, data.content, data.prompt, id, isGenerating, mentionOptions, updateData]);
 
   useEffect(() => {
     if (!resizing) return;

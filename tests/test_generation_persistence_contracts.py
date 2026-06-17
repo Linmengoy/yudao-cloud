@@ -122,6 +122,48 @@ class GenerationPersistenceContractsTest(unittest.TestCase):
         self.assertIn("公开作品", page)
         self.assertIn("Seedance 2.0", page)
 
+    def test_issues_288_to_291_canvas_generation_runs_use_project_level_sync(self):
+        table_sql = read("sql/mysql/workflow/aigc_canvas_generation_run.sql")
+        service = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/service/canvas/AigcCanvasNodeRunServiceImpl.java"
+        )
+        controller = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/controller/app/AigcCanvasAppController.java"
+        )
+        sse_service = read(
+            "yudao-module-aigc-workflow/yudao-module-aigc-workflow-server/src/main/java/"
+            "cn/iocoder/yudao/module/aigc/workflow/websocket/canvas/AigcCanvasGenerationRunSseService.java"
+        )
+        events_hook = read("yudao-ui/draw2video-client/src/features/canvas/use-canvas-generation-run-events.ts")
+        api = read("yudao-ui/draw2video-client/src/features/canvas/canvas-node-run-api.ts")
+        image_node = read("yudao-ui/draw2video-client/src/features/canvas/ImageNode.tsx")
+        video_node = read("yudao-ui/draw2video-client/src/features/canvas/VideoNode.tsx")
+        text_node = read("yudao-ui/draw2video-client/src/features/canvas/TextNode.tsx")
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS `aigc_canvas_generation_run`", table_sql)
+        self.assertIn("UNIQUE KEY `uk_canvas_generation_run_task` (`task_id`)", table_sql)
+        self.assertIn("UNIQUE KEY `uk_canvas_generation_run_project_node_task` (`project_id`, `node_id`, `task_id`)", table_sql)
+        self.assertIn("UNIQUE KEY `uk_canvas_generation_run_project_node_run` (`project_id`, `node_id`, `run_id`)", table_sql)
+        self.assertIn("upsertGenerationRun(reqVO, runId, submit, userId, operation)", service)
+        self.assertIn("updateGenerationRun(reqVO, result, operation)", service)
+        self.assertIn("projectService.validateReadableProject(projectId, userId)", service)
+        self.assertIn('publishGenerationRunAfterCommit("generation-run-status"', service)
+        self.assertIn("getGenerationRunEventName(result)", service)
+        self.assertIn('@GetMapping("/projects/{id}/generation-runs/events")', controller)
+        self.assertIn('name("generation-run-heartbeat")', sse_service)
+        self.assertIn('name("resync-required")', sse_service)
+        self.assertIn("MAX_PROJECT_CONNECTIONS = 6", sse_service)
+        self.assertIn("syncProjectNodeRuns", api)
+        self.assertIn("/nodes/run/sync", api)
+        self.assertIn("useCanvasGenerationRunEvents", events_hook)
+        self.assertIn("text/event-stream", events_hook)
+        self.assertIn("syncProjectGenerationRuns", events_hook)
+        self.assertNotIn("waitCanvasNodeRunResult", image_node)
+        self.assertNotIn("waitCanvasNodeRunResult", video_node)
+        self.assertNotIn("waitCanvasNodeRunResult", text_node)
+
 
 if __name__ == "__main__":
     unittest.main()
