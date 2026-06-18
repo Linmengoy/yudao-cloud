@@ -455,8 +455,17 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         if (result == null || result.getTaskId() == null) {
             throw serviceException(CANVAS_NODE_RUN_TASK_NOT_EXISTS);
         }
+        AigcCanvasGenerationRunDO generationRun = generationRunMapper.selectByTaskId(result.getTaskId());
+        if (generationRun != null) {
+            if (!Objects.equals(generationRun.getProjectId(), reqVO.getProjectId())
+                    || !Objects.equals(generationRun.getNodeId(), reqVO.getNodeId())) {
+                throw serviceException(CANVAS_NODE_RUN_TASK_NOT_BELONG);
+            }
+            return;
+        }
         String expectedPrefix = "canvas_" + reqVO.getProjectId() + "_" + reqVO.getNodeId() + "_";
-        if (!StrUtil.startWith(result.getClientRequestId(), expectedPrefix)) {
+        if (StrUtil.startWith(result.getClientRequestId(), "canvas_")
+                && !StrUtil.startWith(result.getClientRequestId(), expectedPrefix)) {
             throw serviceException(CANVAS_NODE_RUN_TASK_NOT_BELONG);
         }
     }
@@ -520,7 +529,7 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
             generationRun = new AigcCanvasGenerationRunDO()
                     .setProjectId(reqVO.getProjectId())
                     .setNodeId(reqVO.getNodeId())
-                    .setRunId(extractRunIdFromClientRequestId(reqVO, result.getClientRequestId()))
+                    .setRunId(extractRunIdFromClientRequestId(reqVO, result.getTaskId(), result.getClientRequestId()))
                     .setTaskId(result.getTaskId())
                     .setNodeType(reqVO.getNodeType())
                     .setGenerateType(StrUtil.blankToDefault(result.getGenerateType(), "UNKNOWN"))
@@ -544,15 +553,16 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
         return generationRun;
     }
 
-    private String extractRunIdFromClientRequestId(AigcCanvasNodeRunSyncReqVO reqVO, String clientRequestId) {
+    private String extractRunIdFromClientRequestId(AigcCanvasNodeRunSyncReqVO reqVO, Long taskId, String clientRequestId) {
+        String legacyRunId = "legacy_" + taskId;
         if (StrUtil.isBlank(clientRequestId)) {
-            return "run_" + System.currentTimeMillis();
+            return legacyRunId;
         }
         String expectedPrefix = "canvas_" + reqVO.getProjectId() + "_" + reqVO.getNodeId() + "_";
         if (StrUtil.startWith(clientRequestId, expectedPrefix) && clientRequestId.length() > expectedPrefix.length()) {
             return clientRequestId.substring(expectedPrefix.length());
         }
-        return clientRequestId;
+        return StrUtil.startWith(clientRequestId, "canvas_") ? clientRequestId : legacyRunId;
     }
 
     private boolean isTerminalStatus(String status) {

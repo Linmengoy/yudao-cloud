@@ -541,11 +541,15 @@ class ReviewReadyContractTest(unittest.TestCase):
 
         self.assertIn("generationRunMapper.selectByProjectNodeAndTask", service)
         self.assertIn("if (generationRun == null) {", service)
-        self.assertIn(".setRunId(extractRunIdFromClientRequestId(reqVO, result.getClientRequestId()))", service)
+        self.assertIn(".setRunId(extractRunIdFromClientRequestId(reqVO, result.getTaskId(), result.getClientRequestId()))", service)
         self.assertIn("validateResultBelongsToCanvasNode(reqVO, result)", service)
         self.assertIn("CANVAS_NODE_RUN_TASK_NOT_EXISTS", service)
+        self.assertIn("generationRunMapper.selectByTaskId(result.getTaskId())", service)
+        self.assertIn('String legacyRunId = "legacy_" + taskId;', service)
         self.assertIn("return data.status === \"pending\" || (typeof data.taskId === \"string\" && data.taskId.length > 0);", page)
         self.assertIn("taskId: typeof d.taskId === \"string\" ? d.taskId : null", page)
+        self.assertIn("taskStatus: typeof d.taskStatus === \"string\" ? d.taskStatus : null", page)
+        self.assertIn("outputAssetId: typeof d.outputAssetId === \"number\" ? d.outputAssetId : null", page)
 
     def test_issue_297_generation_run_release_gate_separates_ws_sse_rollback_and_metrics(self):
         runbook = read("script/deployment-runbook.md")
