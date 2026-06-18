@@ -46,6 +46,11 @@ export type CanvasNodeRunBatchSyncRequest = {
 export type CanvasNodeRunBatchSyncResponse = {
   projectId: number;
   results: CanvasNodeRunResponse[];
+  requestedCount: number;
+  processedCount: number;
+  truncated: boolean;
+  limit: number;
+  failedCount: number;
 };
 
 export const canvasNodeRunApi = {

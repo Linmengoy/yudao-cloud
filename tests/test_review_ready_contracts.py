@@ -529,7 +529,11 @@ class ReviewReadyContractTest(unittest.TestCase):
         self.assertIn(".setFailedCount(Math.toIntExact(failedCount))", service)
         self.assertIn("buildFailedNodeRunResp(reqVO, ex.getCode(), ex.getMessage())", service)
         self.assertIn("syncProjectNodeRuns", api)
-        self.assertIn("slice(0, 20)", hook)
+        for field in ["requestedCount", "processedCount", "limit", "failedCount"]:
+            self.assertIn(f"{field}: number", api)
+        self.assertIn("truncated: boolean", api)
+        self.assertNotIn("slice(0, 20)", hook)
+        self.assertIn("onBatchSyncRef.current?.(response)", hook)
         self.assertIn("result.success === false", hook)
 
     def test_issue_296_generation_run_keeps_old_canvas_nodes_compatible(self):

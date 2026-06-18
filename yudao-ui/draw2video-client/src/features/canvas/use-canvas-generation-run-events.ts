@@ -95,7 +95,7 @@ export function useCanvasGenerationRunEvents(
       const nodeType = getPendingRunNodeType(node);
       if (!taskId || !nodeType) return [];
       return [{ projectId, nodeId: node.id, taskId, baseVersion: lastAppliedVersionRef.current, nodeType }];
-    }).slice(0, 20);
+    });
     if (nodes.length === 0) return;
     batchSyncInFlightRef.current = true;
     try {

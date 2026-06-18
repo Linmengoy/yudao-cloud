@@ -50,6 +50,7 @@ import { useCanvasServerStorage } from "@/features/canvas/use-canvas-server-stor
 import { useCanvasRealtime } from "@/features/canvas/use-canvas-realtime";
 import { useCanvasOperations } from "@/features/canvas/use-canvas-operations";
 import { isCanvasGenerationRunSseEnabled, useCanvasGenerationRunEvents } from "@/features/canvas/use-canvas-generation-run-events";
+import type { CanvasNodeRunBatchSyncResponse } from "@/features/canvas/canvas-node-run-api";
 import { loadCanvas, saveCanvas } from "@/features/canvas/use-canvas-storage";
 import { loadImage, loadVideo, saveImage, saveVideo } from "@/features/canvas/image-store";
 import { fileToImageNodeData, fileToVideoNodeData, getFilesFromDrop, isAcceptedImageType, isAcceptedVideoFile } from "@/features/canvas/image-upload";
@@ -1689,6 +1690,18 @@ function CanvasFlow() {
     applyOperationRecord(operationRecord);
   }, [applyOperationRecord]);
 
+  const handleGenerationRunBatchSync = useCallback((response: CanvasNodeRunBatchSyncResponse) => {
+    if (response.truncated) {
+      setSaveError(`仍有生成任务待同步，本次已处理 ${response.processedCount}/${response.requestedCount} 个，将继续批量补偿。`);
+      return;
+    }
+    if (response.failedCount > 0) {
+      setSaveError(`${response.failedCount} 个生成任务同步失败，节点已保留可重试状态。`);
+      return;
+    }
+    setSaveError((current) => current.includes("生成任务") ? "" : current);
+  }, []);
+
   const syncFromVersion = useCallback((afterVersion: number) => {
     if (!serverProjectId) return;
     if (syncInFlightVersionsRef.current.has(afterVersion)) return;
@@ -1836,7 +1849,8 @@ function CanvasFlow() {
     isCanvasGenerationRunSseEnabled(),
     lastAppliedVersion,
     () => getNodes() as AppNode[],
-    applyGenerationRunOperation
+    applyGenerationRunOperation,
+    handleGenerationRunBatchSync
   );
 
   useEffect(() => {
