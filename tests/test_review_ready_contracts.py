@@ -569,9 +569,32 @@ class ReviewReadyContractTest(unittest.TestCase):
             self.assertIn(required, runbook)
 
         self.assertIn("useCanvasGenerationRunEvents(", page)
+        self.assertIn("isCanvasGenerationRunSseEnabled()", page)
         self.assertIn("applyGenerationRunOperation", page)
+        self.assertIn('NEXT_PUBLIC_CANVAS_GENERATION_SSE_ENABLED !== "false"', hook)
+        self.assertIn("if (!enabled) {", hook)
+        self.assertIn("void syncProjectGenerationRuns();", hook)
+        self.assertIn("return;", hook)
         self.assertIn("onOperationRef.current(event.operation)", hook)
         self.assertIn("await readEventStream(response", hook)
+        self.assertIn('fetch(`${API_BASE_URL}/canvas/projects/${projectId}/generation-runs/events`', hook)
+
+        disabled_branch = re.search(
+            r"if \(!enabled\) \{(?P<body>.*?)\n    \}",
+            hook,
+            re.S,
+        )
+        self.assertIsNotNone(disabled_branch)
+        self.assertIn("void syncProjectGenerationRuns();", disabled_branch.group("body"))
+        self.assertNotIn("fetch(", disabled_branch.group("body"))
+
+        for required in [
+            "NEXT_PUBLIC_CANVAS_GENERATION_SSE_ENABLED=false",
+            "前端不 fetch /generation-runs/events",
+            "没有 `/generation-runs/events` 请求",
+            "仍可看到 `/nodes/run/sync` 项目级批量同步请求",
+        ]:
+            self.assertIn(required, runbook)
 
     def test_issue_280_aigc_model_release_gate_uses_immutable_tags_and_health_evidence(self):
         test_compose = read("script/docker/docker-compose-micro.yml")

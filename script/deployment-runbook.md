@@ -552,9 +552,18 @@ curl.exe -I "http://111.228.39.103:48080/app-api/canvas/projects/<projectId>/gen
 
 回归清单必须覆盖：单节点 `/run/sync`、项目级 `/nodes/run/sync` 批量同步、SSE `generation-runs/events`、前端无 EventSource/连接失败时的项目级批量同步降级。降级只使用项目级批量同步，不恢复节点级独立长轮询主路径。
 
+前端 SSE 功能开关：
+
+```text
+NEXT_PUBLIC_CANVAS_GENERATION_SSE_ENABLED=true   # 默认开启 GenerationRun SSE
+NEXT_PUBLIC_CANVAS_GENERATION_SSE_ENABLED=false  # 关闭 SSE，前端不 fetch /generation-runs/events，只保留项目级批量同步补偿
+```
+
+关闭前端 SSE 开关后的回归证据必须包含：`NEXT_PUBLIC_CANVAS_GENERATION_SSE_ENABLED=false` 构建/启动参数、浏览器或网络日志中没有 `/generation-runs/events` 请求、仍可看到 `/nodes/run/sync` 项目级批量同步请求、pending 节点终态 operation 通过批量同步后按 version 幂等进入 `applyOperationRecord`。如果关闭开关后恢复节点级独立长轮询，发布门禁失败。
+
 回滚步骤：
 
-1. 关闭前端 SSE 开关或让网关拒绝 `/generation-runs/events`，前端会收到连接失败并走项目级批量同步。
+1. 将 `NEXT_PUBLIC_CANVAS_GENERATION_SSE_ENABLED=false` 写入对应 `.frontend-test.env` / `.frontend-prod.env` 并重新发布 `draw2video-client`；前端不再连接 `/generation-runs/events`，只走项目级批量同步补偿。
 2. 如需恢复单节点同步主路径，回滚到上一稳定前端镜像 tag，并保留后端 `/run/sync` 接口。
 3. 如果批量同步异常，临时保留 30 秒 `syncFromVersion` 协作补偿轮询，禁止重复提交终态 operation。
 

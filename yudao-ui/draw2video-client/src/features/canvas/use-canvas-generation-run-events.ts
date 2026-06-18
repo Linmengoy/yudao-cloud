@@ -21,6 +21,10 @@ export type CanvasGenerationRunEvent = {
 
 type PendingRunNode = Pick<AppNode, "id" | "type" | "data">;
 
+export function isCanvasGenerationRunSseEnabled() {
+  return process.env.NEXT_PUBLIC_CANVAS_GENERATION_SSE_ENABLED !== "false";
+}
+
 function getPendingRunNodeType(node: PendingRunNode) {
   if (node.type === "image" || node.type === "video" || node.type === "text") return node.type;
   return null;
@@ -65,6 +69,7 @@ async function readEventStream(response: Response, onEvent: (event: CanvasGenera
 
 export function useCanvasGenerationRunEvents(
   projectId: string | null,
+  enabled: boolean,
   lastAppliedVersion: number,
   getNodes: () => PendingRunNode[],
   onOperation: (operation: CanvasOperationRecord) => void,
@@ -111,6 +116,10 @@ export function useCanvasGenerationRunEvents(
 
   useEffect(() => {
     if (!isServerCanvasProjectId(projectId)) return;
+    if (!enabled) {
+      void syncProjectGenerationRuns();
+      return;
+    }
     const abortController = new AbortController();
     let reconnectTimer: number | null = null;
     let closed = false;
@@ -151,7 +160,7 @@ export function useCanvasGenerationRunEvents(
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       abortController.abort();
     };
-  }, [projectId, syncProjectGenerationRuns]);
+  }, [enabled, projectId, syncProjectGenerationRuns]);
 
   useEffect(() => {
     if (!isServerCanvasProjectId(projectId)) return;
