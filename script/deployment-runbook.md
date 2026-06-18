@@ -149,6 +149,19 @@ ssh manman "docker pull 127.0.0.1:3000/root/yudao-system:v0.0.1 && docker tag 12
 
 如果 preflight 在回滚镜像校验阶段失败，不要把 `127.0.0.1:3000/root/<service>:<tag>` 当作有效回滚证据。`script/docker/verify-release-evidence.sh preflight` 会拒绝非项目级 `root/manman` registry 前缀；若 `docker pull` 在 `DOCKER_CLI_TIMEOUT_SECONDS` 内无响应，证据必须记录 Docker daemon 健康、registry 可达性、项目级镜像路径和日志路径，修复后重跑 preflight。
 
+项目级回滚镜像证据必须优先写 Packages link；如果 Gitea Packages 页面链接不可访问或规则变化，改写 API/CLI fallback 证据，并保留失败原因：
+
+```text
+Packages link: http://111.228.39.103:3000/root/-/packages/container/manman%2F<service>/<previous_stable_image_tag>
+GITEA_PACKAGES_BASE_URL=http://111.228.39.103:3000/root/-/packages/container
+GITEA_PACKAGES_API_URL=http://111.228.39.103:3000/api/v1/packages/root?type=container
+API fallback: curl -fsS "$GITEA_PACKAGES_API_URL" | grep -F "manman/<service>" | grep -F "<previous_stable_image_tag>"
+CLI fallback: docker pull <registry>/root/manman/<service>:<previous_stable_image_tag>
+CLI fallback: docker image inspect <registry>/root/manman/<service>:<previous_stable_image_tag>
+```
+
+失败归因必须写明 Docker daemon、Registry 网络、认证、路径或 tag 四类中的命中项、命令退出码、开始/结束时间、日志路径和下一步动作。若只在历史 `root/<service>` 发现镜像，必须重新 tag/push 到 `root/manman` 后再重跑 preflight；无法迁移时发布保持阻塞。
+
 ## 后端 prod 发布
 
 适用场景：人工确认后的生产发布，目标主机是 `manman2`。
@@ -373,6 +386,8 @@ $env:MICRO_IMAGE_REGISTRY_PREFIX='111.228.39.103:3000/root/manman/'
 退出码 `126` 表示 bash/Git Bash/WSL 执行环境不可用，退出码 `124` 表示启动或执行超时，其它非零退出码表示 `verify-release-evidence.sh` 判定 release evidence 不满足。日志会写入 `tmp/release-gates/windows-verify-*`，必须随工单写回开始时间、结束时间、退出码和日志路径。
 
 当日志出现 `docker CLI timed out after ... while pulling rollback image` 时，先确认 Docker Desktop/docker engine 可响应，再确认 `MICRO_IMAGE_REGISTRY_PREFIX` 指向项目级 `root/manman/`，并手动验证 `docker pull <registry>/root/manman/<service>:<previous_stable_image_tag>`。不要用历史 `root/<service>` 路径或 `latest` 作为替代回滚证据。
+
+Windows 包装脚本会把 Bash/stdout/stderr 写到 `tmp/release-gates/windows-verify-*`。如果 `docker pull` 或 `docker image inspect` 失败，按同一条证据模板记录 Packages link、`curl -fsS` API fallback、CLI fallback、退出码和日志路径；失败类别必须区分 Docker daemon、Registry 网络、认证、路径或 tag。
 
 ## #173/#174 后端发布范围
 

@@ -1,1 +1,2 @@
 script/deploy-frontend-images.sh text eol=lf
+script/docker/*.sh text eol=lf

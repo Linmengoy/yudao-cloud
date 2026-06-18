@@ -84,6 +84,22 @@ image_ref_for() {
   printf '%s%s:%s' "$prefix" "$service" "$tag"
 }
 
+package_link_for() {
+  local service="$1"
+  local tag="$2"
+  local base="${GITEA_PACKAGES_BASE_URL:-http://111.228.39.103:3000/root/-/packages/container}"
+
+  printf '%s/manman%%2F%s/%s' "${base%/}" "$service" "$tag"
+}
+
+packages_api_command_for() {
+  local service="$1"
+  local tag="$2"
+  local api="${GITEA_PACKAGES_API_URL:-http://111.228.39.103:3000/api/v1/packages/root?type=container}"
+
+  printf "curl -fsS '%s' | grep -F 'manman/%s' | grep -F '%s'" "$api" "$service" "$tag"
+}
+
 require_project_registry_prefix() {
   local service="$1"
   local prefix
@@ -113,20 +129,68 @@ run_docker_with_timeout() {
   fi
 }
 
+classify_docker_pull_failure() {
+  local docker_exit="$1"
+  local stderr_path="$2"
+  local previous_ref="$3"
+  local service="$4"
+  local stderr_text=""
+  local category="unknown"
+  local next_action="inspect docker stderr and registry logs, then rerun preflight"
+
+  if [ -f "$stderr_path" ]; then
+    stderr_text="$(cat "$stderr_path")"
+  fi
+
+  if [ "$docker_exit" -eq 124 ] || printf '%s' "$stderr_text" | grep -Eiq 'Cannot connect to the Docker daemon|error during connect|docker daemon|is the docker daemon running|command .docker. could not be found|could not be found in this WSL|docker: command not found'; then
+    category="Docker daemon"
+    next_action="run docker version and docker info on the runner, restart Docker if needed, then rerun preflight"
+  elif printf '%s' "$stderr_text" | grep -Eiq 'unauthorized|authentication required|denied|forbidden|401|403'; then
+    category="Registry authentication"
+    next_action="rerun docker login for the Gitea registry and verify credentials/secrets"
+  elif printf '%s' "$stderr_text" | grep -Eiq 'manifest unknown|name unknown|not found|repository does not exist|404'; then
+    category="image path or tag"
+    next_action="confirm ${previous_ref} exists under root/manman; retag/push from any legacy root/${service} image before passing"
+  elif printf '%s' "$stderr_text" | grep -Eiq 'TLS handshake timeout|i/o timeout|connection refused|no such host|network is unreachable|temporary failure|timeout'; then
+    category="Registry network"
+    next_action="check registry host reachability, DNS/port/TLS, and runner network access"
+  fi
+
+  echo "  failure classification: ${category}"
+  echo "  failure categories checked: Docker daemon, Registry network, Registry authentication, image path or tag"
+  echo "  failure logs path: ${stderr_path}"
+  echo "  next action: ${next_action}"
+}
+
 pull_previous_image() {
   local previous_ref="$1"
+  local service="$2"
   local timeout_seconds="${DOCKER_CLI_TIMEOUT_SECONDS:-30}"
+  local log_dir="${RELEASE_GATE_LOG_DIR:-tmp/release-gates}"
+  local safe_ref
+  local stderr_path
   local docker_exit
 
+  mkdir -p "$log_dir"
+  safe_ref="$(printf '%s' "$previous_ref" | tr '/:@' '___')"
+  stderr_path="${log_dir}/docker-pull-${safe_ref}.stderr.log"
+
   set +e
-  run_docker_with_timeout pull "$previous_ref"
+  run_docker_with_timeout pull "$previous_ref" >"$stderr_path" 2>&1
   docker_exit=$?
   set -e
 
   if [ "$docker_exit" -eq 124 ]; then
-    fail "docker CLI timed out after ${timeout_seconds}s while pulling rollback image: ${previous_ref}. Check Docker daemon health, registry reachability, and project-scoped root/manman image path."
+    classify_docker_pull_failure "$docker_exit" "$stderr_path" "$previous_ref" "$service"
+    fail "docker CLI timed out after ${timeout_seconds}s while pulling rollback image: ${previous_ref}. Check Docker daemon health, registry reachability, and project-scoped root/manman image path. failure logs path: ${stderr_path}."
   fi
-  [ "$docker_exit" -eq 0 ] || fail "docker pull failed for rollback image ${previous_ref} with exit code ${docker_exit}"
+  if [ "$docker_exit" -ne 0 ]; then
+    classify_docker_pull_failure "$docker_exit" "$stderr_path" "$previous_ref" "$service"
+    fail "docker pull failed for rollback image ${previous_ref} with exit code ${docker_exit}; see failure logs path: ${stderr_path}"
+  fi
+
+  echo "  command: docker image inspect ${previous_ref}"
+  run_docker_with_timeout image inspect "$previous_ref" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}'
 }
 
 preflight() {
@@ -184,9 +248,12 @@ preflight() {
         while IFS= read -r item; do
           require_project_registry_prefix "$item"
           previous_ref="$(image_ref_for "$item" "$previous_tag")"
+          echo "  packages link: $(package_link_for "$item" "$previous_tag")"
+          echo "  packages api fallback command: $(packages_api_command_for "$item" "$previous_tag")"
+          echo "  cli fallback command: docker image inspect ${previous_ref}"
           # Evidence command: docker pull "$previous_ref"
           echo "  command: docker pull ${previous_ref}"
-          pull_previous_image "$previous_ref"
+          pull_previous_image "$previous_ref" "$item"
         done < <(service_list_for "$service")
       fi
     fi
