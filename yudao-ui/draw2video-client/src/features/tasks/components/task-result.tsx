@@ -4,15 +4,6 @@ import { SafetyInlineNotice } from "@/features/safety/safety-ui";
 import { normalizeSafetyStatus, normalizeSafetyStatusFromError } from "@/features/safety/safety-status";
 import type { AigcTask } from "../task-types";
 
-function formatJson(value?: string) {
-  if (!value) return "";
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    return value;
-  }
-}
-
 export function TaskResult({ task }: { task: AigcTask }) {
   const safetyStatus = normalizeSafetyStatus(task.safetyStatus ?? task.auditStatus ?? (task.status === "AUDITING" ? "reviewing" : null));
   const failedSafetyStatus = task.status === "FAILED" ? normalizeSafetyStatusFromError(task.auditReason ?? task.failReason) : "idle";
@@ -46,8 +37,6 @@ export function TaskResult({ task }: { task: AigcTask }) {
     return <div className="rounded-lg border border-border-warm bg-background p-4 text-sm text-muted-gray">生成结果将在任务完成后展示。</div>;
   }
 
-  const outputData = formatJson(task.outputData);
-
   return (
     <div className="flex flex-col gap-4">
       {task.outputAssetId && (
@@ -68,14 +57,14 @@ export function TaskResult({ task }: { task: AigcTask }) {
           <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-charcoal">{task.outputText}</p>
         </div>
       )}
-      {outputData && (
+      {!task.outputText && task.outputSummary && (
         <div className="rounded-lg border border-border-warm bg-background p-4">
-          <p className="text-sm font-medium text-charcoal">结构化结果</p>
-          <pre className="mt-3 overflow-auto rounded-md bg-muted p-3 text-xs leading-relaxed text-charcoal">{outputData}</pre>
+          <p className="text-sm font-medium text-charcoal">结果摘要</p>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-charcoal">{task.outputSummary}</p>
         </div>
       )}
-      {!task.outputAssetId && !task.outputText && !outputData && (
-        <div className="rounded-lg border border-border-warm bg-background p-4 text-sm text-muted-gray">任务已完成，暂无可展示结果。</div>
+      {!task.outputAssetId && !task.outputText && !task.outputSummary && (
+        <div className="rounded-lg border border-border-warm bg-background p-4 text-sm text-muted-gray">任务已完成，结果正在整理中。</div>
       )}
     </div>
   );

@@ -49,7 +49,6 @@ export interface AigcTask {
   outputAssetType?: string;
   outputSummary?: string;
   outputText?: string;
-  outputData?: string;
   failReason?: string;
   safetyStatus?: string | null;
   auditStatus?: string | null;

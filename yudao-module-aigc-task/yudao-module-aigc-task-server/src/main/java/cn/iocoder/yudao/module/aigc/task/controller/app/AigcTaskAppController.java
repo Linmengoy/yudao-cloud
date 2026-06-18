@@ -71,7 +71,8 @@ public class AigcTaskAppController {
         return respDTO.setCostPrice(null)
                 .setProviderId(null)
                 .setExternalTaskId(null)
-                .setFailCode(null);
+                .setFailCode(null)
+                .setOutputData(null);
     }
 
 }
