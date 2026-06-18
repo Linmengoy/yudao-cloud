@@ -1,14 +1,19 @@
 package cn.iocoder.yudao.module.aigc.workflow.websocket.canvas;
 
 import cn.iocoder.yudao.module.aigc.workflow.websocket.canvas.message.AigcCanvasGenerationRunEventMessage;
+import cn.hutool.core.util.StrUtil;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Map;
-import java.util.Set;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -20,11 +25,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AigcCanvasGenerationRunSseService {
 
     private static final long SSE_TIMEOUT_MILLIS = 30 * 60_000L;
-    private static final int MAX_PROJECT_CONNECTIONS = 6;
+    private static final int MAX_USER_PROJECT_CONNECTIONS = 3;
     private static final long HEARTBEAT_INTERVAL_SECONDS = 15L;
 
-    private final Map<Long, Set<SseEmitter>> projectEmitters = new ConcurrentHashMap<>();
+    private final Map<String, SseSession> sessions = new ConcurrentHashMap<>();
     private final AtomicInteger heartbeatFailureCount = new AtomicInteger();
+    private final AtomicInteger connectionLimitedCount = new AtomicInteger();
     private final AtomicInteger resyncRequiredCount = new AtomicInteger();
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "aigc-canvas-generation-run-sse-heartbeat");
@@ -42,67 +48,87 @@ public class AigcCanvasGenerationRunSseService {
         heartbeatExecutor.shutdownNow();
     }
 
-    public SseEmitter subscribe(Long projectId) {
+    public SseEmitter subscribe(Long projectId, Long userId, String lastEventId) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
-        Set<SseEmitter> emitters = projectEmitters.computeIfAbsent(projectId, key -> ConcurrentHashMap.newKeySet());
-        if (emitters.size() >= MAX_PROJECT_CONNECTIONS) {
+        String connectionId = UUID.randomUUID().toString();
+        int activeUserProjectConnections = getUserProjectConnectionCount(projectId, userId);
+        if (activeUserProjectConnections >= MAX_USER_PROJECT_CONNECTIONS) {
+            connectionLimitedCount.incrementAndGet();
+            log.warn("[subscribe][event=sse_connection_limited projectId({}) userId({}) activeCount({}) limit({})]",
+                    projectId, userId, activeUserProjectConnections, MAX_USER_PROJECT_CONNECTIONS);
             try {
                 emitter.send(SseEmitter.event()
                         .name("generation-run-connection-limit")
-                        .id("connection-limit-" + projectId + "-" + System.currentTimeMillis())
-                        .data(Map.of("projectId", projectId, "limit", MAX_PROJECT_CONNECTIONS)));
+                        .id("connection-limit-" + projectId + "-" + userId + "-" + System.currentTimeMillis())
+                        .data(Map.of("projectId", projectId, "userId", userId,
+                                "limit", MAX_USER_PROJECT_CONNECTIONS)));
             } catch (IOException ignored) {
             }
             emitter.complete();
             return emitter;
         }
-        emitters.add(emitter);
-        Runnable cleanup = () -> remove(projectId, emitter);
+        SseSession session = new SseSession(projectId, userId, connectionId, emitter, lastEventId);
+        boolean canResume = canResumeFromLastEventId(projectId, lastEventId);
+        sessions.put(connectionId, session);
+        Runnable cleanup = () -> remove(session);
         emitter.onCompletion(cleanup);
         emitter.onTimeout(cleanup);
         emitter.onError(error -> cleanup.run());
-        sendHeartbeat(projectId, emitter);
-        sendResyncRequired(projectId, emitter, "stream-connected");
+        sendHeartbeat(session);
+        if (!canResume) {
+            sendResyncRequired(session, StrUtil.isBlank(lastEventId)
+                    ? "stream-connected"
+                    : "event-gap-or-unknown-last-event-id");
+        }
         return emitter;
     }
 
     public void publish(String eventName, AigcCanvasGenerationRunEventMessage message) {
-        Set<SseEmitter> emitters = projectEmitters.get(message.getProjectId());
-        if (emitters == null || emitters.isEmpty()) {
+        Collection<SseSession> projectSessions = getProjectSessions(message.getProjectId());
+        if (projectSessions.isEmpty()) {
             return;
         }
-        for (SseEmitter emitter : emitters) {
+        for (SseSession session : projectSessions) {
             try {
-                emitter.send(SseEmitter.event()
+                session.emitter().send(SseEmitter.event()
                         .name(eventName)
                         .id(message.getEventId())
                         .data(message));
+                session.markSent(message.getEventId());
             } catch (IOException | IllegalStateException ex) {
-                log.debug("[publish][projectId({}) eventName({}) SSE emitter closed]",
-                        message.getProjectId(), eventName, ex);
-                remove(message.getProjectId(), emitter);
+                log.debug("[publish][event=sse_emit_failed projectId({}) userId({}) connectionId({}) eventId({}) reason({})]",
+                        session.projectId(), session.userId(), session.connectionId(), message.getEventId(), ex.getMessage(), ex);
+                remove(session);
             }
         }
     }
 
-    private void remove(Long projectId, SseEmitter emitter) {
-        Set<SseEmitter> emitters = projectEmitters.get(projectId);
-        if (emitters == null) {
-            return;
-        }
-        emitters.remove(emitter);
-        if (emitters.isEmpty()) {
-            projectEmitters.remove(projectId, emitters);
+    private void remove(SseSession session) {
+        if (sessions.remove(session.connectionId(), session)) {
+            long durationMs = Duration.between(session.createdAt(), LocalDateTime.now()).toMillis();
+            log.info("[remove][event=sse_connection_closed projectId({}) userId({}) connectionId({}) activeCount({}) durationMs({})]",
+                    session.projectId(), session.userId(), session.connectionId(),
+                    getProjectConnectionCount(session.projectId()), durationMs);
         }
     }
 
     public int getProjectConnectionCount(Long projectId) {
-        Set<SseEmitter> emitters = projectEmitters.get(projectId);
-        return emitters == null ? 0 : emitters.size();
+        return getProjectSessions(projectId).size();
+    }
+
+    public int getUserProjectConnectionCount(Long projectId, Long userId) {
+        return Math.toIntExact(sessions.values().stream()
+                .filter(session -> Objects.equals(projectId, session.projectId())
+                        && Objects.equals(userId, session.userId()))
+                .count());
     }
 
     public int getHeartbeatFailureCount() {
         return heartbeatFailureCount.get();
+    }
+
+    public int getConnectionLimitedCount() {
+        return connectionLimitedCount.get();
     }
 
     public int getResyncRequiredCount() {
@@ -110,36 +136,118 @@ public class AigcCanvasGenerationRunSseService {
     }
 
     private void sendHeartbeatToAll() {
-        for (Map.Entry<Long, Set<SseEmitter>> entry : projectEmitters.entrySet()) {
-            for (SseEmitter emitter : entry.getValue()) {
-                sendHeartbeat(entry.getKey(), emitter);
-            }
+        for (SseSession session : sessions.values()) {
+            sendHeartbeat(session);
         }
     }
 
-    private void sendHeartbeat(Long projectId, SseEmitter emitter) {
+    void sendHeartbeatForTest(Long projectId, Long userId) {
+        getProjectSessions(projectId).stream()
+                .filter(session -> Objects.equals(userId, session.userId()))
+                .forEach(this::sendHeartbeat);
+    }
+
+    private void sendHeartbeat(SseSession session) {
         try {
-            emitter.send(SseEmitter.event()
+            session.emitter().send(SseEmitter.event()
                     .name("generation-run-heartbeat")
-                    .id("heartbeat-" + projectId + "-" + System.currentTimeMillis())
-                    .data(Map.of("projectId", projectId, "emittedAt", System.currentTimeMillis())));
+                    .id("heartbeat-" + session.projectId() + "-" + session.userId() + "-" + System.currentTimeMillis())
+                    .data(Map.of("projectId", session.projectId(), "userId", session.userId(),
+                            "connectionId", session.connectionId(), "emittedAt", System.currentTimeMillis())));
+            session.markHeartbeat();
         } catch (IOException | IllegalStateException ex) {
             heartbeatFailureCount.incrementAndGet();
-            log.warn("[sendHeartbeat][projectId({}) heartbeat failed, closing SSE emitter]", projectId, ex);
-            remove(projectId, emitter);
+            log.warn("[sendHeartbeat][event=sse_emit_failed projectId({}) userId({}) connectionId({}) eventId({}) reason({})]",
+                    session.projectId(), session.userId(), session.connectionId(), "generation-run-heartbeat",
+                    ex.getMessage(), ex);
+            remove(session);
         }
     }
 
-    private void sendResyncRequired(Long projectId, SseEmitter emitter, String reason) {
+    private void sendResyncRequired(SseSession session, String reason) {
         try {
             resyncRequiredCount.incrementAndGet();
-            emitter.send(SseEmitter.event()
+            session.emitter().send(SseEmitter.event()
                     .name("resync-required")
-                    .id("resync-required-" + projectId + "-" + System.currentTimeMillis())
-                    .data(Map.of("projectId", projectId, "reason", reason, "emittedAt", System.currentTimeMillis())));
+                    .id("resync-required-" + session.projectId() + "-" + session.userId() + "-"
+                            + System.currentTimeMillis())
+                    .data(Map.of("projectId", session.projectId(), "userId", session.userId(),
+                            "connectionId", session.connectionId(), "reason", reason,
+                            "emittedAt", System.currentTimeMillis())));
         } catch (IOException | IllegalStateException ex) {
-            remove(projectId, emitter);
+            remove(session);
         }
+    }
+
+    private boolean canResumeFromLastEventId(Long projectId, String lastEventId) {
+        if (StrUtil.isBlank(lastEventId)) {
+            return false;
+        }
+        return getProjectSessions(projectId).stream()
+                .map(SseSession::lastEventId)
+                .filter(StrUtil::isNotBlank)
+                .anyMatch(lastEventId::equals);
+    }
+
+    private Collection<SseSession> getProjectSessions(Long projectId) {
+        return sessions.values().stream()
+                .filter(session -> Objects.equals(projectId, session.projectId()))
+                .toList();
+    }
+
+    private static final class SseSession {
+
+        private final Long projectId;
+        private final Long userId;
+        private final String connectionId;
+        private final SseEmitter emitter;
+        private final LocalDateTime createdAt = LocalDateTime.now();
+        private volatile LocalDateTime lastHeartbeatAt;
+        private volatile LocalDateTime lastSendAt;
+        private volatile String lastEventId;
+
+        private SseSession(Long projectId, Long userId, String connectionId, SseEmitter emitter, String lastEventId) {
+            this.projectId = projectId;
+            this.userId = userId;
+            this.connectionId = connectionId;
+            this.emitter = emitter;
+            this.lastEventId = lastEventId;
+        }
+
+        Long projectId() {
+            return projectId;
+        }
+
+        Long userId() {
+            return userId;
+        }
+
+        String connectionId() {
+            return connectionId;
+        }
+
+        SseEmitter emitter() {
+            return emitter;
+        }
+
+        LocalDateTime createdAt() {
+            return createdAt;
+        }
+
+        String lastEventId() {
+            return lastEventId;
+        }
+
+        void markHeartbeat() {
+            this.lastHeartbeatAt = LocalDateTime.now();
+            this.lastSendAt = this.lastHeartbeatAt;
+        }
+
+        void markSent(String eventId) {
+            this.lastEventId = eventId;
+            this.lastSendAt = LocalDateTime.now();
+        }
+
     }
 
 }

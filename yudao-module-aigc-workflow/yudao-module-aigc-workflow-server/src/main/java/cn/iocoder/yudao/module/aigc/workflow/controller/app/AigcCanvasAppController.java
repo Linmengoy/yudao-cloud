@@ -49,6 +49,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -272,8 +273,9 @@ public class AigcCanvasAppController {
 
     @GetMapping("/projects/{id}/generation-runs/events")
     @Operation(summary = "订阅画布项目生成任务事件")
-    public SseEmitter subscribeGenerationRunEvents(@PathVariable("id") Long id) {
-        return nodeRunService.subscribeGenerationRunEvents(id, getLoginUserId());
+    public SseEmitter subscribeGenerationRunEvents(@PathVariable("id") Long id,
+                                                   @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
+        return nodeRunService.subscribeGenerationRunEvents(id, getLoginUserId(), lastEventId);
     }
 
     private void fillProjectPermissions(AigcCanvasProjectRespVO project, AigcCanvasMemberDO member) {

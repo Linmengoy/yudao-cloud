@@ -487,18 +487,23 @@ class ReviewReadyContractTest(unittest.TestCase):
         hook = read("yudao-ui/draw2video-client/src/features/canvas/use-canvas-generation-run-events.ts")
 
         for required in [
-            "MAX_PROJECT_CONNECTIONS = 6",
+            "MAX_USER_PROJECT_CONNECTIONS = 3",
+            "getUserProjectConnectionCount(projectId, userId)",
             "generation-run-connection-limit",
             "HEARTBEAT_INTERVAL_SECONDS = 15L",
             "heartbeatFailureCount.incrementAndGet()",
-            "log.warn(\"[sendHeartbeat]",
+            "event=sse_emit_failed projectId",
             "getProjectConnectionCount(Long projectId)",
+            "getUserProjectConnectionCount(Long projectId, Long userId)",
             "getHeartbeatFailureCount()",
+            "getConnectionLimitedCount()",
             "getResyncRequiredCount()",
-            "sendResyncRequired(projectId, emitter, \"stream-connected\")",
+            "canResumeFromLastEventId(projectId, lastEventId)",
+            "event-gap-or-unknown-last-event-id",
         ]:
             self.assertIn(required, sse)
 
+        self.assertIn('"Last-Event-ID": lastSseEventIdRef.current', hook)
         self.assertIn('event.type === "resync-required"', hook)
         self.assertIn('event.type === "generation-run-connection-limit"', hook)
         self.assertIn("void syncProjectGenerationRuns();", hook)

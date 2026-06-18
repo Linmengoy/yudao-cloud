@@ -15,6 +15,6 @@ public interface AigcCanvasNodeRunService {
 
     AigcCanvasNodeRunBatchSyncRespVO syncNodeRuns(AigcCanvasNodeRunBatchSyncReqVO reqVO, Long userId);
 
-    SseEmitter subscribeGenerationRunEvents(Long projectId, Long userId);
+    SseEmitter subscribeGenerationRunEvents(Long projectId, Long userId, String lastEventId);
 
 }

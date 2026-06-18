@@ -49,6 +49,11 @@ async function readEventStream(response: Response, onEvent: (event: CanvasGenera
     const chunks = buffer.split(/\r?\n\r?\n/);
     buffer = chunks.pop() ?? "";
     for (const chunk of chunks) {
+      const eventId = chunk
+        .split(/\r?\n/)
+        .find((line) => line.startsWith("id:"))
+        ?.slice(3)
+        .trim();
       const eventType = chunk
         .split(/\r?\n/)
         .find((line) => line.startsWith("event:"))
@@ -60,7 +65,7 @@ async function readEventStream(response: Response, onEvent: (event: CanvasGenera
         .map((line) => line.slice(5).trimStart());
       if (dataLines.length === 0) continue;
       try {
-        onEvent({ ...(JSON.parse(dataLines.join("\n")) as CanvasGenerationRunEvent), type: eventType });
+        onEvent({ ...(JSON.parse(dataLines.join("\n")) as CanvasGenerationRunEvent), type: eventType, eventId });
       } catch {
       }
     }
@@ -80,6 +85,7 @@ export function useCanvasGenerationRunEvents(
   const onOperationRef = useRef(onOperation);
   const onBatchSyncRef = useRef(onBatchSync);
   const batchSyncInFlightRef = useRef(false);
+  const lastSseEventIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     getNodesRef.current = getNodes;
@@ -132,12 +138,14 @@ export function useCanvasGenerationRunEvents(
             Accept: "text/event-stream",
             "tenant-id": API_TENANT_ID,
             terminal: API_TERMINAL,
+            ...(lastSseEventIdRef.current ? { "Last-Event-ID": lastSseEventIdRef.current } : {}),
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           signal: abortController.signal,
         });
         if (!response.ok) throw new Error(`generation run stream failed: ${response.status}`);
         await readEventStream(response, (event) => {
+          if (event.eventId) lastSseEventIdRef.current = event.eventId;
           if (event.projectId != null && String(event.projectId) !== String(projectId)) return;
           if (event.type === "resync-required" || event.type === "generation-run-connection-limit") {
             void syncProjectGenerationRuns();

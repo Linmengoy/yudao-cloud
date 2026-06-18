@@ -154,7 +154,7 @@ class GenerationPersistenceContractsTest(unittest.TestCase):
         self.assertIn('@GetMapping("/projects/{id}/generation-runs/events")', controller)
         self.assertIn('name("generation-run-heartbeat")', sse_service)
         self.assertIn('name("resync-required")', sse_service)
-        self.assertIn("MAX_PROJECT_CONNECTIONS = 6", sse_service)
+        self.assertIn("MAX_USER_PROJECT_CONNECTIONS = 3", sse_service)
         self.assertIn("syncProjectNodeRuns", api)
         self.assertIn("/nodes/run/sync", api)
         self.assertIn("useCanvasGenerationRunEvents", events_hook)

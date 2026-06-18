@@ -183,9 +183,9 @@ public class AigcCanvasNodeRunServiceImpl implements AigcCanvasNodeRunService {
     }
 
     @Override
-    public SseEmitter subscribeGenerationRunEvents(Long projectId, Long userId) {
+    public SseEmitter subscribeGenerationRunEvents(Long projectId, Long userId, String lastEventId) {
         projectService.validateReadableProject(projectId, userId);
-        return generationRunSseService.subscribe(projectId);
+        return generationRunSseService.subscribe(projectId, userId, lastEventId);
     }
 
     private AigcCanvasNodeRunRespVO syncOneNodeRunTransactionally(AigcCanvasNodeRunSyncReqVO reqVO,
