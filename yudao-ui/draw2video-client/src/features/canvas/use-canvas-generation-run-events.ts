@@ -37,6 +37,19 @@ function getPendingTaskId(node: PendingRunNode) {
   return Number.isFinite(taskId) ? taskId : null;
 }
 
+function valuesMatch(left: unknown, right: unknown) {
+  return left != null && right != null && String(left) === String(right);
+}
+
+export function canApplyGenerationRunOperation(event: CanvasGenerationRunEvent, nodes: PendingRunNode[]) {
+  if (!event.operation || !event.nodeId) return false;
+  const node = nodes.find((item) => item.id === event.nodeId);
+  if (!node) return false;
+  const data = node.data as { status?: unknown; taskId?: unknown; runId?: unknown };
+  if (data.status !== "pending") return false;
+  return valuesMatch(data.taskId, event.taskId) || valuesMatch(data.runId, event.runId);
+}
+
 async function readEventStream(response: Response, onEvent: (event: CanvasGenerationRunEvent) => void) {
   const reader = response.body?.getReader();
   if (!reader) return;
@@ -151,7 +164,9 @@ export function useCanvasGenerationRunEvents(
             void syncProjectGenerationRuns();
             return;
           }
-          if (event.operation) onOperationRef.current(event.operation);
+          if (event.operation && canApplyGenerationRunOperation(event, getNodesRef.current())) {
+            onOperationRef.current(event.operation);
+          }
         });
       } catch {
         if (closed || abortController.signal.aborted) return;
