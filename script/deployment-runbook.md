@@ -98,7 +98,9 @@ git tag --sort=-creatordate | Select-String '^prod-stable-' | Select-Object -Fir
 git rev-parse --short=12 prod-stable-20260616-1600
 ```
 
-如果没有稳定 tag，就从 Gitea issue 的上一条成功发布写回、`script/docker/community-release-evidence-index.md`、或服务器当前运行镜像 tag 中选择最后一次健康检查通过的 SHA。不要把 `latest` 当作生产回滚版本；找不到时先补发布证据或标记门禁失败。
+prod workflow 会在 checkout 后拉取 `prod-stable-*` tag，并优先选择第一个不是当前候选短 SHA 的 12 位 Git SHA；证据字段写为 `previous stable image tag source: prod-stable tag <tag>`。如果稳定 tag 不存在或只指向当前候选 SHA，证据字段必须写明 `prod-stable-* tag lookup returned no usable previous stable SHA`，然后才允许按 `/opt/deploy/yudao-micro/.env` 或当前运行容器镜像继续推导。
+
+如果没有可用稳定 tag，就从 Gitea issue 的上一条成功发布写回、`script/docker/community-release-evidence-index.md`、`/opt/deploy/yudao-micro/.env` 或服务器当前运行镜像 tag 中选择最后一次健康检查通过的 SHA。不要把 `latest`、当前候选短 SHA 或人工口头确认当作生产回滚版本；找不到时先补发布证据或标记门禁失败。
 
 推荐发布策略：
 
@@ -185,7 +187,7 @@ Gitea Web 操作：
 2. 选择 `yudao-micro-cicd-prod`。
 3. 手动运行，`ref` 选 `master-jdk17` 或已推送的稳定 tag。
 4. `service` 选择单个服务。
-5. `previous_stable_image_tag` 填上一个稳定生产镜像 tag，必须是 12 位 Git SHA；留空时 workflow 会先读 `/opt/deploy/yudao-micro/.env`，再尝试从当前运行的 `<service>-prod` 容器镜像 tag 推导，推导不到或等于本次 commit 时会失败。
+5. `previous_stable_image_tag` 填上一个稳定生产镜像 tag，必须是 12 位 Git SHA；留空时 workflow 会先查 `prod-stable-*` tag，再读 `/opt/deploy/yudao-micro/.env`，再尝试从当前运行的 `<service>-prod` 容器镜像 tag 推导，推导不到或等于本次 commit 时会失败。
 6. 等 workflow 成功。
 7. 在 `manman2` 验证容器、日志、Nacos 实例和公网域名。
 
@@ -214,7 +216,7 @@ Nacos 实例验证：
 curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=prod&groupName=DEFAULT_GROUP&serviceName=system-server"
 ```
 
-当前限制：test Compose 的业务后端镜像已使用 `${MICRO_IMAGE_TAG:-latest}`，并从 `script/docker/test-image-version` 的 `v0.0.1` 起步；prod Compose 的业务后端镜像也统一使用 `${MICRO_IMAGE_TAG:-latest}`。发布 workflow 会拒绝空 tag 和 `latest`；test 当前 tag 留空时按上一稳定版本自动加一个 patch，prod 当前 tag 始终使用当前 12 位 Git SHA，`previous_stable_image_tag` 来自手填输入、`/opt/deploy/yudao-micro/.env`、当前运行容器镜像或镜像仓库可验证 tag。
+当前限制：test Compose 的业务后端镜像已使用 `${MICRO_IMAGE_TAG:-latest}`，并从 `script/docker/test-image-version` 的 `v0.0.1` 起步；prod Compose 的业务后端镜像也统一使用 `${MICRO_IMAGE_TAG:-latest}`。发布 workflow 会拒绝空 tag 和 `latest`；test 当前 tag 留空时按上一稳定版本自动加一个 patch，prod 当前 tag 始终使用当前 12 位 Git SHA，`previous_stable_image_tag` 来自手填输入、`prod-stable-*` tag、`/opt/deploy/yudao-micro/.env`、当前运行容器镜像或镜像仓库可验证 tag。
 
 `aigc-model` 发布证据必须包含：
 

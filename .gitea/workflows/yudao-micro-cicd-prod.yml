@@ -64,6 +64,7 @@ jobs:
           else
             auth_fetch --depth=1 origin "${checkout_ref}"
           fi
+          auth_fetch --force origin "refs/tags/prod-stable-*:refs/tags/prod-stable-*" || true
           git checkout -f FETCH_HEAD
           git clean -fdx
 
@@ -114,6 +115,20 @@ jobs:
 
           if [ "${service}" != "all" ]; then
             docker compose -f script/docker/docker-compose-micro-prod.yml config --services | grep -Fx "${service}"
+          fi
+
+          if [ -z "${previous_stable_image_tag}" ]; then
+            for stable_ref in $(git tag --sort=-creatordate 'prod-stable-*'); do
+              stable_sha="$(git rev-parse --short=12 "${stable_ref}^{commit}" 2>/dev/null || true)"
+              if printf '%s' "${stable_sha}" | grep -Eq '^[0-9a-f]{12}$' && [ "${stable_sha}" != "${image_tag}" ]; then
+                previous_stable_image_tag="${stable_sha}"
+                previous_stable_image_tag_source="prod-stable tag ${stable_ref}"
+                break
+              fi
+            done
+            if [ -z "${previous_stable_image_tag}" ]; then
+              previous_stable_image_tag_source="prod-stable-* tag lookup returned no usable previous stable SHA"
+            fi
           fi
 
           if [ -z "${previous_stable_image_tag}" ]; then

@@ -87,6 +87,12 @@ class ReleaseWorkflowManualDispatchContractsTest(unittest.TestCase):
         self.assertIn("required: false", workflow)
         self.assertIn("INPUT_PREVIOUS_STABLE_IMAGE_TAG: ${{ github.event.inputs.previous_stable_image_tag }}", workflow)
         self.assertIn('previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}"', workflow)
+        self.assertIn('auth_fetch --force origin "refs/tags/prod-stable-*:refs/tags/prod-stable-*" || true', workflow)
+        self.assertIn("git tag --sort=-creatordate 'prod-stable-*'", workflow)
+        self.assertIn('stable_sha="$(git rev-parse --short=12 "${stable_ref}^{commit}"', workflow)
+        self.assertIn('[ "${stable_sha}" != "${image_tag}" ]', workflow)
+        self.assertIn('previous_stable_image_tag_source="prod-stable tag ${stable_ref}"', workflow)
+        self.assertIn('previous_stable_image_tag_source="prod-stable-* tag lookup returned no usable previous stable SHA"', workflow)
         self.assertIn('deploy_env_file="/opt/deploy/yudao-micro/.env"', workflow)
         self.assertIn('sed -n \'s/^MICRO_IMAGE_TAG=//p\' "${deploy_env_file}"', workflow)
         self.assertIn('inspect_containers="yudao-gateway-prod yudao-system-prod', workflow)
@@ -100,7 +106,15 @@ class ReleaseWorkflowManualDispatchContractsTest(unittest.TestCase):
         self.assertIn("previous stable image tag source: ${PREVIOUS_STABLE_IMAGE_TAG_SOURCE}", workflow)
 
         self.assertIn("prod 当前 tag 始终使用当前 12 位 Git SHA", runbook)
-        self.assertIn("留空时 workflow 会先读 `/opt/deploy/yudao-micro/.env`", runbook)
+        self.assertIn("留空时 workflow 会先查 `prod-stable-*` tag", runbook)
+        self.assertIn("prod-stable-* tag lookup returned no usable previous stable SHA", runbook)
+        self.assertIn("不是当前候选短 SHA", runbook)
+
+    def test_prod_preflight_records_previous_stable_source(self):
+        gate = read("script/docker/verify-release-evidence.sh")
+
+        self.assertIn("PREVIOUS_STABLE_IMAGE_TAG_SOURCE", gate)
+        self.assertIn("- previous stable image tag source: ${PREVIOUS_STABLE_IMAGE_TAG_SOURCE:-not-provided}", gate)
 
 
 if __name__ == "__main__":

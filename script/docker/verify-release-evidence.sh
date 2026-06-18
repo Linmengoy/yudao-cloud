@@ -231,6 +231,7 @@ preflight() {
     echo "- service: ${service}"
     echo "- deploy env: ${deploy_env}"
     echo "- current image tag: ${MICRO_IMAGE_TAG}"
+    echo "- previous stable image tag source: ${PREVIOUS_STABLE_IMAGE_TAG_SOURCE:-not-provided}"
     echo "- previous stable image tag: ${previous_tag:-not-provided}"
     echo "- micro image registry prefix: ${MICRO_IMAGE_REGISTRY_PREFIX:-not-set}"
     echo "- frontend image registry prefix: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-not-set}"
