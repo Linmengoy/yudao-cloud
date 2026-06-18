@@ -81,6 +81,7 @@ image_ref_for() {
   local prefix
 
   prefix="$(registry_prefix_for "$service")"
+  prefix="${prefix%/}/"
   printf '%s%s:%s' "$prefix" "$service" "$tag"
 }
 
@@ -142,7 +143,7 @@ classify_docker_pull_failure() {
     stderr_text="$(cat "$stderr_path")"
   fi
 
-  if [ "$docker_exit" -eq 124 ] || printf '%s' "$stderr_text" | grep -Eiq 'Cannot connect to the Docker daemon|error during connect|docker daemon|is the docker daemon running|command .docker. could not be found|could not be found in this WSL|docker: command not found'; then
+  if [ "$docker_exit" -eq 124 ] || printf '%s' "$stderr_text" | grep -Eiq "Cannot connect to the Docker daemon|error during connect|docker daemon|is the docker daemon running|command .docker. could not be found|could not be found in this WSL|docker: command not found|failed to run command .docker.|No such file or directory"; then
     category="Docker daemon"
     next_action="run docker version and docker info on the runner, restart Docker if needed, then rerun preflight"
   elif printf '%s' "$stderr_text" | grep -Eiq 'unauthorized|authentication required|denied|forbidden|401|403'; then
@@ -235,28 +236,26 @@ preflight() {
     echo "- previous stable image tag: ${previous_tag:-not-provided}"
     echo "- micro image registry prefix: ${MICRO_IMAGE_REGISTRY_PREFIX:-not-set}"
     echo "- frontend image registry prefix: ${FRONTEND_IMAGE_REGISTRY_PREFIX:-not-set}"
-    if command -v docker >/dev/null 2>&1; then
-      echo "- current image inspect:"
-      while IFS= read -r item; do
-        # Evidence command: docker image inspect "${item}:${MICRO_IMAGE_TAG}"
-        echo "  command: docker image inspect ${item}:${MICRO_IMAGE_TAG}"
-        if ! run_docker_with_timeout image inspect "${item}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
-          echo "  image inspect pending until build completes: ${item}:${MICRO_IMAGE_TAG}"
-        fi
-      done < <(service_list_for "$service")
-      if [ -n "$previous_tag" ]; then
-        echo "- previous stable registry pull:"
-        while IFS= read -r item; do
-          require_project_registry_prefix "$item"
-          previous_ref="$(image_ref_for "$item" "$previous_tag")"
-          echo "  packages link: $(package_link_for "$item" "$previous_tag")"
-          echo "  packages api fallback command: $(packages_api_command_for "$item" "$previous_tag")"
-          echo "  cli fallback command: docker image inspect ${previous_ref}"
-          # Evidence command: docker pull "$previous_ref"
-          echo "  command: docker pull ${previous_ref}"
-          pull_previous_image "$previous_ref" "$item"
-        done < <(service_list_for "$service")
+    echo "- current image inspect:"
+    while IFS= read -r item; do
+      # Evidence command: docker image inspect "${item}:${MICRO_IMAGE_TAG}"
+      echo "  command: docker image inspect ${item}:${MICRO_IMAGE_TAG}"
+      if ! run_docker_with_timeout image inspect "${item}:${MICRO_IMAGE_TAG}" --format='  image={{.RepoTags}} id={{.Id}} created={{.Created}}' 2>/dev/null; then
+        echo "  image inspect pending until build completes or docker is available: ${item}:${MICRO_IMAGE_TAG}"
       fi
+    done < <(service_list_for "$service")
+    if [ -n "$previous_tag" ]; then
+      echo "- previous stable registry pull:"
+      while IFS= read -r item; do
+        require_project_registry_prefix "$item"
+        previous_ref="$(image_ref_for "$item" "$previous_tag")"
+        echo "  packages link: $(package_link_for "$item" "$previous_tag")"
+        echo "  packages api fallback command: $(packages_api_command_for "$item" "$previous_tag")"
+        echo "  cli fallback command: docker image inspect ${previous_ref}"
+        # Evidence command: docker pull "$previous_ref"
+        echo "  command: docker pull ${previous_ref}"
+        pull_previous_image "$previous_ref" "$item"
+      done < <(service_list_for "$service")
     fi
     if [ -n "$previous_tag" ]; then
       echo "- rollback command: MICRO_IMAGE_TAG=${previous_tag} FRONTEND_IMAGE_TAG=${previous_tag} MICRO_IMAGE_REGISTRY_PREFIX=${MICRO_IMAGE_REGISTRY_PREFIX:-} FRONTEND_IMAGE_REGISTRY_PREFIX=${FRONTEND_IMAGE_REGISTRY_PREFIX:-} docker compose -f docker-compose-micro.yml up -d --no-build --no-deps --force-recreate ${service}"

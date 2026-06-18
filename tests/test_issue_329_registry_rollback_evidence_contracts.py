@@ -20,12 +20,16 @@ class Issue329RegistryRollbackEvidenceContractsTest(unittest.TestCase):
             "GITEA_PACKAGES_BASE_URL",
             "packages_api_command_for()",
             "GITEA_PACKAGES_API_URL",
+            'prefix="${prefix%/}/"',
             "packages link: $(package_link_for \"$item\" \"$previous_tag\")",
             "packages api fallback command: $(packages_api_command_for \"$item\" \"$previous_tag\")",
             "cli fallback command: docker image inspect ${previous_ref}",
             "command: docker image inspect ${previous_ref}",
+            "pull_previous_image \"$previous_ref\" \"$item\"",
         ]:
             self.assertIn(required, gate)
+
+        self.assertNotIn("if command -v docker >/dev/null 2>&1; then\n      echo \"- current image inspect:\"", gate)
 
         for required in [
             "Packages link",
@@ -51,6 +55,8 @@ class Issue329RegistryRollbackEvidenceContractsTest(unittest.TestCase):
             "RELEASE_GATE_LOG_DIR",
             "root/${service} image",
             "could not be found in this WSL",
+            "failed to run command .docker.",
+            "image inspect pending until build completes or docker is available",
             "run_docker_with_timeout pull \"$previous_ref\" >\"$stderr_path\" 2>&1",
         ]:
             self.assertIn(required, gate)
