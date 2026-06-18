@@ -187,7 +187,7 @@ Gitea Web 操作：
 2. 选择 `yudao-micro-cicd-prod`。
 3. 手动运行，`ref` 选 `master-jdk17` 或已推送的稳定 tag。
 4. `service` 选择单个服务。
-5. `previous_stable_image_tag` 填上一个稳定生产镜像 tag，必须是 12 位 Git SHA；留空时 workflow 会先查 `prod-stable-*` tag，再读 `/opt/deploy/yudao-micro/.env`，再尝试从当前运行的 `<service>-prod` 容器镜像 tag 推导，推导不到或等于本次 commit 时会失败。
+5. `previous_stable_image_tag` 可填上一个期望的上一稳定生产镜像 tag，必须是 12 位 Git SHA；手填值只作为期望上一稳定 SHA，必须同时填写 `previous_stable_image_tag_source`，或能从 `prod-stable-*` tag、`/opt/deploy/yudao-micro/.env` 或当前运行容器镜像中匹配到同一个 SHA，不能单独作为证据来源。允许的来源是上一条成功发布 issue、`prod-stable-*` tag、`/opt/deploy/yudao-micro/.env` 或当前运行容器。留空时 workflow 会先查 `prod-stable-*` tag，再读 `/opt/deploy/yudao-micro/.env`，再尝试从当前运行的 `<service>-prod` 容器镜像 tag 推导，推导不到或等于本次 commit 时会失败。
 6. 等 workflow 成功。
 7. 在 `manman2` 验证容器、日志、Nacos 实例和公网域名。
 
@@ -197,7 +197,7 @@ API 触发示例：
 curl.exe -sS -u root:root -X POST `
   "http://111.228.39.103:3000/api/v1/repos/root/manman/actions/workflows/yudao-micro-cicd-prod.yml/dispatches" `
   -H "Content-Type: application/json" `
-  -d "{\"ref\":\"master-jdk17\",\"inputs\":{\"service\":\"yudao-system\",\"previous_stable_image_tag\":\"5fbe85a739e2\"}}"
+  -d "{\"ref\":\"master-jdk17\",\"inputs\":{\"service\":\"yudao-system\",\"previous_stable_image_tag\":\"5fbe85a739e2\",\"previous_stable_image_tag_source\":\"previous successful release issue #323 http://111.228.39.103:3000/root/manman/issues/323\"}}"
 ```
 
 prod 验证命令：
@@ -216,7 +216,7 @@ Nacos 实例验证：
 curl.exe -sS "http://111.228.39.103:8848/nacos/v1/ns/instance/list?namespaceId=prod&groupName=DEFAULT_GROUP&serviceName=system-server"
 ```
 
-当前限制：test Compose 的业务后端镜像已使用 `${MICRO_IMAGE_TAG:-latest}`，并从 `script/docker/test-image-version` 的 `v0.0.1` 起步；prod Compose 的业务后端镜像也统一使用 `${MICRO_IMAGE_TAG:-latest}`。发布 workflow 会拒绝空 tag 和 `latest`；test 当前 tag 留空时按上一稳定版本自动加一个 patch，prod 当前 tag 始终使用当前 12 位 Git SHA，`previous_stable_image_tag` 来自手填输入、`prod-stable-*` tag、`/opt/deploy/yudao-micro/.env`、当前运行容器镜像或镜像仓库可验证 tag。
+当前限制：test Compose 的业务后端镜像已使用 `${MICRO_IMAGE_TAG:-latest}`，并从 `script/docker/test-image-version` 的 `v0.0.1` 起步；prod Compose 的业务后端镜像也统一使用 `${MICRO_IMAGE_TAG:-latest}`。发布 workflow 会拒绝空 tag 和 `latest`；test 当前 tag 留空时按上一稳定版本自动加一个 patch，prod 当前 tag 始终使用当前 12 位 Git SHA，`previous_stable_image_tag` 只能由上一条成功发布 issue、`prod-stable-*` tag、`/opt/deploy/yudao-micro/.env`、当前运行容器镜像或镜像仓库可验证 tag 背书；手填输入必须匹配其中一个来源，不能作为独立证据来源。
 
 `aigc-model` 发布证据必须包含：
 

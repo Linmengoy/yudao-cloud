@@ -24,7 +24,11 @@ on:
           - aigc-workflow
           - aigc-community
       previous_stable_image_tag:
-        description: '上一稳定生产镜像 tag，用于回滚证据；留空时自动从当前生产部署或运行容器推导'
+        description: '上一稳定生产镜像 tag，用于回滚证据；手填时必须同时提供可审计来源或匹配自动推导来源'
+        required: false
+        default: ''
+      previous_stable_image_tag_source:
+        description: '上一稳定 tag 来源：上一条成功发布 issue、prod-stable-* tag、/opt/deploy/yudao-micro/.env 或 running container'
         required: false
         default: ''
 
@@ -84,6 +88,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_SERVICE: ${{ github.event.inputs.service }}
           INPUT_PREVIOUS_STABLE_IMAGE_TAG: ${{ github.event.inputs.previous_stable_image_tag }}
+          INPUT_PREVIOUS_STABLE_IMAGE_TAG_SOURCE: ${{ github.event.inputs.previous_stable_image_tag_source }}
         run: |
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             service="${INPUT_SERVICE:-aigc-gen}"
@@ -92,8 +97,10 @@ jobs:
           fi
 
           image_tag="$(git rev-parse --short=12 HEAD)"
-          previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}"
-          previous_stable_image_tag_source="workflow_dispatch.previous_stable_image_tag"
+          requested_previous_stable_image_tag="${INPUT_PREVIOUS_STABLE_IMAGE_TAG:-}"
+          requested_previous_stable_image_tag_source="${INPUT_PREVIOUS_STABLE_IMAGE_TAG_SOURCE:-}"
+          previous_stable_image_tag=""
+          previous_stable_image_tag_source=""
 
           case "${service}" in
             all) module="all" ;;
@@ -117,25 +124,43 @@ jobs:
             docker compose -f script/docker/docker-compose-micro-prod.yml config --services | grep -Fx "${service}"
           fi
 
+          if [ -n "${requested_previous_stable_image_tag}" ] && [ -n "${requested_previous_stable_image_tag_source}" ]; then
+            case "${requested_previous_stable_image_tag_source}" in
+              "previous successful release issue #"*|*"root/manman/issues/"*|"prod-stable tag prod-stable-"*|"/opt/deploy/yudao-micro/.env"|"running container "*)
+                previous_stable_image_tag="${requested_previous_stable_image_tag}"
+                previous_stable_image_tag_source="${requested_previous_stable_image_tag_source}"
+                ;;
+              *)
+                echo "previous_stable_image_tag_source must be an allowed auditable source: previous successful release issue, prod-stable-* tag, /opt/deploy/yudao-micro/.env, or running container"
+                exit 1
+                ;;
+            esac
+          fi
+
           if [ -z "${previous_stable_image_tag}" ]; then
             for stable_ref in $(git tag --sort=-creatordate 'prod-stable-*'); do
               stable_sha="$(git rev-parse --short=12 "${stable_ref}^{commit}" 2>/dev/null || true)"
               if printf '%s' "${stable_sha}" | grep -Eq '^[0-9a-f]{12}$' && [ "${stable_sha}" != "${image_tag}" ]; then
-                previous_stable_image_tag="${stable_sha}"
-                previous_stable_image_tag_source="prod-stable tag ${stable_ref}"
-                break
+                if [ -z "${requested_previous_stable_image_tag}" ] || [ "${stable_sha}" = "${requested_previous_stable_image_tag}" ]; then
+                  previous_stable_image_tag="${stable_sha}"
+                  previous_stable_image_tag_source="prod-stable tag ${stable_ref}"
+                  break
+                fi
               fi
             done
-            if [ -z "${previous_stable_image_tag}" ]; then
-              previous_stable_image_tag_source="prod-stable-* tag lookup returned no usable previous stable SHA"
-            fi
+          fi
+          if [ -z "${previous_stable_image_tag}" ] && [ -z "${requested_previous_stable_image_tag}" ]; then
+            previous_stable_image_tag_source="prod-stable-* tag lookup returned no usable previous stable SHA"
           fi
 
-          if [ -z "${previous_stable_image_tag}" ]; then
-            deploy_env_file="/opt/deploy/yudao-micro/.env"
-            if [ -f "${deploy_env_file}" ]; then
-              previous_stable_image_tag="$(sed -n 's/^MICRO_IMAGE_TAG=//p' "${deploy_env_file}" | tail -n 1 | tr -d '[:space:]')"
-              previous_stable_image_tag_source="${deploy_env_file}"
+          deploy_env_file="/opt/deploy/yudao-micro/.env"
+          if [ -z "${previous_stable_image_tag}" ] && [ -f "${deploy_env_file}" ]; then
+            env_previous_stable_image_tag="$(sed -n 's/^MICRO_IMAGE_TAG=//p' "${deploy_env_file}" | tail -n 1 | tr -d '[:space:]')"
+            if [ -n "${env_previous_stable_image_tag}" ]; then
+              if [ -z "${requested_previous_stable_image_tag}" ] || [ "${env_previous_stable_image_tag}" = "${requested_previous_stable_image_tag}" ]; then
+                previous_stable_image_tag="${env_previous_stable_image_tag}"
+                previous_stable_image_tag_source="${deploy_env_file}"
+              fi
             fi
           fi
 
@@ -148,15 +173,22 @@ jobs:
             for container in ${inspect_containers}; do
               running_image="$(docker inspect "${container}" --format '{{.Config.Image}}' 2>/dev/null || true)"
               if [ -n "${running_image}" ]; then
-                previous_stable_image_tag="${running_image##*:}"
-                previous_stable_image_tag_source="running container ${container}"
-                break
+                running_previous_stable_image_tag="${running_image##*:}"
+                if [ -z "${requested_previous_stable_image_tag}" ] || [ "${running_previous_stable_image_tag}" = "${requested_previous_stable_image_tag}" ]; then
+                  previous_stable_image_tag="${running_previous_stable_image_tag}"
+                  previous_stable_image_tag_source="running container ${container}"
+                  break
+                fi
               fi
             done
           fi
 
+          if [ -n "${requested_previous_stable_image_tag}" ] && [ -z "${previous_stable_image_tag}" ]; then
+            echo "workflow_dispatch.previous_stable_image_tag must provide or match an allowed previous stable source: previous successful release issue, prod-stable-* tag, /opt/deploy/yudao-micro/.env, or the selected service container"
+            exit 1
+          fi
           if [ -z "${previous_stable_image_tag}" ]; then
-            echo "previous_stable_image_tag could not be inferred from workflow input, /opt/deploy/yudao-micro/.env, or the selected service container"
+            echo "previous_stable_image_tag could not be inferred from prod-stable-* tag, /opt/deploy/yudao-micro/.env, or the selected service container"
             exit 1
           fi
           if ! printf '%s' "${previous_stable_image_tag}" | grep -Eq '^[0-9a-f]{12}$'; then
