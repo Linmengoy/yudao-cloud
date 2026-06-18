@@ -74,4 +74,30 @@ describe("canApplyGenerationRunOperation", () => {
     expect(canApplyGenerationRunOperation(event({}), nodes)).toBe(false);
     expect(canApplyGenerationRunOperation(event({ nodeId: "missing-node" }), nodes)).toBe(false);
   });
+
+  it("rejects terminal operations that cannot be tied to the current task or run", () => {
+    const nodes = [
+      {
+        id: "image-1",
+        type: "image",
+        data: { status: "pending", taskId: "1001", runId: "run-new" },
+      },
+    ];
+
+    expect(canApplyGenerationRunOperation(event({ taskId: undefined, runId: undefined }), nodes)).toBe(false);
+    const nullIdEvent = event({ taskId: null as unknown as number, runId: null as unknown as string });
+    expect(canApplyGenerationRunOperation(nullIdEvent, nodes)).toBe(false);
+  });
+
+  it("does not overwrite a completed node with a late matching terminal operation", () => {
+    const nodes = [
+      {
+        id: "image-1",
+        type: "image",
+        data: { status: "success", taskId: "1001", runId: "run-new" },
+      },
+    ];
+
+    expect(canApplyGenerationRunOperation(event({ taskId: 1001, runId: "run-new" }), nodes)).toBe(false);
+  });
 });
